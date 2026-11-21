@@ -30,12 +30,12 @@ export const B = {
     cat: "home", name: "خيمة", cost: 50, upkeep: 0, era: 0, water: -1, power: -1,
     levels: [
       { name: "خيمة", cap: 3 },
-      { name: "بيت طين", cap: 6, needs: { road: 1 } },
+      { name: "بيت طين", cap: 6, needs: { road: 1, water: 1, happy: 45, pop: 30 } },
       { name: "بيت شعبي", cap: 10, needs: { road: 1, water: 1, happy: 45 } },
       { name: "فيلا", cap: 16, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
       { name: "عمارة", cap: 48, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
     ],
-    text: "يبدأ خيمة، ويتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
+    text: "يبدأ خيمة، ولما تستقر المضارب (٣٠ ساكن وماء) يتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
@@ -89,9 +89,9 @@ export const TECH = {
 export const GOALS = [
   { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 150 },
   { text: "وصّل الخيام بطريق", test: (s) => s.connectedHomes >= 3, reward: 100 },
-  { text: "أول بيت طين", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
   { text: "احفر بئرًا", test: (s) => s.count.well >= 1, reward: 100 },
   { text: "ابنِ مزرعة نخل", test: (s) => s.count.palms >= 1, reward: 150 },
+  { text: "أول بيت طين (تحتاج ٣٠ ساكن)", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
   { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 200 },
   { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 200 },
   { text: "أول بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 250 },

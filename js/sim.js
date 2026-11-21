@@ -209,6 +209,7 @@ export function houseBlocker(s, a, x, y) {
   if (next.era && s.era < next.era) return `تحتاج الرافعية تصير ${ERAS[next.era].name}`;
   const n = next.needs || {};
   if (n.road && !t.b.works) return "يحتاج طريق";
+  if (n.pop && s.pop < n.pop) return `المضارب ما استقرت بعد: تحتاج ${n.pop} ساكن (الحين ${s.pop})`;
   if (n.water && a.waterRatio < 0.95) return "يحتاج ماء أكثر";
   if (n.power && (!a.grid || a.powerSupply === 0 || a.powerRatio < 0.95)) return "يحتاج كهرباء";
   const here = s.happy + (t.b.local || 0) * 0.6;
