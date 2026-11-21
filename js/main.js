@@ -29,13 +29,16 @@ let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
 const DAY_MS = 3000;
 
-function save() { S.cam = world.view; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
+function save() { S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget }; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
 
 // ---------- the 3D town ----------
 
 const canvas = $("map");
 const world = new World(canvas, { quality: settings.quality });
 world.dayCycle = settings.daynight;
+// Only trust a saved 3D camera (saves from the old 2D map used other numbers).
+const camOk = (c) => c && [c.x, c.z, c.zoom, c.yawTarget ?? c.yaw].every(Number.isFinite) && Math.abs(c.x) <= N / 2 && Math.abs(c.z) <= N / 2 && c.zoom >= 0.45 && c.zoom <= 3.2;
+if (!camOk(S.cam)) S.cam = null;
 if (S.cam) Object.assign(world.view, { x: S.cam.x, z: S.cam.z, zoom: S.cam.zoom, yaw: S.cam.yawTarget ?? S.cam.yaw, yawTarget: S.cam.yawTarget ?? S.cam.yaw });
 else world.focus(Math.floor(N / 2), Math.floor(N / 2) + 2);
 if (!S.cam) world.view.zoom = 0.9;

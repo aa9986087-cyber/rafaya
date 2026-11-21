@@ -17,7 +17,8 @@ const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
 const bodyStart = html.indexOf(">", html.indexOf("<body")) + 1;
 const body = html.slice(bodyStart, html.indexOf("</body>")).replace(/<script[^>]*><\/script>/, "");
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
-const page = `<title>الرافعية</title>
+const page = `<meta charset="utf-8">
+<title>الرافعية</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="data:image/svg+xml;base64,${icon}">
 ${fonts}
