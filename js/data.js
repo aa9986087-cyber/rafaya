@@ -160,15 +160,73 @@ export const GOALS = [
 ];
 
 /** Things that happen. weight: how often; effect lasts `days`. */
+// days: how long it lasts, in hours.
 export const EVENTS = [
-  { id: "rain", name: "مطر الوسم", text: "نزل المطر! المزارع تنتج أكثر.", days: 4, weight: 3, farm: 1.5, happy: 6 },
-  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد. الناس متضايقين.", days: 3, weight: 3, happy: -10 },
-  { id: "drought", name: "جفاف", text: "الآبار نقصت. وفّروا الماء.", days: 5, weight: 2, water: 0.7 },
-  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس مرتاحين.", days: 6, weight: 2, shop: 1.3, happy: 8 },
-  { id: "eid", name: "العيد", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 3, weight: 2, happy: 15, shop: 1.2 },
-  { id: "dates", name: "موسم التمور", text: "موسم الصرام! أسعار التمور فوق.", days: 5, weight: 3, farm: 1.4 },
+  { id: "rain", name: "مطر الوسم", text: "نزل المطر! المزارع تنتج أكثر.", days: 18, weight: 3, farm: 1.5, happy: 6 },
+  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد. الناس متضايقين.", days: 10, weight: 3, happy: -10 },
+  { id: "drought", name: "جفاف", text: "الآبار نقصت. وفّروا الماء.", days: 36, weight: 2, water: 0.7 },
+  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 72, weight: 2, shop: 1.3, happy: 8 },
+  { id: "eid", name: "العيد", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, weight: 2, happy: 15, shop: 1.2 },
+  { id: "dates", name: "موسم التمور", text: "موسم الصرام! أسعار التمور فوق.", days: 36, weight: 3, farm: 1.4 },
   { id: "visit", name: "زيارة المحافظ", text: "المحافظ زار البلد وأعجبه، وصرف دعم.", days: 1, weight: 1, gift: true },
-  { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 4, weight: 2, tech: "tourism", shop: 1.6, happy: 10 }
+  { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 36, weight: 2, tech: "tourism", shop: 1.6, happy: 10 }
+];
+
+/**
+ * Choices the mayor gets now and then. when(s, a, season) says if it can come up;
+ * each option: label, a line on what it does, cost (money), and the effect:
+ * money, an hours-long boost { name, hours, happy, shop, farm }, tax change, a free building.
+ * The last option is what happens if nobody answers (while the player is away).
+ */
+export const DECISIONS = [
+  { id: "investor", title: "مستثمر على الباب", text: "تاجر يبي يفتح مصنع على حسابه قرب البلد، ويدفع للبلدية رسوم. بس الناس خايفين من الدخان.",
+    when: (s) => s.pop >= 60,
+    options: [
+      { label: "وافق", note: "+٢٠٠٠ ريال، والرضا ينزل يومين", money: 2000, boost: { name: "زعل الأهالي من المصنع", hours: 48, happy: -7 } },
+      { label: "ارفض", note: "الأهالي يشكرونك", boost: { name: "الأهالي راضين بقرارك", hours: 24, happy: 4 } }
+    ] },
+  { id: "mazayen", title: "مزاين الإبل", text: "الفيضة خضرا وأهل الإبل يبون يقيمون مزاين عندكم. تجيب زوار من كل مكان.",
+    when: (s, a, season) => season.id === "spring" && s.pop >= 40,
+    options: [
+      { label: "أقيموها", note: "تكلف ١٥٠٠، تفرّح الناس والمحلات تبيع أكثر يومين", cost: 1500, boost: { name: "مزاين الإبل", hours: 48, happy: 10, shop: 1.4, mazayen: true } },
+      { label: "مو هالسنة", note: "ما يصير شي" }
+    ] },
+  { id: "kashta", title: "كشتة جماعية", text: "الأهالي يبون يطلعون كشتة بالفيضة، ويطلبون البلدية تجهّز الخيام والقهوة.",
+    when: (s, a, season) => season.id === "spring",
+    options: [
+      { label: "جهّزوها", note: "تكلف ٤٠٠، رضا +٨ ليوم", cost: 400, boost: { name: "كشتة الربيع", hours: 24, happy: 8 } },
+      { label: "خلّهم على حسابهم", note: "رضا +٢", boost: { name: "كشتة", hours: 12, happy: 2 } }
+    ] },
+  { id: "datesdeal", title: "تاجر تمور", text: "تاجر يبي يشتري محصول التمور مقدّم، يدفع الحين بس بسعر أقل.",
+    when: (s, a, season) => season.id === "autumn" && a.count.palms >= 2,
+    options: [
+      { label: "بِع مقدّم", note: "٣٥٠ ريال عن كل مزرعة نخل، والمزارع تجيب أقل يومين", moneyPerPalm: 350, boost: { name: "المحصول مبيوع", hours: 48, farm: 0.6 } },
+      { label: "ننتظر الصرام", note: "ما يصير شي" }
+    ] },
+  { id: "wedding", title: "عرس كبير", text: "عرس ولد شيخ الحي، ويدعون الرافعية كلها. تساهم البلدية بالعشاء؟",
+    when: (s) => s.pop >= 30,
+    options: [
+      { label: "نساهم", note: "تكلف ٨٠٠، رضا +١٢ ليوم", cost: 800, boost: { name: "فرحة العرس", hours: 24, happy: 12 } },
+      { label: "نعتذر", note: "رضا −٣ ليوم", boost: { name: "عتب أهل العرس", hours: 24, happy: -3 } }
+    ] },
+  { id: "oldmosque", title: "ترميم المسجد القديم", text: "كبار السن يطلبون ترميم المسجد الطيني القديم قبل يطيح.",
+    when: (s, a) => a.count.mosque >= 1,
+    options: [
+      { label: "رمّموه", note: "تكلف ١٢٠٠، رضا +٦ أربعة أيام", cost: 1200, boost: { name: "المسجد القديم رجع", hours: 96, happy: 6 } },
+      { label: "بعدين", note: "ما يصير شي" }
+    ] },
+  { id: "taxplea", title: "عريضة الأهالي", text: "الأهالي رفعوا عريضة يطلبون تخفيض الضريبة.",
+    when: (s) => s.tax >= 12,
+    options: [
+      { label: "خفّضها", note: "الضريبة −٣٪ والناس يفرحون", tax: -3, boost: { name: "الأهالي يدعون لك", hours: 24, happy: 6 } },
+      { label: "ارفض", note: "رضا −٥ يومين", boost: { name: "زعل من الضريبة", hours: 48, happy: -5 } }
+    ] },
+  { id: "drill", title: "حفّار آبار", text: "حفّار مرّ بالبلد ويعرض يحفر بئر بنص السعر، بس لازم تقرر الحين.",
+    when: (s, a, season) => season.id === "summer",
+    options: [
+      { label: "احفر", note: "بئر جديد قرب البلد بـ١٥٠ ريال", cost: 150, freeBuild: "well" },
+      { label: "ما نحتاج", note: "ما يصير شي" }
+    ] }
 ];
 
 /** Starting village: a few tents, a well and palms by the wadi. */

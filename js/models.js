@@ -710,6 +710,19 @@ const MAKERS = {
   pebbles(b) {
     for (let i = 0; i < 5; i++) b.add(new THREE.DodecahedronGeometry(0.02 + (i % 3) * 0.01, 0), i % 2 ? "#a89b86" : "#c2b49c", { x: Math.cos(i * 2.6) * 0.12, y: 0.005, z: Math.sin(i * 1.7) * 0.12, sy: 0.5 });
   },
+  // Ramadan and Eid: a pole with a crescent and glowing lanterns hanging off a line.
+  festive(b) {
+    b.cyl(0.008, 0.01, 0.5, "#d4a53a", {}, 5, "shiny");
+    b.add(new THREE.TorusGeometry(0.035, 0.009, 5, 12, Math.PI * 1.35), "#f3cf7a", { y: 0.55, rz: 0.9 }, "lights");
+    b.box(0.5, 0.004, 0.004, "#3b2a1c", { x: -0.25, y: 0.46 });
+    const cols = ["#ffd27a", "#ff9f5a", "#9fe3c1", "#ffd27a"];
+    for (let i = 0; i < 4; i++) {
+      const x = -0.08 - i * 0.12;
+      b.box(0.002, 0.04, 0.002, "#3b2a1c", { x, y: 0.42 });
+      b.cyl(0.018, 0.014, 0.045, cols[i], { x, y: 0.375 }, 6, "lights");
+      b.cone(0.02, 0.02, "#b8862b", { x, y: 0.42 }, 6);
+    }
+  },
   fencePost(b) {
     b.cyl(0.014, 0.018, 0.12, "#7a5a3a", {}, 5);
     b.box(0.5, 0.012, 0.012, "#9a7a52", { x: 0.25, y: 0.085 });

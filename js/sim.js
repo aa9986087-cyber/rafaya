@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -175,12 +175,14 @@ export function onRoad(s, x, y) {
 /** Needs a road to work: homes, shops and services. Farms and utilities work on their own. */
 const needsRoad = (def) => ["home", "shop", "serv"].includes(def.cat) || def.jobs && def.cat !== "farm";
 
+// Events come from the EVENTS list, or are boosts made by a decision (they carry their own numbers).
+const eventDef = (e) => (e.id === "boost" ? e : EVENTS.find((x) => x.id === e.id) || {});
 export function activeEvent(s, key) {
   let m = 1;
-  for (const e of s.events) { const d = EVENTS.find((x) => x.id === e.id); if (d && d[key] !== undefined && typeof d[key] === "number") m *= key === "happy" ? 1 : d[key]; }
+  for (const e of s.events) { const d = eventDef(e); if (typeof d[key] === "number" && key !== "happy") m *= d[key]; }
   return m;
 }
-const eventHappy = (s) => s.events.reduce((a, e) => a + (EVENTS.find((x) => x.id === e.id)?.happy || 0), 0);
+const eventHappy = (s) => s.events.reduce((a, e) => a + (eventDef(e).happy || 0), 0);
 
 export function analyze(s) {
   const a = {
@@ -352,7 +354,7 @@ export function step(s, r = Math.random) {
   }
   // Events.
   s.events = s.events.filter((e) => --e.left > 0);
-  if (!s.events.length && s.day > 6 && r() < 0.09) {
+  if (!s.events.some((e) => e.id !== "boost") && s.day > 12 && r() < 0.025) {
     const pool = EVENTS.filter((e) => !e.tech || s.tech[e.tech]);
     let roll = r() * pool.reduce((t, e) => t + e.weight, 0);
     const ev = pool.find((e) => (roll -= e.weight) < 0) || pool[0];
@@ -360,6 +362,11 @@ export function step(s, r = Math.random) {
     let text = ev.text;
     if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); s.money += g; text += ` (+${g} ريال)`; }
     msgs.push({ kind: "event", title: ev.name, text });
+  }
+  // Now and then a choice for the mayor.
+  if (!s.decision && s.day > 30 && r() < 0.012) {
+    const pool = DECISIONS.filter((d) => d.when(s, a, season) && d.id !== s.lastDecision);
+    if (pool.length) { const d = pool[Math.floor(r() * pool.length)]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
   }
   // Goals.
   const g = GOALS[s.goal];
@@ -373,6 +380,34 @@ export function step(s, r = Math.random) {
   s.lastGrowth = s.pop - before;
   return { a, msgs };
 }
+
+/** The mayor picks an option of the waiting decision. Returns what happened, or why not. */
+export function decide(s, i) {
+  const d = DECISIONS.find((x) => x.id === s.decision?.id), o = d?.options[i];
+  if (!o) { s.decision = null; return { error: "ما فيه قرار" }; }
+  const a = analyze(s);
+  if (o.cost && s.money < o.cost) return { error: "ما يكفي المال" };
+  s.money -= o.cost || 0;
+  s.money += (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms;
+  if (o.tax) s.tax = clamp(s.tax + o.tax, 0, 25);
+  if (o.boost) s.events.push({ id: "boost", left: o.boost.hours, ...o.boost });
+  let built = "";
+  if (o.freeBuild) {
+    let best = null; // the free owned tile nearest the middle of the town
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const t = s.tiles[idx(x, y)];
+      if (t.b || t.t === "rock" || !owns(s, x, y)) continue;
+      const dist = Math.hypot(x - N / 2, y - N / 2 - 3);
+      if (!best || dist < best.dist) best = { x, y, dist };
+    }
+    if (best) { s.tiles[idx(best.x, best.y)].b = { id: o.freeBuild, lvl: 0, res: 0 }; built = o.freeBuild; }
+  }
+  s.decision = null;
+  return { ok: true, built };
+}
+
+/** While the player was away, the last option of a decision is taken. */
+const decideDefault = (s) => { const d = DECISIONS.find((x) => x.id === s.decision?.id); decide(s, d ? d.options.length - 1 : 0); };
 
 export function goalView(s, a) {
   return { ...a, pop: s.pop, happy: s.happy, tech: s.tech, net: a.net };
@@ -395,7 +430,7 @@ export function catchUp(s, now = Date.now()) {
   if (!days) return null;
   const start = { pop: s.pop, money: s.money, day: s.day };
   const msgs = [];
-  for (let i = 0; i < days; i++) msgs.push(...step(s).msgs);
+  for (let i = 0; i < days; i++) { msgs.push(...step(s).msgs); if (s.decision) decideDefault(s); }
   return { days, pop: s.pop - start.pop, money: Math.round(s.money - start.money), msgs };
 }
 

@@ -417,10 +417,13 @@ export class World {
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
     if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); }
-    this.syncGlows();
-    if (this.flood) this.flood.visible = s.events.some((e) => e.id === "rain");
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
+    this.syncGlows();
+    // Event decorations change only when the events do (sync runs every town hour).
+    const eventKey = s.events.map((e) => e.id + (e.mazayen ? "m" : "")).join() + this.roads.length;
+    if (eventKey !== this.eventKey) { this.eventKey = eventKey; this.syncFestive(s); }
+    if (this.flood) this.flood.visible = s.events.some((e) => e.id === "rain");
     this.state = s;
     this.syncCars();
     this.syncLife(s);
@@ -495,6 +498,81 @@ export class World {
     p.needsUpdate = true;
   }
 
+  /** What the season's events look like: lanterns for Ramadan and Eid, rain, a camel fair. */
+  syncFestive(s) {
+    const has = (id) => s.events.some((e) => e.id === id);
+    this.festive = has("ramadan") || has("eid");
+    this.eid = has("eid");
+    this.raining = has("rain");
+    this.mazayen = s.events.some((e) => e.mazayen);
+    this.removeAll(this.festiveMeshes);
+    this.festiveMeshes = [];
+    if (this.festive) {
+      const list = [];
+      for (const [x, y] of this.roads) if ((x + y) % 2 === 1) { const p = tileCenter(x, y); list.push(this.place(p.x - 0.44, p.z - 0.44, -Math.PI / 4)); }
+      this.festiveMeshes = this.addInstances(model("festive"), list);
+    }
+  }
+
+  stepWeather(dt) {
+    // Rain: streaks falling around the middle of the view.
+    if (this.raining && this.quality !== "low") {
+      if (!this.rain) {
+        const n = 1400, g = new THREE.BufferGeometry(), pos = new Float32Array(n * 6);
+        g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        this.rainDrops = Array.from({ length: n }, () => ({ x: (Math.random() - 0.5) * 30, y: Math.random() * 8, z: (Math.random() - 0.5) * 30 }));
+        this.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#e4f0fa", transparent: true, opacity: 0.75 }));
+        this.rain.frustumCulled = false;
+        this.scene.add(this.rain);
+      }
+      this.rain.visible = true;
+      const pos = this.rain.geometry.attributes.position, v = this.view;
+      this.rainDrops.forEach((d, i) => {
+        d.y -= dt * 9; d.x -= dt * 1.2;
+        if (d.y < 0) { d.y = 7 + Math.random() * 2; d.x = (Math.random() - 0.5) * 30; d.z = (Math.random() - 0.5) * 30; }
+        pos.setXYZ(i * 2, v.x + d.x, d.y, v.z + d.z);
+        pos.setXYZ(i * 2 + 1, v.x + d.x + 0.05, d.y + 0.35, v.z + d.z);
+      });
+      pos.needsUpdate = true;
+    } else if (this.rain) this.rain.visible = false;
+
+    // Eid nights: fireworks over the town.
+    if (this.eid && this.night > 0.5 && this.quality !== "low") {
+      if (!this.fw) {
+        const n = 400, g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3).fill(-50), 3));
+        g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+        this.fw = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.16, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        this.fw.frustumCulled = false;
+        this.fwParts = [];
+        this.fwNext = 0;
+        this.scene.add(this.fw);
+      }
+      this.fw.visible = true;
+      this.fwNext -= dt;
+      if (this.fwNext <= 0) {
+        this.fwNext = 0.5 + Math.random() * 0.9;
+        const c = new THREE.Color().setHSL(Math.random(), 0.9, 0.6), cx = this.view.x + (Math.random() - 0.5) * 10, cz = this.view.z + (Math.random() - 0.5) * 10, cy = 2.2 + Math.random() * 1.4;
+        for (let i = 0; i < 60; i++) {
+          const a = Math.random() * Math.PI * 2, b = Math.acos(Math.random() * 2 - 1), sp = 1.6 + Math.random() * 0.6;
+          this.fwParts.push({ x: cx, y: cy, z: cz, vx: Math.sin(b) * Math.cos(a) * sp, vy: Math.cos(b) * sp, vz: Math.sin(b) * Math.sin(a) * sp, life: 1.2 + Math.random() * 0.5, c });
+        }
+        if (this.fwParts.length > 400) this.fwParts.splice(0, this.fwParts.length - 400);
+      }
+      const pos = this.fw.geometry.attributes.position, col = this.fw.geometry.attributes.color;
+      this.fwParts = this.fwParts.filter((p) => (p.life -= dt) > 0);
+      for (let i = 0; i < 400; i++) {
+        const p = this.fwParts[i];
+        if (!p) { pos.setXYZ(i, 0, -50, 0); continue; }
+        p.vy -= dt * 1.4; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+        pos.setXYZ(i, p.x, p.y, p.z);
+        const f = Math.min(1, p.life);
+        col.setXYZ(i, p.c.r * f, p.c.g * f, p.c.b * f);
+      }
+      pos.needsUpdate = true; col.needsUpdate = true;
+    } else if (this.fw) this.fw.visible = false;
+  }
+
   /** Pools of warm light under lamps, by doors and around tent hearths. Seen only at night. */
   syncGlows() {
     const all = [...(this.lampGlows || []), ...(this.buildingGlows || [])];
@@ -521,7 +599,7 @@ export class World {
       this.peopleMesh = { body: mk("manBody"), red: mk("manHeadRed"), white: mk("manHeadWhite"), woman: mk("woman") };
       this.camels = [];
       const cg = model("camel").matte;
-      this.camelMesh = new THREE.InstancedMesh(cg, this.mats.matte, 8);
+      this.camelMesh = new THREE.InstancedMesh(cg, this.mats.matte, 16);
       this.camelMesh.count = 0; this.camelMesh.frustumCulled = false; this.camelMesh.castShadow = this.quality !== "low";
       this.scene.add(this.camelMesh);
     }
@@ -544,10 +622,12 @@ export class World {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)] || [0, 0]; Object.assign(p, { x, y, tx: x, ty: y, t: 1 });
     }
     // Camels: a small herd while the town is still young, grazing on open land.
-    const herd = s.era >= 3 ? 0 : s.era === 2 ? 3 : 6;
+    const fair = !!s.events?.some((e) => e.mazayen);
+    const herd = fair ? 16 : s.era >= 3 ? 0 : s.era === 2 ? 3 : 6;
     const open = (x, y) => inMap(x, y) && !s.tiles[idx(x, y)].b && s.tiles[idx(x, y)].t !== "rock";
-    if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1]) || this.herdSeason !== seasonOf(s.day).i) {
+    if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1]) || this.herdSeason !== seasonOf(s.day).i || this.herdFair !== fair) {
       this.herdSeason = seasonOf(s.day).i;
+      this.herdFair = fair;
       let best = null, bestScore = -1;
       for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
         if (!open(x, y)) continue;
@@ -570,7 +650,7 @@ export class World {
   stepLife(dt) {
     if (!this.people) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = !!this.nightTime;
+    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = !!this.nightTime && !this.festive;
     const M = this.peopleMesh, col = new THREE.Color();
     const winter = seasonOf(this.state.day).id === "winter";
     const thobes = winter ? ["#f2efe6", "#c9b79a", "#8a8f94", "#6b5a48", "#ece6d8"] : ["#f6f5f0", "#f1ede2", "#ebe7dc", "#f6f5f0"];
@@ -677,7 +757,7 @@ export class World {
     if (this.clouds) {
       const o = this.clouds.material.map.offset;
       o.x = (o.x + dt * 0.004) % 1; o.y = (o.y + dt * 0.0025) % 1;
-      this.clouds.material.opacity = 0.2 * (1 - this.night);
+      this.clouds.material.opacity = (this.raining ? 0.38 : 0.2) * (1 - this.night);
     }
   }
 
@@ -697,6 +777,7 @@ export class World {
     this.hemi.intensity = 0.6 + day * 0.35;
     const sky = new THREE.Color("#22305a").lerp(new THREE.Color("#f6e2b8"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
+    if (this.raining) { sky.lerp(new THREE.Color("#7d8794"), 0.45); this.sun.intensity *= 0.45; this.hemi.intensity *= 0.75; }
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? "#fff4dd" : "#8fa0d8");
@@ -810,6 +891,7 @@ export class World {
     this.stepSmoke(dt);
     this.stepLife(dt);
     this.stepEffects(dt);
+    this.stepWeather(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
     this.renderer.render(this.scene, this.camera);

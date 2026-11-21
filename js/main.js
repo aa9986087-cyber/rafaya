@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decide, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx } from "./sound.js";
@@ -315,7 +315,9 @@ function refresh() {
   $("sSeasonBar").dataset.s = se.id;
   const goal = GOALS[S.goal];
   $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : "<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!";
-  const ev = S.events[0] && EVENTS.find((e) => e.id === S.events[0].id);
+  // The banner shows the main event, or else the strongest boost from a decision.
+  const main = S.events.find((e) => e.id !== "boost"), boost = S.events.find((e) => e.id === "boost");
+  const ev = main ? EVENTS.find((e) => e.id === main.id) : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
   $("event").hidden = !ev;
   if (ev) $("event").innerHTML = `<b>${ev.name}</b> ${ev.text}`;
   $("councilDot").hidden = !!S.research || !Object.entries(TECH).some(([id, t]) => !S.tech[id] && t.era <= S.era && S.money >= t.cost);
@@ -354,9 +356,29 @@ function closeSheet() {
   if (was === "settings-menu") showMenu();
 }
 $("sheetClose").addEventListener("click", () => { sfx.tap(); closeSheet(); });
-$("sheet").addEventListener("click", (e) => { if (e.target === $("sheet") && performance.now() - sheetAt > 400) closeSheet(); });
+$("sheet").addEventListener("click", (e) => { if (e.target === $("sheet") && sheetFor !== "decision" && performance.now() - sheetAt > 400) closeSheet(); });
 
 const row = (k, v, cls = "") => `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`;
+
+/** A choice for the mayor: the story, and a button per option with what it costs and does. */
+function decisionSheet() {
+  const d = DECISIONS.find((x) => x.id === S.decision?.id);
+  if (!d) return;
+  sfx.event();
+  sheet(`<div class="decision"><span class="badge">قرار</span><h2>${d.title}</h2><p>${d.text}</p>
+    <div class="choices">${d.options.map((o, i) => `<button type="button" class="choice ${i === 0 ? "first" : ""}" data-choice="${i}" ${o.cost && S.money < o.cost ? "disabled" : ""}>
+      <b>${o.label}</b><small>${o.note}${o.cost && S.money < o.cost ? " · ما يكفي المال" : ""}</small></button>`).join("")}</div></div>`, "decision");
+  $("sheetClose").hidden = true;
+  $("sheetBody").querySelectorAll("[data-choice]").forEach((b) => b.addEventListener("click", () => {
+    const r = decide(S, Number(b.dataset.choice));
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+    sfx.coin();
+    $("sheetClose").hidden = false;
+    closeSheet();
+    if (r.built) { world.sync(S); toast(`انحفر ${B[r.built].name} جديد قرب البلد`, "goal"); }
+    refresh(); save();
+  }));
+}
 
 /** Land outside the town: what it is, what it costs, and a button to buy it. */
 function plotSheet(id) {
@@ -593,12 +615,13 @@ let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how"].includes(sheetFor)) {
+  if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision"].includes(sheetFor)) {
     acc += dt * 1000 * speed;
     while (acc >= HOUR_MS) {
       acc -= HOUR_MS;
       const { msgs } = step(S);
       for (const m of msgs) {
+        if (m.kind === "decision") continue; // its own sheet opens
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
         (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
@@ -617,6 +640,7 @@ function frame(now) {
     if (text !== shownTime) { shownTime = text; $("sTime").textContent = text; $("sTime").dataset.p = part; world.nightTime = part === "الليل" || part === "الفجر"; }
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
+  if (playing && S.decision && $("sheet").hidden) decisionSheet();
   world.frame(dt, tod);
   requestAnimationFrame(frame);
 }
