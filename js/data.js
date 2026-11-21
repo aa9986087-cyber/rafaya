@@ -229,5 +229,29 @@ export const DECISIONS = [
     ] }
 ];
 
+/** Achievements: test(s, a) with the town state and its analysis. */
+const PROJECTS = ["gate", "heritage", "tower", "airport"];
+const finished = (s, id) => s.tiles.some((t) => t.b?.id === id && !t.b.build);
+export const ACHIEVEMENTS = [
+  { id: "tents", name: "أهل البيوت", text: "انصب ١٠ خيام", test: (s, a) => a.count.house >= 10 },
+  { id: "mud", name: "من الشعر إلى الطين", text: "أول بيت طين", test: (s, a) => a.levels.slice(1).some((n) => n > 0) },
+  { id: "pop100", name: "مية نفس", text: "١٠٠ ساكن", test: (s) => s.pop >= 100 },
+  { id: "town", name: "صارت بلدة", text: "وصل الرافعية لبلدة", test: (s) => s.era >= 1 },
+  { id: "year", name: "سنة كاملة", text: "عِش أربعة مواسم", test: (s) => s.day >= 3 + 24 * 12 },
+  { id: "villa", name: "أول فيلا", text: "بيت يتطور لفيلا", test: (s, a) => a.levels[3] + a.levels[4] > 0 },
+  { id: "pop1000", name: "ألف ساكن", text: "١٠٠٠ ساكن", test: (s) => s.pop >= 1000 },
+  { id: "city", name: "صارت مدينة", text: "وصل الرافعية لمدينة", test: (s) => s.era >= 2 },
+  { id: "tower", name: "أول عمارة", text: "بيت يتطور لعمارة", test: (s, a) => a.levels[4] > 0 },
+  { id: "deco", name: "الحارة الحلوة", text: "حط ١٠ قطع زينة", test: (s, a) => ["streetpalm", "flowers", "lantern", "fountain", "dallah", "incense"].reduce((n, k) => n + a.count[k], 0) >= 10 },
+  { id: "land", name: "أرض جديدة", text: "اشترِ أول أرض", test: (s) => Object.values(s.owned || {}).some(Boolean) },
+  { id: "project", name: "مشروع العمر", text: "كمّل أول مشروع كبير", test: (s) => PROJECTS.some((id) => finished(s, id)) },
+  { id: "happy", name: "بلد سعيد", text: "رضا ٩٠٪", test: (s) => s.happy >= 90 },
+  { id: "rich", name: "خزنة مليانة", text: "٥٠٬٠٠٠ ريال بالميزانية", test: (s) => s.money >= 50000 },
+  { id: "province", name: "محافظة الرافعية", text: "وصل الرافعية لمحافظة", test: (s) => s.era >= 3 },
+  { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي", test: (s) => ["n", "e", "s", "w"].every((p) => s.owned?.[p]) },
+  { id: "allprojects", name: "الرافعية الكبرى", text: "كمّل كل المشاريع الكبرى", test: (s) => PROJECTS.every((id) => finished(s, id)) },
+  { id: "pop5000", name: "خمسة آلاف", text: "٥٠٠٠ ساكن", test: (s) => s.pop >= 5000 }
+];
+
 /** Starting village: a few tents, a well and palms by the wadi. */
 export const START_MONEY = 600;

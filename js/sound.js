@@ -21,6 +21,42 @@ function tone(f, dur, { type = "sine", vol = 0.1, at = 0, slide = 0 } = {}) {
   } catch { /* no audio */ }
 }
 
+// ---------- ambience: wind by day, crickets at night, rain ----------
+let amb = null;
+function noiseBuffer(a) {
+  const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+  return b;
+}
+function startAmbience() {
+  const a = ac();
+  const make = (type, freq, q) => {
+    const src = a.createBufferSource(); src.buffer = noiseBuffer(a); src.loop = true;
+    const f = a.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = a.createGain(); g.gain.value = 0;
+    src.connect(f).connect(g).connect(a.destination); src.start();
+    return g;
+  };
+  amb = { wind: make("bandpass", 420, 0.6), rain: make("highpass", 1800, 0.4), nextChirp: 0 };
+}
+export const ambience = {
+  /** Call a few times a second with what is going on. */
+  update({ playing, night, raining }) {
+    if (!on || !playing) { if (amb) { const t = ctx.currentTime; amb.wind.gain.setTargetAtTime(0, t, 0.3); amb.rain.gain.setTargetAtTime(0, t, 0.3); } return; }
+    try {
+      if (!amb) startAmbience();
+      const t = ctx.currentTime;
+      amb.wind.gain.setTargetAtTime(night ? 0.012 : 0.03, t, 1.5);
+      amb.rain.gain.setTargetAtTime(raining ? 0.05 : 0, t, 1);
+      if (night && !raining && t > amb.nextChirp) { // crickets: three quick high chirps
+        for (let i = 0; i < 3; i++) tone(4300 + Math.random() * 300, 0.035, { type: "sine", vol: 0.012, at: i * 0.06 });
+        amb.nextChirp = t + 0.6 + Math.random() * 1.6;
+      }
+    } catch { /* no audio */ }
+  }
+};
+
 export const sfx = {
   get on() { return on; },
   set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } },
@@ -32,5 +68,6 @@ export const sfx = {
   coin() { tone(988, 0.08, { type: "triangle", vol: 0.06 }); tone(1319, 0.14, { type: "triangle", vol: 0.06, at: 0.07 }); },
   goal() { [659, 784, 988].forEach((f, i) => tone(f, 0.16, { type: "triangle", vol: 0.07, at: i * 0.09 })); },
   era() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.28, { type: "triangle", vol: 0.08, at: i * 0.12 })); },
+  levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },
   event() { tone(440, 0.2, { type: "sine", vol: 0.06 }); tone(554, 0.25, { type: "sine", vol: 0.05, at: 0.12 }); }
 };

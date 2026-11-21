@@ -1,9 +1,9 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decide, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
-import { sfx } from "./sound.js";
+import { sfx, ambience } from "./sound.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -54,7 +54,7 @@ world.dayCycle = settings.daynight;
 const camOk = (c) => c && [c.x, c.z, c.zoom, c.yawTarget ?? c.yaw].every(Number.isFinite) && Math.abs(c.x) <= N / 2 && Math.abs(c.z) <= N / 2 && c.zoom >= 0.45 && c.zoom <= 3.2;
 if (!camOk(S.cam)) S.cam = null;
 if (S.cam) Object.assign(world.view, { x: S.cam.x, z: S.cam.z, zoom: S.cam.zoom, yaw: S.cam.yawTarget ?? S.cam.yaw, yawTarget: S.cam.yawTarget ?? S.cam.yaw });
-else world.focus(Math.floor(N / 2), Math.floor(N / 2) + 2);
+else focusTown();
 if (!S.cam) world.view.zoom = 0.9;
 world.updateCamera();
 world.sync(S);
@@ -360,6 +360,40 @@ $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet") && she
 
 const row = (k, v, cls = "") => `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`;
 
+/** A little label that floats up from a tile: income, a house moving up. */
+function floatAt(x, y, text, cls = "") {
+  const p = world.toScreen(x, y);
+  if (p.sx < 0 || p.sy < 60 || p.sx > innerWidth || p.sy > innerHeight - 120) return;
+  const el = document.createElement("div");
+  el.className = `floater ${cls}`;
+  el.textContent = text;
+  el.style.left = `${p.sx}px`; el.style.top = `${p.sy - 30}px`;
+  $("floaters").append(el);
+  setTimeout(() => el.remove(), 1900);
+}
+
+/** After each town hour: a few income labels, and a cheer for houses that moved up. */
+function hourEffects() {
+  if (speed > 5 || sheetFor) return;
+  const earners = [], ups = [];
+  S.tiles.forEach((t, i) => {
+    if (!t.b?.works) return;
+    if (B[t.b.id].income) { const q = world.toScreen(i % N, Math.floor(i / N)); if (q.sx > 0 && q.sx < innerWidth && q.sy > 60 && q.sy < innerHeight - 120) earners.push(i); }
+    if (t.b.id === "house" && t.b.upAt === S.day - 1) ups.push(i);
+  });
+  for (let k = 0; k < Math.min(3, earners.length); k++) {
+    const i = earners.splice(Math.floor(Math.random() * earners.length), 1)[0], d = B[S.tiles[i].b.id];
+    floatAt(i % N, Math.floor(i / N), `+${ar(Math.max(1, Math.round(d.income * 0.7)))}`, "coin");
+  }
+  for (const i of ups.slice(0, 4)) floatAt(i % N, Math.floor(i / N), `⬆ ${B.house.levels[S.tiles[i].b.lvl].name}`, "up");
+  if (ups.length) sfx.levelUp();
+}
+
+function achievementsSheet() {
+  const got = ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length;
+  sheet(`<h2>الإنجازات</h2><p>${ar(got)} من ${ar(ACHIEVEMENTS.length)}</p><div class="achs">${ACHIEVEMENTS.map((x, i) => `<div class="ach ${S.ach?.[x.id] ? "done" : ""}" style="--i:${i}"><span>${S.ach?.[x.id] ? "🏆" : "🔒"}</span><b>${x.name}</b><small>${x.text}</small></div>`).join("")}</div>`, "ach");
+}
+
 /** A choice for the mayor: the story, and a button per option with what it costs and does. */
 function decisionSheet() {
   const d = DECISIONS.find((x) => x.id === S.decision?.id);
@@ -549,6 +583,9 @@ function howTo(fromMenu) {
       <div class="row"><span>اختر من تحت، اضغط مكانه، ثم «✓ ابنِ»</span><b>تبني</b></div>
       <div class="row"><span>اسحب بالطريق ثم «✓ ابنِ»</span><b>ترسمه مرة وحدة</b></div>
       <div class="row"><span>✕ مرة</span><b>تلغي المكان اللي اخترته</b></div>
+      <div class="row"><span>اضغط على الأرض اللي ورا السياج</span><b>تشتريها وتكبر فيها</b></div>
+      <div class="row"><span>«مشاريع كبرى»</span><b>تنبني على أيام وتجيب دخل كبير</b></div>
+      <div class="row"><span>القائمة ← الإنجازات</span><b>تشوف وش حققت</b></div>
       <div class="row"><span>اضغط على أي مبنى</span><b>تشوف وش ينقصه</b></div>
     </div>
     <h3>كيف تكبر الرافعية؟</h3>
@@ -559,11 +596,13 @@ function pauseMenu() {
   sheet(`<h2>القائمة</h2><div class="rows">
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
     <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
+    <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
   </div>`, "pause");
   $("pmResume").addEventListener("click", closeSheet);
   $("pmHow").addEventListener("click", () => howTo(false));
+  $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
   $("pmMain").addEventListener("click", () => { save(); closeSheet(); showMenu(); });
 }
@@ -578,6 +617,13 @@ function showMenu() {
   if (has) $("mContinueInfo").textContent = `${ERAS[S.era].name} · ${money(S.pop)} نسمة · اليوم ${ar(dayOf(S.day))}`;
 }
 
+/** Look at the middle of everything built so far. */
+function focusTown() {
+  let sx = 0, sy = 0, n = 0;
+  S.tiles.forEach((t, i) => { if (t.b) { sx += i % N; sy += Math.floor(i / N); n++; } });
+  if (n) world.focus(Math.round(sx / n), Math.round(sy / n)); else world.focus(N / 2, N / 2);
+}
+
 function startPlaying() {
   document.body.classList.remove("at-menu");
   playing = true;
@@ -590,7 +636,7 @@ $("mNew").addEventListener("click", () => {
   const b = $("mNew");
   if ((hadSave || S.day > 3) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
   delete b.dataset.sure;
-  S = newGame(); save(); world.sync(S); world.focus(Math.floor(N / 2), Math.floor(N / 2) + 2); world.view.zoom = 0.9; world.updateCamera();
+  S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
   sfx.goal(); startPlaying();
   sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
     <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>
@@ -611,6 +657,7 @@ function showAway(r) {
 
 // ---------- the clock ----------
 
+let ambT = 0;
 let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -622,6 +669,7 @@ function frame(now) {
       const { msgs } = step(S);
       for (const m of msgs) {
         if (m.kind === "decision") continue; // its own sheet opens
+        if (m.kind === "ach") { toast(m.text, "ach"); sfx.goal(); continue; }
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
         (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
@@ -629,6 +677,7 @@ function frame(now) {
       sync(false);
       refresh();
       save();
+      hourEffects();
       if (sheetFor === "budget") budget();
       if (sheetFor === "council") council();
     }
@@ -641,6 +690,8 @@ function frame(now) {
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
+  ambT -= dt;
+  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining }); }
   world.frame(dt, tod);
   requestAnimationFrame(frame);
 }

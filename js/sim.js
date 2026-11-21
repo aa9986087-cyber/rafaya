@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -375,6 +375,10 @@ export function step(s, r = Math.random) {
     msgs.push({ kind: "goal", text: `أنجزت: ${g.text} (+${g.reward} ريال)` });
     s.goal++;
   }
+  // Achievements, once each.
+  s.ach ||= {};
+  const after = ACHIEVEMENTS.some((x) => !s.ach[x.id]) ? analyze(s) : null;
+  for (const x of ACHIEVEMENTS) if (!s.ach[x.id] && x.test(s, after)) { s.ach[x.id] = s.day; msgs.push({ kind: "ach", text: `🏆 إنجاز: ${x.name}` }); }
   s.history.push({ d: s.day, p: s.pop, m: Math.round(s.money), h: Math.round(s.happy), n: a.net });
   if (s.history.length > 60) s.history.shift();
   s.lastGrowth = s.pop - before;
