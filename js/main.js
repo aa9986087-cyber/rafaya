@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, SEASON_DAYS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS as SEASON_LEN } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, dayOf, hourOf, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx } from "./sound.js";
@@ -27,14 +27,21 @@ let playing = false;
 let speed = 1;
 let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
-// One game day is one full day in the town: sunrise, noon, sunset and night.
-// 45 seconds at normal speed; the faster buttons run it 3× and 8×.
-const DAY_MS = 45000;
-const DAYLIGHT = 0.68; // share of the day with the sun up
-/** Where the sun is (0 midnight … 0.5 noon) for how far we are through the game day (0 = sunrise). */
-const sunAt = (p) => (p < DAYLIGHT ? 0.25 + (p / DAYLIGHT) * 0.5 : 0.75 + ((p - DAYLIGHT) / (1 - DAYLIGHT)) * 0.5) % 1;
-const PARTS = [[0.1, "الصبح"], [0.3, "الضحى"], [0.42, "الظهر"], [0.6, "العصر"], [0.68, "المغرب"], [0.93, "الليل"], [1, "الفجر"]];
-const partOfDay = (p) => PARTS.find(([end]) => p < end)[1];
+// A town day is 24 hours and lasts 20 minutes at normal speed (50 seconds an hour).
+// The town moves forward one step every hour. Days start at sunrise; how much of the day is
+// light depends on the season (spring and autumn 10 min + 10 min, summer 12 + 8, winter 8 + 12).
+const HOUR_MS = 50000;
+/** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
+const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
+function partOfDay(p, d) {
+  if (p < d) { const q = p / d; return q < 0.15 ? "الصبح" : q < 0.4 ? "الضحى" : q < 0.55 ? "الظهر" : q < 0.85 ? "العصر" : "المغرب"; }
+  return (p - d) / (1 - d) < 0.85 ? "الليل" : "الفجر";
+}
+/** A clock reading such as ٤:٣٠ م. Sunrise is earlier on long summer days. */
+function clockAt(p, d) {
+  const h = (12 - d * 12 + p * 24) % 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 6) * 10;
+  return `${ar(((hh + 11) % 12) + 1)}:${ar(String(mm).padStart(2, "0"))} ${hh < 12 ? "ص" : "م"}`;
+}
 
 function save() { S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget }; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
 
@@ -232,11 +239,11 @@ const face = (k) => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fil
 function refresh() {
   A = analyze(S);
   $("sMoney").textContent = money(S.money);
-  $("sNet").textContent = `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} باليوم`;
+  $("sNet").textContent = `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} بالساعة`;
   $("sNet").className = A.net >= 0 ? "up" : "down";
   $("sPop").textContent = money(S.pop);
   const gr = S.lastGrowth || 0;
-  $("sGrow").textContent = gr ? `${gr > 0 ? "+" : "−"}${ar(Math.abs(gr))} اليوم` : `السعة ${money(A.cap)}`;
+  $("sGrow").textContent = gr ? `${gr > 0 ? "+" : "−"}${ar(Math.abs(gr))} آخر ساعة` : `السعة ${money(A.cap)}`;
   $("sGrow").className = gr > 0 ? "up" : gr < 0 ? "down" : "";
   $("sHappy").textContent = `${ar(Math.round(S.happy))}٪`;
   $("sFace").innerHTML = face(S.happy < 35 ? 0 : S.happy < 55 ? 1 : S.happy < 75 ? 2 : 3);
@@ -245,10 +252,10 @@ function refresh() {
   set($("sPower"), A.powerRatio, A.grid);
   $("sEra").textContent = ERAS[S.era].name;
   const se = seasonOf(S.day);
-  $("sDay").textContent = `اليوم ${ar(S.day)}`;
-  $("sSeason").textContent = `${se.name} · باقي ${ar(se.left)} يوم`;
+  $("sDay").textContent = `اليوم ${ar(dayOf(S.day))}`;
+  $("sSeason").textContent = `${se.name} · اليوم ${ar(se.dayIn)} من ${ar(SEASON_LEN)}`;
   $("sSeason").dataset.s = se.id;
-  $("sSeasonBar").style.width = `${Math.round((se.dayIn / SEASON_DAYS) * 100)}%`;
+  $("sSeasonBar").style.width = `${Math.round(se.progress * 100)}%`;
   $("sSeasonBar").dataset.s = se.id;
   const goal = GOALS[S.goal];
   $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : "<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!";
@@ -319,8 +326,8 @@ function inspect(x, y) {
     html += `<div class="ladder">${levels}</div>`;
   }
   if (d.jobs) html += row("الوظائف", ar(d.jobs));
-  if (d.income) html += row("الدخل اليومي (تقريبًا)", `${money(d.income)} ريال`, "plus");
-  if (d.upkeep) html += row("المصروف اليومي", `${money(d.upkeep)} ريال`, "minus");
+  if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(d.income)} ريال`, "plus");
+  if (d.upkeep) html += row("المصروف بالساعة", `${money(d.upkeep)} ريال`, "minus");
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius)} مربعات`);
@@ -335,7 +342,7 @@ function council() {
     const done = S.tech[id], going = S.research?.id === id, locked = t.era > S.era;
     const pct = going ? Math.round((1 - S.research.left / t.days) * 100) : 0;
     return `<div class="tech ${done ? "done" : going ? "going" : ""} ${locked ? "locked" : ""}" style="--i:${i}"><div class="tech-top"><b>${t.name}</b>
-      ${done ? "<span class='ok'>تم ✓</span>" : going ? `<span>باقي ${ar(S.research.left)} يوم</span>` : locked ? `<span class="lock">يفتح في ${ERAS[t.era].name}</span>` : `<button class="btn go" data-tech="${id}" type="button" ${S.research || S.money < t.cost ? "disabled" : ""}>${money(t.cost)} ريال · ${ar(t.days)} يوم</button>`}
+      ${done ? "<span class='ok'>تم ✓</span>" : going ? `<span>باقي ${ar(S.research.left)} ساعة</span>` : locked ? `<span class="lock">يفتح في ${ERAS[t.era].name}</span>` : `<button class="btn go" data-tech="${id}" type="button" ${S.research || S.money < t.cost ? "disabled" : ""}>${money(t.cost)} ريال · ${ar(t.days)} ساعة</button>`}
       </div><p>${t.text}</p>${going ? `<i class="prog"><i style="width:${pct}%"></i></i>` : ""}</div>`;
   }).join("");
   sheet(`<h2>المجلس البلدي</h2><p>أبحاث تطوّر الرافعية. بحث واحد في كل مرة، ويبقى للأبد.</p><div class="rows">${list}</div>`, "council");
@@ -348,7 +355,7 @@ function council() {
 $("councilBtn").addEventListener("click", () => { sfx.tap(); council(); });
 
 function spark(values, color) {
-  if (values.length < 2) return "<p>الأرقام تبين بعد كم يوم.</p>";
+  if (values.length < 2) return "<p>الأرقام تبين بعد كم ساعة.</p>";
   const max = Math.max(...values), min = Math.min(...values), span = max - min || 1;
   const pts = values.map((v, i) => `${(i / (values.length - 1)) * 300},${66 - ((v - min) / span) * 60}`).join(" ");
   return `<svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><polyline points="${pts} 300,70 0,70" fill="${color}22" stroke="none"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
@@ -362,7 +369,7 @@ function budget() {
       ${row("المحلات والمصانع", `+${money(A.income)}`, "plus")}
       ${row("المزارع", `+${money(A.farmIncome)}`, "plus")}
       ${row("مصاريف المباني", `−${money(A.upkeep)}`, "minus")}
-      ${row("الصافي باليوم", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
+      ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
     </div>
     <h3>الضريبة</h3><p>ضريبة أعلى = دخل أكثر بس رضا أقل.</p>
     <div class="tax"><input id="taxIn" type="range" min="0" max="25" step="1" value="${S.tax}" aria-label="نسبة الضريبة"><b id="taxOut">${ar(S.tax)}٪</b></div>
@@ -458,9 +465,9 @@ function showMenu() {
   playing = false;
   setTool(null); openCat = null; renderCards();
   document.body.classList.add("at-menu");
-  const has = hadSave || S.day > 1;
+  const has = hadSave || S.day > 3;
   $("mContinue").hidden = !has;
-  if (has) $("mContinueInfo").textContent = `${ERAS[S.era].name} · ${money(S.pop)} نسمة · اليوم ${ar(S.day)}`;
+  if (has) $("mContinueInfo").textContent = `${ERAS[S.era].name} · ${money(S.pop)} نسمة · اليوم ${ar(dayOf(S.day))}`;
 }
 
 function startPlaying() {
@@ -473,7 +480,7 @@ $("mContinue").addEventListener("click", () => { sfx.goal(); startPlaying(); con
 $("mNew").addEventListener("click", () => {
   sfx.tap();
   const b = $("mNew");
-  if ((hadSave || S.day > 1) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
+  if ((hadSave || S.day > 3) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
   delete b.dataset.sure;
   S = newGame(); save(); world.sync(S); world.focus(Math.floor(N / 2), Math.floor(N / 2) + 2); world.view.zoom = 0.9; world.updateCamera();
   sfx.goal(); startPlaying();
@@ -487,7 +494,7 @@ $("mSettings").addEventListener("click", () => { sfx.tap(); settingsSheet(true);
 
 let away = hadSave ? catchUp(S) : null;
 function showAway(r) {
-  sheet(`<h2>وأنت غايب…</h2><p>مرّ على الرافعية ${ar(r.days)} يوم.</p><div class="rows">
+  sheet(`<h2>وأنت غايب…</h2><p>مرّ على الرافعية ${ar(r.days)} ساعة.</p><div class="rows">
     ${row("السكان", `${r.pop >= 0 ? "+" : "−"}${money(Math.abs(r.pop))}`, r.pop >= 0 ? "plus" : "minus")}
     ${row("الميزانية", `${r.money >= 0 ? "+" : "−"}${money(Math.abs(r.money))} ريال`, r.money >= 0 ? "plus" : "minus")}
     ${r.msgs.filter((m) => m.kind !== "event").slice(-4).map((m) => `<div class="row"><span>${m.text}</span></div>`).join("")}</div>`, "away");
@@ -496,14 +503,14 @@ function showAway(r) {
 
 // ---------- the clock ----------
 
-let last = performance.now(), acc = DAY_MS * 0.12, tod = sunAt(0.12), shownPart = "";
+let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how"].includes(sheetFor)) {
     acc += dt * 1000 * speed;
-    while (acc >= DAY_MS) {
-      acc -= DAY_MS;
+    while (acc >= HOUR_MS) {
+      acc -= HOUR_MS;
       const { msgs } = step(S);
       for (const m of msgs) {
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
@@ -518,9 +525,10 @@ function frame(now) {
     }
   }
   if (playing) {
-    tod = sunAt(acc / DAY_MS);
-    const part = partOfDay(acc / DAY_MS);
-    if (part !== shownPart) { shownPart = part; $("sTime").textContent = part; $("sTime").dataset.p = part; }
+    const d = seasonOf(S.day).daylight, p = (hourOf(S.day) + acc / HOUR_MS) / HOURS;
+    tod = sunAt(p, d);
+    const part = partOfDay(p, d), text = `${part} ${clockAt(p, d)}`;
+    if (text !== shownTime) { shownTime = text; $("sTime").textContent = text; $("sTime").dataset.p = part; world.nightTime = part === "الليل" || part === "الفجر"; }
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   world.frame(dt, tod);

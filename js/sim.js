@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS } from "./data.js";
+import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -41,7 +41,8 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     if (t.t === "wadi" && !t.b && Math.abs(yy - cy) < 9) { put(x, yy, "palms"); palmsPlaced++; }
   }
   return {
-    v: 1, hv: 2, fv: 1, seed, day: 1, money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
+    v: 1, hv: 2, fv: 1, seed, day: 3, // hour 3 of day 1: two hours after sunrise
+    money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
 }
@@ -50,10 +51,15 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
 
 export const ROCK_CLEAR = 40;
 
-/** Which season a day falls in, how far into it, and which year. */
-export function seasonOf(day) {
-  const d = Math.max(0, day - 1), i = Math.floor(d / SEASON_DAYS) % 4;
-  return { i, ...SEASONS[i], dayIn: (d % SEASON_DAYS) + 1, left: SEASON_DAYS - (d % SEASON_DAYS), year: Math.floor(d / (SEASON_DAYS * 4)) + 1 };
+// s.day counts hours (one step each). These turn it into days, hours and seasons.
+export const dayOf = (hour) => Math.floor(Math.max(0, hour - 1) / HOURS) + 1;
+export const hourOf = (hour) => Math.max(0, hour - 1) % HOURS;
+
+/** Which season an hour falls in, which day of it, how far through it (0..1), and which year. */
+export function seasonOf(hour) {
+  const h = Math.max(0, hour - 1), day = Math.floor(h / HOURS), i = Math.floor(day / SEASON_DAYS) % 4;
+  const inSeason = day % SEASON_DAYS;
+  return { i, ...SEASONS[i], dayIn: inSeason + 1, left: SEASON_DAYS - inSeason, progress: (inSeason * HOURS + (h % HOURS)) / (SEASON_DAYS * HOURS), year: Math.floor(day / (SEASON_DAYS * 4)) + 1 };
 }
 
 /**
@@ -347,7 +353,7 @@ export function startResearch(s, id) {
 /** While the app was closed the town carried on, slowly: one day for every two minutes away, at most 60. */
 export function catchUp(s, now = Date.now()) {
   const away = Math.max(0, now - (s.savedAt || now));
-  const days = Math.min(60, Math.floor(away / 120000));
+  const days = Math.min(144, Math.floor(away / 60000)); // one town hour per minute away, up to six days
   if (!days) return null;
   const start = { pop: s.pop, money: s.money, day: s.day };
   const msgs = [];

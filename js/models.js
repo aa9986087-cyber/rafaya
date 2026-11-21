@@ -134,6 +134,15 @@ function crescent(b, x, y, z, color = C.red) {
   b.add(new THREE.TorusGeometry(0.05, 0.016, 5, 12, Math.PI * 1.3), color, { x, y, z, rz: 0.9 });
 }
 
+/** A face with a shemagh (red-and-white or white) and the black iqal on top. */
+function head(b, cloth) {
+  b.add(new THREE.SphereGeometry(0.019, 8, 6), "#b98a63", { y: 0.132 });
+  b.add(new THREE.SphereGeometry(0.023, 8, 6, 0, Math.PI * 2, 0, Math.PI / 1.7), cloth, { x: -0.003, y: 0.136 });
+  b.add(new THREE.BoxGeometry(0.008, 0.05, 0.05), cloth, { x: -0.019, y: 0.115 });                 // falls down the back
+  for (const z of [0.021, -0.021]) b.add(new THREE.BoxGeometry(0.02, 0.04, 0.005), cloth, { x: 0.001, y: 0.118, z });
+  b.add(new THREE.TorusGeometry(0.018, 0.0045, 4, 12), "#111", { y: 0.15, rx: Math.PI / 2 });
+}
+
 /** A box-shaped AC unit on a wall or roof. */
 function acUnit(b, x, y, z, ry = 0) {
   b.box(0.08, 0.06, 0.05, "#e7e7e2", { x, y, z, ry });
@@ -502,14 +511,46 @@ const MAKERS = {
     b.add(new THREE.BoxGeometry(0.02, 0.05, 0.01), dark, { x: -0.16, y: 0.22, rz: 0.4 });
     b.box(0.08, 0.012, 0.13, C.red, { x: -0.01, y: 0.355 });
   },
-  personM(b) {
-    b.cyl(0.026, 0.034, 0.12, C.white, {}, 6);
-    b.add(new THREE.SphereGeometry(0.02, 6, 5), "#b98a63", { y: 0.135 });
-    b.add(new THREE.ConeGeometry(0.03, 0.04, 6), C.red, { y: 0.16 });
+  // ---- people: a man in a thobe (the thobe takes the per-person colour), his shemagh and face apart ----
+  manBody(b) {
+    b.cyl(0.027, 0.036, 0.1, C.white, {}, 8);                       // thobe, flaring to the ankles
+    b.add(new THREE.SphereGeometry(0.03, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), C.white, { y: 0.098, sy: 0.55 }); // shoulders
+    for (const z of [-0.031, 0.031]) b.add(new THREE.CylinderGeometry(0.009, 0.011, 0.065, 5), C.white, { x: 0.002, y: 0.066, z, rx: z > 0 ? -0.12 : 0.12 }); // arms
   },
-  personF(b) {
-    b.cyl(0.024, 0.036, 0.12, "#1c1a1d", {}, 6);
-    b.add(new THREE.SphereGeometry(0.021, 6, 5), "#1c1a1d", { y: 0.135 });
+  manHeadRed(b) { head(b, "#c8323a"); },
+  manHeadWhite(b) { head(b, "#f6f4ee"); },
+  woman(b) {
+    const abaya = "#17151a";
+    b.cyl(0.026, 0.04, 0.105, abaya, {}, 8);
+    b.add(new THREE.SphereGeometry(0.03, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), abaya, { y: 0.1, sy: 0.55 });
+    for (const z of [-0.03, 0.03]) b.add(new THREE.CylinderGeometry(0.009, 0.012, 0.065, 5), abaya, { y: 0.067, z });
+    b.add(new THREE.SphereGeometry(0.021, 8, 6), abaya, { y: 0.135 });
+    b.add(new THREE.SphereGeometry(0.011, 6, 4), "#c99a72", { x: 0.016, y: 0.137, sx: 0.5 });  // face
+    b.add(new THREE.ConeGeometry(0.026, 0.05, 8), abaya, { y: 0.14, rx: Math.PI, sy: 0.6 });      // shayla falling to the shoulders
+    b.box(0.018, 0.02, 0.008, "#a3542e", { x: -0.004, y: 0.05, z: 0.043 });                        // a handbag
+  },
+  // ---- the pickup (جيب حوض): body takes the per-car colour; trim keeps its own ----
+  pickupBody(b) {
+    b.box(0.27, 0.045, 0.12, C.white, { y: 0.022 });                          // chassis and sides
+    b.box(0.07, 0.022, 0.118, C.white, { x: 0.1, y: 0.066 });                 // bonnet
+    b.box(0.095, 0.058, 0.116, C.white, { x: 0.02, y: 0.066 });               // cab
+    b.box(0.1, 0.03, 0.008, C.white, { x: -0.083, y: 0.066, z: 0.056 });       // bed sides
+    b.box(0.1, 0.03, 0.008, C.white, { x: -0.083, y: 0.066, z: -0.056 });
+    b.box(0.008, 0.03, 0.12, C.white, { x: -0.131, y: 0.066 });                // tailgate
+  },
+  pickupTrim(b) {
+    for (const [x, z] of [[0.085, 0.058], [0.085, -0.058], [-0.08, 0.058], [-0.08, -0.058]]) {
+      b.cyl(0.026, 0.026, 0.022, "#1d1d1f", { x, y: 0.026 - 0.011, z, rx: Math.PI / 2 }, 10);
+      b.cyl(0.012, 0.012, 0.024, "#b9bcc0", { x, y: 0.026 - 0.012, z, rx: Math.PI / 2 }, 8);
+    }
+    b.add(new THREE.BoxGeometry(0.004, 0.042, 0.104), "#2a3b47", { x: 0.069, y: 0.098, rz: 0.35 }, "shiny");   // windscreen
+    for (const z of [0.0585, -0.0585]) b.box(0.06, 0.03, 0.003, "#2a3b47", { x: 0.02, y: 0.078, z }, "shiny"); // side windows
+    b.box(0.004, 0.028, 0.1, "#2a3b47", { x: -0.028, y: 0.078 }, "shiny");                                       // back window
+    b.box(0.098, 0.004, 0.104, "#3a3632", { x: -0.083, y: 0.046 });                                              // bed floor
+    b.box(0.006, 0.02, 0.07, "#2b2b2e", { x: 0.136, y: 0.03 });                                                 // grille
+    for (const z of [0.045, -0.045]) { b.box(0.004, 0.012, 0.02, "#fff6d8", { x: 0.137, y: 0.034, z }, "lights"); b.box(0.004, 0.014, 0.012, "#d23a2a", { x: -0.136, y: 0.06, z }); }
+    b.box(0.006, 0.012, 0.124, "#9a9da1", { x: 0.138, y: 0.012 });                                              // bumpers
+    b.box(0.006, 0.012, 0.124, "#9a9da1", { x: -0.137, y: 0.012 });
   },
   // A small desert acacia (طلح/سمر): low, wide and close to the ground, as in the Rafaya plains.
   acacia(b) {

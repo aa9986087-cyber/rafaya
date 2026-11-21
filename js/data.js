@@ -10,13 +10,18 @@ export const ERAS = [
   { id: 3, name: "محافظة", pop: 4000 }
 ];
 
-/** The year turns through four seasons. Day 1 is the first day of spring. */
-export const SEASON_DAYS = 10;
+/**
+ * Time: the town moves forward one hour at a time (one simulation step = one hour),
+ * 24 hours make a day, and the year turns through four seasons of SEASON_DAYS days.
+ * daylight: share of the day with the sun up (long summer days, long winter nights).
+ */
+export const HOURS = 24;
+export const SEASON_DAYS = 3;
 export const SEASONS = [
-  { id: "spring", name: "الربيع", start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
-  { id: "summer", name: "الصيف", start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
-  { id: "autumn", name: "الخريف", start: "دخل الخريف: خفّ الحر وبدأ الصِّرام." },
-  { id: "winter", name: "الشتاء", start: "دخل الشتاء: برد وليالي طويلة. الربيع جاي بعده." }
+  { id: "spring", name: "الربيع", daylight: 0.5, start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
+  { id: "summer", name: "الصيف", daylight: 0.6, start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
+  { id: "autumn", name: "الخريف", daylight: 0.5, start: "دخل الخريف: خفّ الحر وبدأ الصِّرام." },
+  { id: "winter", name: "الشتاء", daylight: 0.4, start: "دخل الشتاء: برد وليالي طويلة. الربيع جاي بعده." }
 ];
 
 // Building categories shown in the build bar.
@@ -81,7 +86,7 @@ export const B = {
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, text: "أنظف وأحسن من الترابي." }
 };
 
-/** The municipal council's research. Takes money and days; each one stays forever. */
+/** The municipal council's research. Takes money and hours ("days" counts hours); each one stays forever. */
 export const TECH = {
   irrigation: { name: "الري بالتنقيط", cost: 500, days: 6, era: 0, text: "المزارع تنتج أكثر بـ٣٠٪ وتصرف ماء أقل." },
   asphalt: { name: "سفلتة الطرق", cost: 600, days: 6, era: 1, text: "يفتح الطريق المسفلت، ويرفع رضا الناس حوله." },
@@ -110,7 +115,7 @@ export const GOALS = [
   { text: "ابنِ مولد كهرباء أو ألواح شمسية", test: (s) => s.count.generator + s.count.solar >= 1, reward: 400 },
   { text: "أول فيلا", test: (s) => s.levels[3] >= 1, reward: 500 },
   { text: "رضا الناس ٧٠٪", test: (s) => s.happy >= 70, reward: 600 },
-  { text: "دخل يومي ٥٠٠ ريال", test: (s) => s.net >= 500, reward: 800 },
+  { text: "دخل ٥٠٠ ريال بالساعة", test: (s) => s.net >= 500, reward: 800 },
   { text: "صارت الرافعية مدينة (١٢٠٠ ساكن)", test: (s) => s.pop >= 1200, reward: 1500 },
   { text: "ابنِ مستشفى", test: (s) => s.count.hospital >= 1, reward: 1500 },
   { text: "أول عمارة", test: (s) => s.levels[4] >= 1, reward: 1500 },

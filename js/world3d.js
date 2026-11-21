@@ -406,22 +406,21 @@ export class World {
   syncCars() {
     const want = this.quality === "low" ? 0 : Math.min(40, Math.floor(this.roads.length / 5));
     if (!this.carMesh) {
-      const body = new THREE.BoxGeometry(0.2, 0.08, 0.11); body.translate(0, 0.05, 0);
-      const cab = new THREE.BoxGeometry(0.11, 0.06, 0.1); cab.translate(-0.01, 0.12, 0);
-      const g = mergeTwo(body, cab);
-      this.carMesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), 40);
-      this.carMesh.castShadow = true;
-      this.carMesh.frustumCulled = false;
-      const colors = ["#f2f2f2", "#d8d8d8", "#b3261e", "#2f5f9e", "#1d1d1f", "#c9a46a", "#f2f2f2"];
+      // Pickups (جيب حوض): mostly white, some beige, silver, red and navy. Paint per car, trim shared.
+      this.carMesh = new THREE.InstancedMesh(model("pickupBody").matte, this.mats.shiny, 40);
+      const colors = ["#f4f4f2", "#f4f4f2", "#e9e1cf", "#c3c6ca", "#f4f4f2", "#a8322a", "#2c3e63", "#d9c39a"];
       for (let i = 0; i < 40; i++) this.carMesh.setColorAt(i, new THREE.Color(colors[i % colors.length]));
-      this.scene.add(this.carMesh);
+      const trim = model("pickupTrim");
+      this.carTrim = ["matte", "shiny", "lights"].filter((k) => trim[k]).map((k) => new THREE.InstancedMesh(trim[k], this.mats[k], 40));
+      for (const m of [this.carMesh, ...this.carTrim]) { m.castShadow = m.material !== this.mats.lights && this.quality !== "low"; m.frustumCulled = false; m.count = 0; this.scene.add(m); }
     }
+    this.carsWanted = want;
     while (this.cars.length < want && this.roads.length) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
       this.cars.push({ x, y, tx: x, ty: y, t: 1, speed: 0.6 + Math.random() * 0.6 });
     }
     this.cars.length = Math.min(this.cars.length, want);
-    this.carMesh.count = this.cars.length;
+    for (const m of [this.carMesh, ...this.carTrim]) m.count = this.cars.length;
   }
 
   stepCars(dt) {
@@ -444,8 +443,10 @@ export class World {
       q.setFromAxisAngle(up, Math.atan2(-dz, dx));
       m4.compose(v, q, sc);
       this.carMesh.setMatrixAt(i, m4);
+      for (const t of this.carTrim) t.setMatrixAt(i, m4);
     });
-    this.carMesh.instanceMatrix.needsUpdate = true;
+    const shown = this.nightTime ? Math.ceil(this.cars.length / 4) : this.cars.length;
+    for (const m of [this.carMesh, ...this.carTrim]) { m.count = shown; m.instanceMatrix.needsUpdate = true; }
   }
 
   syncSmoke() {
@@ -490,11 +491,9 @@ export class World {
   syncLife(s) {
     if (!this.people) {
       this.people = [];
-      this.peopleMesh = ["personM", "personF"].map((k) => {
-        const mesh = new THREE.InstancedMesh(model(k).matte, this.mats.matte, 60);
-        mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = this.quality === "high";
-        this.scene.add(mesh); return mesh;
-      });
+      // men: thobe (coloured per person) + head (red or white shemagh); women in abayas.
+      const mk = (k) => { const mesh = new THREE.InstancedMesh(model(k).matte, this.mats.matte, 120); mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = this.quality === "high"; this.scene.add(mesh); return mesh; };
+      this.peopleMesh = { body: mk("manBody"), red: mk("manHeadRed"), white: mk("manHeadWhite"), woman: mk("woman") };
       this.camels = [];
       const cg = model("camel").matte;
       this.camelMesh = new THREE.InstancedMesh(cg, this.mats.matte, 8);
@@ -505,9 +504,17 @@ export class World {
     const want = this.quality === "low" || !this.roads.length ? 0 : Math.min(120, Math.round(4 + s.pop / 6));
     while (this.people.length < want) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
-      this.people.push({ x, y, tx: x, ty: y, t: Math.random(), speed: 0.12 + Math.random() * 0.1, side: Math.random() < 0.5 ? 1 : -1, f: this.people.length % 3 === 2 });
+      const n = this.people.length, kind = n % 3 === 2 ? "woman" : n % 5 === 3 ? "kid" : n % 2 ? "red" : "white";
+      this.people.push({ x, y, tx: x, ty: y, t: Math.random(), speed: 0.12 + Math.random() * 0.1, side: Math.random() < 0.5 ? 1 : -1, kind, shade: Math.random(), home: !!this.nightTime });
     }
     this.people.length = Math.min(this.people.length, want);
+    // Road tiles in front of homes: where people go in at night and come out in the morning.
+    this.doorRoads = [];
+    this.doorSet = new Set();
+    for (const i of this.homes || []) {
+      const x = i % N, y = Math.floor(i / N);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]) && !this.doorSet.has(idx(x + dx, y + dy))) { this.doorSet.add(idx(x + dx, y + dy)); this.doorRoads.push([x + dx, y + dy]); }
+    }
     for (const p of this.people) if (!roadAt(s.tiles[idx(p.tx, p.ty)]) || !roadAt(s.tiles[idx(p.x, p.y)])) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)] || [0, 0]; Object.assign(p, { x, y, tx: x, ty: y, t: 1 });
     }
@@ -538,10 +545,21 @@ export class World {
   stepLife(dt) {
     if (!this.people) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-    const counts = [0, 0];
+    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = !!this.nightTime;
+    const M = this.peopleMesh, col = new THREE.Color();
+    const winter = seasonOf(this.state.day).id === "winter";
+    const thobes = winter ? ["#f2efe6", "#c9b79a", "#8a8f94", "#6b5a48", "#ece6d8"] : ["#f6f5f0", "#f1ede2", "#ebe7dc", "#f6f5f0"];
     for (const p of this.people) {
-      p.t += dt * p.speed;
+      // At night everyone heads home and goes in; in the morning they come out a few at a time.
+      if (p.home) {
+        if (!night && this.doorRoads.length && Math.random() < dt * 0.08) {
+          const [x, y] = this.doorRoads[Math.floor(Math.random() * this.doorRoads.length)];
+          Object.assign(p, { home: false, x, y, tx: x, ty: y, t: 1 });
+        } else continue;
+      }
+      p.t += dt * p.speed * (night ? 2.4 : 1);
       if (p.t >= 1) {
+        if (night && (this.doorSet.has(idx(p.tx, p.ty)) || !this.doorRoads.length || Math.random() < 0.3)) { p.home = true; continue; }
         p.t = 0; p.px = p.x; p.py = p.y; p.x = p.tx; p.y = p.ty;
         const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(p.x + dx, p.y + dy) && roadAt(s.tiles[idx(p.x + dx, p.y + dy)]) && !(p.x + dx === p.px && p.y + dy === p.py));
         const pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [(p.px ?? p.x) - p.x, (p.py ?? p.y) - p.y];
@@ -552,13 +570,23 @@ export class World {
       v.lerpVectors(a, b, p.t);
       const dx = b.x - a.x, dz = b.z - a.z;
       if (dx || dz) { v.x += -dz * 0.4 * p.side; v.z += dx * 0.4 * p.side; } else { v.x += 0.4 * p.side; }
-      v.y = Math.abs(Math.sin(this.clock * 9 + p.speed * 50)) * 0.012;
-      q.setFromAxisAngle(up, Math.atan2(-dz, dx));
+      v.y = Math.abs(Math.sin(this.clock * 9 + p.speed * 50)) * 0.01;
+      q.setFromAxisAngle(up, Math.atan2(-dz, dx) + Math.sin(this.clock * 9 + p.speed * 50) * 0.06);
+      const s2 = p.kind === "kid" ? 0.72 : 0.95 + p.shade * 0.12;
+      sc.set(s2, s2, s2);
       m4.compose(v, q, sc);
-      const k = p.f ? 1 : 0;
-      this.peopleMesh[k].setMatrixAt(counts[k]++, m4);
+      if (p.kind === "woman") M.woman.setMatrixAt(counts.woman++, m4);
+      else {
+        const head = p.kind === "red" ? "red" : "white";
+        M[head].setMatrixAt(counts[head]++, m4);
+        col.set(p.kind === "kid" ? "#f6f5f0" : thobes[Math.floor(p.shade * thobes.length)]);
+        M.body.setColorAt(counts.body, col);
+        M.body.setMatrixAt(counts.body++, m4);
+      }
     }
-    this.peopleMesh.forEach((m, k) => { m.count = counts[k]; m.instanceMatrix.needsUpdate = true; });
+    sc.set(1, 1, 1);
+    for (const [k, m] of Object.entries(M)) { m.count = counts[k]; m.instanceMatrix.needsUpdate = true; }
+    if (M.body.instanceColor) M.body.instanceColor.needsUpdate = true;
 
     if (this.camels.length && this.herdHome) {
       const home = tileCenter(this.herdHome[0], this.herdHome[1]);

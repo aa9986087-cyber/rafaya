@@ -59,7 +59,7 @@ test("a sensible mayor grows the village into a town and then a city", () => {
   assert.ok(a.levels[3] + a.levels[4] > 10, "houses grew into villas and towers");
 });
 
-test("saving keeps the whole town, and the town carries on while away (up to 60 days)", () => {
+test("saving keeps the whole town, and the town carries on while away (up to six town days)", () => {
   const s = autoplay(40, 5);
   const back = unpack(pack(s));
   assert.equal(back.pop, s.pop);
@@ -67,6 +67,6 @@ test("saving keeps the whole town, and the town carries on while away (up to 60 
   assert.deepEqual(back.tiles.map((t) => t.b?.lvl ?? -1), s.tiles.map((t) => t.b?.lvl ?? -1));
   back.savedAt = Date.now() - 1000 * 60 * 60 * 24; // a day away
   const r = catchUp(back);
-  assert.equal(r.days, 60);
+  assert.equal(r.days, 144);
   assert.throws(() => unpack("{}"));
 });
