@@ -4,6 +4,7 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decid
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
+import { RESIDENTS, residentById, townFacts, writePosts, localReply, residentsPrompt, replyPrompt } from "./news.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -394,6 +395,95 @@ function achievementsSheet() {
   sheet(`<h2>الإنجازات</h2><p>${ar(got)} من ${ar(ACHIEVEMENTS.length)}</p><div class="achs">${ACHIEVEMENTS.map((x, i) => `<div class="ach ${S.ach?.[x.id] ? "done" : ""}" style="--i:${i}"><span>${S.ach?.[x.id] ? "🏆" : "🔒"}</span><b>${x.name}</b><small>${x.text}</small></div>`).join("")}</div>`, "ach");
 }
 
+// ---------- نشرة الرافعية ----------
+
+// Inside Claude the residents can speak through Claude; elsewhere (GitHub Pages) they use the town's own lines.
+let sampleFn = null;
+try { window.claude?.use?.("sample").then((f) => { sampleFn = f; if (sheetFor === "news") newsSheet(); }).catch(() => {}); } catch { /* not inside Claude */ }
+
+function addPosts(posts) {
+  if (!posts.length) return;
+  S.news = [...posts, ...(S.news || [])].slice(0, 50);
+  S.newsUnread = (S.newsUnread || 0) + posts.length;
+  showNewsCount();
+  if (sheetFor === "news") newsSheet();
+}
+function showNewsCount() {
+  const n = S.newsUnread || 0;
+  $("newsCount").hidden = !n;
+  $("newsCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
+}
+function hourNews(msgs) {
+  const big = msgs.some((m) => ["event", "season"].includes(m.kind));
+  if (big || S.day % 3 === 0) addPosts(writePosts(S, A, seasonOf(S.day), 1));
+}
+
+const moodTag = (m) => (m < 0 ? `<i class="mood bad">زعلان</i>` : m > 0 ? `<i class="mood good">مبسوط</i>` : `<i class="mood ask">يطالب</i>`);
+function postHtml(p) {
+  const r = residentById(p.who) || RESIDENTS[0];
+  const when = `اليوم ${ar(dayOf(p.day))} · ${ar(hourOf(p.day))}:٠٠`;
+  return `<article class="post" data-post="${p.id}">
+    <div class="post-head"><span class="avatar" style="background:${r.color}">${r.icon}</span>
+      <div><b>${r.name}</b><small>${r.role} · ${when}</small></div>${moodTag(p.mood)}</div>
+    <p>${p.text}</p>
+    ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : r.name}</b> ${m.text}</div>`).join("")}
+    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span>${p.ai ? `<span class="ai">✨</span>` : ""}<button type="button" class="reply-btn" data-reply="${p.id}">رد</button></div>
+    <form class="reply-form" data-form="${p.id}" hidden><input type="text" maxlength="160" placeholder="ردك على ${r.name}…" aria-label="الرد"><button type="submit">أرسل</button></form>
+  </article>`;
+}
+
+function newsSheet() {
+  S.newsUnread = 0; showNewsCount();
+  const posts = S.news || [];
+  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم.</p>
+    ${sampleFn ? `<button type="button" class="btn go block" id="askRes">✨ اسمع الأهالي الحين</button><small class="ai-note" id="askNote">يكتبونها بذكاء من حال البلد الحقيقي.</small>` : ""}</div>
+    <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
+  $("askRes")?.addEventListener("click", askResidents);
+  $("sheetBody").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => {
+    const f = $("sheetBody").querySelector(`[data-form="${b.dataset.reply}"]`);
+    f.hidden = !f.hidden; if (!f.hidden) f.querySelector("input").focus();
+  }));
+  $("sheetBody").querySelectorAll("[data-form]").forEach((f) => f.addEventListener("submit", (e) => { e.preventDefault(); sendReply(f.dataset.form, f.querySelector("input").value.trim()); }));
+}
+$("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
+
+let asking = false;
+async function askResidents() {
+  if (!sampleFn || asking) return;
+  asking = true;
+  const btn = $("askRes"), note = $("askNote");
+  btn.disabled = true; btn.textContent = "الأهالي يكتبون…";
+  const facts = townFacts(S, A, seasonOf(S.day));
+  const recent = (S.news || []).slice(0, 6).map((p) => ({ name: residentById(p.who)?.name, text: p.text }));
+  try {
+    const list = await sampleFn.json(residentsPrompt(facts, recent, 4), { cache: false });
+    const posts = (Array.isArray(list) ? list : []).filter((x) => residentById(x?.who) && typeof x.text === "string" && x.text.trim())
+      .slice(0, 5).map((x, i) => ({ id: `ai-${S.day}-${Date.now()}-${i}`, day: S.day, who: x.who, text: x.text.trim().slice(0, 280), mood: Math.max(-1, Math.min(1, Number(x.mood) || 0)), topic: "ai", likes: 3 + Math.floor(Math.random() * 25), ai: true }));
+    if (!posts.length) throw { code: "empty_completion" };
+    addPosts(posts); S.newsUnread = 0; showNewsCount(); save();
+  } catch (e) {
+    if (e?.code === "not_granted" || e?.code === "sampling_disabled") { sampleFn = null; }
+    if (e?.code !== "cancelled") toast(e?.code === "rate_limited" ? "الأهالي تعبوا من الكلام، جرّب بعد شوي" : "ما قدروا يكتبون الحين", "bad");
+    if (sheetFor === "news") newsSheet();
+  } finally { asking = false; }
+  if (note && sheetFor !== "news") note.remove();
+}
+
+async function sendReply(id, said) {
+  const post = (S.news || []).find((p) => p.id === id);
+  if (!post || !said) return;
+  post.replies = [...(post.replies || []), { from: "mayor", text: said }];
+  newsSheet();
+  let answer = "";
+  if (sampleFn) {
+    try { answer = (await sampleFn(replyPrompt(townFacts(S, A, seasonOf(S.day)), post, post.replies.slice(0, -1), said), { cache: false })).text.trim().slice(0, 300); }
+    catch (e) { if (e?.code === "not_granted" || e?.code === "sampling_disabled") sampleFn = null; }
+  }
+  post.replies.push({ from: "res", text: answer || localReply(post, said) });
+  save();
+  if (sheetFor === "news") newsSheet();
+}
+
 /** A choice for the mayor: the story, and a button per option with what it costs and does. */
 function decisionSheet() {
   const d = DECISIONS.find((x) => x.id === S.decision?.id);
@@ -682,6 +772,7 @@ function frame(now) {
       refresh();
       save();
       hourEffects();
+      hourNews(msgs);
       if (sheetFor === "budget") budget();
       if (sheetFor === "council") council();
     }
