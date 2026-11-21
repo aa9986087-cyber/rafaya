@@ -93,3 +93,22 @@ test("a save from the old 30×30 map opens with the town in the middle", () => {
   assert.equal(back.tiles.length, N * N);
   assert.equal(back.tiles[idx((465 % 30) + 5, Math.floor(465 / 30) + 5)].b.id, "house");
 });
+
+test("decisions about the village: they show up for a reason and do what they say", async () => {
+  const { DECISIONS } = await import("../js/data.js");
+  const { decide, seasonOf } = await import("../js/sim.js");
+  const s = newGame(21);
+  const a = analyze(s);
+  const thirst = DECISIONS.find((d) => d.id === "thirst");
+  assert.equal(thirst.when(s, a, seasonOf(s.day)), false, "no thirst while water is enough");
+  assert.equal(thirst.when(s, { ...a, waterRatio: 0.5 }, seasonOf(s.day)), true);
+  s.decision = { id: "tentsworn" };
+  const before = s.money;
+  assert.ok(decide(s, 0).ok);
+  assert.equal(s.money, before - 20 * a.levels[0], "20 riyals a tent");
+  s.money = -100;
+  s.decision = { id: "loan" };
+  decide(s, 0);
+  assert.equal(s.money, 2900);
+  assert.ok(analyze(s).loan > 0, "the loan is paid back every hour");
+});

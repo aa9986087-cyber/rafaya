@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decide, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decide, optionCost, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -400,8 +400,8 @@ function decisionSheet() {
   if (!d) return;
   sfx.event();
   sheet(`<div class="decision"><span class="badge">قرار</span><h2>${d.title}</h2><p>${d.text}</p>
-    <div class="choices">${d.options.map((o, i) => `<button type="button" class="choice ${i === 0 ? "first" : ""}" data-choice="${i}" ${o.cost && S.money < o.cost ? "disabled" : ""}>
-      <b>${o.label}</b><small>${o.note}${o.cost && S.money < o.cost ? " · ما يكفي المال" : ""}</small></button>`).join("")}</div></div>`, "decision");
+    <div class="choices">${d.options.map((o, i) => { const c = optionCost(S, A, o), poor = c > 0 && S.money < c; return `<button type="button" class="choice ${i === 0 ? "first" : ""}" data-choice="${i}" ${poor ? "disabled" : ""}>
+      <b>${o.label}</b><small>${o.note}${o.costPer ? ` (${money(c)} ريال)` : ""}${poor ? " · ما يكفي المال" : ""}</small></button>`; }).join("")}</div></div>`, "decision");
   $("sheetClose").hidden = true;
   $("sheetBody").querySelectorAll("[data-choice]").forEach((b) => b.addEventListener("click", () => {
     const r = decide(S, Number(b.dataset.choice));
@@ -410,6 +410,7 @@ function decisionSheet() {
     $("sheetClose").hidden = false;
     closeSheet();
     if (r.built) { world.sync(S); toast(`انحفر ${B[r.built].name} جديد قرب البلد`, "goal"); }
+    if (r.lost) { world.sync(S); toast(`احترق ${r.lost} 🔥`, "bad"); }
     refresh(); save();
   }));
 }

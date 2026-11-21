@@ -179,6 +179,74 @@ export const EVENTS = [
  * The last option is what happens if nobody answers (while the player is away).
  */
 export const DECISIONS = [
+  // ---- problems in the village: they come up only when their cause is there (weight 3) ----
+  { id: "wellbroken", weight: 3, title: "البئر خرب", text: "انقطع حبل الدلو وطاحت البكرة في البئر. الأهالي يشيلون الماء بالسطول من بعيد.",
+    when: (s, a) => a.count.well >= 1,
+    options: [
+      { label: "صلّحوه الحين", note: "يكلف ١٢٠ ريال", cost: 120, boost: { name: "البئر رجع يشتغل", hours: 12, happy: 2 } },
+      { label: "نصبر", note: "الماء ينقص ٤٠٪ يومين", boost: { name: "البئر خربان", hours: 48, water: 0.6 } }
+    ] },
+  { id: "thirst", weight: 3, title: "الناس عطشانين", text: "الماء ما يكفي، والحريم يوقفون طوابير عند البئر من الفجر. الأهالي يطالبون بحل.",
+    when: (s, a) => a.waterRatio < 0.9,
+    options: [
+      { label: "اطلب وايتات ماء", note: "تكلف ٣٠٠، ماء أكثر ليوم", cost: 300, boost: { name: "وايتات الماء", hours: 24, water: 1.6, happy: 2 } },
+      { label: "قل لهم يقتصدون", note: "رضا −٨ ليوم", boost: { name: "عطش وزعل", hours: 24, happy: -8 } }
+    ] },
+  { id: "jobless", weight: 3, title: "شباب بلا شغل", text: "شباب الحي قاعدين على الرصيف من الصبح. يقولون: ما فيه شغل بالرافعية، بنطلع للمدن.",
+    when: (s, a) => a.unemployment > 0.3 && s.pop >= 40,
+    options: [
+      { label: "مشروع تشغيل مؤقت", note: "يكلف ٦٠٠، رضا +٦ يومين", cost: 600, boost: { name: "تشغيل الشباب", hours: 48, happy: 6 } },
+      { label: "خلهم يدورون", note: "بعضهم يطلع من البلد، ورضا −٦", popLoss: 0.05, boost: { name: "بطالة الشباب", hours: 48, happy: -6 } }
+    ] },
+  { id: "fever", weight: 3, title: "حمّى بالقرية", text: "انتشرت حمّى بين العيال، وأقرب مستوصف بعيد. الأمهات خايفات.",
+    when: (s, a) => s.pop >= 60 && !a.count.clinic && !a.count.hospital,
+    options: [
+      { label: "جيبوا طبيب زائر", note: "يكلف ٥٠٠", cost: 500, boost: { name: "الطبيب الزائر", hours: 24, happy: 3 } },
+      { label: "الله يشفيهم", note: "بعض العوايل تطلع، ورضا −٨ يومين", popLoss: 0.06, boost: { name: "حمّى", hours: 48, happy: -8 } }
+    ] },
+  { id: "tentsworn", weight: 3, title: "الخيام اهترت", text: "برد الشتاء والهواء قطّع شعر الخيام. الناس يرقّعونها بالبطانيات.",
+    when: (s, a, season) => season.id === "winter" && a.levels[0] >= 5,
+    options: [
+      { label: "بدّلوا الشعر", note: "٢٠ ريال عن كل خيمة", costPer: { tents: 20 }, boost: { name: "خيام جديدة", hours: 24, happy: 4 } },
+      { label: "يتحملون", note: "رضا −٦ ثلاث أيام", boost: { name: "برد الخيام", hours: 72, happy: -6 } }
+    ] },
+  { id: "floodroad", weight: 3, title: "السيل جرف الطريق", text: "سيل الوادي جرف أجزاء من الطرق الترابية، والسيارات تغرز.",
+    when: (s, a) => a.count.road >= 10 && s.events.some((e) => e.id === "rain"),
+    options: [
+      { label: "رصفوها", note: "٦ ريال عن كل طريق ترابي", costPer: { roads: 6 } },
+      { label: "تنشف لحالها", note: "المحلات تبيع أقل، ورضا −٤ يومين", boost: { name: "طرق مقطوعة", hours: 48, shop: 0.8, happy: -4 } }
+    ] },
+  { id: "thief", weight: 3, title: "سرقات بالليل", text: "انسرقت محلات بالليل، والتجار يقولون: ما فيه أحد يحرس.",
+    when: (s, a) => s.pop >= 150 && !a.count.police,
+    options: [
+      { label: "عيّن حرّاس", note: "يكلف ٧٠٠", cost: 700, boost: { name: "حرّاس الليل", hours: 48, happy: 3 } },
+      { label: "تجي الشرطة بعدين", note: "تنسرق ٨٪ من الميزانية، ورضا −٥", moneyLoss: 0.08, boost: { name: "خوف من السرقات", hours: 24, happy: -5 } }
+    ] },
+  { id: "fire", weight: 3, title: "حريق!", text: "شب حريق في محل، والنار بتمتد. ما عندكم دفاع مدني.",
+    when: (s, a) => s.era >= 1 && !a.count.civil && ["grocery", "cafe", "souq", "mandi", "workshop"].some((k) => a.count[k]),
+    options: [
+      { label: "اطلب فزعة البلد المجاور", note: "يكلف ٦٠٠ وينطفي", cost: 600 },
+      { label: "نطفيه بأنفسنا", note: "ممكن يحترق المحل كله", destroy: ["grocery", "cafe", "souq", "mandi", "workshop"], boost: { name: "آثار الحريق", hours: 24, happy: -6 } }
+    ] },
+  { id: "powercut", weight: 3, title: "الكهرباء تنقطع", text: "الكهرباء تطفي كل شوي، والمكيفات واقفة والناس يحترون.",
+    when: (s, a) => a.grid && a.powerRatio < 0.95,
+    options: [
+      { label: "استأجر مولدات", note: "يكلف ٧٠٠، كهرباء أكثر ليوم", cost: 700, boost: { name: "مولدات مستأجرة", hours: 24, power: 1.5 } },
+      { label: "نتحمل", note: "رضا −٩ ليوم", boost: { name: "انقطاع الكهرباء", hours: 24, happy: -9 } }
+    ] },
+  { id: "dusty", weight: 2, title: "غبار الطرق", text: "الطرق الترابية كثرت، والغبار يدخل البيوت مع كل سيارة.",
+    when: (s, a) => a.count.road >= 30 && !s.tech.asphalt,
+    options: [
+      { label: "سيارة رش ماء", note: "تكلف ٣٠٠، رضا +٣ يومين", cost: 300, boost: { name: "رش الطرق", hours: 48, happy: 3 } },
+      { label: "عادي", note: "رضا −٤ يومين", boost: { name: "غبار", hours: 48, happy: -4 } }
+    ] },
+  { id: "loan", weight: 4, title: "البنك يعرض قرض", text: "الميزانية بالسالب والرواتب متأخرة. البنك يعرض قرض ٣٠٠٠ ريال يتسدد على أربعة أيام.",
+    when: (s) => s.money < 0,
+    options: [
+      { label: "خذ القرض", note: "+٣٠٠٠ الحين، وتدفع ٤٠ بالساعة ٤ أيام (٣٨٤٠)", money: 3000, boost: { name: "أقساط القرض", hours: 96, repay: 40 } },
+      { label: "نشد الحزام", note: "الضريبة +٣٪ ورضا −٤", tax: 3, boost: { name: "تقشّف", hours: 48, happy: -4 } }
+    ] },
+  // ---- life and chances ----
   { id: "investor", title: "مستثمر على الباب", text: "تاجر يبي يفتح مصنع على حسابه قرب البلد، ويدفع للبلدية رسوم. بس الناس خايفين من الدخان.",
     when: (s) => s.pop >= 60,
     options: [

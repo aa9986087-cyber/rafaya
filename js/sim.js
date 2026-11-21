@@ -227,7 +227,8 @@ export function analyze(s) {
   // network, the clinic's medicine…) and keeping the roads up.
   a.peopleCost = s.pop * 0.06;
   a.roadCost = a.count.road * 0.05 + a.count.asphalt * 0.12;
-  a.upkeep += a.peopleCost + a.roadCost;
+  a.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0); // bank loan instalments
+  a.upkeep += a.peopleCost + a.roadCost + a.loan;
   if (s.tech.zakat) a.upkeep *= 0.85;
   a.waterSupply *= activeEvent(s, "water");
   a.powerSupply *= activeEvent(s, "power");
@@ -370,9 +371,10 @@ export function step(s, r = Math.random) {
     msgs.push({ kind: "event", title: ev.name, text });
   }
   // Now and then a choice for the mayor.
-  if (!s.decision && s.day > 30 && r() < 0.012) {
+  if (!s.decision && s.day > 30 && r() < 0.02) {
     const pool = DECISIONS.filter((d) => d.when(s, a, season) && d.id !== s.lastDecision);
-    if (pool.length) { const d = pool[Math.floor(r() * pool.length)]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
+    let roll = r() * pool.reduce((n, d) => n + (d.weight || 1), 0);
+    if (pool.length) { const d = pool.find((x) => (roll -= x.weight || 1) < 0) || pool[0]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
   }
   // Goals.
   const g = GOALS[s.goal];
@@ -391,13 +393,28 @@ export function step(s, r = Math.random) {
   return { a, msgs };
 }
 
+/** What an option costs right now (some depend on how many tents or roads there are). */
+export function optionCost(s, a, o) {
+  if (o.costPer) return Math.round((o.costPer.tents || 0) * a.levels[0] + (o.costPer.roads || 0) * a.count.road);
+  return o.cost || 0;
+}
+
 /** The mayor picks an option of the waiting decision. Returns what happened, or why not. */
 export function decide(s, i) {
   const d = DECISIONS.find((x) => x.id === s.decision?.id), o = d?.options[i];
   if (!o) { s.decision = null; return { error: "ما فيه قرار" }; }
   const a = analyze(s);
-  if (o.cost && s.money < o.cost) return { error: "ما يكفي المال" };
-  s.money -= o.cost || 0;
+  const cost = optionCost(s, a, o);
+  if (cost && s.money < cost) return { error: "ما يكفي المال" };
+  s.money -= cost;
+  if (o.popLoss) s.pop = Math.max(0, Math.round(s.pop * (1 - o.popLoss)));
+  if (o.moneyLoss && s.money > 0) s.money = Math.round(s.money * (1 - o.moneyLoss));
+  let lost = "";
+  if (o.destroy) {
+    const spots = [];
+    s.tiles.forEach((t) => { if (t.b && o.destroy.includes(t.b.id)) spots.push(t); });
+    if (spots.length) { const t = spots[Math.floor(Math.random() * spots.length)]; lost = B[t.b.id].name; t.b = null; }
+  }
   s.money += (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms;
   if (o.tax) s.tax = clamp(s.tax + o.tax, 0, 25);
   if (o.boost) s.events.push({ id: "boost", left: o.boost.hours, ...o.boost });
@@ -413,7 +430,7 @@ export function decide(s, i) {
     if (best) { s.tiles[idx(best.x, best.y)].b = { id: o.freeBuild, lvl: 0, res: 0 }; built = o.freeBuild; }
   }
   s.decision = null;
-  return { ok: true, built };
+  return { ok: true, built, lost };
 }
 
 /** While the player was away, the last option of a decision is taken. */
