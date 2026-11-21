@@ -127,15 +127,23 @@ function apply(x, y, quiet) {
     const why = demolish(S, x, y);
     if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
     sfx.remove(); sync(wasRoad);
+    clearPreview(quiet);
   } else {
     const why = build(S, x, y, tool.id);
     if (why) { if (!quiet || why === "ما يكفي المال") { toast(why, "bad"); sfx.deny(); } return; }
     const road = B[tool.id].cat === "road";
     road ? sfx.road() : sfx.build();
     sync(road);
+    clearPreview(quiet);
     if (!road && !["util", "farm"].includes(B[tool.id].cat) && !nearRoad(x, y)) toast("يحتاج طريق جنبه عشان يشتغل", "bad");
   }
   refresh();
+}
+
+/** Once something is placed, the green preview goes so the real building shows straight away. */
+function clearPreview(painting) {
+  world.setGhost(null);
+  if (!painting) { world.setHover(null); world.setOverlay(null); }
 }
 
 function showReach(x, y, def) {
