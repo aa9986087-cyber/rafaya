@@ -134,6 +134,26 @@ function crescent(b, x, y, z, color = C.red) {
   b.add(new THREE.TorusGeometry(0.05, 0.016, 5, 12, Math.PI * 1.3), color, { x, y, z, rz: 0.9 });
 }
 
+/** A box-shaped AC unit on a wall or roof. */
+function acUnit(b, x, y, z, ry = 0) {
+  b.box(0.08, 0.06, 0.05, "#e7e7e2", { x, y, z, ry });
+  b.cyl(0.018, 0.018, 0.004, C.dark, { x: x + Math.sin(ry) * 0.026, y: y + 0.03, z: z + Math.cos(ry) * 0.026, rx: Math.PI / 2, ry }, 8);
+}
+function dish(b, x, y, z) {
+  b.cyl(0.004, 0.004, 0.05, C.grey, { x, y, z }, 4);
+  b.add(new THREE.SphereGeometry(0.04, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2.4), "#ececec", { x, y: y + 0.06, z, rx: -1.1 });
+}
+function pot(b, x, z, s = 1) {
+  b.cyl(0.03 * s, 0.022 * s, 0.05 * s, "#b5683c", { x, z }, 7);
+  b.add(new THREE.IcosahedronGeometry(0.045 * s, 0), C.leaf, { x, y: 0.08 * s, z });
+}
+/** Sadu weaving: the red, black and white bands of Bedouin rugs. */
+function sadu(b, w, d, x, z) {
+  b.box(w, 0.008, d, "#8f1f1a", { x, z });
+  for (let i = 0; i < 5; i++) b.box(w * 0.94, 0.01, d * 0.08, i % 2 ? C.cream : "#1f1915", { x, z: z - d * 0.38 + i * d * 0.19 });
+  for (let i = 0; i < 4; i++) b.box(w * 0.08, 0.012, d * 0.08, C.gold, { x: x - w * 0.3 + i * w * 0.2, z });
+}
+
 function car(b, x, z, ry, color) {
   b.box(0.2, 0.06, 0.1, color, { x, y: 0.03, z, ry });
   b.box(0.11, 0.05, 0.09, C.glass, { x: x - Math.cos(ry) * 0.01, y: 0.09, z: z + Math.sin(ry) * 0.01, ry }, "shiny");
@@ -155,6 +175,15 @@ const MAKERS = {
     for (const x of [-0.27, 0, 0.27]) b.cyl(0.01, 0.01, 0.3, C.wood, { x, z: 0.27 }, 4);
     for (const s of [-1, 1]) b.add(new THREE.BoxGeometry(0.2, 0.006, 0.006), "#8a7458", { x: s * 0.5, y: 0.08, z: 0, rz: s * 0.6 });
     b.add(new THREE.BoxGeometry(0.12, 0.05, 0.12), C.red, { x: -0.33, y: 0.025, z: 0.38 });
+    // A sadu rug in front, a hearth ringed with stones, a dallah and a saddle.
+    sadu(b, 0.34, 0.16, 0.04, 0.37);
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; b.add(new THREE.DodecahedronGeometry(0.018, 0), "#8d8174", { x: 0.33 + Math.cos(a) * 0.055, y: 0.012, z: 0.38 + Math.sin(a) * 0.055 }); }
+    b.add(new THREE.ConeGeometry(0.03, 0.06, 5), "#ff8a2a", { x: 0.33, y: 0.03, z: 0.38 }, "lights");
+    b.add(new THREE.BoxGeometry(0.05, 0.012, 0.012), "#3b2a1c", { x: 0.33, y: 0.01, z: 0.38, ry: 0.5 });
+    b.cyl(0.012, 0.022, 0.04, C.gold, { x: 0.26, z: 0.44 }, 8, "shiny");
+    b.cone(0.012, 0.02, C.gold, { x: 0.26, y: 0.04, z: 0.44 }, 8, "shiny");
+    b.add(new THREE.BoxGeometry(0.02, 0.006, 0.006), C.gold, { x: 0.28, y: 0.035, z: 0.44, rz: 0.5 }, "shiny");
+    b.add(new THREE.TorusGeometry(0.04, 0.012, 4, 8, Math.PI), C.wood, { x: -0.36, y: 0.0, z: 0.25, ry: Math.PI / 2 });
   },
   // Najdi mud house: thick walls, crenellations, beam ends, a carved door.
   house1(b) {
@@ -166,6 +195,14 @@ const MAKERS = {
     b.add(new THREE.ConeGeometry(0.035, 0.05, 3), C.mudDark, { x: -0.18, y: 0.24, z: 0.305, rz: Math.PI });
     b.add(new THREE.ConeGeometry(0.035, 0.05, 3), C.mudDark, { x: -0.06, y: 0.24, z: 0.305, rz: Math.PI });
     b.box(0.08, 0.06, 0.022, C.light, { x: -0.12, y: 0.15, z: 0.3 }, "lights");
+    // white lime trim around the door, a corner buttress, a small yard with a water jar
+    b.box(0.17, 0.02, 0.025, C.plaster, { x: 0.12, y: 0.2, z: 0.3 });
+    b.box(0.02, 0.2, 0.025, C.plaster, { x: 0.035, z: 0.3 }); b.box(0.02, 0.2, 0.025, C.plaster, { x: 0.205, z: 0.3 });
+    b.box(0.1, 0.4, 0.1, C.mudDark, { x: -0.33, z: -0.28 });
+    b.box(0.06, 0.05, 0.02, C.wood, { x: -0.18, y: 0.15, z: 0.305 });
+    b.box(0.3, 0.1, 0.03, C.mud, { x: 0.22, z: 0.44 }); b.box(0.03, 0.1, 0.14, C.mud, { x: 0.36, z: 0.37 });
+    b.add(new THREE.SphereGeometry(0.035, 7, 5), "#b5683c", { x: -0.3, y: 0.035, z: 0.4, sy: 1.2 });
+    b.box(0.6, 0.006, 0.2, "#d8b583", { x: 0, z: 0.4 });
   },
   // شعبي: two floors of plaster, a roof tank, an AC box, a small yard wall.
   house2(b) {
@@ -179,6 +216,12 @@ const MAKERS = {
     b.box(0.12, 0.17, 0.02, C.teal, { x: 0.2, z: 0.225 });
     b.cyl(0.07, 0.07, 0.1, C.white, { x: -0.18, y: 0.53, z: -0.15 }, 10);
     b.box(0.1, 0.07, 0.06, C.grey, { x: 0.33, y: 0.3, z: 0.05 });
+    acUnit(b, -0.25, 0.3, 0.24); acUnit(b, 0.05, 0.3, 0.24);
+    dish(b, 0.18, 0.53, -0.2);
+    b.box(0.7, 0.05, 0.6, C.plaster, { y: 0.53, z: -0.06, sx: 1, sy: 1 });
+    b.box(0.2, 0.13, 0.02, "#2f6d6a", { x: 0.2, z: 0.46 });
+    pot(b, -0.36, 0.38); pot(b, -0.25, 0.38, 0.8);
+    b.box(0.9, 0.006, 0.9, "#d9cdb3");
   },
   // فيلا: white villa, sand-stone trim, palm in the yard, gate and a car.
   house3(b) {
@@ -194,6 +237,11 @@ const MAKERS = {
     b.box(0.12, 0.2, 0.02, C.wood, { x: 0.24, z: 0.135 });
     palm(b, -0.36, 0.3, 0.75);
     car(b, 0.22, 0.32, 0, "#e6e6e6");
+    b.box(0.94, 0.006, 0.94, "#ded4bf");
+    b.box(0.3, 0.008, 0.2, C.grass, { x: -0.25, z: 0.3 });
+    acUnit(b, -0.3, 0.6, -0.25); acUnit(b, -0.15, 0.6, -0.25); dish(b, 0.1, 0.6, -0.3);
+    for (const x of [-0.16, 0.16]) { b.box(0.04, 0.22, 0.04, C.stone, { x: x * 0.95 + 0.22 - 0.22, z: 0.48 }); b.box(0.03, 0.03, 0.03, C.light, { x: x * 0.95, y: 0.22, z: 0.48 }, "lights"); }
+    b.box(0.22, 0.012, 0.18, C.wood, { x: 0.24, y: 0.36, z: 0.1 });
   },
   // عمارة: a tall block with glass bands and roof tanks.
   house4(b) {
@@ -209,6 +257,10 @@ const MAKERS = {
     b.box(0.82, 0.04, 0.74, C.stone, { y: h });
     for (const x of [-0.2, 0.1]) b.cyl(0.06, 0.06, 0.1, C.white, { x, y: h + 0.04, z: -0.15 }, 10);
     b.box(0.2, 0.14, 0.03, C.glass, { y: 0, z: 0.355 }, "shiny");
+    for (let f = 1; f < 7; f++) for (const x of [-0.24, 0.24]) { b.box(0.22, 0.012, 0.08, C.stone, { x, y: 0.08 + f * 0.21, z: 0.39 }); b.box(0.22, 0.05, 0.008, "#d6d1c6", { x, y: 0.09 + f * 0.21, z: 0.43 }); }
+    b.box(0.36, 0.02, 0.16, C.stone, { y: 0.2, z: 0.43 });
+    dish(b, 0.25, h + 0.04, 0.2); acUnit(b, -0.3, h + 0.04, 0.2); acUnit(b, 0.3, h + 0.04, -0.25);
+    b.box(0.94, 0.006, 0.94, "#d6cfc0");
   },
 
   grocery(b) {
@@ -356,6 +408,10 @@ const MAKERS = {
     b.add(new THREE.ConeGeometry(0.07, 0.1, 4), C.mud, { x: 0.3, y: 0.98, z: 0.22, ry: Math.PI / 4 });
     b.box(0.04, 0.05, 0.02, C.light, { x: 0.3, y: 0.8, z: 0.28 }, "lights");
     b.box(0.3, 0.05, 0.022, C.light, { x: -0.18, y: 0.2, z: 0.281 }, "lights");
+    b.box(0.92, 0.006, 0.3, "#e3c9a0", { z: 0.36 });
+    b.box(0.03, 0.1, 0.3, C.mud, { x: -0.45, z: 0.36 }); b.box(0.03, 0.1, 0.3, C.mud, { x: 0.45, z: 0.36 });
+    for (const x of [-0.3, -0.1]) b.box(0.03, 0.04, 0.03, C.light, { x, y: 0.26, z: 0.3 }, "lights");
+    for (let i = 0; i < 3; i++) b.box(0.18, 0.008, 0.08, ["#8f1f1a", "#2f6d6a", "#8f1f1a"][i], { x: -0.3 + i * 0.2, z: 0.36 });
   },
   bigmosque(b) {
     b.box(0.92, 0.42, 0.84, C.white);
@@ -434,6 +490,56 @@ const MAKERS = {
     windowsRow(b, 0.92, 0.24, 0.181, 6); nightWindows(b, 0.92, 0.24, 0.183, 6);
   },
 
+  // ---------- life and scenery (used by the world, not by the build menu) ----------
+
+  camel(b) {
+    const hide = "#c99a5e", dark = "#a77a45";
+    b.add(new THREE.SphereGeometry(0.1, 8, 6), hide, { y: 0.24, sx: 1.5, sy: 0.8, sz: 0.85 });
+    b.add(new THREE.SphereGeometry(0.06, 7, 5), hide, { x: -0.01, y: 0.32, sx: 1.2 });
+    for (const [x, z] of [[0.09, 0.04], [0.09, -0.04], [-0.09, 0.04], [-0.09, -0.04]]) b.cyl(0.012, 0.014, 0.2, dark, { x, z }, 5);
+    b.add(new THREE.CylinderGeometry(0.022, 0.03, 0.18, 6), hide, { x: 0.18, y: 0.31, rz: -0.75 });
+    b.add(new THREE.BoxGeometry(0.08, 0.04, 0.04), hide, { x: 0.25, y: 0.38 });
+    b.add(new THREE.BoxGeometry(0.02, 0.05, 0.01), dark, { x: -0.16, y: 0.22, rz: 0.4 });
+    b.box(0.08, 0.012, 0.13, C.red, { x: -0.01, y: 0.355 });
+  },
+  personM(b) {
+    b.cyl(0.026, 0.034, 0.12, C.white, {}, 6);
+    b.add(new THREE.SphereGeometry(0.02, 6, 5), "#b98a63", { y: 0.135 });
+    b.add(new THREE.ConeGeometry(0.03, 0.04, 6), C.red, { y: 0.16 });
+  },
+  personF(b) {
+    b.cyl(0.024, 0.036, 0.12, "#1c1a1d", {}, 6);
+    b.add(new THREE.SphereGeometry(0.021, 6, 5), "#1c1a1d", { y: 0.135 });
+  },
+  acacia(b) {
+    b.cyl(0.018, 0.026, 0.22, "#6e5133", {}, 5);
+    for (const [x, z, r] of [[0.06, 0.02, 1], [-0.05, -0.03, -1]]) b.add(new THREE.CylinderGeometry(0.008, 0.012, 0.14, 4), "#6e5133", { x: x * 0.6, y: 0.27, z, rz: r * 0.7 });
+    b.add(new THREE.CylinderGeometry(0.2, 0.15, 0.06, 7), "#7f9a4a", { y: 0.33, sz: 0.85 });
+    b.add(new THREE.CylinderGeometry(0.13, 0.12, 0.05, 6), "#93ad58", { x: 0.03, y: 0.37, z: 0.02 });
+  },
+  shrub(b) {
+    for (let i = 0; i < 3; i++) b.add(new THREE.IcosahedronGeometry(0.045 + i * 0.012, 0), i % 2 ? "#a3a35c" : "#8c9550", { x: Math.cos(i * 2.2) * 0.04, y: 0.03, z: Math.sin(i * 2.2) * 0.04, sy: 0.7 });
+  },
+  grassTuft(b) {
+    for (let i = 0; i < 5; i++) b.add(new THREE.ConeGeometry(0.008, 0.09, 3), "#b9a865", { x: Math.cos(i * 1.3) * 0.02, y: 0.04, z: Math.sin(i * 1.3) * 0.02, rx: Math.cos(i) * 0.3, rz: Math.sin(i) * 0.3 });
+  },
+  pebbles(b) {
+    for (let i = 0; i < 5; i++) b.add(new THREE.DodecahedronGeometry(0.02 + (i % 3) * 0.01, 0), i % 2 ? "#a89b86" : "#c2b49c", { x: Math.cos(i * 2.6) * 0.12, y: 0.005, z: Math.sin(i * 1.7) * 0.12, sy: 0.5 });
+  },
+  lamp(b) {
+    b.cyl(0.008, 0.012, 0.42, C.dark, {}, 5);
+    b.box(0.12, 0.012, 0.012, C.dark, { x: 0.05, y: 0.42 });
+    b.box(0.04, 0.012, 0.03, C.grey, { x: 0.1, y: 0.405 });
+    b.box(0.036, 0.008, 0.026, "#fff1b8", { x: 0.1, y: 0.398 }, "lights");
+  },
+  mesa(b, ground, seed = 1) {
+    const r = (k) => ((Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
+    const w = 3 + r(1) * 4, d = 2 + r(2) * 3, h = 1.2 + r(3) * 1.8;
+    b.add(new THREE.CylinderGeometry(0.7, 1, h, 7), "#c49562", { y: h / 2, sx: w, sz: d });
+    b.add(new THREE.CylinderGeometry(0.72, 0.74, h * 0.12, 7), "#b07f4f", { y: h * 0.55, sx: w, sz: d });
+    b.add(new THREE.CylinderGeometry(0.6, 0.7, h * 0.25, 7), "#d7ab74", { y: h + h * 0.12, sx: w, sz: d });
+  },
+
   rock(b, ground, seed = 1) {
     const r = (k) => ((Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
     for (let i = 0; i < 3; i++) b.add(new THREE.DodecahedronGeometry(0.1 + r(i) * 0.1, 0), i % 2 ? "#a99a85" : "#beae96", { x: (r(i + 3) - 0.5) * 0.5, y: 0.05, z: (r(i + 6) - 0.5) * 0.5, sy: 0.6 + r(i + 9) * 0.4, ry: r(i) * 3 });
@@ -454,6 +560,10 @@ export function model(key, ground = "sand") {
   }
   return cache.get(k);
 }
+
+/** Build a one-off merged model from a function that places parts with the Builder. */
+export function compose(fn) { const b = new Builder(); fn(b, MAKERS); return b.done(); }
+export function makerSeeded(key, seed) { const b = new Builder(); MAKERS[key](b, "sand", seed); return b.done(); }
 
 export function modelKey(id, lvl) {
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;

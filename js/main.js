@@ -27,7 +27,7 @@ let playing = false;
 let speed = 1;
 let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
-const DAY_MS = 3000;
+const DAY_MS = 6000; // one game day: six seconds at normal speed
 
 function save() { S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget }; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
 
@@ -147,14 +147,15 @@ function showReach(x, y, def) {
 
 // ---------- build dock ----------
 
+const F = 'fill="currentColor" fill-opacity=".2"';
 const ICONS = {
-  home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>',
-  shop: '<path d="M4 9h16l-1-5H5z"/><path d="M5 9v11h14V9M9 20v-6h6v6"/>',
-  farm: '<path d="M12 21V9"/><path d="M12 9c-3-4-7-4-9-3 3 0 6 1 9 3zM12 9c3-4 7-4 9-3-3 0-6 1-9 3zM12 9c-1-3 0-5 2-6-1 2-1 4-2 6z"/>',
-  util: '<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>',
-  serv: '<path d="M4 20h16M6 20V11a6 6 0 0 1 12 0v9M12 5V2"/>',
-  road: '<path d="M8 3 5 21M16 3l3 18M12 4v3M12 10v3M12 16v3"/>',
-  bulldoze: '<path d="M4 20h16M7 16l4-9 6 3-4 9"/><path d="M11 7l2-4"/>'
+  home: `<path ${F} d="M4 20V10h16v10z"/><path d="M3 20h18M4 20V10h16v10M4 10l1.6-2.5L7.2 10l1.6-2.5L10.4 10 12 7.5l1.6 2.5 1.6-2.5 1.6 2.5 1.6-2.5L20 10M10.5 20v-4.5a1.5 1.5 0 0 1 3 0V20M6.5 13h2M15.5 13h2"/>`,
+  shop: `<path ${F} d="M3 9h18l-2-5H5z"/><path d="M3 9h18l-2-5H5zM3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 11.5V20h14v-8.5M10 20v-5h4v5M3 20h18"/>`,
+  farm: `<path d="M12.5 21c-.3-4 .2-8-.5-11.5"/><path ${F} d="M12 9.5C9 6.5 5.5 6.5 3 8c3.5-.3 6 .5 9 1.5zM12 9.5c3-3 6.5-3 9-1.5-3.5-.3-6 .5-9 1.5zM12 9.5c-2-3.5-1-6 1-7.5-1 2.5-1 5-1 7.5zM12 9.5c-3.5 0-6 2-7 5 2-2 4.5-3.5 7-5zM12 9.5c3.5 0 6 2 7 5-2-2-4.5-3.5-7-5z"/><path d="M12 9.5C9 6.5 5.5 6.5 3 8c3.5-.3 6 .5 9 1.5zM12 9.5c3-3 6.5-3 9-1.5-3.5-.3-6 .5-9 1.5zM12 9.5c-3.5 0-6 2-7 5 2-2 4.5-3.5 7-5zM12 9.5c3.5 0 6 2 7 5-2-2-4.5-3.5-7-5z"/><path d="M7 21h11"/>`,
+  util: `<path ${F} d="M9 3s5.5 6.2 5.5 10.2a5.5 5.5 0 0 1-11 0C3.5 9.2 9 3 9 3z"/><path d="M9 3s5.5 6.2 5.5 10.2a5.5 5.5 0 0 1-11 0C3.5 9.2 9 3 9 3z"/><path d="m18.5 6-2.5 5h3.5L17 17" stroke-width="2.1"/>`,
+  serv: `<path ${F} d="M5 20v-6h10v6zM6 14c0-3 1.8-5 4-6.2 2.2 1.2 4 3.2 4 6.2z"/><path d="M3 20h18M5 20v-6h10v6M6 14c0-3 1.8-5 4-6.2 2.2 1.2 4 3.2 4 6.2M10 7.8V5.5M18 20V9l1-2.5L20 9v11M8.5 20v-2.5a1.5 1.5 0 0 1 3 0V20"/>`,
+  road: `<path ${F} d="M8 3h8l4 18H4z"/><path d="M8 3 4 21M16 3l4 18M12 4v3M12 10v3M12 16v3"/>`,
+  bulldoze: `<path ${F} d="M3 13h9v4H3zM5 9h5v4H5z"/><path d="M3 13h9v4H3zM5 9h5v4H5zM12 14l4-3 2 1-1 5h-5M18 12l3 5M4 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M9 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0"/>`
 };
 const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name })), { id: "bulldoze", name: "إزالة" }];
 function renderCats() {
@@ -210,7 +211,9 @@ $("toolCancel").addEventListener("click", () => { sfx.tap(); setTool(null); });
 
 // ---------- HUD ----------
 
-const FACES = ["😟", "😐", "🙂", "😄"];
+const MOUTHS = ["M8.5 16.5c1.8-2 5.2-2 7 0", "M9 15.5h6", "M8.5 14.5c1.8 2 5.2 2 7 0", "M8 13.5c2 3.5 6 3.5 8 0z"];
+const FACE_COLORS = ["#d9573f", "#d9a540", "#7cb342", "#3f9a5c"];
+const face = (k) => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="${FACE_COLORS[k]}"/><circle cx="9" cy="10" r="1.3" fill="#2f2114"/><circle cx="15" cy="10" r="1.3" fill="#2f2114"/><path d="${MOUTHS[k]}" stroke="#2f2114" stroke-width="1.6" fill="${k === 3 ? "#2f2114" : "none"}" stroke-linecap="round"/></svg>`;
 function refresh() {
   A = analyze(S);
   $("sMoney").textContent = money(S.money);
@@ -221,7 +224,7 @@ function refresh() {
   $("sGrow").textContent = gr ? `${gr > 0 ? "+" : "−"}${ar(Math.abs(gr))} اليوم` : `السعة ${money(A.cap)}`;
   $("sGrow").className = gr > 0 ? "up" : gr < 0 ? "down" : "";
   $("sHappy").textContent = `${ar(Math.round(S.happy))}٪`;
-  $("sFace").textContent = FACES[S.happy < 35 ? 0 : S.happy < 55 ? 1 : S.happy < 75 ? 2 : 3];
+  $("sFace").innerHTML = face(S.happy < 35 ? 0 : S.happy < 55 ? 1 : S.happy < 75 ? 2 : 3);
   const set = (el, r, show) => { el.style.width = `${Math.round((show ? r : 1) * 100)}%`; el.classList.toggle("low", show && r < 0.95); };
   set($("sWater"), A.waterRatio, true);
   set($("sPower"), A.powerRatio, A.grid);
@@ -243,7 +246,7 @@ document.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("cli
 function toast(text, kind = "") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  el.textContent = text;
+  el.textContent = ar(text);
   $("toasts").append(el);
   setTimeout(() => el.classList.add("out"), kind === "era" ? 3800 : 2300);
   setTimeout(() => el.remove(), kind === "era" ? 4200 : 2700);
@@ -518,6 +521,7 @@ addEventListener("pagehide", save);
 Object.defineProperty(window, "__S", { get: () => S });
 window.__world = world;
 window.__play = startPlaying;
+window.__tod = (t) => { tod = t; };
 
 // ---------- start ----------
 

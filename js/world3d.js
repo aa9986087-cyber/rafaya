@@ -2,11 +2,73 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B } from "./data.js";
 import { idx, inMap } from "./sim.js";
-import { model, modelKey } from "./models.js";
+import { model, modelKey, makerSeeded } from "./models.js";
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
 const roadAt = (t) => t?.b && (t.b.id === "road" || t.b.id === "asphalt");
+/** A steady pseudo-random number in 0..1 for a tile (the same every time). */
+const hash = (x, y, k = 0) => {
+  let n = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(k | 0, 1442695041)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+};
+const easeBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+
+/** Sand with soft wind ripples and grain, drawn once into a small repeating texture. */
+function sandTexture() {
+  const S = 256, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d"), img = g.createImageData(S, S), TAU = Math.PI * 2;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const warp = Math.sin(TAU * y * 2 / S) * 0.05 + Math.sin(TAU * (y * 5 + x) / S) * 0.012;
+    const ripple = Math.sin(TAU * (x * 7 / S + warp)) * 0.5 + 0.5;
+    const v = 0.92 + ripple * ripple * 0.05 + (rnd() - 0.5) * 0.06;
+    const i = (y * S + x) * 4;
+    img.data[i] = Math.min(255, 255 * v); img.data[i + 1] = Math.min(255, 250 * v); img.data[i + 2] = Math.min(255, 240 * v); img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** A warm round glow for light pools on the ground at night. */
+function glowTexture() {
+  const S = 64, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d"), grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, "rgba(255,210,140,1)"); grad.addColorStop(0.4, "rgba(255,180,90,0.45)"); grad.addColorStop(1, "rgba(255,160,60,0)");
+  g.fillStyle = grad; g.fillRect(0, 0, S, S);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Soft round cloud shadows that drift over the land. */
+function cloudTexture() {
+  const S = 256, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 9; i++) {
+    const cx = rnd() * S, cy = rnd() * S, r = 20 + rnd() * 34;
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S], [S, S], [-S, -S], [S, -S], [-S, S]]) {
+      for (let k = 0; k < 4; k++) {
+        const x = cx + ox + (k - 1.5) * r * 0.55, y = cy + oy + Math.sin(k * 2) * r * 0.25, rr = r * (0.7 + (k % 2) * 0.3);
+        const grad = g.createRadialGradient(x, y, 0, x, y, rr);
+        grad.addColorStop(0, "rgba(0,0,0,0.55)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+        g.fillStyle = grad; g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+      }
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 
 export class World {
   constructor(canvas, { quality = "high" } = {}) {
@@ -73,51 +135,138 @@ export class World {
       p.setY(i, dune - 0.02);
     }
     outer.computeVertexNormals();
-    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#e6c98f", roughness: 1 }));
+    const uv = outer.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.3, p.getZ(i) * 0.3);
+    this.sand = sandTexture();
+    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#f1d49c", map: this.sand, roughness: 1 }));
     desert.receiveShadow = true;
     this.scene.add(desert);
     this.ground = null;
+
+    // Flat-topped mesas of Najd on the horizon.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + hash(i, 1) * 0.3, r = 26 + hash(i, 2) * 14;
+      const geo = makerSeeded("mesa", i + 1).matte;
+      const m = new THREE.Mesh(geo, this.mats.matte);
+      m.position.set(Math.cos(a) * r, -0.1, Math.sin(a) * r);
+      m.rotation.y = hash(i, 3) * Math.PI;
+      m.receiveShadow = true;
+      this.scene.add(m);
+    }
+
+    // Desert plants all around the town (outside the buildable land).
+    const out = { shrub: [], grassTuft: [], acacia: [], rock: [] };
+    for (let i = 0; i < (this.quality === "low" ? 500 : 1100); i++) {
+      const x = (hash(i, 11) - 0.5) * 70, z = (hash(i, 12) - 0.5) * 70;
+      if (Math.max(Math.abs(x), Math.abs(z)) < HALF + 0.6) continue;
+      const pick = hash(i, 13);
+      const key = pick < 0.42 ? "grassTuft" : pick < 0.8 ? "shrub" : pick < 0.93 ? "acacia" : "rock";
+      out[key].push(this.place(x, z, hash(i, 14) * 6, key === "acacia" ? 0.8 + hash(i, 15) * 0.6 : 0.7 + hash(i, 15) * 0.6));
+    }
+    for (const [key, list] of Object.entries(out)) this.addInstances(model(key), list, key === "acacia");
+
+    // Drifting cloud shadows.
+    if (this.quality !== "low") {
+      const g = new THREE.PlaneGeometry(90, 90); g.rotateX(-Math.PI / 2);
+      this.clouds = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: "#2a1a08", map: cloudTexture(), transparent: true, opacity: 0.2, depthWrite: false }));
+      this.clouds.material.map.repeat.set(2.2, 2.2);
+      this.clouds.position.y = 0.03;
+      this.clouds.renderOrder = 1;
+      this.scene.add(this.clouds);
+    }
   }
+
+  /** A transform at a ground point with a turn and a size. */
+  place(x, z, ry = 0, s = 1, y = 0) {
+    const m = new THREE.Matrix4();
+    m.compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(s, s, s));
+    return m;
+  }
+
+  /** Instanced meshes for one model at many places. Returns the meshes so they can be removed. */
+  addInstances(geo, list, shadow = false) {
+    const meshes = [];
+    if (!geo || !list.length) return meshes;
+    for (const set of ["matte", "shiny", "lights"]) {
+      if (!geo[set]) continue;
+      const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], list.length);
+      list.forEach((m, i) => mesh.setMatrixAt(i, m));
+      mesh.castShadow = shadow && set !== "lights" && this.quality !== "low";
+      mesh.receiveShadow = set !== "lights";
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      meshes.push(mesh);
+    }
+    return meshes;
+  }
+
+  removeAll(list) { for (const m of list || []) { this.scene.remove(m); m.dispose(); } }
 
   /** The town's own tiles: sand, wadi, with a little colour noise. Rebuilt when the land changes. */
   syncTiles(s) {
     if (this.ground) { this.scene.remove(this.ground); this.ground.geometry.dispose(); }
-    const pos = [], col = [], c = new THREE.Color();
+    const pos = [], col = [], uvs = [], c = new THREE.Color();
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? "#c8b277" : "#ecd3a0");
-      c.offsetHSL(0, 0, ((n % 7) - 3) * 0.008);
+      c.set(t.t === "wadi" ? "#c6ad72" : "#f1d49c");
+      c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
       const x0 = x - HALF, z0 = y - HALF;
-      const quad = [[x0, z0], [x0 + 1, z0], [x0 + 1, z0 + 1], [x0, z0], [x0 + 1, z0 + 1], [x0, z0 + 1]];
-      for (const [qx, qz] of quad) { pos.push(qx, 0, qz); col.push(c.r, c.g, c.b); }
+      const quad = [[x0, z0], [x0, z0 + 1], [x0 + 1, z0 + 1], [x0, z0], [x0 + 1, z0 + 1], [x0 + 1, z0]];
+      for (const [qx, qz] of quad) { pos.push(qx, 0, qz); col.push(c.r, c.g, c.b); uvs.push(qx * 0.3, qz * 0.3); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     g.computeVertexNormals();
-    this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+    this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1 }));
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
-    // Wadi scrub: little green tufts on fertile ground.
-    if (!this.scrub) {
-      const tuft = new THREE.IcosahedronGeometry(0.06, 0);
-      const pts = [];
-      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "wadi") for (let k = 0; k < 2; k++) {
-        const n = ((x * 92821 + y * 68917 + k * 31) % 1000) / 1000;
-        pts.push([x - HALF + 0.2 + n * 0.6, y - HALF + 0.2 + ((n * 7) % 1) * 0.6]);
-      }
-      this.scrub = new THREE.InstancedMesh(tuft, new THREE.MeshStandardMaterial({ color: "#7d9a4a", roughness: 1 }), pts.length);
-      const m = new THREE.Matrix4();
-      pts.forEach(([x, z], i) => { m.makeScale(1, 0.6, 1); m.setPosition(x, 0.02, z); this.scrub.setMatrixAt(i, m); });
-      this.scene.add(this.scrub);
+    // After rain the wadi runs: a thin sheet of water along its bed.
+    if (this.flood) { this.scene.remove(this.flood); this.flood.geometry.dispose(); }
+    const wp = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "wadi") {
+      const x0 = x - HALF + 0.08, z0 = y - HALF + 0.08, x1 = x0 + 0.84, z1 = z0 + 0.84;
+      for (const [qx, qz] of [[x0, z0], [x0, z1], [x1, z1], [x0, z0], [x1, z1], [x1, z0]]) wp.push(qx, 0.012, qz);
     }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute("position", new THREE.Float32BufferAttribute(wp, 3));
+    wg.computeVertexNormals();
+    this.flood = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: "#5aa6c4", roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }));
+    this.flood.visible = false;
+    this.scene.add(this.flood);
+  }
+
+  /** Plants and pebbles on land nobody has built on yet. */
+  syncScenery(s) {
+    this.removeAll(this.sceneryMeshes);
+    const lists = { shrub: [], grassTuft: [], acacia: [], pebbles: [] };
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const t = s.tiles[idx(x, y)];
+      if (t.b || t.t === "rock") continue;
+      const p = tileCenter(x, y), h = hash(x, y, 5), j = (k) => (hash(x, y, k) - 0.5) * 0.6;
+      if (t.t === "wadi") {
+        if (h < 0.1) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.7 + h * 3));
+        else if (h < 0.55) lists.shrub.push(this.place(p.x + j(6), p.z + j(7), h * 40, 0.8 + h));
+        if (hash(x, y, 8) < 0.45) lists.pebbles.push(this.place(p.x + j(9), p.z + j(10), h * 9));
+        if (hash(x, y, 11) < 0.5) lists.grassTuft.push(this.place(p.x + j(12), p.z + j(13), h * 7, 0.9));
+      } else {
+        if (h < 0.035) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.8 + h * 6));
+        else if (h < 0.16) lists.shrub.push(this.place(p.x + j(6), p.z + j(7), h * 40, 0.7 + h));
+        else if (h < 0.3) lists.grassTuft.push(this.place(p.x + j(6), p.z + j(7), h * 30, 0.8));
+      }
+    }
+    this.sceneryMeshes = Object.entries(lists).flatMap(([k, l]) => this.addInstances(model(k), l, k === "acacia"));
   }
 
   // ---------- roads ----------
 
   syncRoads(s) {
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); }
+    this.removeAll(this.lampMeshes);
+    const lamps = [];
+    this.lampGlows = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
       c.set(color);
@@ -128,6 +277,11 @@ export class World {
       if (!roadAt(t)) continue;
       const paved = t.b.id === "asphalt";
       const cx = x - HALF + 0.5, cz = y - HALF + 0.5;
+      if (paved) {
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.004, (x + y) % 2 ? "#d9cfbb" : "#d2c7b1");
+        // a street lamp on every other tile, at a corner without a road
+        if ((x + y) % 2 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
+      }
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
       const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
@@ -145,6 +299,7 @@ export class World {
         if (link(0, 1) || link(0, -1)) for (const o of [-0.12, 0.12]) quad(cx + o - 0.015, cz - 0.5, cx + o + 0.015, cz + 0.5, 0.007, "#8a6842");
       }
     }
+    this.lampMeshes = this.addInstances(model("lamp"), lamps, true);
     if (!pos.length) { this.roadMesh = null; return; }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -163,9 +318,12 @@ export class World {
     const push = (key, ground, m) => { const k = key === "palms" ? `palms:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
+    const seen = new Map(), where = new Map(), glows = [];
+    this.anims ||= new Map();
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const p = tileCenter(x, y);
+      if (this.prevKeys?.has(idx(x, y)) && !t.b) this.puff(p, 12);
       if (!t.b) {
         if (t.t === "rock") { q.setFromAxisAngle(up, ((x * 7 + y * 13) % 8) * 0.8); m4.compose(p, q, sc); push("rock", "sand", m4.clone()); }
         continue;
@@ -177,7 +335,14 @@ export class World {
       for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
-      push(modelKey(t.b.id, t.b.lvl), t.t, m4.clone());
+      const key = modelKey(t.b.id, t.b.lvl), gk = key === "palms" ? `palms:${t.t}` : key;
+      push(key, t.t, m4.clone());
+      const i = idx(x, y);
+      seen.set(i, gk);
+      where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
+      if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
+      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "clinic", "hotel", "mall", "bigmosque"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
+      if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
       if (["factory", "generator", "powerplant", "mandi", "datefactory"].includes(t.b.id)) this.smokers.push(p.clone());
     }
     // Reuse or rebuild the instanced meshes.
@@ -209,16 +374,23 @@ export class World {
       }
     }
     this.syncSmoke();
+    this.prevKeys = seen;
+    this.buildingGlows = glows;
+    this.where = where;
+    this.homes = [...where.entries()].filter(([, w]) => w.k === "tent0" || w.k.startsWith("house")).map(([i]) => i);
   }
 
   sync(s, what = { tiles: true, roads: true, buildings: true }) {
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
-    if (what.buildings) this.syncBuildings(s);
+    if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); }
+    this.syncGlows();
+    if (this.flood) this.flood.visible = s.events.some((e) => e.id === "rain");
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
     this.state = s;
     this.syncCars();
+    this.syncLife(s);
   }
 
   // ---------- life: cars and smoke ----------
@@ -289,6 +461,163 @@ export class World {
     p.needsUpdate = true;
   }
 
+  /** Pools of warm light under lamps, by doors and around tent hearths. Seen only at night. */
+  syncGlows() {
+    const all = [...(this.lampGlows || []), ...(this.buildingGlows || [])];
+    if (!this.glowMesh || this.glowMesh.instanceMatrix.count < all.length) {
+      if (this.glowMesh) { this.scene.remove(this.glowMesh); this.glowMesh.dispose(); }
+      const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
+      this.glowMesh = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }), Math.max(64, Math.ceil(all.length * 1.5)));
+      this.glowMesh.frustumCulled = false;
+      this.glowMesh.renderOrder = 2;
+      this.scene.add(this.glowMesh);
+    }
+    all.forEach(([x, z, r], i) => this.glowMesh.setMatrixAt(i, this.place(x, z, 0, r, 0.02)));
+    this.glowMesh.count = all.length;
+    this.glowMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---------- life: people walking, camels grazing, dust when building ----------
+
+  syncLife(s) {
+    if (!this.people) {
+      this.people = [];
+      this.peopleMesh = ["personM", "personF"].map((k) => {
+        const mesh = new THREE.InstancedMesh(model(k).matte, this.mats.matte, 60);
+        mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = this.quality === "high";
+        this.scene.add(mesh); return mesh;
+      });
+      this.camels = [];
+      const cg = model("camel").matte;
+      this.camelMesh = new THREE.InstancedMesh(cg, this.mats.matte, 8);
+      this.camelMesh.count = 0; this.camelMesh.frustumCulled = false; this.camelMesh.castShadow = this.quality !== "low";
+      this.scene.add(this.camelMesh);
+    }
+    // People: more as the town grows, only where there are roads.
+    const want = this.quality === "low" || !this.roads.length ? 0 : Math.min(120, Math.round(4 + s.pop / 6));
+    while (this.people.length < want) {
+      const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
+      this.people.push({ x, y, tx: x, ty: y, t: Math.random(), speed: 0.12 + Math.random() * 0.1, side: Math.random() < 0.5 ? 1 : -1, f: this.people.length % 3 === 2 });
+    }
+    this.people.length = Math.min(this.people.length, want);
+    for (const p of this.people) if (!roadAt(s.tiles[idx(p.tx, p.ty)]) || !roadAt(s.tiles[idx(p.x, p.y)])) {
+      const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)] || [0, 0]; Object.assign(p, { x, y, tx: x, ty: y, t: 1 });
+    }
+    // Camels: a small herd while the town is still young, grazing on open land.
+    const herd = s.era >= 3 ? 0 : s.era === 2 ? 3 : 6;
+    const open = (x, y) => inMap(x, y) && !s.tiles[idx(x, y)].b && s.tiles[idx(x, y)].t !== "rock";
+    if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1])) {
+      let best = null, bestScore = -1;
+      for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
+        if (!open(x, y)) continue;
+        let free = 0;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) free += open(x + dx, y + dy) ? 1 : 0;
+        const score = free * 10 - Math.hypot(x - HALF, y - HALF - 4) + (s.tiles[idx(x, y)].t === "wadi" ? 8 : 0);
+        if (score > bestScore) { bestScore = score; best = [x, y]; }
+      }
+      this.herdHome = best || [2, 2];
+    }
+    while (this.camels.length < herd) {
+      const p = tileCenter(this.herdHome[0], this.herdHome[1]);
+      this.camels.push({ x: p.x + Math.random() - 0.5, z: p.z + Math.random() - 0.5, tx: p.x, tz: p.z, wait: Math.random() * 4, ry: Math.random() * 6 });
+    }
+    this.camels.length = herd;
+    this.camelMesh.count = herd;
+  }
+
+  stepLife(dt) {
+    if (!this.people) return;
+    const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+    const counts = [0, 0];
+    for (const p of this.people) {
+      p.t += dt * p.speed;
+      if (p.t >= 1) {
+        p.t = 0; p.px = p.x; p.py = p.y; p.x = p.tx; p.y = p.ty;
+        const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(p.x + dx, p.y + dy) && roadAt(s.tiles[idx(p.x + dx, p.y + dy)]) && !(p.x + dx === p.px && p.y + dy === p.py));
+        const pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [(p.px ?? p.x) - p.x, (p.py ?? p.y) - p.y];
+        p.tx = p.x + pick[0]; p.ty = p.y + pick[1];
+        if (!inMap(p.tx, p.ty) || !roadAt(s.tiles[idx(p.tx, p.ty)])) { p.tx = p.x; p.ty = p.y; }
+      }
+      const a = tileCenter(p.x, p.y), b = tileCenter(p.tx, p.ty);
+      v.lerpVectors(a, b, p.t);
+      const dx = b.x - a.x, dz = b.z - a.z;
+      if (dx || dz) { v.x += -dz * 0.4 * p.side; v.z += dx * 0.4 * p.side; } else { v.x += 0.4 * p.side; }
+      v.y = Math.abs(Math.sin(this.clock * 9 + p.speed * 50)) * 0.012;
+      q.setFromAxisAngle(up, Math.atan2(-dz, dx));
+      m4.compose(v, q, sc);
+      const k = p.f ? 1 : 0;
+      this.peopleMesh[k].setMatrixAt(counts[k]++, m4);
+    }
+    this.peopleMesh.forEach((m, k) => { m.count = counts[k]; m.instanceMatrix.needsUpdate = true; });
+
+    if (this.camels.length && this.herdHome) {
+      const home = tileCenter(this.herdHome[0], this.herdHome[1]);
+      this.camels.forEach((c, i) => {
+        const dx = c.tx - c.x, dz = c.tz - c.z, d = Math.hypot(dx, dz);
+        if (c.wait > 0) c.wait -= dt;
+        else if (d < 0.05) { c.wait = 2 + Math.random() * 6; c.tx = home.x + (Math.random() - 0.5) * 3.2; c.tz = home.z + (Math.random() - 0.5) * 3.2; }
+        else { const sp = Math.min(d, dt * 0.22); c.x += dx / d * sp; c.z += dz / d * sp; c.ry = Math.atan2(-dz, dx); }
+        const walking = c.wait <= 0 && d >= 0.05;
+        v.set(c.x, walking ? Math.abs(Math.sin(this.clock * 5 + i)) * 0.01 : 0, c.z);
+        q.setFromAxisAngle(up, c.ry);
+        m4.compose(v, q, sc);
+        this.camelMesh.setMatrixAt(i, m4);
+      });
+      this.camelMesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /** A burst of dust where something was built or knocked down. */
+  puff(p, n) {
+    if (this.quality === "low") return;
+    if (!this.dust) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(160 * 3).fill(-50), 3));
+      this.dust = new THREE.Points(g, new THREE.PointsMaterial({ color: "#e3cfa6", size: 0.2, transparent: true, opacity: 0.7, depthWrite: false }));
+      this.dust.frustumCulled = false;
+      this.dustParts = [];
+      this.scene.add(this.dust);
+    }
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 0.8;
+      this.dustParts.push({ x: p.x, y: 0.05, z: p.z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.3 + Math.random() * 0.5, life: 0.7 + Math.random() * 0.4 });
+    }
+    if (this.dustParts.length > 160) this.dustParts.splice(0, this.dustParts.length - 160);
+  }
+
+  stepEffects(dt) {
+    if (this.dust) {
+      const pos = this.dust.geometry.attributes.position;
+      this.dustParts = this.dustParts.filter((d) => (d.life -= dt) > 0);
+      for (let i = 0; i < 160; i++) {
+        const d = this.dustParts[i];
+        if (!d) { pos.setXYZ(i, 0, -50, 0); continue; }
+        d.x += d.vx * dt; d.z += d.vz * dt; d.y += d.vy * dt; d.vx *= 0.92; d.vz *= 0.92; d.vy *= 0.95;
+        pos.setXYZ(i, d.x, d.y, d.z);
+      }
+      pos.needsUpdate = true;
+    }
+    // New buildings rise out of the ground with a little bounce.
+    if (this.anims?.size && this.where) {
+      const m = new THREE.Matrix4(), sc = new THREE.Matrix4();
+      for (const [tile, t0] of this.anims) {
+        const w = this.where.get(tile), inst = w && this.instances.get(w.k);
+        const t = Math.min(1, (this.clock - t0) / 0.55);
+        if (!inst) { this.anims.delete(tile); continue; }
+        const e = easeBack(t);
+        sc.makeScale(0.85 + 0.15 * t, Math.max(0.02, e), 0.85 + 0.15 * t);
+        m.multiplyMatrices(w.m, sc);
+        for (const set of ["matte", "shiny", "lights"]) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
+        if (t >= 1) this.anims.delete(tile);
+      }
+    }
+    if (this.clouds) {
+      const o = this.clouds.material.map.offset;
+      o.x = (o.x + dt * 0.004) % 1; o.y = (o.y + dt * 0.0025) % 1;
+      this.clouds.material.opacity = 0.2 * (1 - this.night);
+    }
+  }
+
   // ---------- day and night ----------
 
   /** t in 0..1 over a full day (0 = midnight, 0.5 = noon). */
@@ -300,15 +629,16 @@ export class World {
     this.night = 1 - day;
     const dir = new THREE.Vector3(Math.cos(sunAngle) * 0.8, Math.max(0.25, elev + 0.25), 0.55).normalize();
     this.sun.position.copy(dir.multiplyScalar(40));
-    this.sun.intensity = 0.25 + day * 2.1;
-    this.sun.color.set(golden > 0.2 ? "#ffcf8a" : "#fff1d6");
-    this.hemi.intensity = 0.35 + day * 0.6;
-    const sky = new THREE.Color("#1b2645").lerp(new THREE.Color("#f6e2b8"), day);
+    this.sun.intensity = 0.55 + day * 1.8;
+    this.sun.color.set(day < 0.3 ? "#9fb4ff" : golden > 0.2 ? "#ffcf8a" : "#fff1d6");
+    this.hemi.intensity = 0.6 + day * 0.35;
+    const sky = new THREE.Color("#22305a").lerp(new THREE.Color("#f6e2b8"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? "#fff4dd" : "#8fa0d8");
     this.mats.lights.opacity = Math.min(1, this.night * 1.4);
+    if (this.glowMesh) this.glowMesh.material.opacity = Math.max(0, this.night * 0.95 - 0.15);
   }
 
   // ---------- camera ----------
@@ -415,6 +745,8 @@ export class World {
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);
     this.stepSmoke(dt);
+    this.stepLife(dt);
+    this.stepEffects(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
     this.renderer.render(this.scene, this.camera);

@@ -14,6 +14,12 @@ const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
     .replace(/^export \{[^}]*\};?\s*$/gm, "")
     .replace(/^export (const|function|let|class|async function) /gm, "$1 "))
   .join("\n");
+// Every module now shares one scope, so the same top-level name twice would break the page.
+const names = new Map();
+for (const m of mods) for (const [, n] of (await read(`js/${m}.js`)).matchAll(/^(?:export )?(?:const|let|function|class|async function) ([A-Za-z_$][\w$]*)/gm)) {
+  if (names.has(n) && !(n === "N")) throw new Error(`"${n}" is declared in both ${names.get(n)} and ${m}`);
+  names.set(n, m);
+}
 const bodyStart = html.indexOf(">", html.indexOf("<body")) + 1;
 const body = html.slice(bodyStart, html.indexOf("</body>")).replace(/<script[^>]*><\/script>/, "");
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
