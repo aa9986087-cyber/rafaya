@@ -20,9 +20,10 @@ export function autoplay(days = 250, seed = 42, log = false) {
     const a = analyze(s);
     // Keep water and power ahead of demand, then grow.
     if (a.waterRatio < 1) place(s.era >= 2 && !cantBuild(s, 0, 0, "desal") ? "desal" : s.era >= 1 ? "tank" : "well");
+    if (s.era >= 1 && !a.grid && s.money > B.generator.cost) place("generator");
     if (s.era >= 1 && a.powerRatio < 1) place(s.tech.solar ? "solar" : s.era >= 2 ? "powerplant" : "generator");
     if (a.unemployment > 0.3) place(s.era >= 1 ? (s.tech.packing ? "datefactory" : "souq") : "grocery");
-    if (s.money > 900) { place(order[i % order.length]); i++; place("road"); }
+    if (s.money > (s.era ? 900 : 350)) { place(order[i % order.length]); i++; place("road"); }
     if (s.money > 4500 && s.era >= 1) place(["police", "stadium", "mandi", "workshop"][d % 4]);
     if (s.money > 12000 && s.era >= 2) place(["hospital", "bigmosque", "mall", "factory"][d % 4]);
     for (const p of PLOTS) if (!s.owned[p.id] && s.money > plotPrice(s) * 1.5) buyPlot(s, p.id);

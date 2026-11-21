@@ -70,8 +70,8 @@ export const B = {
   hotel: { cat: "shop", name: "فندق", cost: 2600, upkeep: 30, era: 2, tech: "tourism", jobs: 30, income: 150, water: -8, power: -8, text: "يجيب الزوار والدخل." },
   mall: { cat: "shop", name: "مجمع تجاري", cost: 5200, upkeep: 60, era: 2, jobs: 70, income: 270, water: -10, power: -14, radius: 6, happy: 10, text: "وظائف كثيرة ودخل عالي." },
 
-  palms: { cat: "farm", name: "مزرعة نخل", cost: 150, upkeep: 2, era: 0, jobs: 5, income: 18, water: -5, text: "تمور ودخل. في الوادي تنتج أكثر." },
-  veg: { cat: "farm", name: "مزرعة خضار", cost: 200, upkeep: 3, era: 0, jobs: 6, income: 22, water: -6, text: "خضار للسوق." },
+  palms: { cat: "farm", name: "مزرعة نخل", cost: 150, upkeep: 2, era: 0, jobs: 5, income: 11, water: -5, text: "تمور ودخل. في الوادي تنتج أكثر." },
+  veg: { cat: "farm", name: "مزرعة خضار", cost: 200, upkeep: 3, era: 0, jobs: 6, income: 14, water: -6, text: "خضار للسوق." },
   workshop: { cat: "farm", name: "ورشة", cost: 400, upkeep: 6, era: 1, jobs: 12, income: 45, power: -4, radius: 2, pollute: 8, text: "وظائف، بس صوتها يزعج الجيران." },
   datefactory: { cat: "farm", name: "مصنع تمور", cost: 1800, upkeep: 25, era: 1, tech: "packing", jobs: 30, income: 110, water: -6, power: -10, radius: 3, pollute: 6, text: "يغلّف التمور. كل مزرعة نخل تزيد دخله." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
@@ -137,10 +137,10 @@ for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);
 
 /** Goals that guide a new mayor; each pays a reward. */
 export const GOALS = [
-  { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 150 },
-  { text: "وصّل الخيام بطريق", test: (s) => s.connectedHomes >= 3, reward: 100 },
-  { text: "احفر بئرًا", test: (s) => s.count.well >= 1, reward: 100 },
-  { text: "ابنِ مزرعة نخل", test: (s) => s.count.palms >= 1, reward: 150 },
+  { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 60 },
+  { text: "وصّل كل الخيام بطريق", test: (s) => s.count.house >= 6 && s.connectedHomes >= s.count.house, reward: 60 },
+  { text: "ازرع مزرعة نخل ثالثة", test: (s) => s.count.palms >= 3, reward: 80 },
+  { text: "احفر بئر ثاني", test: (s) => s.count.well >= 2, reward: 80 },
   { text: "أول بيت طين (تحتاج ٣٠ ساكن)", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
   { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 200 },
   { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 200 },

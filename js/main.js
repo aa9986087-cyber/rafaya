@@ -509,7 +509,10 @@ function budget() {
       ${row("الضرائب", `+${money(A.tax)}`, "plus")}
       ${row("المحلات والمصانع", `+${money(A.income)}`, "plus")}
       ${row("المزارع", `+${money(A.farmIncome)}`, "plus")}
-      ${row("مصاريف المباني", `−${money(A.upkeep)}`, "minus")}
+      ${row("مصاريف المباني", `−${money(A.upkeep - A.peopleCost - A.roadCost)}`, "minus")}
+      ${row("خدمات الأهالي (نظافة، شبكة ماء، علاج)", `−${money(A.peopleCost)}`, "minus")}
+      ${row("صيانة الطرق", `−${money(A.roadCost)}`, "minus")}
+      ${S.money < 0 ? `<div class="need">الميزانية بالسالب: الرواتب متأخرة والناس زعلانين (−١٢ رضا).</div>` : ""}
       ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
     </div>
     <h3>الضريبة</h3><p>ضريبة أعلى = دخل أكثر بس رضا أقل.</p>

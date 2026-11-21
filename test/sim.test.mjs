@@ -53,7 +53,7 @@ test("research takes days and stays", () => {
 });
 
 test("a sensible mayor grows the village into a town and then a city", () => {
-  const s = autoplay(800, 42);
+  const s = autoplay(1600, 42);
   assert.ok(s.era >= 2, `reached stage ${s.era} with ${s.pop} people`);
   assert.ok(s.money > 0);
   const a = analyze(s);

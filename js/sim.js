@@ -223,12 +223,18 @@ export function analyze(s) {
       }
     }
   }
+  // Running costs that grow with the town: services for every resident (cleaning, the water
+  // network, the clinic's medicine…) and keeping the roads up.
+  a.peopleCost = s.pop * 0.06;
+  a.roadCost = a.count.road * 0.05 + a.count.asphalt * 0.12;
+  a.upkeep += a.peopleCost + a.roadCost;
   if (s.tech.zakat) a.upkeep *= 0.85;
   a.waterSupply *= activeEvent(s, "water");
+  a.powerSupply *= activeEvent(s, "power");
   if (seasonOf(s.day).id === "summer") a.waterUse = Math.round(a.waterUse * 1.1);
   a.waterRatio = a.waterUse ? clamp(a.waterSupply / a.waterUse, 0, 1) : 1;
-  // Before the town has a power grid (the village stage) nothing needs electricity.
-  a.grid = s.era >= 1 || a.powerSupply > 0;
+  // Until the town builds its first power source nothing runs on electricity (and nothing misses it).
+  a.grid = a.powerSupply > 0;
   a.powerRatio = !a.grid ? 1 : a.powerUse ? clamp(a.powerSupply / a.powerUse, 0, 1) : 1;
   a.workers = Math.round(s.pop * 0.55);
   a.employed = Math.min(a.workers, a.jobs);
@@ -274,7 +280,7 @@ export function analyze(s) {
   if (season.id === "spring") for (const t of s.tiles) if (t.t === "fayda" && !t.b) a.fayda++;
   a.faydaHappy = Math.min(8, a.fayda * 0.35);
   a.happyTarget = clamp(
-    48 + a.faydaHappy + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s), 0, 100);
+    48 + a.faydaHappy + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s) - (s.money < 0 ? 12 : 0), 0, 100); // in debt: wages run late
   a.unconnected = a.homes - a.connectedHomes;
   return a;
 }
