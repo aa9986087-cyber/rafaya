@@ -6,7 +6,7 @@ import { autoplay } from "./balance.mjs";
 
 const fixedRandom = () => { let s = 7; return () => ((s = (s * 16807) % 2147483647) / 2147483647); };
 
-test("a new village: a street, three mud houses, a well, palms on the wadi, some money", () => {
+test("a new village: a street, three tents, a well, palms on the wadi, some money", () => {
   const s = newGame(1);
   const ids = s.tiles.filter((t) => t.b).map((t) => t.b.id);
   assert.equal(ids.filter((i) => i === "house").length, 3);
@@ -56,7 +56,7 @@ test("a sensible mayor grows the village into a town and then a city", () => {
   assert.ok(s.era >= 2, `reached stage ${s.era} with ${s.pop} people`);
   assert.ok(s.money > 0);
   const a = analyze(s);
-  assert.ok(a.levels[2] + a.levels[3] > 10, "houses grew into villas and towers");
+  assert.ok(a.levels[3] + a.levels[4] > 10, "houses grew into villas and towers");
 });
 
 test("saving keeps the whole town, and the town carries on while away (up to 60 days)", () => {

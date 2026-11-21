@@ -27,14 +27,15 @@ export const CATS = [
  */
 export const B = {
   house: {
-    cat: "home", name: "بيت", cost: 60, upkeep: 0, era: 0, water: -1, power: -1,
+    cat: "home", name: "خيمة", cost: 50, upkeep: 0, era: 0, water: -1, power: -1,
     levels: [
-      { name: "بيت طين", cap: 5 },
+      { name: "خيمة", cap: 3 },
+      { name: "بيت طين", cap: 6, needs: { road: 1 } },
       { name: "بيت شعبي", cap: 10, needs: { road: 1, water: 1, happy: 45 } },
       { name: "فيلا", cap: 16, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
       { name: "عمارة", cap: 48, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
     ],
-    text: "يسكنه الناس ويتطور وحده إذا توفر له الطريق والماء والكهرباء والخدمات."
+    text: "يبدأ خيمة، ويتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
@@ -86,23 +87,24 @@ export const TECH = {
 
 /** Goals that guide a new mayor; each pays a reward. */
 export const GOALS = [
-  { text: "ابنِ ٣ بيوت", test: (s) => s.count.house >= 3, reward: 150 },
-  { text: "وصّل البيوت بطريق", test: (s) => s.connectedHomes >= 3, reward: 100 },
+  { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 150 },
+  { text: "وصّل الخيام بطريق", test: (s) => s.connectedHomes >= 3, reward: 100 },
+  { text: "أول بيت طين", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
   { text: "احفر بئرًا", test: (s) => s.count.well >= 1, reward: 100 },
   { text: "ابنِ مزرعة نخل", test: (s) => s.count.palms >= 1, reward: 150 },
   { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 200 },
   { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 200 },
-  { text: "أول بيت شعبي", test: (s) => s.levels[1] >= 1, reward: 250 },
+  { text: "أول بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 250 },
   { text: "ابنِ مدرسة", test: (s) => s.count.school >= 1, reward: 300 },
   { text: "ابحث الري بالتنقيط في المجلس البلدي", test: (s) => s.tech.irrigation, reward: 300 },
   { text: "صارت الرافعية بلدة (٢٥٠ ساكن)", test: (s) => s.pop >= 250, reward: 600 },
   { text: "ابنِ مولد كهرباء أو ألواح شمسية", test: (s) => s.count.generator + s.count.solar >= 1, reward: 400 },
-  { text: "أول فيلا", test: (s) => s.levels[2] >= 1, reward: 500 },
+  { text: "أول فيلا", test: (s) => s.levels[3] >= 1, reward: 500 },
   { text: "رضا الناس ٧٠٪", test: (s) => s.happy >= 70, reward: 600 },
   { text: "دخل يومي ٥٠٠ ريال", test: (s) => s.net >= 500, reward: 800 },
   { text: "صارت الرافعية مدينة (١٢٠٠ ساكن)", test: (s) => s.pop >= 1200, reward: 1500 },
   { text: "ابنِ مستشفى", test: (s) => s.count.hospital >= 1, reward: 1500 },
-  { text: "أول عمارة", test: (s) => s.levels[3] >= 1, reward: 1500 },
+  { text: "أول عمارة", test: (s) => s.levels[4] >= 1, reward: 1500 },
   { text: "صارت الرافعية محافظة (٤٠٠٠ ساكن)", test: (s) => s.pop >= 4000, reward: 5000 },
   { text: "ابنِ جامعة الرافعية", test: (s) => s.count.university >= 1, reward: 5000 }
 ];
@@ -119,5 +121,5 @@ export const EVENTS = [
   { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 4, weight: 2, tech: "tourism", shop: 1.6, happy: 10 }
 ];
 
-/** Starting village: a few mud houses, a well and palms by the wadi. */
+/** Starting village: a few tents, a well and palms by the wadi. */
 export const START_MONEY = 1500;

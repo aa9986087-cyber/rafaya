@@ -139,15 +139,16 @@ function drawBuilding(g, s, x, y, t, time) {
     case "road": case "asphalt": return;
     case "house": {
       const lv = b.lvl;
-      if (lv === 0) {
+      if (lv === 0) tent(g, cx, cy);
+      else if (lv === 1) {
         const bb = box(g, x, y, 0.32, 14, "#c79a63");
         g.fillStyle = "#8a6238"; for (let i = -2; i <= 2; i++) g.fillRect(bb.cx + i * 5 - 1, bb.cy - bb.h * 0.2 - 2, 2, 3);
         g.fillStyle = "#4a3320"; g.fillRect(bb.cx + bb.w * 0.4, bb.cy + 9, 4, 6);
-      } else if (lv === 1) {
+      } else if (lv === 2) {
         const bb = box(g, x, y, 0.22, 18, "#e2c597", { top: "#d8b885" });
         windows(g, bb, 18, 1, "#5a7a8a");
         g.fillStyle = "#2f6f5e"; g.fillRect(bb.cx + bb.w * 0.45, bb.cy + 11, 4, 7);
-      } else if (lv === 2) {
+      } else if (lv === 3) {
         const bb = box(g, x, y, 0.14, 24, "#f2ead9", { top: "#e7dcc5" });
         windows(g, bb, 24, 2, "#4f7d96");
         g.fillStyle = "#2c8a7a"; g.fillRect(bb.cx - 6, bb.cy - bb.h * 0.1 - 4, 12, 4);
@@ -228,6 +229,34 @@ function drawBuilding(g, s, x, y, t, time) {
     default: box(g, x, y, 0.2, 16, "#cccccc");
   }
   if (!works) { g.fillStyle = "#d1421f"; g.beginPath(); g.arc(cx, cy - 34, 7, 0, Math.PI * 2); g.fill(); g.fillStyle = "#fff"; g.font = "bold 10px Tajawal, sans-serif"; g.textAlign = "center"; g.fillText("!", cx, cy - 30.5); }
+}
+
+/** بيت الشعر: a low black goat-hair tent on poles, with a red-and-white sadu band along the front. */
+function tent(g, cx, cy) {
+  const w = 22, h = 11, top = 14;
+  g.fillStyle = "rgba(60, 40, 20, .18)"; g.beginPath(); g.ellipse(cx, cy + 2, w + 2, h, 0, 0, Math.PI * 2); g.fill();
+  // back and side panels
+  g.fillStyle = "#2a221d";
+  g.beginPath(); g.moveTo(cx - w, cy); g.lineTo(cx, cy - h); g.lineTo(cx + w, cy); g.lineTo(cx + w, cy - 6); g.lineTo(cx, cy - h - 6); g.lineTo(cx - w, cy - 6); g.closePath(); g.fill();
+  // the roof: three peaks over the poles
+  g.fillStyle = "#3a2f28";
+  g.beginPath(); g.moveTo(cx - w - 2, cy - 5); g.lineTo(cx - w * 0.5, cy - top - 3); g.lineTo(cx - 3, cy - top + 1); g.lineTo(cx + w * 0.15, cy - top - 2);
+  g.lineTo(cx + w * 0.6, cy - top + 2); g.lineTo(cx + w + 2, cy - 4); g.lineTo(cx + 2, cy + h - 6); g.closePath(); g.fill();
+  g.strokeStyle = "rgba(255, 255, 255, .12)"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(cx - w * 0.5, cy - top - 3); g.lineTo(cx - w * 0.15, cy + h - 8); g.moveTo(cx + w * 0.15, cy - top - 2); g.lineTo(cx + w * 0.4, cy + h - 9); g.stroke();
+  // open front with the sadu curtain
+  g.fillStyle = "#1c1612"; g.beginPath(); g.moveTo(cx - w + 2, cy - 4); g.lineTo(cx + 2, cy + h - 6); g.lineTo(cx + 2, cy + h - 1); g.lineTo(cx - w + 2, cy + 1); g.closePath(); g.fill();
+  const band = ["#b3261e", "#f1e4c8", "#b3261e", "#1c1612"];
+  for (let i = 0; i < 8; i++) {
+    const t0 = i / 8, t1 = (i + 1) / 8;
+    g.fillStyle = band[i % band.length];
+    g.beginPath();
+    g.moveTo(cx - w + 2 + (w) * t0, cy - 4 + (h - 2) * t0); g.lineTo(cx - w + 2 + (w) * t1, cy - 4 + (h - 2) * t1);
+    g.lineTo(cx - w + 2 + (w) * t1, cy - 1.5 + (h - 2) * t1); g.lineTo(cx - w + 2 + (w) * t0, cy - 1.5 + (h - 2) * t0); g.closePath(); g.fill();
+  }
+  // tent ropes and pegs
+  g.strokeStyle = "rgba(90, 70, 50, .6)"; g.lineWidth = 0.8;
+  g.beginPath(); g.moveTo(cx - w - 2, cy - 5); g.lineTo(cx - w - 8, cy + 2); g.moveTo(cx + w + 2, cy - 4); g.lineTo(cx + w + 8, cy + 3); g.stroke();
 }
 
 function awning(g, b, color) {

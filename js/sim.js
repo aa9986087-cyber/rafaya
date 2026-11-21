@@ -28,9 +28,9 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     const x = Math.floor(r() * N), yy = Math.floor(r() * N), t = tiles[idx(x, yy)];
     if (t.t === "sand") t.t = "rock";
   }
-  // The old village in the middle: a lane, three mud houses, a well and palms on the wadi.
+  // The old settlement in the middle: a lane, three tents, a well and palms on the wadi.
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
-  const put = (x, yy, id) => { const t = tiles[idx(x, yy)]; t.t = t.t === "rock" ? "sand" : t.t; t.b = { id, lvl: 0, res: id === "house" ? 4 : 0 }; };
+  const put = (x, yy, id) => { const t = tiles[idx(x, yy)]; t.t = t.t === "rock" ? "sand" : t.t; t.b = { id, lvl: 0, res: id === "house" ? 3 : 0 }; };
   for (let x = cx - 3; x <= cx + 3; x++) put(x, cy, "road");
   put(cx - 2, cy - 1, "house"); put(cx, cy - 1, "house"); put(cx + 2, cy - 1, "house");
   put(cx - 1, cy + 1, "well");
@@ -40,7 +40,7 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     if (t.t === "wadi" && !t.b && Math.abs(yy - cy) < 9) { put(x, yy, "palms"); palmsPlaced++; }
   }
   return {
-    v: 1, seed, day: 1, money: START_MONEY, tax: 10, era: 0, pop: 12, happy: 55, tiles,
+    v: 1, hv: 2, seed, day: 1, money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
 }
@@ -115,7 +115,7 @@ const eventHappy = (s) => s.events.reduce((a, e) => a + (EVENTS.find((x) => x.id
 
 export function analyze(s) {
   const a = {
-    count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: [0, 0, 0, 0],
+    count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: B.house.levels.map(() => 0),
     waterSupply: 0, waterUse: 0, powerSupply: 0, powerUse: 0, cap: 0, jobs: 0, income: 0, farmIncome: 0,
     upkeep: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
     services: Array.from({ length: N * N }, () => new Set())
@@ -324,10 +324,12 @@ export function pack(s) {
 export function unpack(text) {
   const o = JSON.parse(text);
   if (!o || o.v !== 1 || !Array.isArray(o.tiles) || o.tiles.length !== N * N) throw new Error("bad save");
+  const shift = o.hv === 2 ? 0 : 1; // saves from before tents: every house moves up one step
+  o.hv = 2;
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : "sand";
-    return { t: ground, b: id && B[id] ? { id, lvl: Math.min(Number(lvl) || 0, (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null };
+    return { t: ground, b: id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null };
   });
   return o;
 }
