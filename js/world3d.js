@@ -6,7 +6,7 @@ import { model, modelKey } from "./models.js";
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
-const isRoad = (t) => t?.b && (t.b.id === "road" || t.b.id === "asphalt");
+const roadAt = (t) => t?.b && (t.b.id === "road" || t.b.id === "asphalt");
 
 export class World {
   constructor(canvas, { quality = "high" } = {}) {
@@ -125,12 +125,12 @@ export class World {
     };
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
-      if (!isRoad(t)) continue;
+      if (!roadAt(t)) continue;
       const paved = t.b.id === "asphalt";
       const cx = x - HALF + 0.5, cz = y - HALF + 0.5;
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
-      const link = (dx, dy) => inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)]);
+      const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
       if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
       if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
       if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : "#a98457");
@@ -170,11 +170,11 @@ export class World {
         if (t.t === "rock") { q.setFromAxisAngle(up, ((x * 7 + y * 13) % 8) * 0.8); m4.compose(p, q, sc); push("rock", "sand", m4.clone()); }
         continue;
       }
-      if (isRoad(t)) continue;
+      if (roadAt(t)) continue;
       // Face the road: +z of the model points at the first road neighbour.
       let angle = 0;
       const dirs = [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]];
-      for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
+      for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
       push(modelKey(t.b.id, t.b.lvl), t.t, m4.clone());
@@ -216,7 +216,7 @@ export class World {
     if (what.roads) this.syncRoads(s);
     if (what.buildings) this.syncBuildings(s);
     this.roads = [];
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (isRoad(s.tiles[idx(x, y)])) this.roads.push([x, y]);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
     this.state = s;
     this.syncCars();
   }
@@ -251,10 +251,10 @@ export class World {
       c.t += dt * c.speed;
       if (c.t >= 1) {
         c.x = c.tx; c.y = c.ty; c.t = 0;
-        const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(c.x + dx, c.y + dy) && isRoad(s.tiles[idx(c.x + dx, c.y + dy)]) && !(c.x + dx === c.px && c.y + dy === c.py));
+        const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(c.x + dx, c.y + dy) && roadAt(s.tiles[idx(c.x + dx, c.y + dy)]) && !(c.x + dx === c.px && c.y + dy === c.py));
         const pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [c.px - c.x || 0, c.py - c.y || 0];
         c.px = c.x; c.py = c.y; c.tx = c.x + (pick[0] || 0); c.ty = c.y + (pick[1] || 0);
-        if (!inMap(c.tx, c.ty) || !isRoad(s.tiles[idx(c.tx, c.ty)])) { c.tx = c.x; c.ty = c.y; }
+        if (!inMap(c.tx, c.ty) || !roadAt(s.tiles[idx(c.tx, c.ty)])) { c.tx = c.x; c.ty = c.y; }
       }
       const a = tileCenter(c.x, c.y), b = tileCenter(c.tx, c.ty);
       v.lerpVectors(a, b, c.t);
