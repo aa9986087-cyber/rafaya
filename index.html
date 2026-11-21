@@ -3,50 +3,72 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#3b2a1a">
-  <meta name="description" content="الرافعية: لعبة محاكاة تبني فيها قريتك وتكبّرها لين تصير محافظة.">
+  <meta name="theme-color" content="#2a1d12">
+  <meta name="description" content="الرافعية: لعبة محاكاة ثلاثية الأبعاد تبني فيها مضاربك وتكبّرها من خيمة إلى محافظة.">
   <title>الرافعية</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Reem+Kufi:wght@600;700&family=Tajawal:wght@500;700;800&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@700&family=Reem+Kufi:wght@600;700&family=Tajawal:wght@500;700;800&display=swap">
+  <link rel="stylesheet" href="css/style.css?v=2">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
-<body>
+<body class="at-menu">
   <canvas id="map" aria-label="خريطة الرافعية"></canvas>
 
-  <header class="hud">
-    <div class="stats">
-      <div class="stat money"><span>الميزانية</span><b id="sMoney"></b><small id="sNet"></small></div>
-      <div class="stat"><span>السكان</span><b id="sPop"></b><small id="sGrow"></small></div>
-      <div class="stat"><span>الرضا</span><b id="sHappy"></b></div>
-      <div class="stat util"><span>ماء</span><i class="bar"><i id="sWater"></i></i><span>كهرباء</span><i class="bar"><i id="sPower"></i></i></div>
+  <!-- Main menu over the live town -->
+  <section id="menu" class="menu" aria-label="القائمة الرئيسية">
+    <div class="menu-top">
+      <p class="menu-eyebrow">لعبة محاكاة</p>
+      <h1 class="menu-title">الرافعية</h1>
+      <p class="menu-sub">من خيمة في الوادي… إلى محافظة</p>
     </div>
-    <div class="timebar">
-      <div class="when"><b id="sEra"></b><span id="sDay"></span></div>
-      <div class="speeds" role="group" aria-label="سرعة الوقت">
-        <button type="button" data-speed="0" aria-label="إيقاف">❚❚</button>
-        <button type="button" data-speed="1" aria-label="عادي">▶</button>
-        <button type="button" data-speed="2" aria-label="سريع">▶▶</button>
-        <button type="button" data-speed="4" aria-label="أسرع">▶▶▶</button>
+    <div class="menu-actions">
+      <button id="mContinue" class="mbtn primary" type="button" hidden><b>كمّل مدينتك</b><small id="mContinueInfo"></small></button>
+      <button id="mNew" class="mbtn" type="button"><b>مضارب جديدة</b><small>ابدأ من ثلاث خيام وبئر</small></button>
+      <div class="mrow">
+        <button id="mHow" class="mbtn small" type="button">طريقة اللعب</button>
+        <button id="mSettings" class="mbtn small" type="button">الإعدادات</button>
       </div>
+      <p class="menu-credit">صُنعت في الرافعية بيد <b dir="ltr">Vamos</b></p>
     </div>
-    <button id="goal" class="goal" type="button"></button>
-    <div id="event" class="event" hidden></div>
-  </header>
+  </section>
 
-  <div class="side">
-    <button id="councilBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M3 10h18L12 4 3 10Z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>المجلس</button>
-    <button id="budgetBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>الميزانية</button>
-    <button id="menuBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>القائمة</button>
+  <div id="game" class="game">
+    <header class="hud">
+      <div class="stats">
+        <button class="stat money" id="statMoney" type="button"><span>الميزانية</span><b id="sMoney"></b><small id="sNet"></small></button>
+        <button class="stat" id="statPop" type="button"><span>السكان</span><b id="sPop"></b><small id="sGrow"></small></button>
+        <button class="stat" id="statHappy" type="button"><span>الرضا</span><b id="sHappy"></b><i class="face" id="sFace"></i></button>
+        <div class="stat util"><span>ماء</span><i class="bar"><i id="sWater"></i></i><span>كهرباء</span><i class="bar"><i id="sPower"></i></i></div>
+      </div>
+      <div class="timebar">
+        <div class="when"><b id="sEra"></b><span id="sDay"></span></div>
+        <div class="speeds" role="group" aria-label="سرعة الوقت">
+          <button type="button" data-speed="0" aria-label="إيقاف"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
+          <button type="button" data-speed="1" aria-label="عادي"><svg viewBox="0 0 24 24"><path d="M8 5l10 7-10 7z"/></svg></button>
+          <button type="button" data-speed="2" aria-label="سريع"><svg viewBox="0 0 24 24"><path d="M4 5l8 7-8 7zM12 5l8 7-8 7z"/></svg></button>
+          <button type="button" data-speed="4" aria-label="أسرع"><svg viewBox="0 0 24 24"><path d="M2 6l6 6-6 6zM9 6l6 6-6 6zM16 6l6 6-6 6z"/></svg></button>
+        </div>
+      </div>
+      <button id="goal" class="goal" type="button"></button>
+      <div id="event" class="event" hidden></div>
+    </header>
+
+    <div class="side">
+      <button id="councilBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M3 10h18L12 4 3 10Z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>المجلس</span><i class="dot" id="councilDot" hidden></i></button>
+      <button id="budgetBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الأرقام</span></button>
+      <button id="turnBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>لفّ</span></button>
+      <button id="pauseMenuBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>القائمة</span></button>
+    </div>
+
+    <div id="toolChip" class="tool-chip" hidden><span id="toolName"></span><button id="toolCancel" type="button" aria-label="إلغاء">✕</button></div>
+
+    <footer class="dock">
+      <div id="cards" class="cards" hidden></div>
+      <nav class="cats" id="cats" aria-label="البناء"></nav>
+    </footer>
   </div>
-
-  <div id="toolChip" class="tool-chip" hidden><span id="toolName"></span><button id="toolCancel" type="button" aria-label="إلغاء">✕</button></div>
-
-  <footer class="dock">
-    <div id="cards" class="cards" hidden></div>
-    <nav class="cats" id="cats" aria-label="البناء"></nav>
-  </footer>
 
   <div id="sheet" class="sheet" hidden>
     <div class="sheet-box">
@@ -55,7 +77,8 @@
     </div>
   </div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="loading" class="loading"><b>الرافعية</b><span>نجهّز الوادي…</span></div>
 
-  <script type="module" src="js/main.js?v=1"></script>
+  <script type="module" src="js/main.js?v=2"></script>
 </body>
 </html>
