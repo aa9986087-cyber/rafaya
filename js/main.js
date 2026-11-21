@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS as SEASON_LEN } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, dayOf, hourOf, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
@@ -253,7 +253,7 @@ function refresh() {
   $("sEra").textContent = ERAS[S.era].name;
   const se = seasonOf(S.day);
   $("sDay").textContent = `اليوم ${ar(dayOf(S.day))}`;
-  $("sSeason").textContent = `${se.name} · اليوم ${ar(se.dayIn)} من ${ar(SEASON_LEN)}`;
+  $("sSeason").textContent = `${se.name} · اليوم ${ar(se.dayIn)} من ${ar(SEASON_DAYS)}`;
   $("sSeason").dataset.s = se.id;
   $("sSeasonBar").style.width = `${Math.round(se.progress * 100)}%`;
   $("sSeasonBar").dataset.s = se.id;
