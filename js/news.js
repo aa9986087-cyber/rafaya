@@ -4,22 +4,39 @@
 // remember what they asked for and what the mayor promised, answer each other and react to decisions.
 import { B, ERAS, DECISIONS, MAP_SIZE } from "./data.js";
 
-/** The residents: who they are, what they care about, and how they talk. */
+/**
+ * Kinds of people who speak up. They are types, not fixed people: every post gets a new person of
+ * that kind (a name, a job that fits what the town really has, the part of town they live in),
+ * so a city of thousands is not twelve people talking. The ids are kept for the lines tagged with them.
+ */
 export const RESIDENTS = [
-  { id: "abufahad", icon: "🏪", name: "أبو فهد", role: "صاحب البقالة", color: "#c0703a", cares: ["shops", "roads", "tax", "money", "power"], voice: "تاجر حريص، يحسبها بالريال، يمزح بس يشتكي من الركود" },
-  { id: "umsaad", icon: "🧕", name: "أم سعد", role: "أم لخمسة عيال", color: "#8e5aa8", cares: ["water", "school", "health", "housing", "safety"], voice: "أم عملية وصريحة، تتكلم عن عيالها وبيتها، ما تجامل" },
-  { id: "abunasser", icon: "👴", name: "الشايب أبو ناصر", role: "كبير الحي", color: "#7a6a4f", cares: ["mosque", "palms", "tradition", "camels", "change"], voice: "شايب حكيم يذكر الماضي ويضرب أمثال، يحب المسجد والنخل ويخاف على العادات" },
-  { id: "saud", icon: "🧑", name: "سعود", role: "شاب يدور شغل", color: "#2f6fa8", cares: ["jobs", "fun", "tax", "growth"], voice: "شاب متحمس وعصبي شوي، يبي شغل وطلعات، يتكلم بسرعة" },
-  { id: "noura", icon: "📚", name: "أ. نورة", role: "معلمة", color: "#c2456b", cares: ["school", "parks", "growth", "health"], voice: "معلمة مرتبة ومنطقية، تطالب بأرقام وتقترح حلول" },
-  { id: "abukhalid", icon: "🌴", name: "أبو خالد", role: "مزارع نخل", color: "#4f8a3c", cares: ["water", "farms", "rain", "dates", "season"], voice: "مزارع صبور، عينه على السماء والبئر، يتكلم عن التمر والصرام" },
-  { id: "mishal", icon: "🚙", name: "مشعل", role: "سواق جيب", color: "#5d6770", cares: ["roads", "asphalt", "dust", "traffic"], voice: "سواق يمزح كثير، يشتكي من الطرق والغبار، يعرف كل شارع" },
-  { id: "drYousef", icon: "🩺", name: "د. يوسف", role: "طبيب", color: "#2c8a7a", cares: ["health", "pollution", "water", "safety"], voice: "طبيب هادي وعلمي، ينبه بلطف ويعطي نصيحة" },
-  { id: "haya", icon: "🎒", name: "هيا", role: "طالبة", color: "#d07a2a", cares: ["parks", "fun", "deco", "school", "projects"], voice: "طالبة مرحة، تحب الحدائق والزينة، تحلم بجامعة ومطار" },
-  { id: "mubarak", icon: "🐪", name: "العم مبارك", role: "راعي إبل", color: "#a8843a", cares: ["camels", "fayda", "rain", "season", "change"], voice: "راعي بسيط وفصيح، يتكلم عن الإبل والمرعى والمطر" },
-  { id: "abuabdullah", icon: "🏗️", name: "أبو عبدالله", role: "تاجر عقار", color: "#3b4f7a", cares: ["land", "projects", "growth", "money", "housing"], voice: "تاجر طموح، يشوف الفرص، يتكلم عن الأراضي والمشاريع" },
-  { id: "jawaher", icon: "🧵", name: "جواهر", role: "صاحبة مشغل خياطة", color: "#b0466e", cares: ["shops", "events", "power", "safety", "tax"], voice: "سيدة أعمال ذكية، تتكلم عن الزبائن والمواسم والكهرباء" }
+  { id: "abufahad", gender: "m", cares: ["shops", "roads", "tax", "money", "power"], role: (a) => (a.count.grocery ? "صاحب بقالة" : a.count.cafe ? "صاحب مقهى" : a.count.souq ? "تاجر بالسوق" : "صاحب بسطة") },
+  { id: "umsaad", gender: "mother", cares: ["water", "school", "health", "housing", "safety"], role: (a, r) => `أم لـ${nAr(2 + Math.floor(r() * 6))} عيال` },
+  { id: "abunasser", gender: "elder", cares: ["mosque", "palms", "tradition", "camels", "change"], role: (a, r) => (a.count.mosque && r() < 0.3 ? "مؤذن المسجد" : "من كبار الحي") },
+  { id: "saud", gender: "m", cares: ["jobs", "fun", "tax", "growth"], role: (a) => (a.unemployment > 0.15 ? "شاب يدور شغل" : "موظف") },
+  { id: "noura", gender: "f", title: "أ.", cares: ["school", "parks", "growth", "health"], role: (a) => (a.count.school ? "معلمة" : "خريجة تربية") },
+  { id: "abukhalid", gender: "father", cares: ["water", "farms", "rain", "dates", "season"], role: (a) => (a.count.palms ? "مزارع نخل" : a.count.veg ? "مزارع خضار" : "مزارع") },
+  { id: "mishal", gender: "m", cares: ["roads", "asphalt", "dust", "traffic"], role: (a) => (a.count.asphalt ? "سواق تاكسي" : "سواق جيب") },
+  { id: "drYousef", gender: "m", title: "د.", cares: ["health", "pollution", "water", "safety"], role: (a) => (a.count.hospital ? "طبيب بالمستشفى" : a.count.clinic ? "طبيب بالمستوصف" : "ممرض متقاعد") },
+  { id: "haya", gender: "f", cares: ["parks", "fun", "deco", "school", "projects"], role: (a) => (a.count.university ? "طالبة جامعة" : a.count.school ? "طالبة" : "بنت تبي تدرس") },
+  { id: "mubarak", gender: "uncle", cares: ["camels", "fayda", "rain", "season", "change"], role: () => "راعي إبل" },
+  { id: "abuabdullah", gender: "father", cares: ["land", "projects", "growth", "money", "housing"], role: (a) => (a.count.factory || a.count.mall ? "مستثمر" : "تاجر عقار") },
+  { id: "jawaher", gender: "f", cares: ["shops", "events", "power", "safety", "tax"], role: (a) => (a.grid ? "صاحبة مشغل خياطة" : "تبيع بالسوق") }
 ];
 export const residentById = (id) => RESIDENTS.find((r) => r.id === id);
+
+const MEN = ["فهد", "سعد", "ناصر", "خالد", "عبدالله", "محمد", "سلطان", "تركي", "مشعل", "فيصل", "بندر", "ماجد", "عبدالعزيز", "سعود", "راشد", "حمد", "نايف", "عادل", "مبارك", "صالح", "إبراهيم", "يوسف", "عمر", "زياد", "منصور", "بدر", "حمود", "عبدالرحمن", "سليمان", "متعب"];
+const WOMEN = ["نورة", "هيا", "سارة", "الجوهرة", "لطيفة", "منيرة", "ريم", "العنود", "دانة", "هند", "مها", "جواهر", "نوف", "شهد", "لولوة", "موضي", "حصة", "غادة", "أريج", "رهف"];
+const pickName = (list, r) => list[Math.floor(r() * list.length)];
+/** A new person of a kind: their name, their job in this town, and where they live. */
+export function makePerson(a, kindId, r = Math.random) {
+  const k = residentById(kindId) || RESIDENTS[0];
+  const family = `آل ${pickName(MEN, r)}`;
+  const first = k.gender === "f" ? pickName(WOMEN, r) : pickName(MEN, r);
+  const name = k.gender === "mother" ? `أم ${pickName(MEN, r)}` : k.gender === "father" ? `أبو ${pickName(MEN, r)}` : k.gender === "elder" ? `الشايب أبو ${pickName(MEN, r)}` : k.gender === "uncle" ? `العم ${pickName(MEN, r)}` : `${k.title ? k.title + " " : ""}${first} ${family}`;
+  const area = ["من الحارة الشمالية", "من الحارة الجنوبية", "من الحارة الشرقية", "من الحارة الغربية", "من وسط البلد"][Math.floor(r() * 5)];
+  return { name, role: k.role(a, r), area, kind: k.id };
+}
 
 const NEWS_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const nAr = (n) => String(n).replace(/\d/g, (d) => NEWS_DIGITS[d]);
@@ -180,12 +197,12 @@ const stillMissing = (s, a, season, topic) => topics(s, a, season, townFacts(s, 
 export function followUps(s, a, season) {
   const posts = [];
   s.demands ||= {}; s.promises ||= [];
-  const post = (who, text, mood, topic) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who, text, mood, topic, likes: 10 + Math.floor(Math.random() * 30) });
+  const post = (rec, text, mood, topic) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who: rec.who, person: rec.person || makePerson(a, rec.who), text, mood, topic, likes: agreeing(s, 8) });
   // Promises first: a kept promise is thanked once (and closes the same wish); a broken one hurts.
   s.promises = s.promises.filter((p) => {
-    if (!stillMissing(s, a, season, p.topic)) { post(p.who, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); delete s.demands[p.topic]; return false; }
+    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); delete s.demands[p.topic]; return false; }
     if (!p.reminded && s.day - p.day >= 48) {
-      post(p.who, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». ما صار شي، والوعد دين.`, -1, p.topic);
+      post(p, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». ما صار شي، والوعد دين.`, -1, p.topic);
       posts[posts.length - 1].noCalm = true;
       moodOf(s, p.who, -15); p.reminded = true;
     }
@@ -195,7 +212,7 @@ export function followUps(s, a, season) {
   s.comebacks = (s.comebacks || []).filter((c) => {
     if (s.day < c.at) return true;
     if (stillMissing(s, a, season, c.topic)) {
-      post(c.who, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][Math.floor(Math.random() * 2)], -1, c.topic);
+      post(c, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][Math.floor(Math.random() * 2)], -1, c.topic);
       posts[posts.length - 1].noCalm = true;
     }
     return false;
@@ -204,10 +221,10 @@ export function followUps(s, a, season) {
     const days = Math.round((s.day - d.day) / 24);
     const when = days < 1 ? "بنفس اليوم" : days === 1 ? "بيوم واحد" : days === 2 ? "بيومين" : `بعد ${nAr(days)} أيام`;
     if (!stillMissing(s, a, season, topic)) {
-      post(d.who, `الله يعطيك العافية يا العمدة! طلبنا ${TOPIC_NAMES[topic] || "طلبنا"} وتحقق ${when}. هذا اللي نبيه 👏`, 1, topic);
+      post(d, `الله يعطيك العافية يا العمدة! طلبنا ${TOPIC_NAMES[topic] || "طلبنا"} وتحقق ${when}. هذا اللي نبيه 👏`, 1, topic);
       delete s.demands[topic];
     } else if (!d.reminded && s.day - d.day >= 72) {
-      post(d.who, `صار لنا ${nAr(days)} أيام نطالب بـ${TOPIC_NAMES[topic] || "حقنا"} وللحين ما صار شي. لا تنسانا يا العمدة.`, -1, topic);
+      post(d, `صار لنا ${nAr(days)} أيام نطالب بـ${TOPIC_NAMES[topic] || "حقنا"} وللحين ما صار شي. لا تنسانا يا العمدة.`, -1, topic);
       d.reminded = true;
     }
   }
@@ -217,7 +234,7 @@ export function followUps(s, a, season) {
 /** Remember the complaints that ask for something (so they can be thanked or followed up). */
 export function rememberDemands(s, posts) {
   s.demands ||= {};
-  for (const p of posts) if (p.mood < 0 && TOPIC_NAMES[p.topic] && !s.demands[p.topic]) s.demands[p.topic] = { day: s.day, who: p.who };
+  for (const p of posts) if (p.mood < 0 && TOPIC_NAMES[p.topic] && !s.demands[p.topic]) s.demands[p.topic] = { day: s.day, who: p.who, person: p.person };
 }
 
 // ---------- residents answering each other ----------
@@ -238,11 +255,11 @@ const ANSWERS = {
   housing: [["abuabdullah", 1, "عندي أراضي جاهزة، بس البلدية تبني الطرق."]]
 };
 /** Sometimes another resident joins in: agrees, adds a detail, or disagrees. */
-export function maybeAnswer(post, r = Math.random) {
+export function maybeAnswer(s, a, post, r = Math.random) {
   const list = (ANSWERS[post.topic] || []).filter(([who]) => who !== post.who);
   if (!list.length || r() > 0.45) return post;
   const [who, , text] = list[Math.floor(r() * list.length)];
-  return { ...post, replies: [...(post.replies || []), { from: "res", who, text }] };
+  return { ...post, replies: [...(post.replies || []), { from: "res", who, person: makePerson(a, who, r), text }] };
 }
 
 // ---------- reactions to the mayor's decisions ----------
@@ -263,12 +280,15 @@ const REACT = {
   wellbroken: [["abukhalid", 1, "البئر رجع، الحمد لله. صلحوه بسرعة."], ["abukhalid", -1, "يومين بلا ماء كافي؟ النخل ما يتحمل."]]
 };
 /** One resident's word on what the mayor just decided (first option = 0). */
-export function decisionReaction(s, id, choice) {
+export function decisionReaction(s, a, id, choice) {
   const list = REACT[id];
   if (!list) return null;
   const [who, mood, text] = list[Math.min(choice, list.length - 1)];
-  return { id: `d-${s.day}-${id}`, day: s.day, who, text, mood, topic: "decision", likes: 5 + Math.floor(Math.random() * 30) };
+  return { id: `d-${s.day}-${id}`, day: s.day, who, person: makePerson(a, who), text, mood, topic: "decision", likes: agreeing(s, 6) };
 }
+
+/** How many people agree with a post: a share of the town that grows with how much it matters. */
+const agreeing = (s, weight, r = Math.random) => Math.max(1, Math.round(s.pop * Math.min(0.85, (weight / 14) * (0.35 + r() * 0.65))));
 
 /** A small seeded random so a day's posts do not change on reload. */
 function newsRand(seed) { let x = seed >>> 0 || 1; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
@@ -296,7 +316,7 @@ export function writePosts(s, a, season, count = 1) {
     const line = fresh[Math.floor(r() * fresh.length)], text = line.text;
     const fans = RESIDENTS.filter((p) => p.cares.includes(t.topic));
     const who = residentById(line.by) || (fans.length ? fans : RESIDENTS)[Math.floor(r() * (fans.length || RESIDENTS.length))];
-    posts.push(maybeAnswer({ id: `${s.day}-${k}-${Math.floor(r() * 1e6)}`, day: s.day, who: who.id, text, mood: t.mood, topic: t.topic, likes: Math.round(t.weight * (2 + r() * 6)) }, r));
+    posts.push(maybeAnswer(s, a, { id: `${s.day}-${k}-${Math.floor(r() * 1e6)}`, day: s.day, who: who.id, person: makePerson(a, who.id, r), text, mood: t.mood, topic: t.topic, likes: agreeing(s, t.weight, r) }, r));
   }
   rememberDemands(s, posts);
   return posts;
@@ -304,12 +324,13 @@ export function writePosts(s, a, season, count = 1) {
 
 // ---------- how each resident feels about the mayor, and the answers the mayor can give ----------
 
-/** Each resident's own contentment (0–100, starts at 60). Returns the new value. */
+/**
+ * How much the people trust the mayor (0–100, starts at 60). Every answer moves it a little;
+ * kept and broken promises move it more. Returns the new value.
+ */
 export function moodOf(s, who, change = 0) {
-  s.moods ||= {};
-  const v = Math.max(0, Math.min(100, (s.moods[who] ?? 60) + change));
-  s.moods[who] = v;
-  return v;
+  s.trust = Math.max(0, Math.min(100, (s.trust ?? 60) + change * 0.4));
+  return s.trust;
 }
 
 const PROMISE_LINE = { mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
@@ -349,7 +370,7 @@ export function answerPost(s, a, season, post, kind) {
   if (kind === "promise") {
     const change = post.noCalm ? 6 : 8;
     moodOf(s, post.who, change);
-    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "بنحلها" }); }
+    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, person: post.person, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "بنحلها" }); }
     s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
     const n = needs(s, a);
     const detail = post.topic === "water" && n.wells ? ` ترى نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} بالضبط.` : post.topic === "power" && n.generators ? ` نحتاج ${nAr(n.generators)} مولد على الأقل.` : post.topic === "jobs" && n.jobGap ? ` ${num(n.jobGap)} شخص ينتظرون.` : "";
@@ -358,8 +379,8 @@ export function answerPost(s, a, season, post, kind) {
   }
   if (kind === "calm") {
     s.comebacks ||= [];
-    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, topic: post.topic, at: s.day + 24 });
-    const text = who.role === "كبير الحي" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : "طيب، بنصبر يوم. بس بكرة أبي جواب.";
+    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, at: s.day + 24 });
+    const text = post.who === "abunasser" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : "طيب، بنصبر يوم. بس بكرة أبي جواب.";
     return { text, change: 0 };
   }
   // refuse: hurts, and hurts more when the money is plainly there
@@ -367,7 +388,7 @@ export function answerPost(s, a, season, post, kind) {
   if (building && s.money >= building.cost) { change = -15; text = `مو أولوية؟ الميزانية فيها ${num(s.money)} و${building.name} يبي ${num(building.cost)} بس! الناس بتعرف.`; }
   else if (building && a.net > 0) { const h = Math.ceil((building.cost - s.money) / a.net); text = `${building.name} يبي ${num(building.cost)}، والدخل ${num(a.net)} بالساعة. يعني ${h <= 24 ? `${nAr(h)} ساعة` : `${nAr(Math.ceil(h / 24))} أيام`} توفير بس. أفهم إنكم ما تبون.`; }
   else if (post.topic === "tax") text = `الضريبة ${nAr(s.tax)}٪ وتبونها تبقى؟ الناس بدت تفكر تطلع من البلد.`;
-  else text = who.role === "كبير الحي" ? "الله المستعان. اللي ما يسمع من الكبار يندم." : "طيب… الناس بتتذكر هالكلام.";
+  else text = post.who === "abunasser" ? "الله المستعان. اللي ما يسمع من الكبار يندم." : "طيب… الناس بتتذكر هالكلام.";
   moodOf(s, post.who, change);
   s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
   return { text, change };

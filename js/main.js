@@ -4,7 +4,7 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decid
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
-import { RESIDENTS, residentById, writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf } from "./news.js";
+import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf } from "./news.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -413,20 +413,22 @@ function hourNews(msgs) {
   const season = seasonOf(S.day);
   const big = msgs.some((m) => ["event", "season"].includes(m.kind));
   const posts = followUps(S, A, season);
-  if (big || S.day % 3 === 0) posts.push(...writePosts(S, A, season, 1));
+  // The bigger the town, the more people speak up (1 post every 3 hours in a village, up to 3 in a city).
+  if (big || S.day % 3 === 0) posts.push(...writePosts(S, A, season, Math.min(3, 1 + Math.floor(S.pop / 800))));
   addPosts(posts);
 }
 
 const moodTag = (m) => (m < 0 ? `<i class="mood bad">زعلان</i>` : m > 0 ? `<i class="mood good">مبسوط</i>` : `<i class="mood ask">يطالب</i>`);
+/** Who wrote a post (old saves only have the kind of person). */
+const personOf = (p) => p.person || { name: "واحد من الأهالي", role: "", area: "" };
 function postHtml(p) {
-  const r = residentById(p.who) || RESIDENTS[0];
+  const r = personOf(p);
   const when = `اليوم ${ar(dayOf(p.day))} · ${ar(hourOf(p.day))}:٠٠`;
   return `<article class="post" data-post="${p.id}">
-    <div class="post-head"><span class="avatar" style="background:${r.color}">${r.icon}</span>
-      <div><b>${r.name}</b><small>${r.role} · ${when}</small></div>${moodTag(p.mood)}</div>
+    <div class="post-head"><div><b>${r.name}</b><small>${[r.role, r.area, when].filter(Boolean).join(" · ")}</small></div>${moodTag(p.mood)}</div>
     <p>${p.text}</p>
-    ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : (residentById(m.who) || r).name}</b> ${m.text}</div>`).join("")}
-    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? `رضا ${r.name} +${ar(p.change)}` : p.change < 0 ? `رضا ${r.name} −${ar(-p.change)}` : "بيرجع لك بكرة"}</span>` : ""}</div>
+    ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : m.person ? m.person.name : r.name}</b>${m.person?.role ? `<small> (${m.person.role})</small>` : ""} ${m.text}</div>`).join("")}
+    <div class="post-foot"><span>👥 ${ar(p.likes || 1)} ${(p.likes || 1) > 10 ? "من الأهالي" : ""} يوافقونه</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? "الناس ارتاحوا" : p.change < 0 ? "الناس زعلوا" : "بيرجع لك بكرة"}</span>` : ""}</div>
     ${p.answered || p.id.startsWith("d-") ? "" : `<div class="answers">${replyOptions(p).map((o) => `<button type="button" class="ans ${o.kind}" data-post="${p.id}" data-kind="${o.kind}">${o.label}</button>`).join("")}</div>`}
   </article>`;
 }
@@ -434,9 +436,9 @@ function postHtml(p) {
 function newsSheet() {
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
-  const moods = RESIDENTS.map((r) => ({ r, v: moodOf(S, r.id) }));
-  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم. اختار ردك: الوعد يفرّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
-    <div class="moods">${moods.map(({ r, v }) => `<span class="m" title="${r.name}"><i class="avatar" style="background:${r.color}">${r.icon}</i><b class="${v >= 70 ? "up" : v < 45 ? "down" : ""}">${ar(Math.round(v))}٪</b></span>`).join("")}</div></div>
+  const trust = Math.round(moodOf(S, null));
+  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون أهل الرافعية عن بلدهم. اختار ردك: الوعد يريّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
+    <div class="trust"><span>ثقة الأهالي بالعمدة</span><i class="bar"><i style="width:${trust}%" class="${trust < 45 ? "low" : ""}"></i></i><b>${ar(trust)}٪</b></div></div>
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
   $("sheetBody").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => answer(b.dataset.post, b.dataset.kind)));
 }
@@ -473,7 +475,7 @@ function decisionSheet() {
     closeSheet();
     if (r.built) { world.sync(S); toast(`انحفر ${B[r.built].name} جديد قرب البلد`, "goal"); }
     if (r.lost) { world.sync(S); toast(`احترق ${r.lost} 🔥`, "bad"); }
-    if (r.ok) { const re = decisionReaction(S, decided, choice); if (re) addPosts([re]); }
+    if (r.ok) { const re = decisionReaction(S, A, decided, choice); if (re) addPosts([re]); }
     refresh(); save();
   }));
 }
