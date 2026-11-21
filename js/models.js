@@ -511,11 +511,22 @@ const MAKERS = {
     b.cyl(0.024, 0.036, 0.12, "#1c1a1d", {}, 6);
     b.add(new THREE.SphereGeometry(0.021, 6, 5), "#1c1a1d", { y: 0.135 });
   },
+  // A small desert acacia (طلح/سمر): low, wide and close to the ground, as in the Rafaya plains.
   acacia(b) {
-    b.cyl(0.018, 0.026, 0.22, "#6e5133", {}, 5);
-    for (const [x, z, r] of [[0.06, 0.02, 1], [-0.05, -0.03, -1]]) b.add(new THREE.CylinderGeometry(0.008, 0.012, 0.14, 4), "#6e5133", { x: x * 0.6, y: 0.27, z, rz: r * 0.7 });
-    b.add(new THREE.CylinderGeometry(0.2, 0.15, 0.06, 7), "#7f9a4a", { y: 0.33, sz: 0.85 });
-    b.add(new THREE.CylinderGeometry(0.13, 0.12, 0.05, 6), "#93ad58", { x: 0.03, y: 0.37, z: 0.02 });
+    b.cyl(0.016, 0.024, 0.08, "#6e5133", {}, 5);
+    for (const [x, z, r] of [[0.03, 0.01, 1], [-0.03, -0.01, -1], [0, 0.03, 0]]) b.add(new THREE.CylinderGeometry(0.006, 0.01, 0.08, 4), "#6e5133", { x, y: 0.1, z, rz: r * 0.6, rx: r === 0 ? 0.6 : 0 });
+    b.add(new THREE.CylinderGeometry(0.13, 0.1, 0.04, 7), "#7f9a4a", { y: 0.13, sz: 0.85 });
+    b.add(new THREE.CylinderGeometry(0.08, 0.08, 0.035, 6), "#93ad58", { x: 0.02, y: 0.155, z: 0.01 });
+  },
+  // Spring on the faydah: green tufts and flowers (yellow, purple khuzama, white).
+  bloom(b) {
+    for (let i = 0; i < 4; i++) b.add(new THREE.IcosahedronGeometry(0.03, 0), i % 2 ? "#7fb04a" : "#94c257", { x: Math.cos(i * 1.7) * 0.06, y: 0.012, z: Math.sin(i * 1.7) * 0.06, sy: 0.5 });
+    const colors = ["#f4d03f", "#a77bca", "#f7f4ec", "#f4d03f", "#e8a0b4", "#a77bca"];
+    for (let i = 0; i < 6; i++) {
+      const x = Math.cos(i * 2.4) * 0.09, z = Math.sin(i * 2.4) * 0.09;
+      b.cyl(0.003, 0.003, 0.04, "#5f8f3a", { x, z }, 3);
+      b.add(new THREE.SphereGeometry(0.014, 5, 4), colors[i], { x, y: 0.045, z });
+    }
   },
   shrub(b) {
     for (let i = 0; i < 3; i++) b.add(new THREE.IcosahedronGeometry(0.045 + i * 0.012, 0), i % 2 ? "#a3a35c" : "#8c9550", { x: Math.cos(i * 2.2) * 0.04, y: 0.03, z: Math.sin(i * 2.2) * 0.04, sy: 0.7 });

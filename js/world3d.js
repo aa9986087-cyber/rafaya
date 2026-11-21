@@ -1,7 +1,7 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
 import { MAP_SIZE as N, B } from "./data.js";
-import { idx, inMap } from "./sim.js";
+import { idx, inMap, seasonOf } from "./sim.js";
 import { model, modelKey, makerSeeded } from "./models.js";
 
 const HALF = N / 2;
@@ -160,8 +160,8 @@ export class World {
       const x = (hash(i, 11) - 0.5) * 70, z = (hash(i, 12) - 0.5) * 70;
       if (Math.max(Math.abs(x), Math.abs(z)) < HALF + 0.6) continue;
       const pick = hash(i, 13);
-      const key = pick < 0.42 ? "grassTuft" : pick < 0.8 ? "shrub" : pick < 0.93 ? "acacia" : "rock";
-      out[key].push(this.place(x, z, hash(i, 14) * 6, key === "acacia" ? 0.8 + hash(i, 15) * 0.6 : 0.7 + hash(i, 15) * 0.6));
+      const key = pick < 0.45 ? "grassTuft" : pick < 0.85 ? "shrub" : pick < 0.92 ? "acacia" : "rock";
+      out[key].push(this.place(x, z, hash(i, 14) * 6, key === "acacia" ? 0.8 + hash(i, 15) * 0.4 : 0.7 + hash(i, 15) * 0.6));
     }
     for (const [key, list] of Object.entries(out)) this.addInstances(model(key), list, key === "acacia");
 
@@ -206,10 +206,11 @@ export class World {
   syncTiles(s) {
     if (this.ground) { this.scene.remove(this.ground); this.ground.geometry.dispose(); }
     const pos = [], col = [], uvs = [], c = new THREE.Color();
+    const spring = seasonOf(s.day).id === "spring";
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? "#c6ad72" : "#f1d49c");
+      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : "#f1d49c");
       c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
       const x0 = x - HALF, z0 = y - HALF;
       const quad = [[x0, z0], [x0, z0 + 1], [x0 + 1, z0 + 1], [x0, z0], [x0 + 1, z0 + 1], [x0 + 1, z0]];
@@ -241,18 +242,22 @@ export class World {
   /** Plants and pebbles on land nobody has built on yet. */
   syncScenery(s) {
     this.removeAll(this.sceneryMeshes);
-    const lists = { shrub: [], grassTuft: [], acacia: [], pebbles: [] };
+    const lists = { shrub: [], grassTuft: [], acacia: [], pebbles: [], bloom: [] };
+    const spring = seasonOf(s.day).id === "spring";
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       if (t.b || t.t === "rock") continue;
       const p = tileCenter(x, y), h = hash(x, y, 5), j = (k) => (hash(x, y, k) - 0.5) * 0.6;
-      if (t.t === "wadi") {
-        if (h < 0.1) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.7 + h * 3));
+      if (t.t === "fayda") {
+        if (spring) for (let k = 0; k < 5; k++) lists.bloom.push(this.place(p.x + j(20 + k), p.z + j(30 + k), hash(x, y, 40 + k) * 6, 0.9 + hash(x, y, 50 + k) * 0.5));
+        else if (h < 0.6) lists.grassTuft.push(this.place(p.x + j(6), p.z + j(7), h * 30, 0.7));
+      } else if (t.t === "wadi") {
+        if (h < 0.08) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.8 + h * 2));
         else if (h < 0.55) lists.shrub.push(this.place(p.x + j(6), p.z + j(7), h * 40, 0.8 + h));
         if (hash(x, y, 8) < 0.45) lists.pebbles.push(this.place(p.x + j(9), p.z + j(10), h * 9));
         if (hash(x, y, 11) < 0.5) lists.grassTuft.push(this.place(p.x + j(12), p.z + j(13), h * 7, 0.9));
       } else {
-        if (h < 0.035) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.8 + h * 6));
+        if (h < 0.03) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.8 + h * 5));
         else if (h < 0.16) lists.shrub.push(this.place(p.x + j(6), p.z + j(7), h * 40, 0.7 + h));
         else if (h < 0.3) lists.grassTuft.push(this.place(p.x + j(6), p.z + j(7), h * 30, 0.8));
       }
@@ -381,6 +386,9 @@ export class World {
   }
 
   sync(s, what = { tiles: true, roads: true, buildings: true }) {
+    const season = seasonOf(s.day).i;
+    if (this.season !== undefined && this.season !== season) what = { ...what, tiles: true, buildings: true };
+    this.season = season;
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
     if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); }
@@ -506,13 +514,15 @@ export class World {
     // Camels: a small herd while the town is still young, grazing on open land.
     const herd = s.era >= 3 ? 0 : s.era === 2 ? 3 : 6;
     const open = (x, y) => inMap(x, y) && !s.tiles[idx(x, y)].b && s.tiles[idx(x, y)].t !== "rock";
-    if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1])) {
+    if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1]) || this.herdSeason !== seasonOf(s.day).i) {
+      this.herdSeason = seasonOf(s.day).i;
       let best = null, bestScore = -1;
       for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
         if (!open(x, y)) continue;
         let free = 0;
         for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) free += open(x + dx, y + dy) ? 1 : 0;
-        const score = free * 10 - Math.hypot(x - HALF, y - HALF - 4) + (s.tiles[idx(x, y)].t === "wadi" ? 8 : 0);
+        const g = s.tiles[idx(x, y)].t;
+        const score = free * 10 - Math.hypot(x - HALF, y - HALF - 4) + (g === "wadi" ? 8 : 0) + (g === "fayda" && seasonOf(s.day).id === "spring" ? 60 : 0);
         if (score > bestScore) { bestScore = score; best = [x, y]; }
       }
       this.herdHome = best || [2, 2];

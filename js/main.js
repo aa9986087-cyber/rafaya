@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, SEASON_DAYS } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx } from "./sound.js";
@@ -237,7 +237,12 @@ function refresh() {
   set($("sWater"), A.waterRatio, true);
   set($("sPower"), A.powerRatio, A.grid);
   $("sEra").textContent = ERAS[S.era].name;
+  const se = seasonOf(S.day);
   $("sDay").textContent = `اليوم ${ar(S.day)}`;
+  $("sSeason").textContent = `${se.name} · باقي ${ar(se.left)} يوم`;
+  $("sSeason").dataset.s = se.id;
+  $("sSeasonBar").style.width = `${Math.round((se.dayIn / SEASON_DAYS) * 100)}%`;
+  $("sSeasonBar").dataset.s = se.id;
   const goal = GOALS[S.goal];
   $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : "<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!";
   const ev = S.events[0] && EVENTS.find((e) => e.id === S.events[0].id);
@@ -256,8 +261,9 @@ function toast(text, kind = "") {
   el.className = `toast ${kind}`;
   el.textContent = ar(text);
   $("toasts").append(el);
-  setTimeout(() => el.classList.add("out"), kind === "era" ? 3800 : 2300);
-  setTimeout(() => el.remove(), kind === "era" ? 4200 : 2700);
+  const long = kind === "era" || kind.startsWith("season");
+  setTimeout(() => el.classList.add("out"), long ? 4200 : 2300);
+  setTimeout(() => el.remove(), long ? 4600 : 2700);
   while ($("toasts").children.length > 3) $("toasts").firstChild.remove();
 }
 
@@ -286,6 +292,9 @@ function inspect(x, y) {
   if (!t.b) {
     if (t.t === "rock") sheet(`<h2>صخور</h2><p>تقدر تشيلها بـ${money(ROCK_CLEAR)} ريال، أو تبني فوقها مباشرة والإزالة تنحسب مع السعر.</p>`, "inspect");
     else if (t.t === "wadi") sheet(`<h2>أرض الوادي</h2><p>أرض خصبة: مزارع النخل والخضار هنا تنتج ٥٠٪ أكثر.</p>`, "inspect");
+    else if (t.t === "fayda") sheet(`<h2>فيضة</h2><p>أرض منخفضة يجتمع فيها ماء المطر. في الربيع تطلع فيها النباتات الحولية والزهور (الخزامى والنفل والأقحوان)، وتفرّح الناس وترعى فيها الإبل. وفي باقي السنة تيبس.</p>
+      <div class="rows">${row("الموسم الحين", seasonOf(S.day).name)}${row("فرحة الناس منها في الربيع", `+${ar(Math.round(A.faydaHappy || 0))} رضا`, "plus")}</div>
+      <div class="need">لو بنيت عليها تروح للأبد.</div>`, "inspect");
     return;
   }
   sfx.tap();
@@ -461,7 +470,7 @@ $("mNew").addEventListener("click", () => {
   delete b.dataset.sure;
   S = newGame(); save(); world.sync(S); world.focus(Math.floor(N / 2), Math.floor(N / 2) + 2); world.view.zoom = 0.9; world.updateCamera();
   sfx.goal(); startPlaying();
-  sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين مضارب صغيرة: ثلاث خيام، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
+  sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
     <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>
     <div class="sheet-actions"><button class="btn go block" id="letsGo" type="button">يلا نبدأ</button></div>`, "welcome");
   $("letsGo").addEventListener("click", closeSheet);
@@ -490,8 +499,8 @@ function frame(now) {
       acc -= DAY_MS;
       const { msgs } = step(S);
       for (const m of msgs) {
-        toast(m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : "");
-        (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" ? sfx.event : sfx.coin)();
+        toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
+        (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
       }
       sync(false);

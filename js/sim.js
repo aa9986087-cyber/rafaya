@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY } from "./data.js";
+import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -28,6 +28,7 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     const x = Math.floor(r() * N), yy = Math.floor(r() * N), t = tiles[idx(x, yy)];
     if (t.t === "sand") t.t = "rock";
   }
+  addFayda(tiles, r);
   // The old settlement in the middle: a lane, three tents, a well and palms on the wadi.
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
   const put = (x, yy, id) => { const t = tiles[idx(x, yy)]; t.t = t.t === "rock" ? "sand" : t.t; t.b = { id, lvl: 0, res: id === "house" ? 3 : 0 }; };
@@ -40,7 +41,7 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     if (t.t === "wadi" && !t.b && Math.abs(yy - cy) < 9) { put(x, yy, "palms"); palmsPlaced++; }
   }
   return {
-    v: 1, hv: 2, seed, day: 1, money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
+    v: 1, hv: 2, fv: 1, seed, day: 1, money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
 }
@@ -48,6 +49,35 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
 // ---------- building ----------
 
 export const ROCK_CLEAR = 40;
+
+/** Which season a day falls in, how far into it, and which year. */
+export function seasonOf(day) {
+  const d = Math.max(0, day - 1), i = Math.floor(d / SEASON_DAYS) % 4;
+  return { i, ...SEASONS[i], dayIn: (d % SEASON_DAYS) + 1, left: SEASON_DAYS - (d % SEASON_DAYS), year: Math.floor(d / (SEASON_DAYS * 4)) + 1 };
+}
+
+/**
+ * Faydah (فيضة): low ground where rainwater gathers. In spring it fills with annual plants and
+ * flowers, and people go out to enjoy it. A few patches away from the old settlement.
+ */
+function addFayda(tiles, r) {
+  const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
+  let made = 0;
+  for (let tries = 0; tries < 200 && made < 3; tries++) {
+    const x = 3 + Math.floor(r() * (N - 6)), y = 3 + Math.floor(r() * (N - 6));
+    if (Math.hypot(x - cx, y - cy) < 8 || tiles[idx(x, y)].t !== "sand" || tiles[idx(x, y)].b) continue;
+    const size = 7 + Math.floor(r() * 6), cells = [[x, y]];
+    for (let k = 0; k < size * 3 && cells.length < size; k++) {
+      const [bx, by] = cells[Math.floor(r() * cells.length)];
+      const [dx, dy] = [[1, 0], [-1, 0], [0, 1], [0, -1]][Math.floor(r() * 4)];
+      const nx = bx + dx, ny = by + dy;
+      if (!inMap(nx, ny) || tiles[idx(nx, ny)].t !== "sand" || tiles[idx(nx, ny)].b || cells.some(([a, b]) => a === nx && b === ny)) continue;
+      cells.push([nx, ny]);
+    }
+    for (const [a, b] of cells) tiles[idx(a, b)].t = "fayda";
+    made++;
+  }
+}
 
 export function techUnlocked(s, def) { return !def.tech || s.tech[def.tech]; }
 
@@ -153,6 +183,7 @@ export function analyze(s) {
   }
   if (s.tech.zakat) a.upkeep *= 0.85;
   a.waterSupply *= activeEvent(s, "water");
+  if (seasonOf(s.day).id === "summer") a.waterUse = Math.round(a.waterUse * 1.1);
   a.waterRatio = a.waterUse ? clamp(a.waterSupply / a.waterUse, 0, 1) : 1;
   // Before the town has a power grid (the village stage) nothing needs electricity.
   a.grid = s.era >= 1 || a.powerSupply > 0;
@@ -193,8 +224,14 @@ export function analyze(s) {
     sum += local * w; weight += w;
   }
   const local = weight ? sum / weight : 0;
+  // Seasons: a green faydah in spring lifts spirits; summer heat makes homes thirstier.
+  const season = seasonOf(s.day);
+  a.season = season;
+  a.fayda = 0;
+  if (season.id === "spring") for (const t of s.tiles) if (t.t === "fayda" && !t.b) a.fayda++;
+  a.faydaHappy = Math.min(8, a.fayda * 0.35);
   a.happyTarget = clamp(
-    48 + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s), 0, 100);
+    48 + a.faydaHappy + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s), 0, 100);
   a.unconnected = a.homes - a.connectedHomes;
   return a;
 }
@@ -209,7 +246,7 @@ export function houseBlocker(s, a, x, y) {
   if (next.era && s.era < next.era) return `تحتاج الرافعية تصير ${ERAS[next.era].name}`;
   const n = next.needs || {};
   if (n.road && !t.b.works) return "يحتاج طريق";
-  if (n.pop && s.pop < n.pop) return `المضارب ما استقرت بعد: تحتاج ${n.pop} ساكن (الحين ${s.pop})`;
+  if (n.pop && s.pop < n.pop) return `الأهل ما استقروا بعد: تحتاج ${n.pop} ساكن (الحين ${s.pop})`;
   if (n.water && a.waterRatio < 0.95) return "يحتاج ماء أكثر";
   if (n.power && (!a.grid || a.powerSupply === 0 || a.powerRatio < 0.95)) return "يحتاج كهرباء";
   const here = s.happy + (t.b.local || 0) * 0.6;
@@ -254,11 +291,15 @@ export function step(s, r = Math.random) {
   }
   s.money += a.net;
   s.happy = Math.round((s.happy * 0.7 + a.happyTarget * 0.3) * 10) / 10;
+  const seasonBefore = seasonOf(s.day).i;
   s.day++;
 
   const msgs = [];
   // Stage of the town never goes back.
   for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
+  // A new season.
+  const season = seasonOf(s.day);
+  if (season.i !== seasonBefore) msgs.push({ kind: "season", title: season.name, text: season.start });
   // Research.
   if (s.research && --s.research.left <= 0) {
     s.tech[s.research.id] = true;
@@ -327,10 +368,13 @@ export function unpack(text) {
   if (!o || o.v !== 1 || !Array.isArray(o.tiles) || o.tiles.length !== N * N) throw new Error("bad save");
   const shift = o.hv === 2 ? 0 : 1; // saves from before tents: every house moves up one step
   o.hv = 2;
+  const faydaMissing = o.fv !== 1;
+  o.fv = 1;
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res] = String(str).split(":");
-    const ground = t === "w" ? "wadi" : t === "r" ? "rock" : "sand";
+    const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
     return { t: ground, b: id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null };
   });
+  if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));
   return o;
 }

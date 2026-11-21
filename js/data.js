@@ -10,6 +10,15 @@ export const ERAS = [
   { id: 3, name: "محافظة", pop: 4000 }
 ];
 
+/** The year turns through four seasons. Day 1 is the first day of spring. */
+export const SEASON_DAYS = 30;
+export const SEASONS = [
+  { id: "spring", name: "الربيع", start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
+  { id: "summer", name: "الصيف", start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
+  { id: "autumn", name: "الخريف", start: "دخل الخريف: خفّ الحر وبدأ الصِّرام." },
+  { id: "winter", name: "الشتاء", start: "دخل الشتاء: برد وليالي طويلة. الربيع جاي بعده." }
+];
+
 // Building categories shown in the build bar.
 export const CATS = [
   { id: "home", name: "سكن" },
@@ -35,7 +44,7 @@ export const B = {
       { name: "فيلا", cap: 16, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
       { name: "عمارة", cap: 48, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
     ],
-    text: "يبدأ خيمة، ولما تستقر المضارب (٣٠ ساكن وماء) يتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
+    text: "يبدأ خيمة، ولما يستقر الأهل (٣٠ ساكن وماء) يتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
