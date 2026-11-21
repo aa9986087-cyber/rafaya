@@ -181,11 +181,24 @@ export function followUps(s, a, season) {
   const posts = [];
   s.demands ||= {}; s.promises ||= [];
   const post = (who, text, mood, topic) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who, text, mood, topic, likes: 10 + Math.floor(Math.random() * 30) });
-  // Promises first: a kept promise is thanked once (and closes the same wish).
+  // Promises first: a kept promise is thanked once (and closes the same wish); a broken one hurts.
   s.promises = s.promises.filter((p) => {
-    if (!stillMissing(s, a, season, p.topic)) { post(p.who, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); delete s.demands[p.topic]; return false; }
-    if (!p.reminded && s.day - p.day >= 48) { post(p.who, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». الناس يسألون وين الوعد؟`, -1, p.topic); p.reminded = true; }
+    if (!stillMissing(s, a, season, p.topic)) { post(p.who, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); delete s.demands[p.topic]; return false; }
+    if (!p.reminded && s.day - p.day >= 48) {
+      post(p.who, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». ما صار شي، والوعد دين.`, -1, p.topic);
+      posts[posts.length - 1].noCalm = true;
+      moodOf(s, p.who, -15); p.reminded = true;
+    }
     return s.day - p.day < 24 * 8;
+  });
+  // People the mayor fobbed off come back for a real answer.
+  s.comebacks = (s.comebacks || []).filter((c) => {
+    if (s.day < c.at) return true;
+    if (stillMissing(s, a, season, c.topic)) {
+      post(c.who, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][Math.floor(Math.random() * 2)], -1, c.topic);
+      posts[posts.length - 1].noCalm = true;
+    }
+    return false;
   });
   for (const [topic, d] of Object.entries(s.demands)) {
     const days = Math.round((s.day - d.day) / 24);
@@ -289,42 +302,73 @@ export function writePosts(s, a, season, count = 1) {
   return posts;
 }
 
-// ---------- the mayor answers a resident ----------
+// ---------- how each resident feels about the mayor, and the answers the mayor can give ----------
 
-const PROMISE_WORDS = /بنبني|بنسوي|ابشر|أبشر|تم|إن شاء الله|ان شاء الله|قريب|حاضر|وعد|بكرة|بكره|الحين|نبني|بنحط|بنفتح|بنحفر|بنزيد|بنخفف|بنسفلت/;
-const REFUSE_WORDS = /لا |ما نقدر|ماعندنا|ما عندنا|مستحيل|بعدين|اصبر|اصبروا|ما فيه فلوس|مافيه فلوس|غالي/;
-const ASK_WORDS = /وش تبون|وش تبي|وش ناقص|وش الناقص|وش تحتاجون|وش المشكلة|ليش/;
-const KEYWORDS = [[/مسجد|جامع/, "mosque"], [/مدرس|تعليم/, "school"], [/مستوصف|مستشفى|طبيب/, "health"], [/شرط|أمن|حرّاس|حراس/, "safety"], [/حديق|منتزه/, "parks"],
-  [/بئر|ماء|خزان|تحلية|وايت/, "water"], [/كهرب|مولد|شمسي/, "power"], [/شغل|وظ|سوق|مزرع|محل|ورش|مصنع/, "jobs"], [/ضريب/, "tax"], [/سفلت|زفت|غبار/, "dust"],
-  [/طريق|شارع/, "roads"], [/بيوت|خيام|سكن/, "housing"]];
+/** Each resident's own contentment (0–100, starts at 60). Returns the new value. */
+export function moodOf(s, who, change = 0) {
+  s.moods ||= {};
+  const v = Math.max(0, Math.min(100, (s.moods[who] ?? 60) + change));
+  s.moods[who] = v;
+  return v;
+}
+
+const PROMISE_LINE = { mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
+  water: "أبشر، بنحفر بئر جديد", power: "أبشر، بنزيد الكهرباء", jobs: "أبشر، بنفتح محلات ومزارع للشباب", tax: "أبشر، بنخفف الضريبة", dust: "أبشر، بنسفلت الطرق", roads: "أبشر، بنوصل البيوت بطريق",
+  housing: "أبشر، بنبني بيوت جديدة", money: "أبشر، بنرتب الميزانية", pollution: "أبشر، بنبعد الدخان عن البيوت" };
+const BUILDING_FOR = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" };
+
+/** The answers on offer under a post: promise (cheers), calm (they come back later), refuse (upsets). */
+export function replyOptions(post) {
+  if (post.mood > 0) return [
+    { kind: "promise", label: "الله يسعدك، هذا واجبنا 🤝" },
+    { kind: "calm", label: "شكرًا لك" },
+    { kind: "refuse", label: "خلّونا من المدح واشتغلوا" }
+  ];
+  const opts = [
+    { kind: "promise", label: PROMISE_LINE[post.topic] || "معك حق، بنحلها قريب" },
+    { kind: "calm", label: "إن شاء الله، نشوف الموضوع" },
+    { kind: "refuse", label: post.topic === "tax" ? "الضريبة باقية، البلد يحتاجها" : "مو أولوية الحين، الميزانية ما تسمح" }
+  ];
+  return post.noCalm ? opts.filter((o) => o.kind !== "calm") : opts;
+}
 
 /**
- * A resident answers the mayor. They read what the mayor said (a promise, a refusal, a question),
- * check it against the town's numbers, and remember promises to follow them up.
+ * The mayor picks an answer. The resident replies in their own way, with the town's real numbers;
+ * their contentment moves, and a promise or a fob-off is remembered. Returns { text, change }.
  */
-export function smartReply(s, a, season, post, said) {
-  const who = residentById(post.who), n = needs(s, a);
-  const topic = (KEYWORDS.find(([re]) => re.test(said)) || [])[1] || (TOPIC_NAMES[post.topic] ? post.topic : null);
-  const missing = topic && stillMissing(s, a, season, topic);
-  const detail = topic === "water" && n.wells ? ` ترى نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} بالضبط.` : topic === "power" && n.generators ? ` نحتاج ${nAr(n.generators)} مولد على الأقل.` : topic === "jobs" && n.jobGap ? ` ${num(n.jobGap)} شخص ينتظرون وظيفة.` : "";
-  if (ASK_WORDS.test(said)) {
-    const list = topics(s, a, season, townFacts(s, a, season)).filter((t) => t.mood < 0).sort((x, y) => y.weight - x.weight).slice(0, 2).map((t) => TOPIC_NAMES[t.topic]).filter(Boolean);
-    return list.length ? `بصراحة يا العمدة: ${list.join("، وبعده ")}.${detail}` : `الحمد لله ما ينقصنا شي كبير الحين. استمر كذا.`;
+export function answerPost(s, a, season, post, kind) {
+  const who = residentById(post.who);
+  const missing = TOPIC_NAMES[post.topic] && stillMissing(s, a, season, post.topic);
+  const building = BUILDING_FOR[post.topic] && B[BUILDING_FOR[post.topic]];
+  if (post.mood > 0) {
+    const change = kind === "promise" ? 4 : kind === "refuse" ? -6 : 1;
+    moodOf(s, post.who, change);
+    const text = kind === "promise" ? "الله يحفظك يا العمدة، الرافعية بخير دامك فيها." : kind === "refuse" ? "طيب… كنت أشكرك بس 😐" : "العفو، الله يعطيك العافية.";
+    return { text, change };
   }
-  if (PROMISE_WORDS.test(said) && !REFUSE_WORDS.test(said)) {
-    if (topic && !missing) return `${TOPIC_NAMES[topic]} ما عليه كلام الحين، الله يجزاك خير. ${who.role === "كبير الحي" ? "الكلمة الطيبة صدقة." : "بس لا تنسى الباقي."}`;
-    if (topic) { s.promises ||= []; if (!s.promises.some((p) => p.topic === topic)) s.promises.push({ who: post.who, topic, day: s.day, said }); }
-    return [`كلمة عمدة! ننتظر ${TOPIC_NAMES[topic] || "الوعد"}، وبنذكّرك إن تأخر 😄.${detail}`, `الله يجزاك خير، الحي كله بيسمع. ${detail || "لا تطوّل علينا."}`][Math.floor(Math.random() * 2)];
+  if (kind === "promise") {
+    const change = post.noCalm ? 6 : 8;
+    moodOf(s, post.who, change);
+    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "بنحلها" }); }
+    s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
+    const n = needs(s, a);
+    const detail = post.topic === "water" && n.wells ? ` ترى نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} بالضبط.` : post.topic === "power" && n.generators ? ` نحتاج ${nAr(n.generators)} مولد على الأقل.` : post.topic === "jobs" && n.jobGap ? ` ${num(n.jobGap)} شخص ينتظرون.` : "";
+    const text = missing ? `${post.noCalm ? "هذا الجواب اللي أبيه." : "كلمة عمدة!"} ننتظر، وبنذكّرك إن تأخر.${detail}` : `الله يجزاك خير، ${TOPIC_NAMES[post.topic] || "الموضوع"} ما عليه كلام الحين.`;
+    return { text, change };
   }
-  if (REFUSE_WORDS.test(said)) {
-    const building = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" }[topic];
-    if (/فلوس|غالي/.test(said) && building && B[building]) {
-      const cost = B[building].cost;
-      if (s.money >= cost) return `ما فيه فلوس؟ الميزانية فيها ${num(s.money)} و${B[building].name} يبي ${num(cost)} بس. الفلوس موجودة يا العمدة!`;
-      if (a.net > 0) { const h = Math.ceil((cost - s.money) / a.net); return `${B[building].name} يبي ${num(cost)}، والدخل ${num(a.net)} بالساعة. يعني ${h <= 24 ? `${nAr(h)} ساعة` : `${nAr(Math.ceil(h / 24))} أيام`} توفير ويصير. نصبر بس لا تنسى.`; }
-      return `البلدية تخسر كل ساعة، صح. بس سكّروا الهدر أول وبعدين ${B[building].name}.`;
-    }
-    return post.mood < 0 ? `يعني نصبر لين متى؟ ${who.role === "كبير الحي" ? "الصبر زين بس الحاجة ما تنتظر." : "الناس بدت تتعب."}` : `خلاص على راحتكم، بس لا تطولون.`;
+  if (kind === "calm") {
+    s.comebacks ||= [];
+    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, topic: post.topic, at: s.day + 24 });
+    const text = who.role === "كبير الحي" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : "طيب، بنصبر يوم. بس بكرة أبي جواب.";
+    return { text, change: 0 };
   }
-  return post.mood < 0 ? `نبي فعل مو كلام يا العمدة 🙏${detail}` : `حياك الله يا العمدة، نورتنا.`;
+  // refuse: hurts, and hurts more when the money is plainly there
+  let change = -10, text;
+  if (building && s.money >= building.cost) { change = -15; text = `مو أولوية؟ الميزانية فيها ${num(s.money)} و${building.name} يبي ${num(building.cost)} بس! الناس بتعرف.`; }
+  else if (building && a.net > 0) { const h = Math.ceil((building.cost - s.money) / a.net); text = `${building.name} يبي ${num(building.cost)}، والدخل ${num(a.net)} بالساعة. يعني ${h <= 24 ? `${nAr(h)} ساعة` : `${nAr(Math.ceil(h / 24))} أيام`} توفير بس. أفهم إنكم ما تبون.`; }
+  else if (post.topic === "tax") text = `الضريبة ${nAr(s.tax)}٪ وتبونها تبقى؟ الناس بدت تفكر تطلع من البلد.`;
+  else text = who.role === "كبير الحي" ? "الله المستعان. اللي ما يسمع من الكبار يندم." : "طيب… الناس بتتذكر هالكلام.";
+  moodOf(s, post.who, change);
+  s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
+  return { text, change };
 }

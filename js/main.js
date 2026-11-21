@@ -4,7 +4,7 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decid
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
-import { RESIDENTS, residentById, writePosts, followUps, decisionReaction, smartReply } from "./news.js";
+import { RESIDENTS, residentById, writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf } from "./news.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -426,33 +426,33 @@ function postHtml(p) {
       <div><b>${r.name}</b><small>${r.role} · ${when}</small></div>${moodTag(p.mood)}</div>
     <p>${p.text}</p>
     ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : (residentById(m.who) || r).name}</b> ${m.text}</div>`).join("")}
-    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span><button type="button" class="reply-btn" data-reply="${p.id}">رد</button></div>
-    <form class="reply-form" data-form="${p.id}" hidden><input type="text" maxlength="160" placeholder="ردك على ${r.name}…" aria-label="الرد"><button type="submit">أرسل</button></form>
+    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? `رضا ${r.name} +${ar(p.change)}` : p.change < 0 ? `رضا ${r.name} −${ar(-p.change)}` : "بيرجع لك بكرة"}</span>` : ""}</div>
+    ${p.answered || p.id.startsWith("d-") ? "" : `<div class="answers">${replyOptions(p).map((o) => `<button type="button" class="ans ${o.kind}" data-post="${p.id}" data-kind="${o.kind}">${o.label}</button>`).join("")}</div>`}
   </article>`;
 }
 
 function newsSheet() {
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
-  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم. رد عليهم: يتذكرون وعودك ويتابعونها.</p></div>
+  const moods = RESIDENTS.map((r) => ({ r, v: moodOf(S, r.id) }));
+  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم. اختار ردك: الوعد يفرّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
+    <div class="moods">${moods.map(({ r, v }) => `<span class="m" title="${r.name}"><i class="avatar" style="background:${r.color}">${r.icon}</i><b class="${v >= 70 ? "up" : v < 45 ? "down" : ""}">${ar(Math.round(v))}٪</b></span>`).join("")}</div></div>
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
-  $("sheetBody").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => {
-    const f = $("sheetBody").querySelector(`[data-form="${b.dataset.reply}"]`);
-    f.hidden = !f.hidden; if (!f.hidden) f.querySelector("input").focus();
-  }));
-  $("sheetBody").querySelectorAll("[data-form]").forEach((f) => f.addEventListener("submit", (e) => { e.preventDefault(); sendReply(f.dataset.form, f.querySelector("input").value.trim()); }));
+  $("sheetBody").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => answer(b.dataset.post, b.dataset.kind)));
 }
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
 
-async function sendReply(id, said) {
+/** The mayor answers a post with one of the offered replies. */
+function answer(id, kind) {
   const post = (S.news || []).find((p) => p.id === id);
-  if (!post || !said) return;
-  post.replies = [...(post.replies || []), { from: "mayor", text: said }];
+  if (!post || post.answered) return;
+  const label = replyOptions(post).find((o) => o.kind === kind)?.label;
+  const r = answerPost(S, A, seasonOf(S.day), post, kind);
+  post.replies = [...(post.replies || []), { from: "mayor", text: label }, { from: "res", who: post.who, text: r.text }];
+  post.answered = kind; post.change = r.change;
+  (r.change > 0 ? sfx.coin : r.change < 0 ? sfx.deny : sfx.tap)();
+  refresh(); save();
   newsSheet();
-  await new Promise((r) => setTimeout(r, 700)); // a moment to "type"
-  post.replies.push({ from: "res", who: post.who, text: smartReply(S, A, seasonOf(S.day), post, said) });
-  save();
-  if (sheetFor === "news") newsSheet();
 }
 
 /** A choice for the mayor: the story, and a button per option with what it costs and does. */

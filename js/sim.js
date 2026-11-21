@@ -280,8 +280,11 @@ export function analyze(s) {
   a.fayda = 0;
   if (season.id === "spring") for (const t of s.tiles) if (t.t === "fayda" && !t.b) a.fayda++;
   a.faydaHappy = Math.min(8, a.fayda * 0.35);
+  // The residents' own contentment with the mayor (from the news replies): ±8 at most.
+  const moods = Object.values(s.moods || {});
+  a.councilMood = moods.length ? Math.max(-8, Math.min(8, ((moods.reduce((n, v) => n + v, 0) + 60 * (12 - moods.length)) / 12 - 60) * 0.25)) : 0;
   a.happyTarget = clamp(
-    48 + a.faydaHappy + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s) - (s.money < 0 ? 12 : 0), 0, 100); // in debt: wages run late
+    48 + a.faydaHappy + a.councilMood + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s) - (s.money < 0 ? 12 : 0), 0, 100); // in debt: wages run late
   a.unconnected = a.homes - a.connectedHomes;
   return a;
 }

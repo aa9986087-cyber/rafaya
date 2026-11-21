@@ -121,12 +121,33 @@ test("the residents remember: they ask, hold the mayor to a promise, and thank h
   s.pop = 70; s.money = 5000;
   const season = seasonOf(s.day);
   news.writePosts(s, analyze(s), season, 4);
-  const reply = news.smartReply(s, analyze(s), season, { who: "abunasser", topic: "mosque", mood: -1, text: "" }, "ابشر بنبني مسجد");
-  assert.match(reply, /المسجد/);
+  const post = { who: "abunasser", topic: "mosque", mood: -1, text: "" };
+  assert.deepEqual(news.replyOptions(post).map((o) => o.kind), ["promise", "calm", "refuse"]);
+  const r = news.answerPost(s, analyze(s), season, post, "promise");
+  assert.ok(r.change > 0, "a promise cheers him");
   assert.equal(s.promises.length, 1);
   const i = s.tiles.findIndex((t, k) => !t.b && t.t !== "rock" && owns(s, k % N, Math.floor(k / N)) && onRoad(s, k % N, Math.floor(k / N)));
   build(s, i % N, Math.floor(i / N), "mosque");
   const posts = news.followUps(s, analyze(s), season);
   assert.ok(posts.some((p) => /وفيت بوعدك/.test(p.text)), "thanks the mayor for the kept promise");
   assert.equal(s.promises.length, 0);
+});
+
+test("fobbing a resident off brings them back, and they will not take it twice", async () => {
+  const news = await import("../js/news.js");
+  const { seasonOf } = await import("../js/sim.js");
+  const s = newGame(5);
+  for (let i = 0; i < 40; i++) step(s, fixedRandom());
+  s.pop = 70;
+  const season = seasonOf(s.day);
+  const post = { who: "umsaad", topic: "school", mood: -1, text: "" };
+  assert.equal(news.answerPost(s, analyze(s), season, post, "calm").change, 0);
+  assert.equal(s.comebacks.length, 1);
+  s.day += 25;
+  const back = news.followUps(s, analyze(s), seasonOf(s.day)).find((p) => p.who === "umsaad");
+  assert.ok(back && back.noCalm, "she comes back and wants a yes or a no");
+  assert.deepEqual(news.replyOptions(back).map((o) => o.kind), ["promise", "refuse"]);
+  const before = news.moodOf(s, "umsaad");
+  news.answerPost(s, analyze(s), seasonOf(s.day), back, "refuse");
+  assert.ok(news.moodOf(s, "umsaad") < before, "refusing upsets her");
 });
