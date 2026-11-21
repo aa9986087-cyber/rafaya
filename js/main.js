@@ -4,7 +4,7 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decid
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
-import { RESIDENTS, residentById, townFacts, writePosts, localReply, residentsPrompt, replyPrompt } from "./news.js";
+import { RESIDENTS, residentById, writePosts, followUps, decisionReaction, smartReply } from "./news.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -397,10 +397,6 @@ function achievementsSheet() {
 
 // ---------- نشرة الرافعية ----------
 
-// Inside Claude the residents can speak through Claude; elsewhere (GitHub Pages) they use the town's own lines.
-let sampleFn = null;
-try { window.claude?.use?.("sample").then((f) => { sampleFn = f; if (sheetFor === "news") newsSheet(); }).catch(() => {}); } catch { /* not inside Claude */ }
-
 function addPosts(posts) {
   if (!posts.length) return;
   S.news = [...posts, ...(S.news || [])].slice(0, 50);
@@ -414,8 +410,11 @@ function showNewsCount() {
   $("newsCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
 }
 function hourNews(msgs) {
+  const season = seasonOf(S.day);
   const big = msgs.some((m) => ["event", "season"].includes(m.kind));
-  if (big || S.day % 3 === 0) addPosts(writePosts(S, A, seasonOf(S.day), 1));
+  const posts = followUps(S, A, season);
+  if (big || S.day % 3 === 0) posts.push(...writePosts(S, A, season, 1));
+  addPosts(posts);
 }
 
 const moodTag = (m) => (m < 0 ? `<i class="mood bad">زعلان</i>` : m > 0 ? `<i class="mood good">مبسوط</i>` : `<i class="mood ask">يطالب</i>`);
@@ -426,8 +425,8 @@ function postHtml(p) {
     <div class="post-head"><span class="avatar" style="background:${r.color}">${r.icon}</span>
       <div><b>${r.name}</b><small>${r.role} · ${when}</small></div>${moodTag(p.mood)}</div>
     <p>${p.text}</p>
-    ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : r.name}</b> ${m.text}</div>`).join("")}
-    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span>${p.ai ? `<span class="ai">✨</span>` : ""}<button type="button" class="reply-btn" data-reply="${p.id}">رد</button></div>
+    ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : (residentById(m.who) || r).name}</b> ${m.text}</div>`).join("")}
+    <div class="post-foot"><span>❤ ${ar(p.likes || 0)}</span><button type="button" class="reply-btn" data-reply="${p.id}">رد</button></div>
     <form class="reply-form" data-form="${p.id}" hidden><input type="text" maxlength="160" placeholder="ردك على ${r.name}…" aria-label="الرد"><button type="submit">أرسل</button></form>
   </article>`;
 }
@@ -435,10 +434,8 @@ function postHtml(p) {
 function newsSheet() {
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
-  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم.</p>
-    ${sampleFn ? `<button type="button" class="btn go block" id="askRes">✨ اسمع الأهالي الحين</button><small class="ai-note" id="askNote">يكتبونها بذكاء من حال البلد الحقيقي.</small>` : ""}</div>
+  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون الأهالي عن بلدهم. رد عليهم: يتذكرون وعودك ويتابعونها.</p></div>
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
-  $("askRes")?.addEventListener("click", askResidents);
   $("sheetBody").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => {
     const f = $("sheetBody").querySelector(`[data-form="${b.dataset.reply}"]`);
     f.hidden = !f.hidden; if (!f.hidden) f.querySelector("input").focus();
@@ -447,39 +444,13 @@ function newsSheet() {
 }
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
 
-let asking = false;
-async function askResidents() {
-  if (!sampleFn || asking) return;
-  asking = true;
-  const btn = $("askRes"), note = $("askNote");
-  btn.disabled = true; btn.textContent = "الأهالي يكتبون…";
-  const facts = townFacts(S, A, seasonOf(S.day));
-  const recent = (S.news || []).slice(0, 6).map((p) => ({ name: residentById(p.who)?.name, text: p.text }));
-  try {
-    const list = await sampleFn.json(residentsPrompt(facts, recent, 4), { cache: false });
-    const posts = (Array.isArray(list) ? list : []).filter((x) => residentById(x?.who) && typeof x.text === "string" && x.text.trim())
-      .slice(0, 5).map((x, i) => ({ id: `ai-${S.day}-${Date.now()}-${i}`, day: S.day, who: x.who, text: x.text.trim().slice(0, 280), mood: Math.max(-1, Math.min(1, Number(x.mood) || 0)), topic: "ai", likes: 3 + Math.floor(Math.random() * 25), ai: true }));
-    if (!posts.length) throw { code: "empty_completion" };
-    addPosts(posts); S.newsUnread = 0; showNewsCount(); save();
-  } catch (e) {
-    if (e?.code === "not_granted" || e?.code === "sampling_disabled") { sampleFn = null; }
-    if (e?.code !== "cancelled") toast(e?.code === "rate_limited" ? "الأهالي تعبوا من الكلام، جرّب بعد شوي" : "ما قدروا يكتبون الحين", "bad");
-    if (sheetFor === "news") newsSheet();
-  } finally { asking = false; }
-  if (note && sheetFor !== "news") note.remove();
-}
-
 async function sendReply(id, said) {
   const post = (S.news || []).find((p) => p.id === id);
   if (!post || !said) return;
   post.replies = [...(post.replies || []), { from: "mayor", text: said }];
   newsSheet();
-  let answer = "";
-  if (sampleFn) {
-    try { answer = (await sampleFn(replyPrompt(townFacts(S, A, seasonOf(S.day)), post, post.replies.slice(0, -1), said), { cache: false })).text.trim().slice(0, 300); }
-    catch (e) { if (e?.code === "not_granted" || e?.code === "sampling_disabled") sampleFn = null; }
-  }
-  post.replies.push({ from: "res", text: answer || localReply(post, said) });
+  await new Promise((r) => setTimeout(r, 700)); // a moment to "type"
+  post.replies.push({ from: "res", who: post.who, text: smartReply(S, A, seasonOf(S.day), post, said) });
   save();
   if (sheetFor === "news") newsSheet();
 }
@@ -494,13 +465,15 @@ function decisionSheet() {
       <b>${o.label}</b><small>${o.note}${o.costPer ? ` (${money(c)} ريال)` : ""}${poor ? " · ما يكفي المال" : ""}</small></button>`; }).join("")}</div></div>`, "decision");
   $("sheetClose").hidden = true;
   $("sheetBody").querySelectorAll("[data-choice]").forEach((b) => b.addEventListener("click", () => {
-    const r = decide(S, Number(b.dataset.choice));
+    const choice = Number(b.dataset.choice), decided = S.decision?.id;
+    const r = decide(S, choice);
     if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
     sfx.coin();
     $("sheetClose").hidden = false;
     closeSheet();
     if (r.built) { world.sync(S); toast(`انحفر ${B[r.built].name} جديد قرب البلد`, "goal"); }
     if (r.lost) { world.sync(S); toast(`احترق ${r.lost} 🔥`, "bad"); }
+    if (r.ok) { const re = decisionReaction(S, decided, choice); if (re) addPosts([re]); }
     refresh(); save();
   }));
 }

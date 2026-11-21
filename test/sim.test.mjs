@@ -112,3 +112,21 @@ test("decisions about the village: they show up for a reason and do what they sa
   assert.equal(s.money, 2900);
   assert.ok(analyze(s).loan > 0, "the loan is paid back every hour");
 });
+
+test("the residents remember: they ask, hold the mayor to a promise, and thank him when it is done", async () => {
+  const news = await import("../js/news.js");
+  const { seasonOf, onRoad } = await import("../js/sim.js");
+  const s = newGame(5);
+  for (let i = 0; i < 40; i++) step(s, fixedRandom());
+  s.pop = 70; s.money = 5000;
+  const season = seasonOf(s.day);
+  news.writePosts(s, analyze(s), season, 4);
+  const reply = news.smartReply(s, analyze(s), season, { who: "abunasser", topic: "mosque", mood: -1, text: "" }, "ابشر بنبني مسجد");
+  assert.match(reply, /المسجد/);
+  assert.equal(s.promises.length, 1);
+  const i = s.tiles.findIndex((t, k) => !t.b && t.t !== "rock" && owns(s, k % N, Math.floor(k / N)) && onRoad(s, k % N, Math.floor(k / N)));
+  build(s, i % N, Math.floor(i / N), "mosque");
+  const posts = news.followUps(s, analyze(s), season);
+  assert.ok(posts.some((p) => /وفيت بوعدك/.test(p.text)), "thanks the mayor for the kept promise");
+  assert.equal(s.promises.length, 0);
+});
