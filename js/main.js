@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, dayOf, hourOf, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx } from "./sound.js";
@@ -354,8 +354,33 @@ $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet") && per
 
 const row = (k, v, cls = "") => `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`;
 
+/** Land outside the town: what it is, what it costs, and a button to buy it. */
+function plotSheet(id) {
+  const plot = PLOTS.find((p) => p.id === id), price = plotPrice(S);
+  let wadi = 0, fayda = 0, rocks = 0, size = 0;
+  S.tiles.forEach((t, i) => { if (plotAt(i % N, Math.floor(i / N)) !== id) return; size++; if (t.t === "wadi") wadi++; else if (t.t === "fayda") fayda++; else if (t.t === "rock") rocks++; });
+  const bought = PLOTS.filter((p) => S.owned[p.id]).length;
+  sheet(`<h2>${plot.name} للبيع</h2><p>أرض جديدة تكبر فيها الرافعية. كل ما اشتريت أرض، اللي بعدها تصير أغلى.</p>
+    <div class="rows">
+      ${row("المساحة", `${ar(size)} مربع`)}
+      ${wadi ? row("أرض الوادي (خصبة)", `${ar(wadi)} مربع`, "plus") : ""}
+      ${fayda ? row("فيضة", `${ar(fayda)} مربع`, "plus") : ""}
+      ${rocks ? row("صخور", `${ar(rocks)}`) : ""}
+      ${row("السعر", `${money(price)} ريال`, S.money >= price ? "" : "minus")}
+      ${row("اشتريت", `${ar(bought)} من ${ar(PLOTS.length)}`)}
+    </div>
+    <div class="sheet-actions"><button class="btn go block" id="buyPlot" type="button" ${S.money < price ? "disabled" : ""}>${S.money < price ? `تحتاج ${money(price - S.money)} ريال زيادة` : `اشترِ الأرض بـ${money(price)} ريال`}</button></div>`, "plot");
+  $("buyPlot").addEventListener("click", () => {
+    const why = buyPlot(S, id);
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.era(); closeSheet(); toast(`صارت ${plot.name} لك!`, "goal");
+    world.sync(S); refresh(); save();
+  });
+}
+
 function inspect(x, y) {
   const t = S.tiles[idx(x, y)];
+  if (!owns(S, x, y)) { sfx.tap(); plotSheet(plotAt(x, y)); return; }
   if (!t.b) {
     if (t.t === "rock") sheet(`<h2>صخور</h2><p>تقدر تشيلها بـ${money(ROCK_CLEAR)} ريال، أو تبني فوقها مباشرة والإزالة تنحسب مع السعر.</p>`, "inspect");
     else if (t.t === "wadi") sheet(`<h2>أرض الوادي</h2><p>أرض خصبة: مزارع النخل والخضار هنا تنتج ٥٠٪ أكثر.</p>`, "inspect");

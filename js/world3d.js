@@ -1,7 +1,7 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
 import { MAP_SIZE as N, B } from "./data.js";
-import { idx, inMap, seasonOf } from "./sim.js";
+import { idx, inMap, seasonOf, owns, plotAt } from "./sim.js";
 import { model, modelKey, makerSeeded } from "./models.js";
 
 const HALF = N / 2;
@@ -145,7 +145,7 @@ export class World {
 
     // Flat-topped mesas of Najd on the horizon.
     for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2 + hash(i, 1) * 0.3, r = 26 + hash(i, 2) * 14;
+      const a = (i / 16) * Math.PI * 2 + hash(i, 1) * 0.3, r = HALF + 11 + hash(i, 2) * 14;
       const geo = makerSeeded("mesa", i + 1).matte;
       const m = new THREE.Mesh(geo, this.mats.matte);
       m.position.set(Math.cos(a) * r, -0.1, Math.sin(a) * r);
@@ -157,7 +157,7 @@ export class World {
     // Desert plants all around the town (outside the buildable land).
     const out = { shrub: [], grassTuft: [], acacia: [], rock: [] };
     for (let i = 0; i < (this.quality === "low" ? 500 : 1100); i++) {
-      const x = (hash(i, 11) - 0.5) * 70, z = (hash(i, 12) - 0.5) * 70;
+      const x = (hash(i, 11) - 0.5) * (N + 40), z = (hash(i, 12) - 0.5) * (N + 40);
       if (Math.max(Math.abs(x), Math.abs(z)) < HALF + 0.6) continue;
       const pick = hash(i, 13);
       const key = pick < 0.45 ? "grassTuft" : pick < 0.85 ? "shrub" : pick < 0.92 ? "acacia" : "rock";
@@ -212,6 +212,7 @@ export class World {
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
       c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : "#f1d49c");
       c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
+      if (!owns(s, x, y)) { c.offsetHSL(0, -0.12, -0.06); }
       const x0 = x - HALF, z0 = y - HALF;
       const quad = [[x0, z0], [x0, z0 + 1], [x0 + 1, z0 + 1], [x0, z0], [x0 + 1, z0 + 1], [x0 + 1, z0]];
       for (const [qx, qz] of quad) { pos.push(qx, 0, qz); col.push(c.r, c.g, c.b); uvs.push(qx * 0.3, qz * 0.3); }
@@ -224,6 +225,26 @@ export class World {
     this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1 }));
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
+    // A fence along the edge of the land the town owns, and a "for sale" sign on each plot.
+    this.removeAll(this.fenceMeshes);
+    const posts = [], signs = [], signAt = {};
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!owns(s, x, y)) {
+        const p = plotAt(x, y);
+        // the sign goes on the plot tile nearest the middle of the map
+        const d = Math.hypot(x - HALF + 0.5, y - HALF + 0.5) + Math.abs((p === "n" || p === "s" ? x : y) - HALF) * 0.5;
+        if (!signAt[p] || d < signAt[p].d) signAt[p] = { x, y, d };
+        continue;
+      }
+      const c0 = tileCenter(x, y);
+      if (inMap(x + 1, y) && !owns(s, x + 1, y)) for (const k of [0, 0.5]) posts.push(this.place(c0.x + 0.5, c0.z - 0.5 + k, -Math.PI / 2));
+      if (inMap(x - 1, y) && !owns(s, x - 1, y)) for (const k of [0, 0.5]) posts.push(this.place(c0.x - 0.5, c0.z - 0.5 + k, -Math.PI / 2));
+      if (inMap(x, y + 1) && !owns(s, x, y + 1)) for (const k of [0, 0.5]) posts.push(this.place(c0.x - 0.5 + k, c0.z + 0.5, 0));
+      if (inMap(x, y - 1) && !owns(s, x, y - 1)) for (const k of [0, 0.5]) posts.push(this.place(c0.x - 0.5 + k, c0.z - 0.5, 0));
+    }
+    for (const { x, y } of Object.values(signAt)) { const c0 = tileCenter(x, y); signs.push(this.place(c0.x, c0.z, Math.atan2(c0.x, c0.z) + Math.PI / 2, 1.3)); }
+    this.fenceMeshes = [...this.addInstances(model("fencePost"), posts), ...this.addInstances(model("saleSign"), signs, true)];
+
     // After rain the wadi runs: a thin sheet of water along its bed.
     if (this.flood) { this.scene.remove(this.flood); this.flood.geometry.dispose(); }
     const wp = [];

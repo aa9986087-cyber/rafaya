@@ -1,6 +1,6 @@
 // A simple automatic mayor, to check the town can grow from village to province and money stays sane.
-import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap } from "../js/sim.js";
-import { B, TECH, MAP_SIZE as N, ERAS } from "../js/data.js";
+import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice } from "../js/sim.js";
+import { B, TECH, MAP_SIZE as N, ERAS, PLOTS } from "../js/data.js";
 
 export function autoplay(days = 250, seed = 42, log = false) {
   const s = newGame(seed);
@@ -25,6 +25,7 @@ export function autoplay(days = 250, seed = 42, log = false) {
     if (s.money > 900) { place(order[i % order.length]); i++; place("road"); }
     if (s.money > 4500 && s.era >= 1) place(["police", "stadium", "mandi", "workshop"][d % 4]);
     if (s.money > 12000 && s.era >= 2) place(["hospital", "bigmosque", "mall", "factory"][d % 4]);
+    for (const p of PLOTS) if (!s.owned[p.id] && s.money > plotPrice(s) * 1.5) buyPlot(s, p.id);
     for (const t of Object.keys(TECH)) if (!s.research && !s.tech[t]) startResearch(s, t);
     step(s);
     if (log && s.day % 100 === 0) console.log(`day ${s.day} | ${ERAS[s.era].name} | pop ${s.pop} | money ${Math.round(s.money)} | net/day ${analyze(s).net} | happy ${Math.round(s.happy)} | water ${analyze(s).waterRatio.toFixed(2)} power ${analyze(s).powerRatio.toFixed(2)} | houses L ${analyze(s).levels}`);

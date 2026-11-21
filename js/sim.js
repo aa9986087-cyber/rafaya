@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS } from "./data.js";
+import { B, TECH, EVENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -12,10 +12,31 @@ export function rng(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-// ---------- new game ----------
+// ---------- land ----------
 
-export function newGame(seed = Math.floor(Math.random() * 1e9)) {
-  const r = rng(seed);
+const O = OWN_START, E = N - OWN_START;
+/** Which plot a tile belongs to ("" for the land the town starts with). The corners go clockwise. */
+export function plotAt(x, y) {
+  if (x >= O && x < E && y >= O && y < E) return "";
+  if (y < O && x < E) return "n";
+  if (x >= E && y < E) return "e";
+  if (y >= E && x >= O) return "s";
+  return "w";
+}
+export const owns = (s, x, y) => { const p = plotAt(x, y); return !p || !!s.owned?.[p]; };
+export const plotPrice = (s) => PLOT_PRICES[Math.min(PLOT_PRICES.length - 1, PLOTS.filter((p) => s.owned?.[p.id]).length)];
+export function buyPlot(s, id) {
+  if (!PLOTS.some((p) => p.id === id)) return "ما فيه أرض كذا";
+  if (s.owned[id]) return "الأرض لك من قبل";
+  const price = plotPrice(s);
+  if (s.money < price) return "ما يكفي المال";
+  s.money -= price;
+  s.owned[id] = true;
+  return "";
+}
+
+/** Sand, a winding wadi and scattered rocks over the whole map. */
+function makeLand(r) {
   const tiles = Array.from({ length: N * N }, () => ({ t: "sand", b: null }));
   // A dry wadi winding across the land: fertile ground for farms.
   let y = Math.floor(N * 0.3 + r() * N * 0.2);
@@ -24,24 +45,32 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
     if (r() < 0.35) y = clamp(y + (r() < 0.5 ? -1 : 1), 2, N - 3);
   }
   // Rocks here and there (cost a little to clear).
-  for (let i = 0; i < N * 1.6; i++) {
+  for (let i = 0; i < N * N * 0.053; i++) {
     const x = Math.floor(r() * N), yy = Math.floor(r() * N), t = tiles[idx(x, yy)];
     if (t.t === "sand") t.t = "rock";
   }
   addFayda(tiles, r);
+  return tiles;
+}
+
+// ---------- new game ----------
+
+export function newGame(seed = Math.floor(Math.random() * 1e9)) {
+  const r = rng(seed);
+  const tiles = makeLand(r);
   // The old settlement in the middle: a lane, three tents, a well and palms on the wadi.
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
   const put = (x, yy, id) => { const t = tiles[idx(x, yy)]; t.t = t.t === "rock" ? "sand" : t.t; t.b = { id, lvl: 0, res: id === "house" ? 3 : 0 }; };
   for (let x = cx - 3; x <= cx + 3; x++) put(x, cy, "road");
   put(cx - 2, cy - 1, "house"); put(cx, cy - 1, "house"); put(cx + 2, cy - 1, "house");
   put(cx - 1, cy + 1, "well");
-  let palmsPlaced = 0;
-  for (let yy = 0; yy < N && palmsPlaced < 2; yy++) for (let x = cx - 4; x <= cx + 4 && palmsPlaced < 2; x++) {
-    const t = tiles[idx(x, yy)];
-    if (t.t === "wadi" && !t.b && Math.abs(yy - cy) < 9) { put(x, yy, "palms"); palmsPlaced++; }
-  }
+  // Two palm groves on the nearest wadi ground the town owns (on sand if there is none).
+  const spots = [];
+  for (let yy = O; yy < E; yy++) for (let x = O; x < E; x++) if (!tiles[idx(x, yy)].b && tiles[idx(x, yy)].t !== "rock") spots.push([x, yy]);
+  spots.sort(([ax, ay], [bx, by]) => (tiles[idx(ax, ay)].t === "wadi" ? 0 : 100) + Math.hypot(ax - cx, ay - cy) - (tiles[idx(bx, by)].t === "wadi" ? 0 : 100) - Math.hypot(bx - cx, by - cy));
+  for (const [x, yy] of spots.slice(0, 2)) put(x, yy, "palms");
   return {
-    v: 1, hv: 2, fv: 1, seed, day: 3, // hour 3 of day 1: two hours after sunrise
+    v: 1, hv: 2, fv: 1, size: N, owned: {}, seed, day: 3, // hour 3 of day 1: two hours after sunrise
     money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
@@ -69,7 +98,7 @@ export function seasonOf(hour) {
 function addFayda(tiles, r) {
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
   let made = 0;
-  for (let tries = 0; tries < 200 && made < 3; tries++) {
+  for (let tries = 0; tries < 300 && made < 5; tries++) {
     const x = 3 + Math.floor(r() * (N - 6)), y = 3 + Math.floor(r() * (N - 6));
     if (Math.hypot(x - cx, y - cy) < 8 || tiles[idx(x, y)].t !== "sand" || tiles[idx(x, y)].b) continue;
     const size = 7 + Math.floor(r() * 6), cells = [[x, y]];
@@ -92,6 +121,7 @@ export function cantBuild(s, x, y, id) {
   const def = B[id];
   if (!inMap(x, y)) return "خارج الأرض";
   const t = s.tiles[idx(x, y)];
+  if (!owns(s, x, y)) return "الأرض هذي مو لك: اضغط عليها عشان تشتريها";
   if (def.era > s.era) return `تحتاج الرافعية تصير ${ERAS[def.era].name}`;
   if (!techUnlocked(s, def)) return `تحتاج بحث «${TECH[def.tech].name}»`;
   if (t.b) {
@@ -116,6 +146,7 @@ export function build(s, x, y, id) {
 /** Remove a building (a third of its price comes back) or clear a rock. */
 export function demolish(s, x, y) {
   const t = s.tiles[idx(x, y)];
+  if (!owns(s, x, y)) return "الأرض هذي مو لك";
   if (t.b) {
     const def = B[t.b.id];
     s.money += Math.floor(def.cost / 3);
@@ -372,7 +403,19 @@ export function pack(s) {
 
 export function unpack(text) {
   const o = JSON.parse(text);
-  if (!o || o.v !== 1 || !Array.isArray(o.tiles) || o.tiles.length !== N * N) throw new Error("bad save");
+  if (!o || o.v !== 1 || !Array.isArray(o.tiles)) throw new Error("bad save");
+  // Saves from the 30×30 map: the old town goes in the middle, with new land around it to buy.
+  const old = Math.round(Math.sqrt(o.tiles.length));
+  if (old * old !== o.tiles.length || old > N) throw new Error("bad save");
+  if (old < N) {
+    const off = (N - old) / 2, land = makeLand(rng((o.seed || 1) + 7));
+    const fresh = land.map((t) => (t.t === "sand" ? "" : t.t[0]));
+    o.tiles.forEach((str, i) => { fresh[idx((i % old) + off, Math.floor(i / old) + off)] = str; });
+    o.tiles = fresh;
+    if (o.cam) { o.cam = null; }
+  }
+  o.size = N;
+  o.owned ||= {};
   const shift = o.hv === 2 ? 0 : 1; // saves from before tents: every house moves up one step
   o.hv = 2;
   const faydaMissing = o.fv !== 1;
@@ -383,5 +426,7 @@ export function unpack(text) {
     return { t: ground, b: id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));
+  // The land the town already used is its own, even outside the middle.
+  o.tiles.forEach((t, i) => { if (t.b) { const p = plotAt(i % N, Math.floor(i / N)); if (p) o.owned[p] = true; } });
   return o;
 }

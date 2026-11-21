@@ -1,6 +1,16 @@
 // Everything the town can build, research and become. Numbers are per in-game day.
 
-export const MAP_SIZE = 30;
+export const MAP_SIZE = 40;
+/** The town owns the middle (OWN_START … MAP_SIZE − OWN_START); the land around it is bought in plots. */
+export const OWN_START = 5;
+export const PLOTS = [
+  { id: "n", name: "الأرض الشمالية" },
+  { id: "e", name: "الأرض الشرقية" },
+  { id: "s", name: "الأرض الجنوبية" },
+  { id: "w", name: "الأرض الغربية" }
+];
+/** Each plot costs more than the last one bought. */
+export const PLOT_PRICES = [6000, 12000, 20000, 32000];
 
 /** Town stages: reaching the population opens the stage and its buildings. */
 export const ERAS = [
