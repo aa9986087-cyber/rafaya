@@ -118,6 +118,11 @@ function topics(s, a, season, f) {
   if (s.happy < 35) add("growth", -1, 6, [`الناس زعلانين، والرضا ${nAr(Math.round(s.happy))}٪ بس. لازم العمدة يسمع لنا.`]);
   if (f.tents >= 10 && a.levels.slice(1).every((n) => !n)) add("change", 0, 4, [`abunasser:الخيام كثرت والحمد لله. إذا صرنا ٣٠ واستقرينا نبني بيوت طين مثل أول.`]);
 
+  // The market and the council's money
+  if (a.shopRaw > a.shopDemand * 1.3 && a.shopRaw > 10) add("shops", -1, 6, [`abufahad:المحلات كثرت والزباين نفسهم! الأهالي يصرفون ${num(a.shopDemand)} بالساعة بس، وكل محل يقاسم الثاني. نبي ناس أكثر مو محلات أكثر.`, `jawaher:السوق مشبع، فتحت المشغل وما جاني إلا القليل. البلد تحتاج سكان قبل المحلات.`]);
+  if (s.broke) add("money", -1, 12, [`umsaad:البلدية أفلست! المدرسة مقفلة والمستوصف مسكّر. وين راحت الفلوس؟`, `abuabdullah:الإفلاس ما يجي فجأة. المصاريف ${num(a.upkeep)} بالساعة والدخل أقل. قفلوا اللي ما يرجع وارفعوا الدخل.`]);
+  else if (s.money < 0) add("money", -1, 9, [`drYousef:المستوصف يشتغل بنص طاقته لأن الرواتب متأخرة. الديون تأثر على صحة الناس.`]);
+
   // ---- the residents who think it through: how much is missing, where, and what it costs ----
   const n = needs(s, a);
   if (n.wells > 0) add("water", -1, 7, [`abukhalid:حسبتها: الماء ناقص ${num(n.waterGap)} وحدة، والبئر يعطي ٣٠. يعني نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} زيادة${s.era >= 1 ? `، أو خزان واحد يكفي الكل` : ""}.`]);

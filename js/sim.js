@@ -188,7 +188,7 @@ export function analyze(s) {
   const a = {
     count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: B.house.levels.map(() => 0),
     waterSupply: 0, waterUse: 0, powerSupply: 0, powerUse: 0, cap: 0, jobs: 0, income: 0, farmIncome: 0,
-    upkeep: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
+    upkeep: 0, costs: { services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0 }, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
     services: Array.from({ length: N * N }, () => new Set())
   };
   const concrete = s.tech.concrete ? 1.25 : 1;
@@ -198,12 +198,13 @@ export function analyze(s) {
     if (!t.b) continue;
     const def = B[t.b.id];
     a.count[t.b.id]++;
-    if (t.b.build > 0) { t.b.works = false; a.upkeep += Math.round((def.upkeep || 0) / 4); continue; } // still being built
-    const works = !needsRoad(def) || onRoad(s, x, y);
+    if (t.b.build > 0) { t.b.works = false; a.costs.sites += Math.round((def.upkeep || 0) / 4); continue; } // still being built
+    // A bankrupt council cannot pay the people who run its services: they close.
+    const works = (!needsRoad(def) || onRoad(s, x, y)) && !(s.broke && def.cat === "serv");
     t.b.works = works;
     if (def.water > 0) a.waterSupply += def.water; else if (def.water && works) a.waterUse -= def.water;
     if (def.power > 0) a.powerSupply += def.power; else if (def.power && works) a.powerUse -= def.power;
-    a.upkeep += def.upkeep || 0;
+    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += def.upkeep || 0;
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
@@ -217,19 +218,23 @@ export function analyze(s) {
       for (let yy = y - def.radius; yy <= y + def.radius; yy++) for (let xx = x - def.radius; xx <= x + def.radius; xx++) {
         if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > def.radius) continue;
         const i = idx(xx, yy);
-        if (def.happy) a.local[i] += def.happy;
+        if (def.happy) a.local[i] += s.money < 0 && def.cat === "serv" ? def.happy / 2 : def.happy;
         if (def.pollute) a.pollution[i] += def.pollute;
         if (def.service) a.services[i].add(def.service);
       }
     }
   }
-  // Running costs that grow with the town: services for every resident (cleaning, the water
-  // network, the clinic's medicine…) and keeping the roads up.
-  a.peopleCost = s.pop * 0.06;
-  a.roadCost = a.count.road * 0.05 + a.count.asphalt * 0.12;
-  a.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0); // bank loan instalments
-  a.upkeep += a.peopleCost + a.roadCost + a.loan;
-  if (s.tech.zakat) a.upkeep *= 0.85;
+  // Running the town, per hour: the council's own staff (more of them at each stage), cleaning and
+  // rubbish for every resident, keeping the water network up, road repairs and street lights, loans.
+  const c = a.costs;
+  c.staff = [3, 25, 90, 250][s.era] + s.pop * 0.02;
+  c.cleaning = s.pop * 0.05;
+  c.waterNet = a.waterUse * 0.04;
+  c.roads = a.count.road * 0.05 + a.count.asphalt * 0.15;
+  c.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0);
+  if (s.tech.zakat) for (const k of ["services", "utilities", "business", "staff"]) c[k] *= 0.85;
+  a.upkeep = Object.values(c).reduce((n, v) => n + v, 0);
+  a.peopleCost = c.staff + c.cleaning + c.waterNet; a.roadCost = c.roads; a.loan = c.loan;
   a.waterSupply *= activeEvent(s, "water");
   a.powerSupply *= activeEvent(s, "power");
   if (seasonOf(s.day).id === "summer") a.waterUse = Math.round(a.waterUse * 1.1);
@@ -245,6 +250,10 @@ export function analyze(s) {
   // Money for one day.
   const shopMult = activeEvent(s, "shop") * (s.tech.smart ? 1.2 : 1);
   const farmMult = activeEvent(s, "farm") * (s.tech.irrigation ? 1.3 : 1) * (s.tech.smart ? 1.2 : 1);
+  // Local shops can only sell what the residents spend (about 0.6 riyal a person an hour, more in
+  // Ramadan and Eid); more shops than that share the same customers. Visitors' places (hotel, the
+  // grand projects) and industry sell outside the town, so they are not capped.
+  a.shopRaw = 0; a.visitorIncome = 0; a.industryIncome = 0;
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const t = s.tiles[idx(x, y)];
     if (!t.b || !t.b.works) continue;
@@ -256,9 +265,14 @@ export function analyze(s) {
     } else {
       let inc = def.income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio);
       if (t.b.id === "datefactory") inc *= 1 + Math.min(1, palms.length * 0.1);
-      a.income += inc * (def.cat === "shop" ? shopMult : 1);
+      if (def.visitors) a.visitorIncome += inc * shopMult;
+      else if (def.cat === "shop") a.shopRaw += inc * shopMult;
+      else a.industryIncome += inc;
     }
   }
+  a.shopDemand = s.pop * 0.6 * shopMult;
+  a.shopIncome = Math.min(a.shopRaw, a.shopDemand);
+  a.income = a.shopIncome + a.visitorIncome + a.industryIncome;
   // Tax per person falls a little as the town grows, so big cities do not drown in money.
   a.tax = s.pop * (s.tax / 100) * (3 - Math.min(1.2, s.pop / 2500));
   a.net = Math.round(a.income + a.farmIncome + a.tax - a.upkeep);
@@ -310,10 +324,12 @@ export function houseBlocker(s, a, x, y) {
 export function step(s, r = Math.random) {
   const a = analyze(s);
   // People move in when there is room and life is good, and leave when it is not.
-  const pull = clamp((s.happy - 25) / 50, 0, 1.2) * (1 - a.unemployment * 0.8);
+  // Homes fill up when life is good (fully from 60% content), and empty when it is not.
+  const pull = clamp((s.happy - 20) / 40, 0, 1.2) * (1 - a.unemployment * 0.8);
   const target = a.cap * clamp(pull, 0, 1);
   const before = s.pop;
-  s.pop = Math.max(0, Math.round(s.pop + (target - s.pop) * 0.12 + (target > s.pop ? 1 : 0)));
+  // People come quickly when there is room, but leave slowly: a bad day does not empty a town.
+  s.pop = Math.max(0, Math.round(s.pop + (target - s.pop) * (target > s.pop ? 0.12 : 0.03) + (target > s.pop ? 1 : 0)));
   if (s.pop > a.cap) s.pop = a.cap;
   // Spread residents evenly over the connected houses (every house about equally full).
   const concrete = s.tech.concrete ? 1.25 : 1;
@@ -352,6 +368,10 @@ export function step(s, r = Math.random) {
   const msgs = done.map((name) => ({ kind: "goal", text: `اكتمل مشروع «${name}»! 🎉` }));
   // Stage of the town never goes back.
   for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
+  // Bankruptcy: deep in debt the council stops paying its services; back above zero they reopen.
+  const limit = 1500 + a.upkeep * 12;
+  if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
+  else if (s.broke && s.money >= 0) { s.broke = false; msgs.push({ kind: "goal", text: "سددت الديون! الخدمات رجعت تشتغل." }); }
   // A new season.
   const season = seasonOf(s.day);
   if (season.i !== seasonBefore) msgs.push({ kind: "season", title: season.name, text: season.start });

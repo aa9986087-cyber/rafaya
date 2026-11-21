@@ -151,3 +151,12 @@ test("fobbing a resident off brings them back, and they will not take it twice",
   news.answerPost(s, analyze(s), seasonOf(s.day), back, "refuse");
   assert.ok(news.moodOf(s, "umsaad") < before, "refusing upsets her");
 });
+
+test("money is not guaranteed: a spender goes broke, a careful mayor does not", () => {
+  const spender = autoplay(900, 2, false, "spender");
+  assert.ok(spender.money < 0, `the spender ends in debt (${Math.round(spender.money)})`);
+  const careful = autoplay(900, 2, false, "careful");
+  assert.ok(careful.money > 0 && !careful.broke, "the careful mayor stays in credit");
+  const a = analyze(careful);
+  assert.ok(a.shopIncome <= a.shopDemand + 1e-6, "shops never sell more than people spend");
+});

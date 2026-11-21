@@ -67,7 +67,7 @@ export const B = {
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
   souq: { cat: "shop", name: "سوق شعبي", cost: 600, upkeep: 10, era: 1, jobs: 14, income: 60, water: -2, power: -3, text: "سوق يرفع الدخل كثير." },
   mandi: { cat: "shop", name: "مطعم مندي", cost: 450, upkeep: 6, era: 1, jobs: 9, income: 42, water: -3, power: -3, radius: 4, happy: 8, text: "الكل يحبه: وظائف ورضا." },
-  hotel: { cat: "shop", name: "فندق", cost: 2600, upkeep: 30, era: 2, tech: "tourism", jobs: 30, income: 150, water: -8, power: -8, text: "يجيب الزوار والدخل." },
+  hotel: { cat: "shop", visitors: true, name: "فندق", cost: 2600, upkeep: 30, era: 2, tech: "tourism", jobs: 30, income: 150, water: -8, power: -8, text: "يجيب الزوار والدخل." },
   mall: { cat: "shop", name: "مجمع تجاري", cost: 5200, upkeep: 60, era: 2, jobs: 70, income: 270, water: -10, power: -14, radius: 6, happy: 10, text: "وظائف كثيرة ودخل عالي." },
 
   palms: { cat: "farm", name: "مزرعة نخل", cost: 150, upkeep: 2, era: 0, jobs: 5, income: 11, water: -5, text: "تمور ودخل. في الوادي تنتج أكثر." },
@@ -103,10 +103,10 @@ export const B = {
   incense: { cat: "deco", name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
 
   // Grand projects: one of each, very dear, and they take days to build.
-  gate: { cat: "proj", name: "بوابة الرافعية", cost: 5000, upkeep: 20, era: 1, unique: true, buildHours: 48, radius: 9, happy: 12, income: 60, text: "بوابة نجدية كبيرة على مدخل البلد. يفرح فيها الأهالي ويجيب زوار." },
-  heritage: { cat: "proj", name: "السوق التراثي", cost: 9000, upkeep: 40, era: 1, unique: true, buildHours: 72, jobs: 40, radius: 7, happy: 10, income: 220, water: -4, power: -4, text: "سوق قديم مرمّم بالطين والخشب، فيه حرف ومطاعم ودلال." },
-  tower: { cat: "proj", name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
-  airport: { cat: "proj", name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
+  gate: { cat: "proj", visitors: true, name: "بوابة الرافعية", cost: 5000, upkeep: 20, era: 1, unique: true, buildHours: 48, radius: 9, happy: 12, income: 60, text: "بوابة نجدية كبيرة على مدخل البلد. يفرح فيها الأهالي ويجيب زوار." },
+  heritage: { cat: "proj", visitors: true, name: "السوق التراثي", cost: 9000, upkeep: 40, era: 1, unique: true, buildHours: 72, jobs: 40, radius: 7, happy: 10, income: 220, water: -4, power: -4, text: "سوق قديم مرمّم بالطين والخشب، فيه حرف ومطاعم ودلال." },
+  tower: { cat: "proj", visitors: true, name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
+  airport: { cat: "proj", visitors: true, name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
 
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, text: "يوصل البيوت والمحلات ببعض." },
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, text: "أنظف وأحسن من الترابي." }

@@ -10,6 +10,8 @@ const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
 const ar = (n) => String(n).replace(/\d/g, (d) => AR[d]);
 const money = (n) => ar(Math.round(n).toLocaleString("en-US"));
+/** Money with one decimal for small amounts (٠٫٦) and whole numbers otherwise. */
+const fine = (n) => (Math.abs(n) < 10 && Math.round(n) !== n ? ar(n.toFixed(1)).replace(".", "٫") : money(n));
 const SAVE = "rafaya-save-v1";
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -572,14 +574,32 @@ function budget() {
   const h = S.history;
   sheet(`<h2>الأرقام</h2>
     <div class="rows">
-      ${row("الضرائب", `+${money(A.tax)}`, "plus")}
-      ${row("المحلات والمصانع", `+${money(A.income)}`, "plus")}
-      ${row("المزارع", `+${money(A.farmIncome)}`, "plus")}
-      ${row("مصاريف المباني", `−${money(A.upkeep - A.peopleCost - A.roadCost)}`, "minus")}
-      ${row("خدمات الأهالي (نظافة، شبكة ماء، علاج)", `−${money(A.peopleCost)}`, "minus")}
-      ${row("صيانة الطرق", `−${money(A.roadCost)}`, "minus")}
-      ${S.money < 0 ? `<div class="need">الميزانية بالسالب: الرواتب متأخرة والناس زعلانين (−١٢ رضا).</div>` : ""}
       ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
+      ${row("يعني باليوم (٢٤ ساعة)", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net * 24))}`, A.net >= 0 ? "plus" : "minus")}
+      ${A.net < 0 && S.money > 0 ? `<div class="need">تخسر كل ساعة. بعد ${ar(Math.max(1, Math.floor(S.money / -A.net)))} ساعة تصير الميزانية بالسالب.</div>` : ""}
+      ${S.broke ? `<div class="need">البلدية مفلسة: المساجد والمدارس والمستوصفات مقفلة لين ترجع الميزانية فوق الصفر.</div>` : S.money < 0 ? `<div class="need">الميزانية بالسالب: الرواتب متأخرة، والخدمات تشتغل بنص طاقتها، والناس زعلانين. لو زادت الديون عن ${money(1500 + A.upkeep * 12)} تفلس البلدية.</div>` : ""}
+    </div>
+    <h3>الدخل بالساعة</h3>
+    <div class="rows">
+      ${row("الضرائب على الأهالي", `+${fine(A.tax)}`, "plus")}
+      ${row("مبيعات المحلات", `+${fine(A.shopIncome)}`, "plus")}
+      ${A.shopRaw > A.shopDemand * 1.02 ? `<div class="need">السوق مشبع: الأهالي يصرفون ${fine(A.shopDemand)} بالساعة بس، والمحلات تقدر تبيع ${fine(A.shopRaw)}. محلات زيادة ما تجيب دخل، تحتاج ناس أكثر.</div>` : A.shopRaw > 0 ? `<div class="need ok">السوق فيه مجال: الأهالي يصرفون ${fine(A.shopDemand)} والمحلات تبيع ${fine(A.shopRaw)}.</div>` : ""}
+      ${A.visitorIncome ? row("الزوار والمشاريع الكبرى", `+${fine(A.visitorIncome)}`, "plus") : ""}
+      ${A.industryIncome ? row("الورش والمصانع", `+${fine(A.industryIncome)}`, "plus") : ""}
+      ${row("المزارع", `+${fine(A.farmIncome)}`, "plus")}
+    </div>
+    <h3>المصاريف بالساعة</h3>
+    <div class="rows">
+      ${row("رواتب موظفي البلدية", `−${fine(A.costs.staff)}`, "minus")}
+      ${row("النظافة وجمع النفايات", `−${fine(A.costs.cleaning)}`, "minus")}
+      ${row("صيانة شبكة الماء", `−${fine(A.costs.waterNet)}`, "minus")}
+      ${row("صيانة الطرق والإنارة", `−${fine(A.costs.roads)}`, "minus")}
+      ${A.costs.services ? row("رواتب الخدمات (مساجد، مدارس، مستوصفات…)", `−${fine(A.costs.services)}`, "minus") : ""}
+      ${A.costs.utilities ? row("تشغيل الآبار والكهرباء", `−${fine(A.costs.utilities)}`, "minus") : ""}
+      ${A.costs.business ? row("مصاريف المحلات والمزارع والمصانع", `−${fine(A.costs.business)}`, "minus") : ""}
+      ${A.costs.sites ? row("مواقع الإنشاء", `−${fine(A.costs.sites)}`, "minus") : ""}
+      ${A.costs.loan ? row("أقساط القرض", `−${fine(A.costs.loan)}`, "minus") : ""}
+      ${row("المجموع", `−${fine(A.upkeep)}`, "minus")}
     </div>
     <h3>الضريبة</h3><p>ضريبة أعلى = دخل أكثر بس رضا أقل.</p>
     <div class="tax"><input id="taxIn" type="range" min="0" max="25" step="1" value="${S.tax}" aria-label="نسبة الضريبة"><b id="taxOut">${ar(S.tax)}٪</b></div>
