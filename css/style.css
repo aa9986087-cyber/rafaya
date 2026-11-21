@@ -48,6 +48,8 @@ input { -webkit-user-select: text; user-select: text; }
 .when b { font: 700 16px/1.2 var(--title); color: #f3cf7a; }
 .when { display: grid; gap: 3px; padding: 5px 10px 6px; }
 .when-top { display: flex; gap: 8px; align-items: baseline; }
+.when .time { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: rgba(243, 207, 122, .18); color: #f8e3a8; }
+.when .time[data-p="الليل"], .when .time[data-p="الفجر"] { background: rgba(143, 179, 224, .22); color: #cfe0ff; }
 .when-season { display: grid; gap: 3px; font-size: 11px; color: rgba(251, 243, 226, .85); }
 .when-season .bar { height: 4px; background: rgba(255, 255, 255, .15); }
 .when-season .bar > i[data-s="spring"] { background: #8fc45a; }

@@ -27,7 +27,14 @@ let playing = false;
 let speed = 1;
 let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
-const DAY_MS = 6000; // one game day: six seconds at normal speed
+// One game day is one full day in the town: sunrise, noon, sunset and night.
+// 45 seconds at normal speed; the faster buttons run it 3× and 8×.
+const DAY_MS = 45000;
+const DAYLIGHT = 0.68; // share of the day with the sun up
+/** Where the sun is (0 midnight … 0.5 noon) for how far we are through the game day (0 = sunrise). */
+const sunAt = (p) => (p < DAYLIGHT ? 0.25 + (p / DAYLIGHT) * 0.5 : 0.75 + ((p - DAYLIGHT) / (1 - DAYLIGHT)) * 0.5) % 1;
+const PARTS = [[0.1, "الصبح"], [0.3, "الضحى"], [0.42, "الظهر"], [0.6, "العصر"], [0.68, "المغرب"], [0.93, "الليل"], [1, "الفجر"]];
+const partOfDay = (p) => PARTS.find(([end]) => p < end)[1];
 
 function save() { S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget }; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
 
@@ -489,7 +496,7 @@ function showAway(r) {
 
 // ---------- the clock ----------
 
-let last = performance.now(), acc = 0, tod = 0.36;
+let last = performance.now(), acc = DAY_MS * 0.12, tod = sunAt(0.12), shownPart = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -509,7 +516,11 @@ function frame(now) {
       if (sheetFor === "budget") budget();
       if (sheetFor === "council") council();
     }
-    tod = (tod + dt * speed / 240) % 1;
+  }
+  if (playing) {
+    tod = sunAt(acc / DAY_MS);
+    const part = partOfDay(acc / DAY_MS);
+    if (part !== shownPart) { shownPart = part; $("sTime").textContent = part; $("sTime").dataset.p = part; }
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   world.frame(dt, tod);
@@ -538,7 +549,7 @@ addEventListener("pagehide", save);
 Object.defineProperty(window, "__S", { get: () => S });
 window.__world = world;
 window.__play = startPlaying;
-window.__tod = (t) => { tod = t; };
+window.__tod = (t) => { tod = t; playing = false; };
 
 // ---------- start ----------
 

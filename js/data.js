@@ -11,7 +11,7 @@ export const ERAS = [
 ];
 
 /** The year turns through four seasons. Day 1 is the first day of spring. */
-export const SEASON_DAYS = 30;
+export const SEASON_DAYS = 10;
 export const SEASONS = [
   { id: "spring", name: "الربيع", start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
   { id: "summer", name: "الصيف", start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
