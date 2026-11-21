@@ -99,7 +99,11 @@ input { -webkit-user-select: text; user-select: text; }
 .card.on { border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal); }
 .card.locked { opacity: .6; }
 .tool-chip { position: fixed; z-index: 6; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom) + 152px); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 99px; background: var(--ink); color: #fbf3e2; font-size: 14px; box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .7); white-space: nowrap; }
-.tool-chip button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .15); color: #fff; }
+.tool-chip button { width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .15); color: #fff; flex: none; }
+.tool-chip button.ok { width: auto; padding: 0 16px; border-radius: 99px; background: var(--teal); font-weight: 800; animation: pop .3s ease-out; }
+.tool-chip button.ok:disabled { background: rgba(255, 255, 255, .2); color: rgba(255, 255, 255, .5); }
+.tool-chip { max-width: calc(100% - 24px); white-space: normal; }
+.tool-chip span { min-width: 0; }
 
 /* Sheets (council, budget, building info, menu) */
 .sheet { position: fixed; inset: 0; z-index: 20; background: rgba(40, 28, 16, .45); display: grid; align-items: end; justify-items: center; padding-top: calc(var(--top) + 30px); }

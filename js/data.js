@@ -86,6 +86,15 @@ export const B = {
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, text: "أنظف وأحسن من الترابي." }
 };
 
+// A long game: building is dear next to what the town earns. Every price above is multiplied
+// here (roads less, so a player can still lay out streets).
+export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6 };
+for (const d of Object.values(B)) {
+  d.cost = Math.round(d.cost * (d.cat === "road" ? PRICE.road : PRICE.build));
+  d.upkeep = Math.round((d.upkeep || 0) * PRICE.upkeep);
+  if (d.income && d.era >= 2) d.income = Math.round(d.income * PRICE.bigIncome); // big city earners pay less
+}
+
 /** The municipal council's research. Takes money and hours ("days" counts hours); each one stays forever. */
 export const TECH = {
   irrigation: { name: "الري بالتنقيط", cost: 500, days: 6, era: 0, text: "المزارع تنتج أكثر بـ٣٠٪ وتصرف ماء أقل." },
@@ -98,6 +107,7 @@ export const TECH = {
   desal: { name: "تحلية المياه", cost: 3000, days: 12, era: 2, text: "يفتح محطة التحلية." },
   smart: { name: "المدينة الذكية", cost: 6000, days: 16, era: 3, text: "الدخل كله أكثر بـ٢٠٪." }
 };
+for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);
 
 /** Goals that guide a new mayor; each pays a reward. */
 export const GOALS = [
@@ -136,4 +146,4 @@ export const EVENTS = [
 ];
 
 /** Starting village: a few tents, a well and palms by the wadi. */
-export const START_MONEY = 1500;
+export const START_MONEY = 600;

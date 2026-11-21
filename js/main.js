@@ -81,7 +81,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (painting) paintAt(e.clientX, e.clientY);
 });
 canvas.addEventListener("pointermove", (e) => {
-  if (!pointers.has(e.pointerId)) { if (e.pointerType === "mouse" && tool && playing) hoverAt(world.pick(e.clientX, e.clientY)); return; }
+  if (!pointers.has(e.pointerId)) { if (e.pointerType === "mouse" && tool && playing && !pending.length) hoverAt(world.pick(e.clientX, e.clientY)); return; }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && pointers.size >= 2) {
     const [a, b] = [...pointers.values()];
@@ -114,21 +114,70 @@ function hoverAt(t) {
   if (tool.id !== "bulldoze" && B[tool.id].radius) showReach(t.x, t.y, B[tool.id]);
 }
 
+// ---------- choosing a spot, then confirming ----------
+// Nothing is built on a tap. The tap (or a drag, for roads and removal) marks the spot,
+// a preview shows it, and the ✓ button builds it.
+let pending = []; // [{ x, y }]
+const isMulti = () => tool && (tool.id === "bulldoze" || B[tool.id].cat === "road");
+const tileCost = (x, y) => (tool.id === "bulldoze" ? 0 : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : !cantBuild(S, x, y, tool.id); };
+
+function showPending() {
+  if (!tool) return;
+  if (isMulti()) {
+    const values = new Float32Array(N * N);
+    for (const p of pending) values[idx(p.x, p.y)] = 1;
+    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : "#2cb59c");
+    world.setHover(pending.length ? pending[pending.length - 1] : null, true);
+  } else if (pending.length) hoverAt(pending[0]);
+  else { world.setHover(null); world.setGhost(null); world.setOverlay(null); }
+  const d = B[tool.id];
+  const ok = pending.filter((p) => canDo(p.x, p.y));
+  const cost = ok.reduce((a, p) => a + tileCost(p.x, p.y), 0);
+  $("toolOk").hidden = !pending.length;
+  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : "✓ ابنِ";
+  $("toolOk").disabled = !ok.length || cost > S.money;
+  if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(d.cost)} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
+  else if (tool.id === "bulldoze") $("toolName").textContent = `إزالة ${ar(ok.length)} ${ok.length === 1 ? "شي" : "أشياء"}؟`;
+  else if (!ok.length) $("toolName").textContent = cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا";
+  else $("toolName").textContent = `${isMulti() ? `${ar(ok.length)} مربع` : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+}
+
 function paintAt(sx, sy) {
   const t = world.pick(sx, sy);
   if (!inMap(t.x, t.y)) return;
   const key = idx(t.x, t.y);
   if (drag?.done.has(key)) return;
   drag?.done.add(key);
-  hoverAt(t);
-  apply(t.x, t.y, true);
+  if (!pending.some((p) => p.x === t.x && p.y === t.y) && canDo(t.x, t.y)) { pending.push(t); sfx.road(); }
+  showPending();
 }
 
 function tap(sx, sy) {
   const t = world.pick(sx, sy);
   if (!inMap(t.x, t.y)) return;
-  if (tool) { hoverAt(t); apply(t.x, t.y, false); return; }
+  if (tool) {
+    if (isMulti()) {
+      const at = pending.findIndex((p) => p.x === t.x && p.y === t.y);
+      if (at >= 0) pending.splice(at, 1); else pending.push(t);
+    } else pending = [t];
+    sfx.tap();
+    showPending();
+    return;
+  }
   inspect(t.x, t.y);
+}
+
+function confirmPending() {
+  if (!tool || !pending.length) return;
+  const list = pending.filter((p) => canDo(p.x, p.y));
+  const cost = list.reduce((a, p) => a + tileCost(p.x, p.y), 0);
+  if (!list.length) { toast(cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا", "bad"); sfx.deny(); return; }
+  if (cost > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+  for (const p of list) apply(p.x, p.y, list.length > 1);
+  pending = [];
+  world.setHover(null); world.setGhost(null); world.setOverlay(null);
+  showPending();
 }
 
 const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ["road", "asphalt"].includes(S.tiles[idx(x + dx, y + dy)].b?.id));
@@ -220,16 +269,19 @@ function renderCards() {
 
 function setTool(t) {
   tool = t;
+  pending = [];
   if (t) openCat = null;
   world.setHover(null); world.setGhost(null); world.setOverlay(null);
   $("toolChip").hidden = !t;
   if (t) {
     const d = B[t.id];
-    $("toolName").textContent = t.id === "bulldoze" ? "إزالة: اضغط أو اسحب على المباني والصخور" : `${d.name} · ${money(d.cost)} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
+    showPending();
   }
   renderCats(); renderCards();
 }
-$("toolCancel").addEventListener("click", () => { sfx.tap(); setTool(null); });
+// ✕ first clears the chosen spot; a second ✕ puts the tool away.
+$("toolCancel").addEventListener("click", () => { sfx.tap(); if (pending.length) { pending = []; world.setGhost(null); world.setHover(null); world.setOverlay(null); showPending(); } else setTool(null); });
+$("toolOk").addEventListener("click", () => confirmPending());
 
 // ---------- HUD ----------
 
@@ -265,6 +317,7 @@ function refresh() {
   $("councilDot").hidden = !!S.research || !Object.entries(TECH).some(([id, t]) => !S.tech[id] && t.era <= S.era && S.money >= t.cost);
   document.querySelectorAll("[data-speed]").forEach((b) => b.classList.toggle("on", Number(b.dataset.speed) === speed));
   if (openCat) renderCards();
+  if (tool && pending.length) showPending();
 }
 document.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); speed = Number(b.dataset.speed); refresh(); }));
 
@@ -439,8 +492,9 @@ function howTo(fromMenu) {
       <div class="row"><span>اسحب بإصبع</span><b>تتحرك في الخريطة</b></div>
       <div class="row"><span>بإصبعين</span><b>تكبّر وتصغّر</b></div>
       <div class="row"><span>زر «لفّ»</span><b>تدوّر المنظر</b></div>
-      <div class="row"><span>اختر من تحت واضغط مكانه</span><b>تبني</b></div>
-      <div class="row"><span>اسحب بالطريق</span><b>ترسمه مرة وحدة</b></div>
+      <div class="row"><span>اختر من تحت، اضغط مكانه، ثم «✓ ابنِ»</span><b>تبني</b></div>
+      <div class="row"><span>اسحب بالطريق ثم «✓ ابنِ»</span><b>ترسمه مرة وحدة</b></div>
+      <div class="row"><span>✕ مرة</span><b>تلغي المكان اللي اخترته</b></div>
       <div class="row"><span>اضغط على أي مبنى</span><b>تشوف وش ينقصه</b></div>
     </div>
     <h3>كيف تكبر الرافعية؟</h3>

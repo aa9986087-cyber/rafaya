@@ -216,7 +216,8 @@ export function analyze(s) {
       a.income += inc * (def.cat === "shop" ? shopMult : 1);
     }
   }
-  a.tax = s.pop * (s.tax / 100) * 3;
+  // Tax per person falls a little as the town grows, so big cities do not drown in money.
+  a.tax = s.pop * (s.tax / 100) * (3 - Math.min(1.2, s.pop / 2500));
   a.net = Math.round(a.income + a.farmIncome + a.tax - a.upkeep);
 
   // How happy people are where they live.
