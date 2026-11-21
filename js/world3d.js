@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt } from "./sim.js";
-import { model, modelKey, makerSeeded } from "./models.js";
+import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
@@ -361,15 +361,19 @@ export class World {
       for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
-      const key = modelKey(t.b.id, t.b.lvl), gk = key === "palms" ? `palms:${t.t}` : key;
+      // Building sites, and a colour variant per house so streets do not look copied.
+      let key = t.b.build > 0 ? "construction" : modelKey(t.b.id, t.b.lvl);
+      const variants = VARIANTS[key];
+      if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
+      const gk = key === "palms" ? `palms:${t.t}` : key;
       push(key, t.t, m4.clone());
       const i = idx(x, y);
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
       if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
-      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "clinic", "hotel", "mall", "bigmosque"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
+      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
       if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
-      if (["factory", "generator", "powerplant", "mandi", "datefactory"].includes(t.b.id)) this.smokers.push(p.clone());
+      if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
     }
     // Reuse or rebuild the instanced meshes.
     for (const [k, inst] of this.instances) if (!groups.has(k)) { for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); } this.instances.delete(k); }

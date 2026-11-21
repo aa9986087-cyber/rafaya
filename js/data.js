@@ -41,7 +41,9 @@ export const CATS = [
   { id: "farm", name: "زراعة وصناعة" },
   { id: "util", name: "ماء وكهرباء" },
   { id: "serv", name: "خدمات" },
-  { id: "road", name: "طرق" }
+  { id: "road", name: "طرق" },
+  { id: "deco", name: "زينة" },
+  { id: "proj", name: "مشاريع كبرى" }
 ];
 
 /*
@@ -92,6 +94,20 @@ export const B = {
   hospital: { cat: "serv", name: "مستشفى", cost: 4200, upkeep: 50, era: 2, water: -6, power: -8, radius: 11, happy: 18, service: "health", text: "علاج ومواعيد قريبة." },
   university: { cat: "serv", name: "جامعة", cost: 6000, upkeep: 70, era: 3, water: -6, power: -10, radius: 12, happy: 18, service: "school", jobs: 30, text: "جامعة الرافعية. فخر المحافظة." },
 
+  // Decorations: cheap, no road needed, they cheer up the streets around them.
+  streetpalm: { cat: "deco", name: "نخلة شارع", cost: 40, upkeep: 0, era: 0, radius: 2, happy: 2, text: "نخلة وحدة تزيّن الشارع." },
+  flowers: { cat: "deco", name: "حوض زهور", cost: 30, upkeep: 0, era: 0, radius: 2, happy: 2, text: "زهور ملونة على الرصيف." },
+  lantern: { cat: "deco", name: "فانوس زينة", cost: 50, upkeep: 1, era: 0, radius: 2, happy: 3, text: "فانوس ينوّر بالليل." },
+  fountain: { cat: "deco", name: "نافورة", cost: 260, upkeep: 2, era: 1, radius: 3, happy: 5, text: "ماء وبرودة وسط الحارة." },
+  dallah: { cat: "deco", name: "دوّار الدلة", cost: 420, upkeep: 2, era: 1, radius: 4, happy: 6, text: "دوار بوسطه دلة كبيرة، رمز الكرم." },
+  incense: { cat: "deco", name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
+
+  // Grand projects: one of each, very dear, and they take days to build.
+  gate: { cat: "proj", name: "بوابة الرافعية", cost: 5000, upkeep: 20, era: 1, unique: true, buildHours: 48, radius: 9, happy: 12, income: 60, text: "بوابة نجدية كبيرة على مدخل البلد. يفرح فيها الأهالي ويجيب زوار." },
+  heritage: { cat: "proj", name: "السوق التراثي", cost: 9000, upkeep: 40, era: 1, unique: true, buildHours: 72, jobs: 40, radius: 7, happy: 10, income: 220, water: -4, power: -4, text: "سوق قديم مرمّم بالطين والخشب، فيه حرف ومطاعم ودلال." },
+  tower: { cat: "proj", name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
+  airport: { cat: "proj", name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
+
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, text: "يوصل البيوت والمحلات ببعض." },
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, text: "أنظف وأحسن من الترابي." }
 };
@@ -100,7 +116,7 @@ export const B = {
 // here (roads less, so a player can still lay out streets).
 export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6 };
 for (const d of Object.values(B)) {
-  d.cost = Math.round(d.cost * (d.cat === "road" ? PRICE.road : PRICE.build));
+  d.cost = Math.round(d.cost * (d.cat === "road" || d.cat === "deco" ? PRICE.road : PRICE.build));
   d.upkeep = Math.round((d.upkeep || 0) * PRICE.upkeep);
   if (d.income && d.era >= 2) d.income = Math.round(d.income * PRICE.bigIncome); // big city earners pay less
 }

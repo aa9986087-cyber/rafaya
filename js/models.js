@@ -499,6 +499,138 @@ const MAKERS = {
     windowsRow(b, 0.92, 0.24, 0.181, 6); nightWindows(b, 0.92, 0.24, 0.183, 6);
   },
 
+  // ---------- decorations ----------
+  streetpalm(b) {
+    b.cyl(0.13, 0.14, 0.04, C.stone, {}, 10);
+    b.cyl(0.11, 0.11, 0.01, C.soil, { y: 0.04 }, 10);
+    palm(b, 0, 0, 0.95, 0.15);
+  },
+  flowers(b) {
+    b.box(0.5, 0.06, 0.3, C.stone);
+    b.box(0.46, 0.02, 0.26, C.soil, { y: 0.06 });
+    const cols = ["#e74c3c", "#f4d03f", "#ffffff", "#e8a0b4", "#a77bca"];
+    for (let i = 0; i < 14; i++) { const x = -0.19 + (i % 7) * 0.063, z = -0.07 + Math.floor(i / 7) * 0.14; b.add(new THREE.IcosahedronGeometry(0.028, 0), C.leaf, { x, y: 0.09, z }); b.add(new THREE.SphereGeometry(0.018, 5, 4), cols[i % cols.length], { x, y: 0.12, z }); }
+  },
+  lantern(b) {
+    b.box(0.14, 0.04, 0.14, C.stone);
+    b.cyl(0.02, 0.025, 0.4, "#2b2b2e", { y: 0.04 }, 6);
+    b.cyl(0.055, 0.04, 0.12, "#b8862b", { y: 0.44 }, 6, "shiny");
+    b.cyl(0.045, 0.035, 0.1, "#ffd27a", { y: 0.45 }, 6, "lights");
+    b.cone(0.06, 0.07, "#b8862b", { y: 0.56 }, 6, "shiny");
+    b.add(new THREE.SphereGeometry(0.015, 5, 4), "#b8862b", { y: 0.64 }, "shiny");
+  },
+  fountain(b) {
+    b.box(0.92, 0.012, 0.92, "#e3d4ae");
+    b.cyl(0.36, 0.38, 0.08, C.stone, {}, 16);
+    b.cyl(0.33, 0.33, 0.02, C.water, { y: 0.07 }, 16, "shiny");
+    b.cyl(0.06, 0.08, 0.22, C.stone, { y: 0.08 }, 10);
+    b.cyl(0.14, 0.1, 0.04, C.stone, { y: 0.28 }, 12);
+    b.cyl(0.11, 0.11, 0.01, C.water, { y: 0.32 }, 12, "shiny");
+    b.cone(0.03, 0.12, "#bfe6f2", { y: 0.32 }, 8, "shiny");
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; b.add(new THREE.IcosahedronGeometry(0.05, 0), C.leaf, { x: Math.cos(a) * 0.4, y: 0.04, z: Math.sin(a) * 0.4 }); }
+  },
+  // A roundabout with a giant dallah (Arabic coffee pot) on a plinth.
+  dallah(b) {
+    b.box(0.96, 0.01, 0.96, "#4d4f55");
+    b.cyl(0.4, 0.42, 0.05, "#e7e2d6", {}, 20);
+    b.cyl(0.36, 0.36, 0.02, C.grass, { y: 0.05 }, 20);
+    b.cyl(0.1, 0.12, 0.12, C.stone, { y: 0.06 }, 8);
+    const gold = C.gold;
+    b.cyl(0.07, 0.12, 0.16, gold, { y: 0.18 }, 12, "shiny");
+    b.cyl(0.05, 0.07, 0.05, gold, { y: 0.34 }, 12, "shiny");
+    b.cone(0.07, 0.14, gold, { y: 0.39 }, 12, "shiny");
+    b.add(new THREE.SphereGeometry(0.02, 6, 4), gold, { y: 0.54 }, "shiny");
+    b.add(new THREE.CylinderGeometry(0.012, 0.02, 0.18, 6), gold, { x: 0.12, y: 0.32, rz: -0.9 }, "shiny");
+    b.add(new THREE.TorusGeometry(0.06, 0.012, 5, 10, Math.PI), gold, { x: -0.1, y: 0.3, rz: Math.PI / 2 }, "shiny");
+  },
+  // A giant mabkhara (incense burner) with a wisp of smoke.
+  incense(b) {
+    b.box(0.6, 0.04, 0.6, C.stone);
+    b.box(0.2, 0.1, 0.2, "#7a3b1f", { y: 0.04 });
+    b.cyl(0.06, 0.13, 0.12, "#7a3b1f", { y: 0.14 }, 4);
+    b.box(0.26, 0.12, 0.26, "#8f4a24", { y: 0.26 });
+    for (const [x, z] of [[0.13, 0], [-0.13, 0], [0, 0.13], [0, -0.13]]) b.box(x ? 0.01 : 0.18, 0.08, x ? 0.18 : 0.01, C.gold, { x: x * 1.03, y: 0.28, z: z * 1.03 }, "shiny");
+    b.cyl(0.1, 0.13, 0.06, "#8f4a24", { y: 0.38 }, 4);
+    b.add(new THREE.ConeGeometry(0.05, 0.1, 6), "#ff8a2a", { y: 0.47 }, "lights");
+    for (let i = 0; i < 3; i++) b.add(new THREE.SphereGeometry(0.04 + i * 0.015, 6, 4), "#e8e4dc", { x: i * 0.03, y: 0.55 + i * 0.09, z: -i * 0.02 });
+  },
+
+  // ---------- grand projects ----------
+  gate(b) {
+    for (const x of [-0.36, 0.36]) {
+      b.box(0.2, 0.7, 0.3, C.mudLight, { x });
+      b.box(0.22, 0.04, 0.32, C.mud, { x, y: 0.7 });
+      crenels(b, 0.2, 0.3, 0.74, C.mud, 0.035);
+      b.box(0.05, 0.1, 0.02, C.door, { x, y: 0.45, z: 0.16 });
+      b.box(0.04, 0.06, 0.022, C.light, { x, y: 0.47, z: 0.161 }, "lights");
+    }
+    b.box(0.56, 0.18, 0.3, C.mudLight, { y: 0.4 });
+    b.box(0.58, 0.03, 0.32, C.mud, { y: 0.58 });
+    crenels(b, 0.56, 0.3, 0.61, C.mud, 0.035);
+    b.add(new THREE.CylinderGeometry(0.26, 0.26, 0.3, 14, 1, false, 0, Math.PI), C.mudLight, { y: 0.4, rx: Math.PI / 2, rz: Math.PI / 2, sz: 0.01 });
+    beams(b, 0.56, 0.52, 0.15, 6);
+    b.box(0.5, 0.06, 0.022, "#2c8a7a", { y: 0.5, z: 0.152 });
+    b.box(0.96, 0.01, 0.4, "#c9b48a");
+    for (const x of [-0.46, 0.46]) palm(b, x, 0.3, 0.8);
+  },
+  heritage(b) {
+    b.box(0.96, 0.012, 0.96, "#d8bf8f");
+    const blocks = [[-0.25, -0.25, 0.42, 0.36, 0.34], [0.22, -0.28, 0.4, 0.3, 0.3], [-0.28, 0.2, 0.34, 0.28, 0.4], [0.24, 0.2, 0.36, 0.26, 0.36]];
+    for (const [x, z, w, h, d] of blocks) {
+      b.box(w, h, d, C.mud, { x, z });
+      b.box(w + 0.02, 0.025, d + 0.02, C.mudDark, { x, y: h, z });
+      crenels(b, w, d, h + 0.03, C.mudLight, 0.03);
+      b.box(0.07, 0.12, 0.01, C.door, { x, z: z + d / 2 + 0.005 });
+      b.box(0.05, 0.04, 0.012, C.light, { x: x + w * 0.3, y: h * 0.55, z: z + d / 2 + 0.006 }, "lights");
+    }
+    for (let i = 0; i < 3; i++) b.add(new THREE.ConeGeometry(0.12, 0.06, 4), [C.red, C.teal, C.gold][i], { x: -0.1 + i * 0.1, y: 0.26, z: 0, ry: Math.PI / 4 });
+    for (let i = 0; i < 4; i++) b.box(0.012, 0.012, 0.6, "#3b2a1c", { x: -0.3 + i * 0.2, y: 0.32 });
+    for (let i = 0; i < 5; i++) b.add(new THREE.SphereGeometry(0.018, 5, 4), C.light, { x: -0.3 + i * 0.15, y: 0.3, z: (i % 2) * 0.1 - 0.05 }, "lights");
+    b.cyl(0.03, 0.05, 0.06, C.gold, { x: 0.02, z: 0.05 }, 8, "shiny");
+  },
+  tower(b) {
+    b.box(0.9, 0.015, 0.9, "#d6cfc0");
+    b.cyl(0.3, 0.36, 0.12, C.stone, {}, 8);
+    const h = 2.6;
+    b.add(new THREE.CylinderGeometry(0.11, 0.2, h, 8), "#e9e4d8", { y: 0.12 + h / 2 });
+    for (let i = 0; i < 12; i++) b.add(new THREE.CylinderGeometry(0.115 - i * 0.0072 + 0.01, 0.12 - i * 0.0072 + 0.01, 0.012, 8), C.glass, { y: 0.3 + i * 0.2 }, "shiny");
+    b.add(new THREE.CylinderGeometry(0.22, 0.14, 0.14, 12), "#e9e4d8", { y: 0.12 + h * 0.78 });
+    b.add(new THREE.CylinderGeometry(0.225, 0.225, 0.06, 12), C.glass, { y: 0.12 + h * 0.78 + 0.07 }, "shiny");
+    b.add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12), C.light, { y: 0.12 + h * 0.78 + 0.075 }, "lights");
+    b.cone(0.06, 0.4, C.gold, { y: 0.12 + h }, 8, "shiny");
+    b.box(0.03, 0.03, 0.03, "#ff3b30", { y: 0.12 + h + 0.4 }, "lights");
+  },
+  airport(b) {
+    b.box(0.98, 0.01, 0.98, "#c9bc9c");
+    b.box(0.98, 0.012, 0.26, "#3d3f44", { z: 0.22 });
+    for (let i = 0; i < 6; i++) b.box(0.08, 0.014, 0.015, "#f2f2f2", { x: -0.42 + i * 0.17, z: 0.22 });
+    b.box(0.5, 0.14, 0.24, "#e9e4d8", { x: -0.18, z: -0.26 });
+    b.box(0.5, 0.06, 0.02, C.glass, { x: -0.18, y: 0.05, z: -0.139 }, "shiny");
+    b.box(0.46, 0.04, 0.022, C.light, { x: -0.18, y: 0.06, z: -0.138 }, "lights");
+    b.cyl(0.035, 0.05, 0.42, "#e9e4d8", { x: 0.3, z: -0.3 }, 8);
+    b.cyl(0.08, 0.06, 0.08, C.glass, { x: 0.3, y: 0.42, z: -0.3 }, 8, "shiny");
+    b.cyl(0.085, 0.085, 0.02, "#e9e4d8", { x: 0.3, y: 0.5, z: -0.3 }, 8);
+    // a small plane on the runway
+    b.add(new THREE.CylinderGeometry(0.025, 0.02, 0.36, 8), "#f6f6f6", { x: 0.05, y: 0.05, z: 0.22, rz: Math.PI / 2 }, "shiny");
+    b.add(new THREE.ConeGeometry(0.025, 0.06, 8), "#f6f6f6", { x: 0.26, y: 0.05, z: 0.22, rz: -Math.PI / 2 }, "shiny");
+    b.box(0.08, 0.008, 0.34, "#f6f6f6", { x: 0.06, y: 0.045, z: 0.22 }, "shiny");
+    b.box(0.05, 0.07, 0.008, "#2c8a7a", { x: -0.11, y: 0.05, z: 0.22 });
+    b.box(0.04, 0.006, 0.12, "#f6f6f6", { x: -0.11, y: 0.08, z: 0.22 }, "shiny");
+  },
+  // A building site: fence, sand piles, a frame going up and a crane.
+  construction(b) {
+    b.box(0.94, 0.008, 0.94, "#cdb68a");
+    for (const [x, z, w, d] of [[0, -0.46, 0.94, 0.02], [0, 0.46, 0.94, 0.02], [-0.46, 0, 0.02, 0.94], [0.46, 0, 0.02, 0.94]]) b.box(w, 0.1, d, "#e8d9b5", { x, z });
+    for (const [x, z] of [[-0.25, -0.2], [0.25, -0.2], [-0.25, 0.15], [0.25, 0.15]]) b.box(0.03, 0.5, 0.03, "#9aa0a6", { x, z });
+    for (const y of [0.18, 0.36, 0.5]) { b.box(0.53, 0.02, 0.03, "#9aa0a6", { y, z: -0.2 }); b.box(0.53, 0.02, 0.03, "#9aa0a6", { y, z: 0.15 }); }
+    b.box(0.5, 0.02, 0.38, "#bfbab0", { y: 0.18, z: -0.02 });
+    b.cone(0.12, 0.1, "#d9b77a", { x: 0.3, z: 0.32 }, 7);
+    b.cyl(0.012, 0.012, 1.1, "#e0b02a", { x: -0.35, z: 0.3 }, 4);
+    b.box(0.6, 0.03, 0.03, "#e0b02a", { x: -0.15, y: 1.1, z: 0.3 });
+    b.box(0.08, 0.06, 0.06, "#e0b02a", { x: -0.38, y: 1.06, z: 0.3 });
+    b.box(0.004, 0.4, 0.004, "#333", { x: 0.1, y: 0.7, z: 0.3 });
+  },
+
   // ---------- life and scenery (used by the world, not by the build menu) ----------
 
   camel(b) {
@@ -611,10 +743,36 @@ const MAKERS = {
 
 const cache = new Map();
 
-/** The model for a building (key like "house3", "mosque", "rock"); built once, then reused. */
+/** Colour swaps that make the same house look different from its neighbours ("house2~1"). */
+export const VARIANTS = {
+  house1: [{ [C.mud]: "#b8834e", [C.mudLight]: "#c99a62" }, { [C.mud]: "#d4a46a", [C.mudDark]: "#b38250" }],
+  house2: [{ [C.plaster]: "#ecdcbc", [C.teal]: "#7a3b1f" }, { [C.plaster]: "#f2e2d4", [C.teal]: "#2f5f9e", [C.stone]: "#cdb48e" }],
+  house3: [{ [C.white]: "#efe4cc", [C.stone]: "#b89b72", [C.cream]: "#e6d6b6" }, { [C.white]: "#f3efe9", [C.stone]: "#8e959a" }],
+  house4: [{ [C.cream]: "#e2d6c4", [C.stone]: "#b9a888" }, { [C.cream]: "#d9ccb2", [C.stone]: "#9aa1a6" }]
+};
+
+function recolor(geo, swaps) {
+  if (!geo) return geo;
+  const g = geo.clone(), col = g.attributes.color, c = new THREE.Color();
+  const table = Object.entries(swaps).map(([from, to]) => [new THREE.Color(from), new THREE.Color(to)]);
+  for (let i = 0; i < col.count; i++) {
+    c.fromBufferAttribute(col, i);
+    for (const [from, to] of table) if (Math.abs(c.r - from.r) + Math.abs(c.g - from.g) + Math.abs(c.b - from.b) < 0.01) { col.setXYZ(i, to.r, to.g, to.b); break; }
+  }
+  return g;
+}
+
+/** The model for a building (key like "house3", "mosque", "rock", or a variant "house3~1"); built once, then reused. */
 export function model(key, ground = "sand") {
   const k = key === "palms" ? `palms:${ground}` : key;
   if (!cache.has(k)) {
+    const [base, v] = key.split("~");
+    if (v !== undefined) {
+      const src = model(base, ground), swaps = VARIANTS[base]?.[Number(v)];
+      if (!src || !swaps) return src;
+      cache.set(k, { matte: recolor(src.matte, swaps), shiny: recolor(src.shiny, swaps), lights: src.lights });
+      return cache.get(k);
+    }
     const b = new Builder();
     const maker = MAKERS[key];
     if (!maker) return null;

@@ -124,6 +124,7 @@ export function cantBuild(s, x, y, id) {
   if (!owns(s, x, y)) return "الأرض هذي مو لك: اضغط عليها عشان تشتريها";
   if (def.era > s.era) return `تحتاج الرافعية تصير ${ERAS[def.era].name}`;
   if (!techUnlocked(s, def)) return `تحتاج بحث «${TECH[def.tech].name}»`;
+  if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (t.b) {
     if (id === "asphalt" && t.b.id === "road") return s.money < def.cost ? "ما يكفي المال" : "";
     return "المكان مشغول";
@@ -140,6 +141,7 @@ export function build(s, x, y, id) {
   s.money -= B[id].cost + (t.t === "rock" ? ROCK_CLEAR : 0);
   if (t.t === "rock") t.t = "sand";
   t.b = { id, lvl: 0, res: 0, day: s.day };
+  if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
 }
 
@@ -194,6 +196,7 @@ export function analyze(s) {
     if (!t.b) continue;
     const def = B[t.b.id];
     a.count[t.b.id]++;
+    if (t.b.build > 0) { t.b.works = false; a.upkeep += Math.round((def.upkeep || 0) / 4); continue; } // still being built
     const works = !needsRoad(def) || onRoad(s, x, y);
     t.b.works = works;
     if (def.water > 0) a.waterSupply += def.water; else if (def.water && works) a.waterUse -= def.water;
@@ -327,12 +330,15 @@ export function step(s, r = Math.random) {
       t.b.lvl++; t.b.upAt = s.day;
     } else if (t.b.lvl > 0 && (a.waterRatio < 0.6 || s.happy < 25) && r() < 0.08) t.b.lvl--;
   }
+  // Building sites move on; a finished grand project is news.
+  const done = [];
+  for (const t of s.tiles) if (t.b?.build > 0 && --t.b.build <= 0) { delete t.b.build; done.push(B[t.b.id].name); }
   s.money += a.net;
   s.happy = Math.round((s.happy * 0.7 + a.happyTarget * 0.3) * 10) / 10;
   const seasonBefore = seasonOf(s.day).i;
   s.day++;
 
-  const msgs = [];
+  const msgs = done.map((name) => ({ kind: "goal", text: `اكتمل مشروع «${name}»! 🎉` }));
   // Stage of the town never goes back.
   for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
   // A new season.
@@ -396,7 +402,7 @@ export function catchUp(s, now = Date.now()) {
 // ---------- saving ----------
 
 export function pack(s) {
-  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}` : ""));
+  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}${t.b.build ? `:${t.b.build}` : ""}` : ""));
   const { tiles: _, ...rest } = s;
   return JSON.stringify({ ...rest, tiles });
 }
@@ -421,9 +427,11 @@ export function unpack(text) {
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
-    const [t, id, lvl, res] = String(str).split(":");
+    const [t, id, lvl, res, build] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
-    return { t: ground, b: id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null };
+    const b = id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null;
+    if (b && Number(build) > 0) b.build = Number(build);
+    return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));
   // The land the town already used is its own, even outside the middle.
