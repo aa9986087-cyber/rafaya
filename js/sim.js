@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -131,7 +131,8 @@ export function cantBuild(s, x, y, id) {
   }
   if (t.t === "lake") return "هذي بحيرة السد";
   if (def.onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
-  const cost = def.cost + (t.t === "rock" ? ROCK_CLEAR : 0);
+  if (def.onRock && t.t !== "rock") return "الكسارة تنبني على الصخور";
+  const cost = def.cost + (t.t === "rock" && !def.onRock ? ROCK_CLEAR : 0);
   if (s.money < cost) return "ما يكفي المال";
   return "";
 }
@@ -140,11 +141,73 @@ export function build(s, x, y, id) {
   const why = cantBuild(s, x, y, id);
   if (why) return why;
   const t = s.tiles[idx(x, y)];
-  s.money -= B[id].cost + (t.t === "rock" ? ROCK_CLEAR : 0);
-  if (t.t === "rock") t.t = "sand";
+  const keepRock = B[id].onRock;
+  s.money -= B[id].cost + (t.t === "rock" && !keepRock ? ROCK_CLEAR : 0);
+  if (t.t === "rock" && !keepRock) t.t = "sand";
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
+}
+
+// ---------- production chains ----------
+/** Road networks: each road tile gets the number of the network it belongs to. */
+export function roadNets(s) {
+  const net = new Int32Array(N * N).fill(-1);
+  let n = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (net[i] >= 0 || !isRoad(s.tiles[i])) continue;
+    const stack = [i]; net[i] = n;
+    while (stack.length) {
+      const j = stack.pop(), x = j % N, y = Math.floor(j / N);
+      for (const [dx, dy] of near4) {
+        const xx = x + dx, yy = y + dy;
+        if (!inMap(xx, yy)) continue;
+        const k = idx(xx, yy);
+        if (net[k] < 0 && isRoad(s.tiles[k])) { net[k] = n; stack.push(k); }
+      }
+    }
+    n++;
+  }
+  return net;
+}
+/** The road networks a building touches. */
+function netsOf(net, i) {
+  const out = new Set(), x = i % N, y = Math.floor(i / N);
+  for (const [dx, dy] of near4) if (inMap(x + dx, y + dy) && net[idx(x + dx, y + dy)] >= 0) out.add(net[idx(x + dx, y + dy)]);
+  return out;
+}
+/**
+ * Which producers feed which factory, by road. Each producer sends its goods to one factory of its
+ * chain (the first that still has room). Returns the links (for the trucks) and per factory how full it runs.
+ */
+export function chainLinks(s, net = roadNets(s)) {
+  const links = [], at = new Map();
+  for (const c of CHAINS) {
+    const factories = [], producers = [];
+    s.tiles.forEach((t, i) => {
+      if (!t.b || t.b.build > 0 || t.b.ruin) return;
+      if (t.b.id === c.to) factories.push({ i, nets: netsOf(net, i), got: 0 });
+      else if (t.b.id === c.from) producers.push({ i, nets: netsOf(net, i) });
+    });
+    for (const p of producers) {
+      const f = factories.find((f) => f.got < c.need && [...p.nets].some((n) => f.nets.has(n)));
+      if (f) { f.got++; links.push({ from: p.i, to: f.i, chain: c.id, cargo: c.cargo }); }
+    }
+    for (const f of factories) at.set(f.i, { chain: c, got: f.got, fill: Math.min(1, f.got / c.need) });
+  }
+  return { links, at };
+}
+function chainsInto(s, a) {
+  const { links, at } = chainLinks(s);
+  a.chainLinks = links; a.chainAt = at;
+  // materials made this hour
+  let made = 0;
+  s.tiles.forEach((t, i) => {
+    if (!t.b?.works && t.b?.works !== undefined) return;
+    if (t.b?.id === "quarry" && !(t.b.build > 0)) made += MAT.quarry * condFactor(t.b);
+    if (t.b?.id === "blockfactory" && !(t.b.build > 0)) made += MAT.block * (at.get(i)?.fill || 0) * condFactor(t.b);
+  });
+  a.matMade = made * (0.3 + 0.7 * (a.staffing ?? 1));
 }
 
 // ---------- dams, lakes and groundwater ----------
@@ -243,7 +306,8 @@ export function moveBlocker(s, fx, fy, tx, ty) {
   if (t.b) return "المكان مشغول";
   if (t.t === "lake") return "هذي بحيرة السد";
   if (B[from.id].onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
-  if (s.money < moveCost(from) + (t.t === "rock" ? ROCK_CLEAR : 0)) return "ما يكفي المال";
+  if (B[from.id].onRock && t.t !== "rock") return "الكسارة تنبني على الصخور";
+  if (s.money < moveCost(from) + (t.t === "rock" && !B[from.id].onRock ? ROCK_CLEAR : 0)) return "ما يكفي المال";
   return "";
 }
 /** Move a building to an empty tile you own. Returns why not, or "". */
@@ -251,8 +315,8 @@ export function moveBuilding(s, fx, fy, tx, ty) {
   const why = moveBlocker(s, fx, fy, tx, ty);
   if (why) return why;
   const src = s.tiles[idx(fx, fy)], dst = s.tiles[idx(tx, ty)];
-  s.money -= moveCost(src.b) + (dst.t === "rock" ? ROCK_CLEAR : 0);
-  if (dst.t === "rock") dst.t = "sand";
+  s.money -= moveCost(src.b) + (dst.t === "rock" && !B[src.b.id].onRock ? ROCK_CLEAR : 0);
+  if (dst.t === "rock" && !B[src.b.id].onRock) dst.t = "sand";
   dst.b = src.b; src.b = null;
   return "";
 }
@@ -439,6 +503,8 @@ export function analyze(s) {
     });
     for (let i = 0; i < N * N; i++) if (near[i]) a.local[i] += 6;
   }
+  // Production chains and building materials.
+  chainsInto(s, a);
   a.shopRaw = 0; a.visitorIncome = 0; a.industryIncome = 0;
   // Spring grazing: pens with green fayda within 4 tiles.
   a.grazing = new Set();
@@ -460,8 +526,8 @@ export function analyze(s) {
       a.farmIncome += def.income * bizLevel(t.b).income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
     } else {
       let inc = def.income * bizLevel(t.b).income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
-      if (t.b.id === "datefactory") inc *= 1 + Math.min(1, palms.length * 0.1);
-      if (t.b.id === "livestock") inc *= 1 + Math.min(1, a.count.pen * 0.1);
+      const ch = a.chainAt.get(idx(x, y));
+      if (ch) inc *= 0.3 + 1.7 * ch.fill;
       if (t.b.id === "mazayen") inc *= 1 + Math.min(1, a.count.pen * 0.05);
       if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1.5;
       if (t.b.id === "pivot") inc *= a.groundFactor;
@@ -477,6 +543,7 @@ export function analyze(s) {
   a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion) * (a.prayer && a.prayer.id !== "fajr" ? 0.6 : 1);
   // Workshops and factories sell outside, but the traders who buy from a town of this size only take
   // so much: past that, extra output sells at about a third of the price.
+  if ((s.materials || 0) >= MAT.cap) a.industryIncome += a.matMade * MAT.sell;
   a.industryRaw = a.industryIncome;
   a.exportDemand = 300 + s.pop * 0.9;
   if (a.industryRaw > a.exportDemand) a.industryIncome = a.exportDemand + (a.industryRaw - a.exportDemand) * 0.35;
@@ -538,6 +605,20 @@ export function houseBlocker(s, a, x, y) {
   return "";
 }
 
+/** Building materials the next level needs. */
+export const upgradeMats = (b) => (b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : 0);
+/** Everything the next level costs now: money, plus whatever materials are short, bought from outside. */
+export function upgradePrice(s, b) {
+  const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0));
+  return { money: upgradeCost(b), mats: need, short, total: upgradeCost(b) + short * MAT.price };
+}
+function payUpgrade(s, b) {
+  const p = upgradePrice(s, b);
+  if (s.money < p.total) return "ما يكفي المال";
+  s.money -= p.total;
+  s.materials = Math.max(0, (s.materials || 0) - (p.mats - p.short));
+  return "";
+}
 /** What the next level of this house costs (0 at the top). */
 export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
   : BIZ_LEVELS[b?.id] && BIZ_UP[b.lvl + 1] ? Math.round(B[b.id].cost * BIZ_UP[b.lvl + 1].cost) : 0);
@@ -565,9 +646,8 @@ export function upgradeBiz(s, x, y, a = analyze(s)) {
   const b = s.tiles[idx(x, y)]?.b;
   const why = bizBlocker(s, a, x, y);
   if (why) return why;
-  const cost = upgradeCost(b);
-  if (s.money < cost) return "ما يكفي المال";
-  s.money -= cost;
+  const paid = payUpgrade(s, b);
+  if (paid) return paid;
   b.lvl++; b.cond = 100; b.upAt = s.day;
   return "";
 }
@@ -582,9 +662,8 @@ export function upgradeHouse(s, x, y, a = analyze(s)) {
   if (b?.id !== "house") return "مو بيت";
   const why = houseBlocker(s, a, x, y);
   if (why) return why;
-  const cost = upgradeCost(b);
-  if (s.money < cost) return "ما يكفي المال";
-  s.money -= cost;
+  const paid = payUpgrade(s, b);
+  if (paid) return paid;
   b.lvl++; b.cond = 100; b.ruin = 0; b.upAt = s.day;
   return "";
 }
@@ -679,6 +758,8 @@ export function step(s, r = Math.random) {
 
   const msgs = done.map((name) => ({ kind: "goal", text: `اكتمل مشروع «${name}»! 🎉` }));
   for (const f of fell) msgs.push(f.warn ? { kind: "event", title: "مبنى خربان", tile: f.i, text: `«${f.name}» خرب ووقف عن الشغل. رمّمه خلال يومين وإلا بيطيح.` } : { kind: "collapse", tile: f.i, text: f.house ? "بيت انهار من الإهمال ورجع أصغر. رمّم بيوتك قبل لا تطيح." : `انهار «${f.name}» من الإهمال!${f.refund ? ` التأمين عوّضك ${f.refund} ريال.` : " ما كان عليه تأمين."}` });
+  // Building materials: what the quarries made goes in the store.
+  s.materials = Math.min(MAT.cap, (s.materials || 0) + (a.matMade || 0));
   // Groundwater, and the water held behind the dams.
   const raining = s.events.some((e) => e.id === "rain");
   const aNow = a;

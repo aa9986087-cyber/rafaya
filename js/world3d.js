@@ -1,7 +1,7 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
 import { MAP_SIZE as N, B } from "./data.js";
-import { idx, inMap, seasonOf, owns, plotAt } from "./sim.js";
+import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets } from "./sim.js";
 import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
@@ -447,10 +447,80 @@ export class World {
     if (this.flood) this.flood.visible = s.events.some((e) => e.id === "rain");
     this.state = s;
     this.syncCars();
+    this.syncTrucks(s);
     this.syncLife(s);
   }
 
   // ---------- life: cars and smoke ----------
+
+  /** Trucks carry goods along the roads from each farm to its factory, and come back empty. */
+  syncTrucks(s) {
+    if (this.quality === "low") return;
+    if (!this.truckMesh) {
+      this.truckMesh = new THREE.InstancedMesh(model("truckBody").matte, this.mats.matte, 24);
+      this.truckGlass = model("truckBody").shiny ? new THREE.InstancedMesh(model("truckBody").shiny, this.mats.shiny, 24) : null;
+      this.cargoMesh = new THREE.InstancedMesh(model("truckCargo").matte, this.mats.matte, 24);
+      for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) { m.count = 0; m.frustumCulled = false; m.castShadow = this.quality === "high"; this.scene.add(m); }
+      this.trucks = [];
+    }
+    const net = roadNets(s), { links } = chainLinks(s, net);
+    const key = links.map((l) => `${l.from}>${l.to}`).join();
+    if (key === this.truckKey) return;
+    this.truckKey = key;
+    const door = (i) => { const x = i % N, y = Math.floor(i / N); for (const [dx, dy] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) return idx(x + dx, y + dy); return -1; };
+    // shortest road path between two road tiles
+    const path = (a, b) => {
+      const prev = new Int32Array(N * N).fill(-2); prev[a] = -1; const q = [a];
+      for (let h = 0; h < q.length; h++) {
+        const j = q[h]; if (j === b) break;
+        const x = j % N, y = Math.floor(j / N);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (!inMap(xx, yy)) continue; const k = idx(xx, yy); if (prev[k] === -2 && roadAt(s.tiles[k])) { prev[k] = j; q.push(k); } }
+      }
+      if (prev[b] === -2) return null;
+      const out = []; for (let j = b; j !== -1; j = prev[j]) out.push(j); return out.reverse();
+    };
+    this.trucks = [];
+    for (const l of links.slice(0, 24)) {
+      const a = door(l.from), b = door(l.to);
+      if (a < 0 || b < 0) continue;
+      const p = path(a, b);
+      if (!p || p.length < 2) continue;
+      this.trucks.push({ path: p, k: Math.random() * (p.length - 1), dir: 1, wait: Math.random() * 2, cargo: new THREE.Color(l.cargo) });
+    }
+    for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) m.count = this.trucks.length;
+  }
+
+  stepTrucks(dt) {
+    if (!this.trucks?.length) { if (this.truckMesh) for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) m.count = 0; return; }
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1), hide = new THREE.Vector3(0, 0, 0);
+    const night = this.nightTime;
+    this.trucks.forEach((t, i) => {
+      if (t.wait > 0) t.wait -= dt;
+      else {
+        t.k += dt * 0.9 * t.dir;
+        const end = t.path.length - 1;
+        if (t.k >= end) { t.k = end; t.dir = -1; t.wait = 1.5; }
+        if (t.k <= 0) { t.k = 0; t.dir = 1; t.wait = 1.5; }
+      }
+      const j = Math.min(t.path.length - 2, Math.floor(t.k)), f = t.k - j;
+      const a = tileCenter(t.path[j] % N, Math.floor(t.path[j] / N)), b = tileCenter(t.path[j + 1] % N, Math.floor(t.path[j + 1] / N));
+      v.lerpVectors(a, b, f);
+      let dx = b.x - a.x, dz = b.z - a.z;
+      if (t.dir < 0) { dx = -dx; dz = -dz; }
+      v.x += -dz * 0.14; v.z += dx * 0.14; // drive on the right
+      q.setFromAxisAngle(up, Math.atan2(-dz, dx));
+      sc.setScalar(night ? 0.0001 : 1); // trucks rest at night
+      m4.compose(v, q, sc);
+      this.truckMesh.setMatrixAt(i, m4);
+      this.truckGlass?.setMatrixAt(i, m4);
+      // loaded on the way to the factory, empty on the way back
+      if (t.dir < 0 || night) m4.compose(hide, q, new THREE.Vector3(0.0001, 0.0001, 0.0001));
+      this.cargoMesh.setMatrixAt(i, m4);
+      this.cargoMesh.setColorAt(i, t.cargo);
+    });
+    for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) m.instanceMatrix.needsUpdate = true;
+    if (this.cargoMesh.instanceColor) this.cargoMesh.instanceColor.needsUpdate = true;
+  }
 
   syncCars() {
     const want = this.quality === "low" ? 0 : Math.min(40, Math.floor(this.roads.length / 5));
@@ -1030,6 +1100,7 @@ export class World {
     if (Math.abs(v.yaw - v.yawTarget) > 1e-3) { v.yaw += (v.yawTarget - v.yaw) * Math.min(1, dt * 8); this.updateCamera(); }
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);
+    this.stepTrucks(dt);
     this.stepSmoke(dt);
     this.stepLife(dt);
     this.stepEffects(dt);

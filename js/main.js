@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -142,7 +142,7 @@ function hoverAt(t) {
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
 const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradeCost(S.tiles[idx(x, y)].b) : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const tileCost = (x, y) => (tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
 const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
@@ -698,17 +698,18 @@ function inspect(x, y) {
     const block = houseBlocker(S, A, x, y), next = d.levels[t.b.lvl + 1];
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next.name}»: ${block}</div>`;
-    else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < next.cost ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(next.cost)} ريال</button></div>`;
+    else { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${matsNote(pr)}`; }
   }
   if (BIZ_LEVELS[t.b.id] && !t.b.build) {
     const names = BIZ_LEVELS[t.b.id], next = names[t.b.lvl + 1];
     html += `<div class="ladder">${names.map((n, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${n}</i>`).join("")}</div>`;
-    const block = upgradeBlocker(S, A, x, y), cost = upgradeCost(t.b);
+    const block = upgradeBlocker(S, A, x, y), pr = upgradePrice(S, t.b), cost = pr.total;
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next}»: ${block}</div>`;
     else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < cost ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(cost)} ريال</button></div>
-      <p class="hint">يزيد دخله ${ar(Math.round((bizLevelNext(t.b).income / up.income - 1) * 100))}٪، ويحتاج موظفين ومصروف أكثر.</p>`;
+      <p class="hint">يزيد دخله ${ar(Math.round((bizLevelNext(t.b).income / up.income - 1) * 100))}٪، ويحتاج موظفين ومصروف أكثر.</p>${matsNote(pr)}`;
   }
+  html += chainInfo(t, x, y);
   if (d.jobs) html += row("الوظائف", ar(Math.round(d.jobs * up.jobs)));
   if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(Math.round(d.income * up.income))} ريال`, "plus");
   if (d.upkeep) html += row("المصروف بالساعة", `${money(Math.round(d.upkeep * up.upkeep))} ريال`, "minus");
@@ -801,6 +802,8 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-23",
   items: [
+    ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
+    ["🧱", "مواد البناء", "كسارة الحجر تطلّع مواد تحتاجها لتطوير البيوت والمحلات، وإلا تشتريها من برا."],
     ["🤝", "الوعود صارت واضحة", "إذا رجعوا يطالبون تشوف وش طلبوا ووش وعدتهم ومتى، وفي النشرة قائمة «وعودك»."],
     ["🌊", "السدود والماء الجوفي", "السد يحجز السيل ويسوي بحيرة. الماء الجوفي ينقص مع كثرة الآبار ويرجع مع المطر."],
     ["🌾", "المزرعة المحورية", "رشاش دوّار يسقي دايرة قمح: دخل عالي ويسحب من الماء الجوفي."],
@@ -873,6 +876,7 @@ function budget() {
     </div>
     ${S.staffRaise ? `<p>رواتب البلدية زادت ${ar(Math.round(S.staffRaise * 100))}٪ من العلاوات السنوية. وكل سنة تدفع رسوم المحافظة.</p>` : ""}
     ${A.congestion > 0.02 ? `<div class="need">زحمة بالطرق الترابية: المحلات تخسر ${ar(Math.round(A.congestion * 100))}٪ من زباينها. سفلت الطرق أو زد عددها.</div>` : ""}
+    ${productionHtml()}
     <h3>البنك</h3>
     <div class="rows">${(S.loans || []).length ? row("قروض عليك", `${ar(S.loans.length)} · ${fine(S.loans.reduce((n, l) => n + l.per, 0))} بالساعة`, "minus") : row("القروض", "ما عليك قروض")}
       <button class="btn block" id="openBank" type="button">🏦 افتح البنك</button></div>
@@ -901,6 +905,42 @@ function budget() {
   $("repairAll")?.addEventListener("click", () => { const r = repairAll(S); if (!r.n) { toast("ما يكفي المال", "bad"); sfx.deny(); return; } sfx.build(); toast(`رممت ${ar(r.n)} مبنى بـ${money(r.spent)} ريال`, "goal"); refresh(); save(); budget(); });
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
+}
+/** The materials part of an upgrade: from the store, or bought from outside. */
+function matsNote(pr) {
+  if (!pr.mats) return "";
+  return `<p class="hint">🧱 يحتاج ${ar(pr.mats)} مواد بناء${pr.short ? `: عندك ${ar(Math.floor(S.materials || 0))}، والباقي (${ar(pr.short)}) ينشرى من برا بـ${money(pr.short * MAT.price)} ريال (داخل في السعر). كسارة حجر توفر عليك.` : " من مخزونك."}</p>`;
+}
+/** A factory: how many farms feed it by road. A farm: which factory it sends to. */
+function chainInfo(t, x, y) {
+  const i = idx(x, y);
+  const asFactory = A.chainAt?.get(i);
+  if (asFactory) {
+    const c = asFactory.chain;
+    return `${row(`يجيه من ${B[c.from].name}`, `${ar(asFactory.got)} من ${ar(c.need)}`, asFactory.fill >= 1 ? "plus" : "minus")}<i class="prog"><i style="width:${Math.round(asFactory.fill * 100)}%"></i></i>
+      ${asFactory.fill < 1 ? `<p class="hint">🚚 يشتغل بـ${ar(Math.round((0.3 + 1.7 * asFactory.fill) / 2 * 100))}٪. يحتاج ${ar(c.need - asFactory.got)} ${B[c.from].name} زيادة موصولة به بطريق (المزرعة لازم يكون جنبها طريق يوصل للمصنع).</p>` : `<p class="hint">🚚 الشاحنات توصله كل اللي يحتاجه.</p>`}`;
+  }
+  const chains = CHAINS.filter((c) => c.from === t.b.id);
+  if (!chains.length) return "";
+  const link = A.chainLinks?.find((l) => l.from === i);
+  if (link) return row("يرسل إنتاجه إلى", `${B[S.tiles[link.to].b.id].name} 🚚`, "plus");
+  return `<div class="need">ما فيه ${chains.map((c) => B[c.to].name).join(" ولا ")} موصول بطريق. ${chains.map((c) => B[c.to].name).join(" أو ")} يضاعف قيمة إنتاجه.</div>`;
+}
+/** Production: each chain, and the building materials. */
+function productionHtml() {
+  const rows = CHAINS.map((c) => {
+    const factories = [...(A.chainAt || new Map()).values()].filter((f) => f.chain.id === c.id);
+    const producers = A.count[c.from] || 0;
+    if (!factories.length && !producers) return "";
+    const linked = factories.reduce((n, f) => n + f.got, 0), want = factories.length * c.need;
+    return row(`${c.name}: ${B[c.from].name} ← ${B[c.to].name}`, factories.length ? `${ar(linked)}/${ar(want)} موصولة` : `${ar(producers)} بلا مصنع`, factories.length && linked >= want ? "plus" : "minus");
+  }).join("");
+  return `<h3>🏭 الإنتاج ومواد البناء</h3><div class="rows">
+    ${row("مواد البناء بالمخزن", `${ar(Math.floor(S.materials || 0))} / ${ar(MAT.cap)}`)}
+    ${row("تنتج بالساعة", `${ar(Math.round((A.matMade || 0) * 10) / 10)}`, A.matMade ? "plus" : "")}
+    ${!A.matMade ? `<p class="hint">ما عندك كسارة: أي مواد تحتاجها للتطوير تنشرى من برا بـ${ar(MAT.price)} ريال للوحدة. الكسارة تنبني على الصخور.</p>` : (S.materials || 0) >= MAT.cap ? `<p class="hint">المخزن مليان: الزايد ينباع بـ${ar(MAT.sell)} للوحدة.</p>` : ""}
+    ${rows || `<p class="hint">المزارع ترسل إنتاجها بالشاحنات للمصانع الموصولة فيها بطريق: النخل لمصنع التمور، الحظائر لمصنع الألبان وسوق الماشية، المحورية للصوامع، والكسارة لمصنع البلوك.</p>`}
+  </div>`;
 }
 /** The next level's numbers for a farm, shop or workshop. */
 const bizLevelNext = (b) => bizLevel({ id: b.id, lvl: b.lvl + 1 });
@@ -1051,6 +1091,10 @@ function howTo(fromMenu) {
 
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
+
+    <details><summary>سلاسل الإنتاج ومواد البناء</summary>
+      <p>المزارع ترسل إنتاجها بالشاحنات للمصانع، بس لازم طريق يوصل بينهم: النخل لمصنع التمور، الحظائر لمصنع الألبان وسوق الماشية، المزارع المحورية للصوامع، والكسارات لمصنع البلوك. المصنع يشتغل كامل إذا وصله العدد اللي يحتاجه.</p>
+      <p>تطوير البيوت الكبيرة والمحلات يحتاج مواد بناء. «كسارة حجر» تنبني على الصخور وتطلّعها، وإذا ما عندك تنشرى من برا غالي. تابعها في «الأرقام».</p></details>
 
     <details><summary>السدود والماء الجوفي</summary>
       <p>تحت الرافعية ماء جوفي: الآبار والخزانات والمزارع المحورية تسحب منه، والمطر يرجّعه. إذا نزل كثير الآبار تعطي أقل. تابعه من مربع الماء فوق.</p>

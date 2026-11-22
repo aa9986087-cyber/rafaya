@@ -78,7 +78,11 @@ export const B = {
   pen: { cat: "farm", name: "حظيرة حلال", cost: 150, upkeep: 3, era: 0, jobs: 3, income: 10, water: -1, text: "غنم وإبل. في الربيع ترعى في الفيضة القريبة (لين ٤ مربعات) ويزيد دخلها النص." },
   livestock: { cat: "farm", name: "سوق الماشية", cost: 900, upkeep: 12, era: 1, jobs: 10, income: 50, water: -2, radius: 3, happy: 4, text: "يبيع الحلال لبرا البلد. كل حظيرة عندك تزيد دخله ١٠٪ (لين الضعف)." },
   workshop: { cat: "farm", name: "ورشة", cost: 400, upkeep: 6, era: 1, jobs: 12, income: 45, power: -4, radius: 2, pollute: 8, text: "وظائف، بس صوتها يزعج الجيران." },
-  datefactory: { cat: "farm", name: "مصنع تمور", cost: 1800, upkeep: 25, era: 1, tech: "packing", jobs: 30, income: 110, water: -6, power: -10, radius: 3, pollute: 6, text: "يغلّف التمور. كل مزرعة نخل تزيد دخله." },
+  datefactory: { cat: "farm", name: "مصنع تمور", cost: 1800, upkeep: 25, era: 1, tech: "packing", jobs: 30, income: 110, water: -6, power: -10, radius: 3, pollute: 6, text: "يغلّف التمور ويصدّرها. يحتاج ٦ مزارع نخل موصولة به بطريق عشان يشتغل كامل." },
+  quarry: { cat: "farm", name: "كسارة حجر", cost: 700, upkeep: 10, era: 1, onRock: true, jobs: 8, radius: 2, pollute: 6, text: "تنبني على الصخور. تطلّع حجر = مواد بناء (٣ بالساعة) تحتاجها لتطوير البيوت والمحلات." },
+  blockfactory: { cat: "farm", name: "مصنع بلوك", cost: 1600, upkeep: 18, era: 1, jobs: 15, power: -6, radius: 2, pollute: 5, text: "يحوّل حجر الكسارات لبلوك: ٨ مواد بناء بالساعة إذا وصلته كسارتين بطريق." },
+  dairy: { cat: "farm", name: "مصنع ألبان ومسلخ", cost: 2200, upkeep: 25, era: 1, jobs: 20, income: 90, water: -4, power: -6, radius: 2, pollute: 3, text: "حليب ولحم من حلال الرافعية. يحتاج ٤ حظائر موصولة به بطريق." },
+  mill: { cat: "farm", name: "صوامع ومطحنة", cost: 2400, upkeep: 25, era: 1, jobs: 15, income: 100, power: -8, radius: 2, pollute: 3, text: "تطحن قمح المزارع المحورية. تحتاج ٣ مزارع محورية موصولة بها بطريق." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
 
   // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
@@ -143,6 +147,8 @@ export const BIZ_LEVELS = {
   souq: ["سوق شعبي", "سوق مسقوف", "سوق كبير"],
   mandi: ["مطعم مندي", "مطعم مندي كبير", "مطاعم ومطابخ"],
   workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"],
+  dairy: ["مصنع ألبان ومسلخ", "مصنع ألبان كبير", "مجمع أغذية"],
+  mill: ["صوامع ومطحنة", "صوامع كبيرة", "مجمع حبوب"],
   pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة"]
 };
 /** What each step does: its price (× the building's price) and how income, staff and running costs grow. */
@@ -174,6 +180,19 @@ export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
 export const GROUND = { start: 100, low: 40, pump: 0.0003, pivot: 0.06, base: 0.05, rain: 0.5, lake: 0.08, spring: 0.03 };
 /** Price of filling a tile of wadi ground with earth (no more floods there, no more fertile ground). */
 export const FILL_COST = 80;
+
+// Production chains: farms send their goods by truck, along the roads, to the factory that works them.
+// A factory runs at 30% with nothing coming in and at full power with `need` producers linked by road.
+export const CHAINS = [
+  { id: "dates", name: "التمور", from: "palms", to: "datefactory", need: 6, cargo: "#8a5a2b" },
+  { id: "meat", name: "الحلال", from: "pen", to: "dairy", need: 4, cargo: "#f1ece0" },
+  { id: "market", name: "سوق الماشية", from: "pen", to: "livestock", need: 4, cargo: "#c49a63" },
+  { id: "wheat", name: "القمح", from: "pivot", to: "mill", need: 3, cargo: "#d9b54a" },
+  { id: "stone", name: "الحجر", from: "quarry", to: "blockfactory", need: 2, cargo: "#a9a196" }
+];
+// Building materials: quarries and block factories make them; upgrades use them. What is missing is
+// bought from outside at MAT_PRICE a unit; the store holds MAT_CAP, and the rest is sold at MAT_SELL.
+export const MAT = { price: 25, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 10, 30, 100], biz: [0, 0, 15] };
 
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [

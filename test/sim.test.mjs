@@ -298,3 +298,23 @@ test("a dam makes a lake behind it, holds floods, and groundwater falls with pum
   const t = autoplay(1300, 2);
   assert.ok(t.aquifer < 100);
 });
+
+test("production chains: farms linked by road feed their factory; quarries make materials", async () => {
+  const { chainLinks, upgradePrice } = await import("../js/sim.js");
+  const { MAT } = await import("../js/data.js");
+  const s = newGame(21);
+  const road = s.tiles.findIndex((t) => t.b?.id === "road"), ry = Math.floor(road / N), x0 = road % N;
+  for (let x = x0 + 1; x < x0 + 9; x++) { const t = s.tiles[idx(x, ry)]; if (!t.b) { t.b = { id: "road", lvl: 0, res: 0 }; t.t = "sand"; } }
+  let n = 0;
+  for (let x = x0 + 2; x < x0 + 9 && n < 3; x++) { const t = s.tiles[idx(x, ry + 1)]; if (!t.b) { t.b = { id: "palms", lvl: 0, res: 0, cond: 100 }; t.t = "sand"; n++; } }
+  s.tiles[idx(x0 + 8, ry - 1)].b = { id: "datefactory", lvl: 0, res: 0, cond: 100 };
+  const { at } = chainLinks(s);
+  const f = at.get(idx(x0 + 8, ry - 1));
+  assert.ok(f && f.got >= 3, "palms on the road reach the factory");
+  // materials: short ones are bought
+  const villa = { id: "house", lvl: 2 };
+  s.materials = 0;
+  assert.equal(upgradePrice(s, villa).total, B.house.levels[3].cost + MAT.house[3] * MAT.price);
+  s.materials = 1000;
+  assert.equal(upgradePrice(s, villa).total, B.house.levels[3].cost);
+});
