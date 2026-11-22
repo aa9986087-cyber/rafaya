@@ -1062,11 +1062,21 @@ const WHATS_NEW = {
 };
 function whatsNewSheet() {
   try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
+  showWhatsNewDot();
   sheet(`<h2>وش الجديد في الرافعية؟</h2><p>تحديث جديد وصل! هذي أهم الإضافات:</p>
     <div class="rows">${WHATS_NEW.items.map(([icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
     <div class="sheet-actions"><button class="btn go block" id="wnOk" type="button">يلا نلعب</button></div>`, "whatsnew");
   $("wnOk").addEventListener("click", closeSheet);
 }
+/** The "what's new" button on the screen: a red dot until this update has been read. */
+function showWhatsNewDot() {
+  let seen = null;
+  try { seen = localStorage.getItem("rafaya-news-seen"); } catch { /* fine */ }
+  $("wnDot").hidden = seen === WHATS_NEW.v;
+}
+$("wnChip").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
+$("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
+showWhatsNewDot();
 function maybeWhatsNew() {
   let seen = null;
   try { seen = localStorage.getItem("rafaya-news-seen"); } catch { /* fine */ }
