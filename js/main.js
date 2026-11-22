@@ -61,7 +61,24 @@ else focusTown();
 if (!S.cam) world.view.zoom = 0.9;
 world.updateCamera();
 world.sync(S);
-addEventListener("resize", () => world.resize());
+addEventListener("resize", () => { world.resize(); layoutSide(); });
+/**
+ * The side buttons sit between the speed buttons and the build dock, never on top of them: on a short
+ * screen they get smaller, lose their labels, and if they still do not fit they go in two columns.
+ */
+function layoutSide() {
+  const side = document.querySelector(".side"), speeds = document.querySelector(".speeds"), dock = document.querySelector(".dock");
+  if (!side || !speeds || !dock) return;
+  const top = speeds.getBoundingClientRect().bottom + 10, bottom = dock.getBoundingClientRect().top - 10;
+  const n = side.children.length, gap = 6, avail = Math.max(0, bottom - top);
+  let size = Math.floor((avail - gap * (n - 1)) / n), cols = 1;
+  if (size < 40) { cols = 2; size = Math.floor((avail - gap * (Math.ceil(n / 2) - 1)) / Math.ceil(n / 2)); }
+  size = Math.max(36, Math.min(58, size));
+  side.style.top = `${Math.round(top)}px`;
+  side.style.setProperty("--sz", `${size}px`);
+  side.classList.toggle("compact", size < 50);
+  side.classList.toggle("two", cols === 2);
+}
 
 const sync = (roads) => world.sync(S, { tiles: false, roads, buildings: true });
 
@@ -332,6 +349,7 @@ function lockReason(id) {
 }
 
 function renderCards() {
+  requestAnimationFrame(layoutSide);
   const box = $("cards");
   if (!openCat) { box.hidden = true; return; }
   const ids = Object.keys(B).filter((k) => B[k].cat === openCat);
@@ -1056,6 +1074,8 @@ function startPlaying() {
   document.body.classList.remove("at-menu");
   playing = true;
   refresh();
+  // the top bar slides in when the game starts: place the side buttons once it has settled
+  for (const ms of [0, 300, 700, 1400]) setTimeout(layoutSide, ms);
 }
 
 $("mContinue").addEventListener("click", () => { sfx.goal(); startPlaying(); const r = away; away = null; if (r) showAway(r); else maybeWhatsNew(); });
@@ -1133,7 +1153,7 @@ function frame(now) {
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
   ambT -= dt;
-  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining }); }
+  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining }); if (playing) layoutSide(); }
   world.frame(dt, tod);
   requestAnimationFrame(frame);
 }
