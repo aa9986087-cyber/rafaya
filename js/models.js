@@ -170,6 +170,34 @@ function car(b, x, z, ry, color) {
 
 // ---------- the buildings ----------
 
+/** A sheep: a wool body and a dark head. */
+function sheep(b, x, z, ry = 0) {
+  const c = Math.cos(ry), s = Math.sin(ry);
+  b.box(0.11, 0.07, 0.07, "#f1ece0", { x, y: 0.05, z, ry });
+  b.box(0.04, 0.045, 0.045, C.black, { x: x + c * 0.07, y: 0.075, z: z - s * 0.07, ry });
+  for (const [lx, lz] of [[0.035, 0.022], [-0.035, 0.022], [0.035, -0.022], [-0.035, -0.022]]) b.box(0.015, 0.03, 0.015, C.black, { x: x + c * lx + s * lz, y: 0.015, z: z - s * lx + c * lz });
+}
+/** A small seated-height camel for pens and markets. */
+function camelSmall(b, x, z, ry = 0) {
+  const c = Math.cos(ry), s = Math.sin(ry), at = (dx, dz) => ({ x: x + c * dx + s * dz, z: z - s * dx + c * dz });
+  const col = "#c49a63";
+  b.box(0.2, 0.09, 0.08, col, { ...at(0, 0), y: 0.15, ry });
+  b.box(0.08, 0.06, 0.06, col, { ...at(-0.01, 0), y: 0.21, ry });
+  b.box(0.04, 0.12, 0.04, col, { ...at(0.11, 0), y: 0.18, ry, rz: -0.5 });
+  b.box(0.07, 0.04, 0.04, col, { ...at(0.15, 0), y: 0.27, ry });
+  for (const [lx, lz] of [[0.07, 0.03], [0.07, -0.03], [-0.07, 0.03], [-0.07, -0.03]]) b.box(0.02, 0.15, 0.02, "#a87f4d", { ...at(lx, lz), y: 0.015, ry });
+}
+/** Wooden posts and rails round the edge of a tile. */
+function fenceRing(b, r) {
+  for (let k = -4; k <= 4; k++) for (const [x, z] of [[k * r / 4, -r], [k * r / 4, r], [-r, k * r / 4], [r, k * r / 4]]) b.box(0.025, 0.14, 0.025, C.wood, { x, y: 0.015, z });
+  for (const [w, d, x, z] of [[2 * r, 0.015, 0, -r], [2 * r, 0.015, 0, r], [0.015, 2 * r, -r, 0], [0.015, 2 * r, r, 0]]) { b.box(w, 0.015, d, C.wood, { x, y: 0.12, z }); b.box(w, 0.015, d, C.wood, { x, y: 0.07, z }); }
+}
+/** A shade on four poles. */
+function shade(b, x, z, w, d) {
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.cyl(0.012, 0.012, 0.26, C.wood, { x: x + sx * w / 2, z: z + sz * d / 2 }, 4);
+  b.box(w + 0.04, 0.015, d + 0.04, "#e6d6b0", { x, y: 0.26, z });
+}
+
 const MAKERS = {
   // بيت الشعر: low black tent, three peaks, sadu band, poles and ropes.
   tent0(b) {
@@ -351,6 +379,36 @@ const MAKERS = {
     for (let i = 0; i < 6; i++) b.box(0.84, 0.05, 0.07, i % 2 ? C.grass : "#5fa34a", { z: -0.36 + i * 0.14, y: 0.015 });
     b.box(0.16, 0.18, 0.16, C.plaster, { x: 0.36, z: -0.36 });
     b.cyl(0.05, 0.05, 0.08, C.white, { x: 0.36, y: 0.18, z: -0.36 }, 8);
+  },
+  pen(b) {
+    b.box(0.94, 0.015, 0.94, "#c9ad7c");
+    fenceRing(b, 0.44);
+    shade(b, -0.1, -0.26, 0.5, 0.26);
+    b.box(0.3, 0.05, 0.08, "#8a8f94", { x: 0.18, y: 0.015, z: 0.3 }); b.box(0.26, 0.01, 0.05, C.water, { x: 0.18, y: 0.06, z: 0.3 }, "shiny");
+    sheep(b, -0.22, 0.12, 0.4); sheep(b, 0.02, 0.06, -0.3); sheep(b, -0.1, 0.28, 1.2);
+    camelSmall(b, 0.24, -0.04, 0.3);
+  },
+  livestock(b) {
+    b.box(0.94, 0.015, 0.94, "#cdb48a");
+    for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.1], [0.42, 0.1]]) b.cyl(0.018, 0.018, 0.4, C.wood, { x, z }, 5);
+    b.box(0.92, 0.02, 0.6, "#e9dcc0", { y: 0.4, z: -0.16 });
+    b.box(0.92, 0.04, 0.02, C.red, { y: 0.38, z: 0.14 });
+    for (const x of [-0.25, 0.25]) { b.box(0.36, 0.06, 0.02, C.wood, { x, y: 0.1, z: -0.02 }); b.box(0.02, 0.12, 0.3, C.wood, { x: x - 0.18, y: 0.015, z: -0.17 }); }
+    sheep(b, -0.32, -0.2, 0); sheep(b, -0.18, -0.3, 2); sheep(b, -0.24, -0.08, 1);
+    camelSmall(b, 0.22, -0.2, 1.5); camelSmall(b, 0.3, 0.3, 0.2);
+    b.box(0.26, 0.08, 0.16, C.stone, { x: -0.22, z: 0.3 }); b.box(0.04, 0.1, 0.04, C.dark, { x: -0.22, y: 0.08, z: 0.3 });
+  },
+  mazayen(b) {
+    b.box(0.98, 0.015, 0.98, "#d8bf8c");
+    const ring = new THREE.CylinderGeometry(0.4, 0.4, 0.07, 28, 1, true);
+    b.add(ring, C.white, { y: 0.015 });
+    b.add(new THREE.CylinderGeometry(0.39, 0.39, 0.004, 28), "#cfae74", { y: 0.016 });
+    for (let k = 0; k < 3; k++) b.box(0.9, 0.06 * (3 - k), 0.06, k % 2 ? C.stone : "#e4d6b8", { z: -0.46 + k * 0.06 });
+    for (let k = 0; k < 4; k++) b.cyl(0.008, 0.008, 0.3, C.dark, { x: -0.42 + k * 0.28, z: -0.48 }, 4);
+    b.box(0.92, 0.015, 0.14, C.green, { y: 0.3, z: -0.44 });
+    for (const x of [-0.44, 0.44]) { b.cyl(0.01, 0.01, 0.45, C.dark, { x, z: 0.44 }, 4); b.box(0.12, 0.07, 0.006, C.green, { x: x + (x < 0 ? 0.06 : -0.06), y: 0.4, z: 0.44 }); }
+    camelSmall(b, -0.12, 0.02, 0.5); camelSmall(b, 0.14, 0.12, 2.6); camelSmall(b, 0.02, -0.2, 1.4);
+    b.box(0.2, 0.02, 0.12, C.red, { x: 0.36, z: 0.3 });
   },
   workshop(b) {
     b.box(0.74, 0.32, 0.6, "#a7a49b");
@@ -812,7 +870,7 @@ export function compose(fn) { const b = new Builder(); fn(b, MAKERS); return b.d
 export function makerSeeded(key, seed) { const b = new Builder(); MAKERS[key](b, "sand", seed); return b.done(); }
 
 // Upgraded farms, shops and workshops: the same building with more added on at each level.
-const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop"];
+const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop", "pen"];
 function bizExtras(b, id, lvl) {
   if (id === "palms") {
     for (const z of [-0.2, 0.2]) b.box(0.8, 0.012, 0.014, "#3b3f44", { y: 0.018, z }); // drip lines
@@ -824,6 +882,11 @@ function bizExtras(b, id, lvl) {
     const tunnel = (z) => b.add(new THREE.CylinderGeometry(0.17, 0.17, 0.84, 10, 1, true, 0, Math.PI), "#cfe3ea", { y: 0.015, z, rz: Math.PI / 2 }, "shiny");
     tunnel(0.24);
     if (lvl >= 2) { tunnel(-0.12); b.cyl(0.07, 0.07, 0.22, C.white, { x: -0.38, z: -0.38 }, 10); }
+    return;
+  }
+  if (id === "pen") {
+    sheep(b, 0.12, 0.16, 2.2); camelSmall(b, -0.28, 0.02, 1.8);
+    if (lvl >= 2) { b.box(0.22, 0.2, 0.18, C.mudLight, { x: 0.3, z: -0.3 }); b.box(0.24, 0.02, 0.2, C.mud, { x: 0.3, y: 0.2, z: -0.3 }); b.cyl(0.05, 0.05, 0.16, C.white, { x: 0.36, z: 0.36 }, 8); }
     return;
   }
   if (id === "workshop") {

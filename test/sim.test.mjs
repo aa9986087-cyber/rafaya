@@ -256,3 +256,22 @@ test("a building can be moved, keeping its level and residents", async () => {
   assert.equal(s.money, money - fee);
   assert.notEqual(moveBlocker(s, to.x, to.y, to.x, to.y), "", "cannot move onto a taken tile");
 });
+
+test("elections at the end of the year; prayers through the day; pens graze in spring", async () => {
+  const { voteShare, prayerNow, hoursToElection, districtStats, districtName } = await import("../js/sim.js");
+  const { YEAR_HOURS } = await import("../js/data.js");
+  // a town grown by the careful bot through its first year has voted once
+  const s = autoplay(YEAR_HOURS + 5, 42);
+  assert.ok(s.pop >= 30);
+  assert.equal(s.elections?.length, 1, "an election came at the end of the year");
+  assert.ok(voteShare(s) > 0 && voteShare(s) < 1);
+  assert.ok(hoursToElection(s) > 0);
+  // five prayers a day
+  const names = new Set();
+  for (let h = 1; h <= 24; h++) { s.day = h; const p = prayerNow(s); if (p) names.add(p.id); }
+  assert.equal(names.size, 5);
+  // quarters: renaming shows in the stats
+  const d = districtStats(s, analyze(s))[0];
+  s.districts = { [d.d]: "حارة الوادي" };
+  assert.equal(districtName(s, d.d), "حارة الوادي");
+});

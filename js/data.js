@@ -74,6 +74,8 @@ export const B = {
 
   palms: { cat: "farm", name: "مزرعة نخل", cost: 150, upkeep: 2, era: 0, jobs: 5, income: 11, water: -5, text: "تمور ودخل. في الوادي تنتج أكثر." },
   veg: { cat: "farm", name: "مزرعة خضار", cost: 200, upkeep: 3, era: 0, jobs: 6, income: 14, water: -6, text: "خضار للسوق." },
+  pen: { cat: "farm", name: "حظيرة حلال", cost: 150, upkeep: 3, era: 0, jobs: 3, income: 10, water: -1, text: "غنم وإبل. في الربيع ترعى في الفيضة القريبة (لين ٤ مربعات) ويزيد دخلها النص." },
+  livestock: { cat: "farm", name: "سوق الماشية", cost: 900, upkeep: 12, era: 1, jobs: 10, income: 50, water: -2, radius: 3, happy: 4, text: "يبيع الحلال لبرا البلد. كل حظيرة عندك تزيد دخله ١٠٪ (لين الضعف)." },
   workshop: { cat: "farm", name: "ورشة", cost: 400, upkeep: 6, era: 1, jobs: 12, income: 45, power: -4, radius: 2, pollute: 8, text: "وظائف، بس صوتها يزعج الجيران." },
   datefactory: { cat: "farm", name: "مصنع تمور", cost: 1800, upkeep: 25, era: 1, tech: "packing", jobs: 30, income: 110, water: -6, power: -10, radius: 3, pollute: 6, text: "يغلّف التمور. كل مزرعة نخل تزيد دخله." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
@@ -106,6 +108,7 @@ export const B = {
   incense: { cat: "deco", name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
 
   // Grand projects: one of each, very dear, and they take days to build.
+  mazayen: { cat: "proj", visitors: true, name: "ميدان مزاين الإبل", cost: 4000, upkeep: 25, era: 1, unique: true, buildHours: 72, jobs: 20, radius: 8, happy: 10, income: 120, water: -3, text: "ميدان لمزاين الإبل يجيب الزوار من كل مكان. كل حظيرة عندك تزيد دخله ٥٪." },
   gate: { cat: "proj", visitors: true, name: "بوابة الرافعية", cost: 5000, upkeep: 20, era: 1, unique: true, buildHours: 48, radius: 9, happy: 12, income: 60, text: "بوابة نجدية كبيرة على مدخل البلد. يفرح فيها الأهالي ويجيب زوار." },
   heritage: { cat: "proj", visitors: true, name: "السوق التراثي", cost: 9000, upkeep: 40, era: 1, unique: true, buildHours: 72, jobs: 40, radius: 7, happy: 10, income: 220, water: -4, power: -4, text: "سوق قديم مرمّم بالطين والخشب، فيه حرف ومطاعم ودلال." },
   tower: { cat: "proj", visitors: true, name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
@@ -137,7 +140,8 @@ export const BIZ_LEVELS = {
   cafe: ["مقهى", "مقهى كبير", "كوفي حديث"],
   souq: ["سوق شعبي", "سوق مسقوف", "سوق كبير"],
   mandi: ["مطعم مندي", "مطعم مندي كبير", "مطاعم ومطابخ"],
-  workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"]
+  workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"],
+  pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة"]
 };
 /** What each step does: its price (× the building's price) and how income, staff and running costs grow. */
 export const BIZ_UP = [
@@ -146,6 +150,22 @@ export const BIZ_UP = [
   { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, era: 1 }
 ];
 export const bizLevel = (b) => BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0] || BIZ_UP[0];
+
+// The five prayers, by the town's hour (hour 0 is sunrise; D is the hours of daylight that season).
+export const PRAYERS = [
+  { id: "fajr", name: "الفجر", at: () => 23 },
+  { id: "dhuhr", name: "الظهر", at: (D) => Math.round(D / 2) },
+  { id: "asr", name: "العصر", at: (D) => Math.round(D * 0.75) },
+  { id: "maghrib", name: "المغرب", at: (D) => Math.round(D) },
+  { id: "isha", name: "العشاء", at: (D) => Math.round(D) + 2 }
+];
+
+// The town's quarters: the land in a 3×3 grid. The mayor can rename them.
+export const DISTRICT_NAMES = ["الحارة الشمالية الغربية", "الحارة الشمالية", "الحارة الشمالية الشرقية", "الحارة الغربية", "وسط البلد", "الحارة الشرقية", "الحارة الجنوبية الغربية", "الحارة الجنوبية", "الحارة الجنوبية الشرقية"];
+
+// Elections for the municipal council, at the end of every year. Winning brings a grant from the
+// province; losing doubles next year's province fee (the province sends an inspector).
+export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
 
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [

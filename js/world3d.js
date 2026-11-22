@@ -721,12 +721,20 @@ export class World {
       const x = i % N, y = Math.floor(i / N);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]) && !this.doorSet.has(idx(x + dx, y + dy))) { this.doorSet.add(idx(x + dx, y + dy)); this.doorRoads.push([x + dx, y + dy]); }
     }
+    // Road tiles by the mosques: where the men go at prayer time.
+    this.mosqueRoads = []; this.mosqueSet = new Set();
+    s.tiles.forEach((t, i) => {
+      if (!["mosque", "bigmosque"].includes(t.b?.id) || t.b.build > 0) return;
+      const x = i % N, y = Math.floor(i / N);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]) && !this.mosqueSet.has(idx(x + dx, y + dy))) { this.mosqueSet.add(idx(x + dx, y + dy)); this.mosqueRoads.push([x + dx, y + dy]); }
+    });
     for (const p of this.people) if (!roadAt(s.tiles[idx(p.tx, p.ty)]) || !roadAt(s.tiles[idx(p.x, p.y)])) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)] || [0, 0]; Object.assign(p, { x, y, tx: x, ty: y, t: 1 });
     }
     // Camels: a small herd while the town is still young, grazing on open land.
     const fair = !!s.events?.some((e) => e.mazayen);
-    const herd = fair ? 16 : s.era >= 3 ? 0 : s.era === 2 ? 3 : 6;
+    const pens = s.tiles.reduce((n, t) => n + (t.b?.id === "pen" || t.b?.id === "livestock" ? 1 : 0), 0);
+    const herd = Math.min(16, (fair ? 16 : s.era >= 3 ? 0 : s.era === 2 ? 3 : 6) + pens * 2);
     const open = (x, y) => inMap(x, y) && !s.tiles[idx(x, y)].b && s.tiles[idx(x, y)].t !== "rock";
     if (!this.herdHome || !open(this.herdHome[0], this.herdHome[1]) || this.herdSeason !== seasonOf(s.day).i || this.herdFair !== fair) {
       this.herdSeason = seasonOf(s.day).i;
@@ -757,7 +765,13 @@ export class World {
     const M = this.peopleMesh, col = new THREE.Color();
     const winter = seasonOf(this.state.day).id === "winter";
     const thobes = winter ? ["#f2efe6", "#c9b79a", "#8a8f94", "#6b5a48", "#ece6d8"] : ["#f6f5f0", "#f1ede2", "#ebe7dc", "#f6f5f0"];
+    const pray = !!this.prayer && !night && this.mosqueRoads?.length > 0;
     for (const p of this.people) {
+      // After the prayer the men come out of the mosque a few at a time.
+      if (p.atMosque) {
+        if (!pray && Math.random() < dt * 0.5) { const [x, y] = this.mosqueRoads?.length ? this.mosqueRoads[Math.floor(Math.random() * this.mosqueRoads.length)] : [p.x, p.y]; Object.assign(p, { home: false, atMosque: false, x, y, tx: x, ty: y, t: 1 }); }
+        else continue;
+      }
       // At night everyone heads home and goes in; in the morning they come out a few at a time.
       if (p.home) {
         if (!night && this.doorRoads.length && Math.random() < dt * 0.08) {
@@ -765,12 +779,19 @@ export class World {
           Object.assign(p, { home: false, x, y, tx: x, ty: y, t: 1 });
         } else continue;
       }
-      p.t += dt * p.speed * (night ? 2.4 : 1);
+      const toMosque = pray && p.kind !== "woman";
+      p.t += dt * p.speed * (night ? 2.4 : toMosque ? 1.8 : 1);
       if (p.t >= 1) {
         if (night && (this.doorSet.has(idx(p.tx, p.ty)) || !this.doorRoads.length || Math.random() < 0.3)) { p.home = true; continue; }
+        if (toMosque && this.mosqueSet.has(idx(p.tx, p.ty))) { p.atMosque = true; p.x = p.tx; p.y = p.ty; continue; }
         p.t = 0; p.px = p.x; p.py = p.y; p.x = p.tx; p.y = p.ty;
         const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(p.x + dx, p.y + dy) && roadAt(s.tiles[idx(p.x + dx, p.y + dy)]) && !(p.x + dx === p.px && p.y + dy === p.py));
-        const pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [(p.px ?? p.x) - p.x, (p.py ?? p.y) - p.y];
+        let pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [(p.px ?? p.x) - p.x, (p.py ?? p.y) - p.y];
+        // at prayer time, take the step that brings you closest to a mosque (with a little wandering)
+        if (toMosque && opts.length && Math.random() < 0.85) {
+          const goal = this.mosqueRoads.reduce((best, m) => (Math.abs(m[0] - p.x) + Math.abs(m[1] - p.y) < Math.abs(best[0] - p.x) + Math.abs(best[1] - p.y) ? m : best), this.mosqueRoads[0]);
+          pick = opts.reduce((best, o) => (Math.abs(p.x + o[0] - goal[0]) + Math.abs(p.y + o[1] - goal[1]) < Math.abs(p.x + best[0] - goal[0]) + Math.abs(p.y + best[1] - goal[1]) ? o : best), opts[0]);
+        }
         p.tx = p.x + pick[0]; p.ty = p.y + pick[1];
         if (!inMap(p.tx, p.ty) || !roadAt(s.tiles[idx(p.tx, p.ty)])) { p.tx = p.x; p.ty = p.y; }
       }

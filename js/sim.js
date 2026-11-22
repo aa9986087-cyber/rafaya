@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -144,6 +144,43 @@ export function build(s, x, y, id) {
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
 }
+
+// ---------- prayers ----------
+/** The prayer whose time it is this town hour, or null. */
+export function prayerNow(s) {
+  const D = seasonOf(s.day).daylight * HOURS, h = hourOf(s.day);
+  return PRAYERS.find((p) => p.at(D) === h) || null;
+}
+
+// ---------- the town's quarters ----------
+/** Which quarter (0–8) a tile is in. */
+export const districtOf = (i) => Math.min(2, Math.floor((Math.floor(i / N)) / (N / 3))) * 3 + Math.min(2, Math.floor((i % N) / (N / 3)));
+export const districtName = (s, d) => s.districts?.[d] || DISTRICT_NAMES[d];
+/** Each lived-in quarter: homes, people, happiness and what is missing there. */
+export function districtStats(s, a = analyze(s)) {
+  const out = DISTRICT_NAMES.map((n, d) => ({ d, name: districtName(s, d), homes: 0, pop: 0, happy: 0, dry: 0, dark: 0, noRoad: 0 }));
+  s.tiles.forEach((t, i) => {
+    if (t.b?.id !== "house") return;
+    const o = out[districtOf(i)];
+    o.homes++; o.pop += t.b.res || 0;
+    o.happy += Math.max(0, Math.min(100, s.happy + (t.b.local || 0) * 0.6));
+    if (t.b.works === false) o.noRoad++;
+    else if (!a.watered[i]) o.dry++;
+    if (a.grid && t.b.lvl >= 3 && !a.powered[i]) o.dark++;
+  });
+  for (const o of out) o.happy = o.homes ? Math.round(o.happy / o.homes) : 0;
+  return out.filter((o) => o.homes);
+}
+
+// ---------- elections ----------
+/** The share of the vote the mayor would get today (0–1). */
+export function voteShare(s) {
+  const r = s.record || {};
+  const v = 0.2 + ((s.trust ?? 60) / 100) * 0.35 + ((s.happy - 40) / 100) * 0.6 + (r.kept || 0) * 0.02 - (r.broken || 0) * 0.04 - (s.broke ? 0.15 : s.money < 0 ? 0.05 : 0);
+  return Math.max(0.05, Math.min(0.95, v));
+}
+/** Hours until the next election (the end of the year). */
+export const hoursToElection = (s) => YEAR_HOURS - ((s.day - 1) % YEAR_HOURS);
 
 // ---------- moving a building ----------
 /** Movers' fee: a tenth of the building's price. Level, residents and condition move with it. */
@@ -338,6 +375,16 @@ export function analyze(s) {
   // Ramadan and Eid); more shops than that share the same customers. Visitors' places (hotel, the
   // grand projects) and industry sell outside the town, so they are not capped.
   a.shopRaw = 0; a.visitorIncome = 0; a.industryIncome = 0;
+  // Spring grazing: pens with green fayda within 4 tiles.
+  a.grazing = new Set();
+  if (seasonOf(s.day).id === "spring") for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (s.tiles[idx(x, y)].b?.id !== "pen") continue;
+    let near = false;
+    for (let yy = y - 4; yy <= y + 4 && !near; yy++) for (let xx = x - 4; xx <= x + 4 && !near; xx++) if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= 4 && s.tiles[idx(xx, yy)].t === "fayda") near = true;
+    if (near) a.grazing.add(idx(x, y));
+  }
+  // At prayer time the shops close their doors for a while.
+  a.prayer = prayerNow(s);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const t = s.tiles[idx(x, y)];
     if (!t.b || !t.b.works) continue;
@@ -349,6 +396,9 @@ export function analyze(s) {
     } else {
       let inc = def.income * bizLevel(t.b).income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
       if (t.b.id === "datefactory") inc *= 1 + Math.min(1, palms.length * 0.1);
+      if (t.b.id === "livestock") inc *= 1 + Math.min(1, a.count.pen * 0.1);
+      if (t.b.id === "mazayen") inc *= 1 + Math.min(1, a.count.pen * 0.05);
+      if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1.5;
       if (def.visitors) a.visitorIncome += inc * shopMult;
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
       else a.industryIncome += inc;
@@ -358,7 +408,7 @@ export function analyze(s) {
   // Traffic: too many people for the roads, and dirt roads at that, keep customers away.
   const roadsAll = a.count.road + a.count.asphalt;
   a.congestion = roadsAll ? Math.max(0, Math.min(0.4, s.pop / (roadsAll * 20) - 1)) * (a.count.road / roadsAll) : 0;
-  a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion);
+  a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion) * (a.prayer && a.prayer.id !== "fajr" ? 0.6 : 1);
   // Workshops and factories sell outside, but the traders who buy from a town of this size only take
   // so much: past that, extra output sells at about a third of the price.
   a.industryRaw = a.industryIncome;
@@ -597,10 +647,19 @@ export function step(s, r = Math.random) {
   else if (s.broke && s.money >= 0) { s.broke = false; msgs.push({ kind: "goal", text: "سددت الديون! الخدمات رجعت تشتغل." }); }
   // A new year: the province's fee, and the council's staff ask for a raise.
   if (Math.floor((s.day - 1) / YEAR_HOURS) > yearBefore) {
-    const fee = PROVINCE_FEES[s.era];
+    const fee = PROVINCE_FEES[s.era] * (s.feeX || 1);
     if (fee) { s.money -= fee; msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
     if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }
-  }
+    if (s.pop >= 30) {
+      const share = voteShare(s), won = share >= 0.5, year = Math.floor((s.day - 1) / YEAR_HOURS);
+      const grant = won ? ELECTION_GRANT[s.era] : 0;
+      if (won) { s.money += grant; s.events.push({ id: "boost", name: "فرحة الفوز بالانتخابات", left: 48, hours: 48, happy: 6 }); s.feeX = 1; }
+      else { s.events.push({ id: "boost", name: "زعل بعد الانتخابات", left: 48, hours: 48, happy: -5 }); s.feeX = 2; s.trust = Math.max(s.trust ?? 60, 50); }
+      s.elections = [...(s.elections || []), { year, share: Math.round(share * 100), won }].slice(-10);
+      msgs.push({ kind: "election", share, won, grant, record: { ...(s.record || {}) } });
+      s.record = { kept: 0, broken: 0 };
+    }
+  } else if (s.pop >= 30 && hoursToElection(s) === 48) msgs.push({ kind: "event", title: "الانتخابات", text: `انتخابات المجلس البلدي بعد يومين. لو صارت اليوم بتاخذ ${Math.round(voteShare(s) * 100)}٪ من الأصوات.` });
   // A new season.
   const season = seasonOf(s.day);
   if (season.i !== seasonBefore) msgs.push({ kind: "season", title: season.name, text: season.start });

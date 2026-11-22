@@ -81,6 +81,7 @@ export const sfx = {
     } catch { /* no audio */ }
     tone(90, 0.8, { type: "sawtooth", vol: 0.04, slide: -40 });
   },
+  prayer() { [294, 392, 349].forEach((f, i) => tone(f, 0.7, { type: "sine", vol: 0.035, at: i * 0.45 })); },
   levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },
   event() { tone(440, 0.2, { type: "sine", vol: 0.06 }); tone(554, 0.25, { type: "sine", vol: 0.05, at: 0.12 }); }
 };

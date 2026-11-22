@@ -323,3 +323,14 @@ details .row { background: rgba(255, 255, 255, .45); }
 .g-now { display: grid; gap: 6px; margin: 8px 0 4px; }
 .g-step { justify-content: flex-start; }
 .g-n { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: #fff; font-size: 14px; }
+
+.quarter { display: grid; gap: 6px; padding: 8px; border-radius: 14px; background: var(--paper-2); }
+.quarter .row { background: rgba(255, 255, 255, .5); }
+.q-edit { display: flex; gap: 6px; }
+.q-edit input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font: inherit; background: #fffaf0; color: var(--ink); }
+.q-edit .btn { flex: none; padding: 8px 12px; }
+.vote { display: grid; justify-items: center; margin: 6px 0; }
+.vote b { font-size: 48px; line-height: 1.1; }
+.vote .plus { color: var(--palm); } .vote .minus { color: var(--red); }
+.row.wn { justify-content: flex-start; }
+.wn-i { flex: none; font-size: 22px; width: 32px; text-align: center; }

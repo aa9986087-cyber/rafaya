@@ -3,6 +3,15 @@
 // one of the residents in their own voice. They work out what is needed and how much, say where,
 // remember what they asked for and what the mayor promised, answer each other and react to decisions.
 import { B, ERAS, DECISIONS, MAP_SIZE } from "./data.js";
+import { districtOf, districtName } from "./sim.js";
+
+// The quarters people live in (by the names the mayor gave them), so a speaker says where they are from.
+let livedIn = [];
+function learnQuarters(s) {
+  const ds = new Set();
+  s.tiles.forEach((t, i) => { if (t.b?.id === "house") ds.add(districtOf(i)); });
+  livedIn = [...ds].map((d) => districtName(s, d));
+}
 
 /**
  * Kinds of people who speak up. They are types, not fixed people: every post gets a new person of
@@ -34,7 +43,8 @@ export function makePerson(a, kindId, r = Math.random) {
   const family = `آل ${pickName(MEN, r)}`;
   const first = k.gender === "f" ? pickName(WOMEN, r) : pickName(MEN, r);
   const name = k.gender === "mother" ? `أم ${pickName(MEN, r)}` : k.gender === "father" ? `أبو ${pickName(MEN, r)}` : k.gender === "elder" ? `الشايب أبو ${pickName(MEN, r)}` : k.gender === "uncle" ? `العم ${pickName(MEN, r)}` : `${k.title ? k.title + " " : ""}${first} ${family}`;
-  const area = ["من الحارة الشمالية", "من الحارة الجنوبية", "من الحارة الشرقية", "من الحارة الغربية", "من وسط البلد"][Math.floor(r() * 5)];
+  const areas = livedIn.length ? livedIn : ["الحارة الشمالية", "الحارة الجنوبية", "الحارة الشرقية", "الحارة الغربية", "وسط البلد"];
+  const area = `من ${areas[Math.floor(r() * areas.length)]}`;
   return { name, role: k.role(a, r), area, kind: k.id };
 }
 
@@ -150,16 +160,12 @@ function topics(s, a, season, f) {
   return out;
 }
 
-const AREAS = { n: "بالحارة الشمالية", s: "بالحارة الجنوبية", e: "بالحارة الشرقية", w: "بالحارة الغربية", c: "بوسط البلد" };
-/** Which part of town a set of tiles is in (by its average position against the town's middle). */
+/** Which quarter a set of tiles is mostly in, as "بـ<name>" (the mayor may have renamed it). */
 function areaOf(s, list) {
-  if (!list.length) return AREAS.c;
-  let cx = 0, cy = 0, mx = 0, my = 0, all = 0;
-  list.forEach((i) => { cx += i % MAP_SIZE; cy += Math.floor(i / MAP_SIZE); });
-  s.tiles.forEach((t, i) => { if (t.b?.id === "house") { mx += i % MAP_SIZE; my += Math.floor(i / MAP_SIZE); all++; } });
-  const dx = cx / list.length - mx / (all || 1), dy = cy / list.length - my / (all || 1);
-  if (Math.hypot(dx, dy) < 2) return AREAS.c;
-  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? AREAS.e : AREAS.w) : (dy > 0 ? AREAS.s : AREAS.n);
+  const counts = new Map();
+  for (const i of list) counts.set(districtOf(i), (counts.get(districtOf(i)) || 0) + 1);
+  const d = [...counts.entries()].sort((p, q) => q[1] - p[1])[0]?.[0] ?? 4;
+  return `ب${districtName(s, d)}`;
 }
 
 /** The arithmetic behind the complaints: what is missing, how many, where. */
@@ -214,16 +220,17 @@ const stillMissing = (s, a, season, topic) => topics(s, a, season, townFacts(s, 
  * (asked three days ago) or promises not kept after two days.
  */
 export function followUps(s, a, season) {
+  learnQuarters(s);
   const posts = [];
   s.demands ||= {}; s.promises ||= [];
   const post = (rec, text, mood, topic) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who: rec.who, person: rec.person || makePerson(a, rec.who), text, mood, topic, likes: agreeing(s, 8) });
   // Promises first: a kept promise is thanked once (and closes the same wish); a broken one hurts.
   s.promises = s.promises.filter((p) => {
-    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); delete s.demands[p.topic]; return false; }
+    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); (s.record ||= {}).kept = (s.record.kept || 0) + 1; delete s.demands[p.topic]; return false; }
     if (!p.reminded && s.day - p.day >= 48) {
       post(p, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». ما صار شي، والوعد دين.`, -1, p.topic);
       posts[posts.length - 1].noCalm = true;
-      moodOf(s, p.who, -15); p.reminded = true;
+      moodOf(s, p.who, -15); (s.record ||= {}).broken = (s.record.broken || 0) + 1; p.reminded = true;
     }
     return s.day - p.day < 24 * 8;
   });
@@ -317,6 +324,7 @@ function newsRand(seed) { let x = seed >>> 0 || 1; return () => ((x = (x * 16645
  * resident who cares about it, and avoids lines and topics said recently.
  */
 export function writePosts(s, a, season, count = 1) {
+  learnQuarters(s);
   const f = townFacts(s, a, season);
   const all = topics(s, a, season, f);
   const recent = (s.news || []).slice(0, 8);

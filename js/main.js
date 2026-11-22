@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -637,6 +637,7 @@ function inspect(x, y) {
   if (t.b.id === "house") {
     const cap = Math.round(d.levels[t.b.lvl].cap * (S.tech.concrete ? 1.25 : 1));
     html += row("السكان", `${ar(t.b.res || 0)} من ${ar(cap)}`);
+    html += row("الحارة", districtName(S, districtOf(idx(x, y))));
     const i = idx(x, y);
     html += row("الماء", A.watered[i] ? "واصل ✓" : "ما يوصله ✕", A.watered[i] ? "plus" : "minus");
     if (A.grid || t.b.lvl >= 2) html += row("الكهرباء", A.powered[i] ? "واصلة ✓" : "ما توصله ✕", A.powered[i] ? "plus" : "minus");
@@ -684,7 +685,17 @@ function council() {
       ${done ? "<span class='ok'>تم ✓</span>" : going ? `<span>باقي ${ar(S.research.left)} ساعة</span>` : locked ? `<span class="lock">يفتح في ${ERAS[t.era].name}</span>` : `<button class="btn go" data-tech="${id}" type="button" ${S.research || S.money < t.cost ? "disabled" : ""}>${money(t.cost)} ريال · ${ar(t.days)} ساعة</button>`}
       </div><p>${t.text}</p>${going ? `<i class="prog"><i style="width:${pct}%"></i></i>` : ""}</div>`;
   }).join("");
-  sheet(`<h2>المجلس البلدي</h2><p>أبحاث تطوّر الرافعية. بحث واحد في كل مرة، ويبقى للأبد.</p><div class="rows">${list}</div>`, "council");
+  const vote = Math.round(voteShare(S) * 100), days = Math.ceil(hoursToElection(S) / 24), last = S.elections?.[S.elections.length - 1];
+  const elect = S.pop >= 30 ? `<h3>🗳️ الانتخابات</h3><div class="rows">
+      ${row("الانتخابات الجاية", days === 1 ? "بكرة" : days === 2 ? "بعد يومين" : `بعد ${ar(days)} ${days <= 10 ? "أيام" : "يوم"}`)}
+      ${row("لو صارت اليوم", `${ar(vote)}٪ ${vote >= 50 ? "تفوز" : "تخسر"}`, vote >= 50 ? "plus" : "minus")}
+      ${row("وعود وفيت فيها هالسنة", ar(S.record?.kept || 0), "plus")}${S.record?.broken ? row("وعود ما وفيت فيها", ar(S.record.broken), "minus") : ""}
+      ${last ? row(`آخر انتخابات`, `${ar(last.share)}٪ ${last.won ? "فزت ✓" : "خسرت"}`, last.won ? "plus" : "minus") : ""}
+      <p class="hint">الأصوات تجي من رضا الناس وثقتهم فيك والوعود اللي وفيت فيها. الفوز يجيب دعم ${money(ELECTION_GRANT[S.era])} ريال من المحافظة، والخسارة تضاعف رسوم المحافظة السنة الجاية.</p></div>` : "";
+  sheet(`<h2>المجلس البلدي</h2>${elect}
+    <div class="sheet-actions"><button class="btn block" id="openQuarters" type="button">🏘️ حارات الرافعية</button></div>
+    <h3>الأبحاث</h3><p>أبحاث تطوّر الرافعية. بحث واحد في كل مرة، ويبقى للأبد.</p><div class="rows">${list}</div>`, "council");
+  $("openQuarters").addEventListener("click", () => { sfx.tap(); quartersSheet(); });
   $("sheetBody").querySelectorAll("[data-tech]").forEach((b) => b.addEventListener("click", () => {
     const why = startResearch(S, b.dataset.tech);
     if (why) { toast(why, "bad"); sfx.deny(); } else { toast(`بدأ بحث «${TECH[b.dataset.tech].name}»`); sfx.coin(); }
@@ -692,6 +703,76 @@ function council() {
   }));
 }
 $("councilBtn").addEventListener("click", () => { sfx.tap(); council(); });
+
+/** The quarters: who lives where, how happy, what is missing, and their names (the mayor can rename them). */
+function quartersSheet() {
+  A = analyze(S);
+  const list = districtStats(S, A);
+  sheet(`<h2>🏘️ حارات الرافعية</h2><p>الرافعية مقسومة حارات. سمّها بالأسامي اللي تبيها، والأهالي في النشرة بيتكلمون عنها بأسمائها.</p>
+    <div class="rows">${list.length ? list.map((o) => `<div class="quarter">
+      <div class="row"><span><b>${o.name}</b><small>${ar(o.homes)} بيت · ${money(o.pop)} ساكن</small></span><b class="${o.happy >= 60 ? "plus" : o.happy < 40 ? "minus" : ""}">رضا ${ar(o.happy)}٪</b></div>
+      ${o.dry || o.noRoad || o.dark ? `<div class="need">${[o.noRoad && `${ar(o.noRoad)} بيت بلا طريق`, o.dry && `${ar(o.dry)} بيت بلا ماء`, o.dark && `${ar(o.dark)} بيت بلا كهرباء`].filter(Boolean).join(" · ")}</div>` : ""}
+      <div class="q-edit"><input type="text" maxlength="24" data-q="${o.d}" value="${o.name.replace(/"/g, "")}" aria-label="اسم الحارة"><button class="btn" type="button" data-qsave="${o.d}">سمّها</button><button class="btn" type="button" data-qshow="${o.d}">وريني</button></div>
+    </div>`).join("") : `<div class="need">ما فيه بيوت للحين.</div>`}</div>`, "quarters");
+  $("sheetBody").querySelectorAll("[data-qsave]").forEach((b) => b.addEventListener("click", () => {
+    const d = Number(b.dataset.qsave), v = $("sheetBody").querySelector(`[data-q="${d}"]`).value.trim().slice(0, 24);
+    S.districts ||= {};
+    if (!v || v === DISTRICT_NAMES[d]) delete S.districts[d]; else S.districts[d] = v;
+    sfx.coin(); save(); toast(`صار اسمها «${districtName(S, d)}»`, "goal"); quartersSheet();
+  }));
+  $("sheetBody").querySelectorAll("[data-qshow]").forEach((b) => b.addEventListener("click", () => {
+    const d = Number(b.dataset.qshow), values = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) if (districtOf(i) === d) values[i] = 1;
+    let cx = 0, cy = 0, n = 0;
+    S.tiles.forEach((t, i) => { if (t.b?.id === "house" && districtOf(i) === d) { cx += i % N; cy += Math.floor(i / N); n++; } });
+    closeSheet();
+    if (n) { world.focus(Math.round(cx / n), Math.round(cy / n)); world.updateCamera(); }
+    setTimeout(() => world.setOverlay(values, "#7b5cc4"), 220);
+    setTimeout(() => { if (!tool) world.setOverlay(null); }, 5000);
+  }));
+}
+
+/** The result of the yearly election. */
+function electionSheet(m) {
+  const pct = Math.round(m.share * 100);
+  sfx[m.won ? "era" : "event"]();
+  sheet(`<h2>🗳️ نتيجة انتخابات المجلس البلدي</h2>
+    <div class="vote"><b class="${m.won ? "plus" : "minus"}">${ar(pct)}٪</b><span>من أصوات أهل الرافعية</span></div>
+    <i class="prog"><i style="width:${pct}%"></i></i>
+    <p>${m.won ? `مبروك! الأهالي جددوا ثقتهم فيك سنة ثانية. المحافظة صرفت لك دعم <b>${money(m.grant)} ريال</b>، والناس فرحانين يومين.` : `خسرت هالمرة. المحافظة بترسل مراقب، ورسومها السنة الجاية بتكون الضعف (${money(PROVINCE_FEES[S.era] * 2)} ريال). شد حيلك ووفّ بوعودك عشان ترجع ثقة الناس.`}</p>
+    <div class="rows">${row("وعود وفيت فيها", ar(m.record.kept || 0), "plus")}${row("وعود ما وفيت فيها", ar(m.record.broken || 0), m.record.broken ? "minus" : "")}${row("رضا الناس", `${ar(Math.round(S.happy))}٪`)}${row("ثقة الناس فيك", `${ar(Math.round(S.trust ?? 60))}٪`)}</div>
+    <div class="sheet-actions"><button class="btn go block" id="electOk" type="button">تمام</button></div>`, "election");
+  $("electOk").addEventListener("click", closeSheet);
+}
+
+// ---------- what is new in this version ----------
+const WHATS_NEW = {
+  v: "2026-11-22",
+  items: [
+    ["🕌", "أوقات الصلاة", "خمس صلوات باليوم. وقت الصلاة الرجال يمشون للمسجد، والمحلات تسكر شوي."],
+    ["🐪", "الحلال والإبل", "حظيرة حلال ترعى في الفيضة بالربيع، وسوق الماشية، وميدان مزاين الإبل."],
+    ["🏘️", "الحارات", "سمّ حارات ديرتك وتابع رضا كل حارة (من «المجلس»)."],
+    ["🗳️", "الانتخابات", "كل سنة يصوت الأهالي عليك: الفوز يجيب دعم، والخسارة تضاعف الرسوم."],
+    ["↔️", "نقل المباني", "رتب ديرتك: زر «نقل» تحت، تنقل أي مبنى بمستواه وأهله."],
+    ["⬆️", "تطوير المحلات والمزارع", "كل محل ومزرعة وورشة لها ٣ مستويات، دخلها يزيد مع كل مستوى."],
+    ["🏦", "البنك ودعم التجارة", "قروض تسددها بالساعة، والمحلات أرخص ٣٠٪ بدعم الدولة."],
+    ["❓", "الشرح", "زر «الشرح» على اليسار: كيف تكبر وتصير بلدة ومدينة."],
+    ["🎯", "مكافآت المهام", "صارت تغطي تكلفة اللي تطلبه المهمة."],
+    ["⏸️", "البلد تنتظرك", "اللعبة توقف وأنت طالع منها، وترجع تلقاها مثل ما تركتها."]
+  ]
+};
+function whatsNewSheet() {
+  try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
+  sheet(`<h2>وش الجديد في الرافعية؟</h2><p>تحديث جديد وصل! هذي أهم الإضافات:</p>
+    <div class="rows">${WHATS_NEW.items.map(([icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
+    <div class="sheet-actions"><button class="btn go block" id="wnOk" type="button">يلا نلعب</button></div>`, "whatsnew");
+  $("wnOk").addEventListener("click", closeSheet);
+}
+function maybeWhatsNew() {
+  let seen = null;
+  try { seen = localStorage.getItem("rafaya-news-seen"); } catch { /* fine */ }
+  if (seen !== WHATS_NEW.v) whatsNewSheet();
+}
 
 function spark(values, color) {
   if (values.length < 2) return "<p>الأرقام تبين بعد كم ساعة.</p>";
@@ -913,6 +994,14 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>الصلاة والحلال</summary>
+      <p>خمس صلوات باليوم. وقت الصلاة يطلع لك تنبيه، والرجال يمشون للمسجد، والمحلات تسكر شوي ويقل بيعها. ابنِ مسجد قريب من البيوت.</p>
+      <p>«حظيرة حلال» (من «زراعة وصناعة») تجيب دخل، وفي الربيع ترعى في الفيضة القريبة ويزيد دخلها النص. «سوق الماشية» يزيد دخله مع كل حظيرة، و«ميدان مزاين الإبل» مشروع كبير يجيب الزوار.</p></details>
+
+    <details><summary>الحارات والانتخابات</summary>
+      <p>من «المجلس ← حارات الرافعية» تشوف كل حارة: كم بيت فيها، ورضا أهلها، وش ناقصها، وتسميها بالاسم اللي تبيه.</p>
+      <p>آخر كل سنة فيه انتخابات للمجلس البلدي. الأصوات تجي من رضا الناس وثقتهم والوعود اللي وفيت فيها. إذا فزت تجيك منحة من المحافظة، وإذا خسرت تتضاعف رسومها السنة الجاية. تابع التوقعات في «المجلس».</p></details>
+
     <details><summary>الناس والنشرة والقرارات</summary>
       <p>في «النشرة» الأهالي يتكلمون عن اللي ناقصهم واللي مبسوطين فيه، وترد عليهم بوعد أو تسكيت أو رفض. الوعد لازم توفي فيه. ومرة كل كم يوم يجيك قرار من المجلس تختار فيه.</p></details>
 
@@ -933,12 +1022,14 @@ function pauseMenu() {
   sheet(`<h2>القائمة</h2><div class="rows">
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
     <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
+    <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
   </div>`, "pause");
   $("pmResume").addEventListener("click", closeSheet);
   $("pmHow").addEventListener("click", () => howTo(false));
+  $("pmNew").addEventListener("click", () => whatsNewSheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
   $("pmMain").addEventListener("click", () => { save(); closeSheet(); showMenu(); });
@@ -967,13 +1058,14 @@ function startPlaying() {
   refresh();
 }
 
-$("mContinue").addEventListener("click", () => { sfx.goal(); startPlaying(); const r = away; away = null; if (r) showAway(r); });
+$("mContinue").addEventListener("click", () => { sfx.goal(); startPlaying(); const r = away; away = null; if (r) showAway(r); else maybeWhatsNew(); });
 $("mNew").addEventListener("click", () => {
   sfx.tap();
   const b = $("mNew");
   if ((hadSave || S.day > 3) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
   delete b.dataset.sure;
   S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
+  try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
   sfx.goal(); startPlaying();
   sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
     <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>
@@ -999,7 +1091,7 @@ let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision"].includes(sheetFor)) {
+  if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor)) {
     acc += dt * 1000 * speed;
     while (acc >= HOUR_MS) {
       acc -= HOUR_MS;
@@ -1014,11 +1106,16 @@ function frame(now) {
           world.playFlood(m.lost, m.damaged); sfx.flood(); toast(m.text, "bad"); continue;
         }
         if (m.kind === "collapse") { toast(m.text, "bad"); sfx.remove(); continue; }
+        if (m.kind === "election") { electionSheet(m); continue; }
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
         (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
       }
       sync(false);
+      // Prayer time: a soft call, and the men walk to the mosque.
+      const pr = prayerNow(S);
+      world.prayer = pr;
+      if (pr && speed <= 5) { toast(`🕌 حان وقت صلاة ${pr.name}${A.count.mosque + A.count.bigmosque ? "" : " · وما فيه مسجد بالرافعية"}`, ""); sfx.prayer(); }
       refresh();
       save();
       hourEffects();
@@ -1030,7 +1127,7 @@ function frame(now) {
   if (playing) {
     const d = seasonOf(S.day).daylight, p = (hourOf(S.day) + acc / HOUR_MS) / HOURS;
     tod = sunAt(p, d);
-    const part = partOfDay(p, d), text = `${part} ${clockAt(p, d)}`;
+    const part = partOfDay(p, d), text = `${part} ${clockAt(p, d)}${world.prayer ? " · 🕌" : ""}`;
     if (text !== shownTime) { shownTime = text; $("sTime").textContent = text; $("sTime").dataset.p = part; world.nightTime = part === "الليل" || part === "الفجر"; }
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
