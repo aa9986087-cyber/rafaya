@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
@@ -798,7 +798,39 @@ function council() {
   }));
 }
 $("councilBtn").addEventListener("click", () => { sfx.tap(); council(); });
-document.querySelector(".when")?.addEventListener("click", () => { sfx.tap(); if (worldMode) worldMapSheet(); else regionSheet(); });
+document.querySelector(".when")?.addEventListener("click", () => { sfx.tap(); whenSheet(); });
+/** What the season, the hour and the town's stage mean, and what comes next. */
+/** «بعد يومين», «بعد ٣ أيام», «بعد ١٢ يوم». */
+const afterDays = (d) => (d <= 1 ? "بكرة" : d === 2 ? "بعد يومين" : `بعد ${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`);
+const SEASON_NOTES = {
+  spring: ["الفيضة تخضر إذا الشتاء كان ممطر، والناس يكشتون", "الحلال يرعى بالفياض ببلاش", "يجي جراد أحيانًا ويضر المزارع", "مطر الربيع خفيف"],
+  summer: ["ما فيه مطر أبد", "الحر يزيد طلب الماء والكهرب (المكيفات)", "موجات حر وغبار", "الناس يقيّلون الظهر والشوارع تفضى"],
+  autumn: ["الصِّرام: التمر يجيب دخل زيادة", "يبدأ الوسم وتجي أول الأمطار", "السيول تبدأ بالوادي"],
+  winter: ["أكثر وقت للمطر والسيول", "موجات برد: الناس يبون تدفئة وكهرب", "الليل طويل", "مطر الشتاء هو اللي يخضّر الربيع الجاي"]
+};
+function whenSheet() {
+  const se = seasonOf(S.day), next = SEASONS[(se.i + 1) % 4], h = hourOf(S.day), D = se.daylight * HOURS;
+  const era = ERAS[S.era], nextEra = ERAS[S.era + 1];
+  const prayers = PRAYERS.map((p) => ({ ...p, h: p.at(D) % HOURS }));
+  const upcoming = prayers.map((p) => ({ ...p, in: (p.h - h + HOURS) % HOURS || HOURS })).sort((a, b) => a.in - b.in)[0];
+  const toElect = hoursToElection(S);
+  sheet(`<h2>🌤️ الوقت والموسم</h2>
+    <div class="vote"><b>${se.name}</b><span>اليوم ${ar(se.dayIn)} من ${ar(SEASON_DAYS)} · السنة ${ar(se.year)} · ${h < D ? "نهار ☀️" : "ليل 🌙"}</span></div>
+    <h3>وش يصير ب${se.name}</h3>
+    <div class="rows">${SEASON_NOTES[se.id].map((t) => `<div class="row"><span>• ${t}</span></div>`).join("")}</div>
+    <div class="rows">
+      ${row("بعده", `${next.name} ${afterDays(Math.ceil(se.left))}`)}
+      ${row("طول النهار", `${ar(Math.round(D))} ساعة من ${ar(HOURS)}`)}
+      ${upcoming ? row("الصلاة الجاية", `${upcoming.name} بعد ${ar(upcoming.in)} ساعة`) : ""}
+      ${toElect != null ? row("الانتخابات", afterDays(Math.ceil(toElect / HOURS))) : ""}
+    </div>
+    <h3>🏘️ ${S.name && S.site && S.site !== "main" ? S.name : "الرافعية"}: ${era.name}</h3>
+    ${nextEra ? `<div class="rows">${row(`عشان تصير ${nextEra.name}`, `${money(S.pop)} من ${money(nextEra.pop)} نسمة`, S.pop >= nextEra.pop ? "plus" : "")}</div>
+      <i class="bar wide"><i style="width:${Math.min(100, Math.round((S.pop / nextEra.pop) * 100))}%"></i></i>` : `<div class="need ok">وصلت أعلى مرحلة 👏</div>`}
+    <p class="hint">كل ساعة باللعبة = ${ar(Math.round(HOUR_MS / 1000))} ثانية. ${worldMode ? "بعالم الجوف الوقت ماشي للكل حتى وانت طالع." : "اللعبة توقف وانت طالع منها."}</p>
+    <div class="sheet-actions keep"><button class="btn block" id="whenMap" type="button">${worldMode ? "🌍 خريطة الجوف" : "🗺️ خريطة المنطقة"}</button></div>`, "when");
+  $("whenMap")?.addEventListener("click", () => { sfx.tap(); if (worldMode) worldMapSheet(); else regionSheet(); });
+}
 
 /** The quarters: who lives where, how happy, what is missing, and their names (the mayor can rename them). */
 function quartersSheet() {
@@ -997,6 +1029,72 @@ function worldJoinSheet(recover) {
   });
 }
 let worldPick = null;
+/** How far the world map is zoomed in, kept while the sheet redraws. */
+let wmView = null;
+/**
+ * Two fingers zoom the map in and out, one finger drags it, and a short tap picks a plot.
+ * The view is the SVG viewBox, kept inside the map.
+ */
+function mapZoom(svg, W, H, onPick) {
+  if (!svg) return;
+  let v = wmView || { x: 0, y: 0, w: W, h: H };
+  const ratio = H / W;
+  const apply = () => {
+    v.w = Math.min(W, Math.max(W / 4, v.w)); v.h = v.w * ratio;
+    v.x = Math.min(W - v.w, Math.max(0, v.x)); v.y = Math.min(H - v.h, Math.max(0, v.y));
+    svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+    wmView = v.w >= W ? null : { ...v };
+  };
+  // zoom by k around a point given in screen pixels
+  const zoomAt = (k, cx, cy) => {
+    const r = svg.getBoundingClientRect();
+    const px = v.x + ((cx - r.left) / r.width) * v.w, py = v.y + ((cy - r.top) / r.height) * v.h;
+    const nw = Math.min(W, Math.max(W / 4, v.w / k)), s2 = nw / v.w;
+    v.x = px - (px - v.x) * s2; v.y = py - (py - v.y) * s2; v.w = nw;
+    apply();
+  };
+  apply();
+  const pts = new Map();
+  let start = null, moved = false, pinch = null;
+  svg.style.touchAction = "none";
+  svg.addEventListener("pointerdown", (e) => {
+    try { svg.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ }
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { start = { x: e.clientX, y: e.clientY, vx: v.x, vy: v.y, target: e.target }; moved = false; }
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; moved = true; }
+  });
+  svg.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const r = svg.getBoundingClientRect();
+    if (pts.size >= 2 && pinch) {
+      const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d > 0 && pinch.d > 0) zoomAt(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch.d = d;
+    } else if (start) {
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) > 8) moved = true;
+      if (moved && v.w < W) { v.x = start.vx - (dx / r.width) * v.w; v.y = start.vy - (dy / r.height) * v.h; apply(); }
+    }
+  });
+  const up = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) {
+      if (start && !moved && e.type === "pointerup") {
+        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.("[data-plot]") || start.target.closest?.("[data-plot]");
+        if (el) onPick(Number(el.dataset.plot));
+      }
+      start = null;
+    } else { const [p] = [...pts.values()]; start = { x: p.x, y: p.y, vx: v.x, vy: v.y, target: e.target }; }
+  };
+  svg.addEventListener("pointerup", up);
+  svg.addEventListener("pointercancel", up);
+  svg.addEventListener("wheel", (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); }, { passive: false });
+  const mid = (k) => { const r = svg.getBoundingClientRect(); zoomAt(k, r.left + r.width / 2, r.top + r.height / 2); };
+  $("wmIn")?.addEventListener("click", () => { sfx.tap(); mid(1.6); });
+  $("wmOut")?.addEventListener("click", () => { sfx.tap(); mid(1 / 1.6); });
+}
 async function worldMapSheet(pick) {
   worldPick = pick ?? worldPick;
   const id = me();
@@ -1028,11 +1126,12 @@ async function worldMapSheet(pick) {
     }
   }
   sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
-    <div class="wm-wrap"><svg class="wm-map" viewBox="0 0 ${cols * cell} ${rows * cell}" role="img" aria-label="خريطة الجوف">${cells}${labels}</svg></div>
+    <div class="wm-wrap"><svg class="wm-map" id="wmMap" viewBox="0 0 ${cols * cell} ${rows * cell}" role="img" aria-label="خريطة الجوف">${cells}${labels}</svg>
+      <div class="wm-zoom"><button type="button" id="wmIn" aria-label="قرّب">＋</button><button type="button" id="wmOut" aria-label="بعّد">－</button></div></div>
     ${detail}
     ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}`, "world");
-  $("sheetBody").querySelectorAll("[data-plot]").forEach((el) => el.addEventListener("click", () => { sfx.tap(); worldMapSheet(Number(el.dataset.plot)); }));
-  $("wmMine")?.addEventListener("click", () => worldMapSheet(id.plot));
+  mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
+  $("wmMine")?.addEventListener("click", () => { wmView = null; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
   $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
   $("wmReport")?.addEventListener("click", async () => {
@@ -1225,8 +1324,13 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-24",
+  v: "2026-11-25",
   items: [
+    ["🌦️", "الجو على حسب الفصل", "المطر بالخريف والشتاء والربيع بس، والصيف حر وغبار وقيلولة، والشتاء برد. ومطر الشتاء هو اللي يخضّر الربيع."],
+    ["💬", "ردود ذكية", "الأهالي يردون على حسب السالفة: تشكرهم على المطر بالدعاء، وعلى العيد بالتهنئة، وكل شكوى فيها «وش يبي» واضح."],
+    ["ℹ️", "كل مربع فوق يشرح نفسه", "اضغط الميزانية أو السكان أو الرضا أو الماء والكهرب أو الوقت والموسم، ويطلع لك وش وراه وش يصلحه."],
+    ["🏞️", "بحيرة السد صارت حقيقية", "ماء بشط ناعم ورمل مبلول حوله وموج يتحرك، والأرض صارت ألوانها تندمج بدل المربعات."],
+    ["🤏", "قرّب وبعّد خريطة الجوف", "بإصبعين تقرّب وتبعّد، وبإصبع تسحب، أو بأزرار ＋ و－."],
     ["🌍", "عالم الجوف", "عالم أونلاين واحد لكل اللاعبين على خريطة الجوف: سمّ نفسك، أسس مدينتك، وادخل مدن غيرك. العالم يمشي دايم، ونائب العمدة يمسك مدينتك وأنت طالع."],
     ["🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
     ["🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
@@ -1505,7 +1609,32 @@ function utilSheet() {
 }
 $("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
 
-for (const id of ["budgetBtn", "statMoney", "statPop"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
+for (const id of ["budgetBtn", "statMoney"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
+$("statPop").addEventListener("click", () => { sfx.tap(); popSheet(); });
+/** The people: how many, how many homes for them, who is coming or leaving and why, work, the homes by level. */
+function popSheet() {
+  A = analyze(S);
+  const pull = Math.max(0, Math.min(1.2, (S.happy - 20) / 40)) * (1 - A.unemployment * 0.8);
+  const target = Math.round(A.cap * Math.min(1, pull));
+  const going = target > S.pop ? "up" : target < S.pop ? "down" : "same";
+  const reasons = [];
+  if (S.pop >= A.cap * 0.95) reasons.push({ t: "البيوت امتلت: ما فيه مكان لناس جدد", fix: "انصب خيام أو طوّر البيوت عشان تسع ناس أكثر" });
+  if (S.happy < 60) reasons.push({ t: `الرضا ${ar(Math.round(S.happy))}٪: الناس يجون كامل إذا الرضا ٦٠٪ وفوق`, fix: "شوف تفاصيل الرضا (اضغط مربع الرضا)" });
+  if (A.unemployment > 0.1) reasons.push({ t: `البطالة ${ar(Math.round(A.unemployment * 100))}٪: اللي ما يلقى شغل ما يجي`, fix: "افتح محلات ومزارع وورش" });
+  if (A.unconnected) reasons.push({ t: `${ar(A.unconnected)} بيت بلا طريق: ما أحد يسكنها`, fix: "وصّلها بطريق" });
+  if (A.dryHomes) reasons.push({ t: `${ar(A.dryHomes)} بيت ما يوصلها ماء`, fix: "ابنِ بئر قريب منها" });
+  sheet(`<h2>👨‍👩‍👧 السكان</h2>
+    <div class="vote"><b>${money(S.pop)}</b><span>${going === "up" ? `يزيدون لين ${money(target)} تقريبًا` : going === "down" ? `ينقصون لين ${money(target)} تقريبًا` : "ثابتين"}</span></div>
+    <div class="rows">
+      ${row("السعة (كم تسع البيوت)", money(A.cap))}
+      ${row("الوظائف", `${money(A.employed)} شغالين من ${money(A.workers)} يبون شغل`, A.unemployment > 0.15 ? "minus" : "plus")}
+      ${row("البطالة", `${ar(Math.round(A.unemployment * 100))}٪`, A.unemployment > 0.15 ? "minus" : "")}
+      ${row("الضريبة اللي يدفعونها", `+${fine(A.tax)} بالساعة`, "plus")}
+    </div>
+    ${reasons.length ? `<h3>${going === "down" ? "👎 ليش يطلعون" : "🚧 وش يوقف الزيادة"}</h3><div class="rows">${reasons.map((r) => `<div class="row"><span>${r.t}</span></div><div class="pfix">🛠️ ${r.fix}</div>`).join("")}</div>` : `<div class="need ok">ما فيه شي يوقف الناس عن الجية 👏</div>`}
+    <h3>🏠 البيوت</h3><div class="rows">${B.house.levels.map((l, k) => A.levels[k] ? row(l.name, `${ar(A.levels[k])} · يسع كل واحد ${ar(l.cap)}`) : "").join("")}</div>
+    <p class="hint">الناس يجون بسرعة إذا فيه مكان والحياة زينة، ويطلعون شوي شوي إذا زعلوا. كل ما زاد السكان صارت الرافعية بلدة ثم مدينة ثم محافظة.</p>`, "pop");
+}
 $("statHappy").addEventListener("click", () => { sfx.tap(); happySheet(); });
 /** Why people are as happy as they are: every part of it, the worst first, with what fixes it. */
 function happySheet() {

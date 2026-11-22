@@ -205,22 +205,41 @@ export class World {
   /** The town's own tiles: sand, wadi, with a little colour noise. Rebuilt when the land changes. */
   syncTiles(s) {
     if (this.ground) { this.scene.remove(this.ground); this.ground.geometry.dispose(); }
-    const pos = [], col = [], uvs = [], c = new THREE.Color();
-    const spring = seasonOf(s.day).id === "spring";
+    const spring = seasonOf(s.day).id === "spring", c = new THREE.Color();
+    // each tile's colour (and how dark it is outside the land the town owns)
+    const tileCol = new Float32Array(N * N * 3);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : t.t === "lake" ? ((s.lake || 0) > 10 ? "#6f9fae" : "#b9a57a") : "#f1d49c");
+      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : t.t === "lake" ? "#b3a173" : t.t === "rock" ? "#e2c793" : "#f1d49c");
       c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
-      if (!owns(s, x, y)) { c.offsetHSL(0, -0.12, -0.06); }
-      const x0 = x - HALF, z0 = y - HALF;
-      const quad = [[x0, z0], [x0, z0 + 1], [x0 + 1, z0 + 1], [x0, z0], [x0 + 1, z0 + 1], [x0 + 1, z0]];
-      for (const [qx, qz] of quad) { pos.push(qx, 0, qz); col.push(c.r, c.g, c.b); uvs.push(qx * 0.3, qz * 0.3); }
+      if (!owns(s, x, y)) c.offsetHSL(0, -0.12, -0.06);
+      tileCol.set([c.r, c.g, c.b], idx(x, y) * 3);
+    }
+    // a grid of corners, two triangles per tile; a corner takes the mean of the tiles that touch it,
+    // with a little noise so the sand is not flat
+    const V = N + 1, pos = new Float32Array(V * V * 3), col = new Float32Array(V * V * 3), uvs = new Float32Array(V * V * 2), index = [];
+    for (let y = 0; y <= N; y++) for (let x = 0; x <= N; x++) {
+      let r = 0, gg = 0, b = 0, k = 0;
+      for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+        const tx = x + dx, ty = y + dy;
+        if (tx < 0 || ty < 0 || tx >= N || ty >= N) continue;
+        const o = idx(tx, ty) * 3; r += tileCol[o]; gg += tileCol[o + 1]; b += tileCol[o + 2]; k++;
+      }
+      const v = y * V + x, jitter = ((((x * 92821) ^ (y * 68917)) >>> 0) % 9 - 4) * 0.004;
+      pos.set([x - HALF, 0, y - HALF], v * 3);
+      col.set([r / k + jitter, gg / k + jitter, b / k + jitter * 0.6], v * 3);
+      uvs.set([(x - HALF) * 0.3, (y - HALF) * 0.3], v * 2);
+    }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const a = y * V + x, b = a + 1, d = a + V, e = d + 1;
+      index.push(a, d, e, a, e, b);
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    g.setIndex(index);
     g.computeVertexNormals();
     this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1 }));
     this.ground.receiveShadow = true;
@@ -258,20 +277,55 @@ export class World {
     this.flood = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: "#5aa6c4", roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }));
     this.flood.visible = false;
     this.scene.add(this.flood);
-    // The dam lake: still water over its tiles while it holds water.
-    if (this.lakeMesh) { this.scene.remove(this.lakeMesh); this.lakeMesh.geometry.dispose(); this.lakeMesh = null; }
-    const lp = [];
-    if ((s.lake || 0) > 10) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "lake") {
-      const x0 = x - HALF, z0 = y - HALF, x1 = x0 + 1, z1 = z0 + 1;
-      for (const [qx, qz] of [[x0, z0], [x0, z1], [x1, z1], [x0, z0], [x1, z1], [x1, z0]]) lp.push(qx, 0.03, qz);
-    }
-    if (lp.length) {
-      const lg = new THREE.BufferGeometry();
-      lg.setAttribute("position", new THREE.Float32BufferAttribute(lp, 3));
-      lg.computeVertexNormals();
-      this.lakeMesh = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: "#3f8fb5", roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.82, depthWrite: false }));
-      this.scene.add(this.lakeMesh);
-    }
+    // The dam lake: one body of water with an uneven shore, a band of wet sand around it, and ripples.
+    this.removeAll(this.lakeMeshes || []);
+    this.lakeMeshes = [];
+    const lakeTiles = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "lake") lakeTiles.push([x, y]);
+    if (lakeTiles.length) {
+      const full = (s.lake || 0) > 10, level = Math.min(1, (s.lake || 0) / 100);
+      const minX = Math.min(...lakeTiles.map((p) => p[0])) - 1, maxX = Math.max(...lakeTiles.map((p) => p[0])) + 2;
+      const minY = Math.min(...lakeTiles.map((p) => p[1])) - 1, maxY = Math.max(...lakeTiles.map((p) => p[1])) + 2;
+      const W = maxX - minX, H = maxY - minY, PX = 48;
+      // a mask: soft blobs on every lake tile (bigger when the lake is fuller), drawn blurred
+      const mask = (grow, blur, alpha) => {
+        const cv = document.createElement("canvas"); cv.width = W * PX; cv.height = H * PX;
+        const cx = cv.getContext("2d");
+        cx.fillStyle = "#000"; cx.fillRect(0, 0, cv.width, cv.height);
+        cx.filter = `blur(${blur}px)`;
+        cx.fillStyle = `rgba(255,255,255,${alpha})`;
+        for (const [x, y] of lakeTiles) {
+          const h = hash(x, y, 31);
+          cx.beginPath();
+          cx.ellipse((x - minX + 0.5) * PX, (y - minY + 0.5) * PX, PX * (0.62 + grow + h * 0.18), PX * (0.58 + grow + hash(x, y, 32) * 0.2), h * 3, 0, Math.PI * 2);
+          cx.fill();
+        }
+        const tex = new THREE.CanvasTexture(cv);
+        return tex;
+      };
+      const plane = (y, mat) => {
+        const pg = new THREE.PlaneGeometry(W, H); pg.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(pg, mat);
+        m.position.set(minX - HALF + W / 2, y, minY - HALF + H / 2);
+        m.renderOrder = 1;
+        this.scene.add(m); this.lakeMeshes.push(m);
+        return m;
+      };
+      // wet, darker sand where the water reaches (also when the lake is low: the mud shows)
+      plane(0.006, new THREE.MeshStandardMaterial({ color: "#8f7c55", alphaMap: mask(0.28, 14, 0.9), transparent: true, opacity: 0.55, roughness: 1, depthWrite: false }));
+      if (full) {
+        // the water itself: deep blue in the middle, light at the shore (two layers)
+        plane(0.02, new THREE.MeshStandardMaterial({ color: "#5fa8c4", alphaMap: mask(0.12 * level, 10, 1), transparent: true, opacity: 0.85, roughness: 0.12, metalness: 0.2, depthWrite: false }));
+        plane(0.024, new THREE.MeshStandardMaterial({ color: "#2f7fa3", alphaMap: mask(-0.12 + 0.1 * level, 16, 1), transparent: true, opacity: 0.75, roughness: 0.08, metalness: 0.25, depthWrite: false }));
+        // ripples: light streaks that drift across the water
+        const rc = document.createElement("canvas"); rc.width = rc.height = 128;
+        const rx = rc.getContext("2d");
+        rx.strokeStyle = "rgba(255,255,255,0.5)"; rx.lineWidth = 1.5;
+        for (let k = 0; k < 26; k++) { const x0 = (k * 37) % 128, y0 = (k * 53) % 128; rx.beginPath(); rx.arc(x0, y0, 6 + (k % 5) * 3, 0.2, 1.4); rx.stroke(); }
+        const rt = new THREE.CanvasTexture(rc); rt.wrapS = rt.wrapT = THREE.RepeatWrapping; rt.repeat.set(W / 2, H / 2);
+        this.ripples = plane(0.03, new THREE.MeshBasicMaterial({ map: rt, alphaMap: mask(0.05, 12, 1), transparent: true, opacity: 0.35, depthWrite: false }));
+      } else this.ripples = null;
+    } else this.ripples = null;
   }
 
   /** Plants and pebbles on land nobody has built on yet. */
@@ -1177,6 +1231,7 @@ export class World {
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);
     this.stepTrucks(dt);
+    if (this.ripples) { const m = this.ripples.material.map; m.offset.x = (m.offset.x + dt * 0.02) % 1; m.offset.y = (m.offset.y + dt * 0.012) % 1; }
     this.stepFollow(dt);
     this.stepSmoke(dt);
     this.stepLife(dt);
