@@ -1,10 +1,11 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
+import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -560,6 +561,7 @@ function postHtml(p) {
     <p>${p.text}</p>
     ${p.ref ? refHtml(p) : ""}
     ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : m.person ? m.person.name : r.name}</b>${m.person?.role ? `<small> (${m.person.role})</small>` : ""} ${m.text}</div>`).join("")}
+    ${p.person?.home != null && S.tiles[p.person.home]?.b?.id === "house" ? `<button class="home-btn" type="button" data-home="${p.person.home}">📍 بيته</button>` : ""}
     <div class="post-foot"><span>👥 ${ar(p.likes || 1)} ${(p.likes || 1) > 10 ? "من الأهالي" : ""} يوافقونه</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? "الناس ارتاحوا" : p.change < 0 ? "الناس زعلوا" : "بيرجع لك بكرة"}</span>` : ""}</div>
     ${p.answered || p.id.startsWith("d-") ? "" : `<div class="answers">${replyOptions(p).map((o) => `<button type="button" class="ans ${o.kind}" data-post="${p.id}" data-kind="${o.kind}">${o.label}</button>`).join("")}</div>`}
   </article>`;
@@ -595,6 +597,11 @@ function newsSheet() {
     ${promisesHtml()}
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
   $("sheetBody").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => answer(b.dataset.post, b.dataset.kind)));
+  $("sheetBody").querySelectorAll("[data-home]").forEach((b) => b.addEventListener("click", () => {
+    const i = Number(b.dataset.home);
+    closeSheet(); world.focus(i % N, Math.floor(i / N)); world.view.zoom = Math.max(world.view.zoom, 1.4); world.updateCamera();
+    setTimeout(() => { inspect(i % N, Math.floor(i / N)); }, 350);
+  }));
 }
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
 
@@ -690,6 +697,7 @@ function inspect(x, y) {
     const cap = Math.round(d.levels[t.b.lvl].cap * (S.tech.concrete ? 1.25 : 1));
     html += row("السكان", `${ar(t.b.res || 0)} من ${ar(cap)}`);
     html += row("الحارة", districtName(S, districtOf(idx(x, y))));
+    html += familiesHtml(idx(x, y));
     const i = idx(x, y);
     html += row("الماء", A.watered[i] ? "واصل ✓" : "ما يوصله ✕", A.watered[i] ? "plus" : "minus");
     if (A.grid || t.b.lvl >= 2) html += row("الكهرباء", A.powered[i] ? "واصلة ✓" : "ما توصله ✕", A.powered[i] ? "plus" : "minus");
@@ -724,6 +732,8 @@ function inspect(x, y) {
   html += `</div><div class="sheet-actions"><button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, d);
+  $("sheetBody").querySelectorAll("[data-follow]").forEach((btn) => btn.addEventListener("click", () => followFamily(idx(x, y), Number(btn.dataset.follow))));
+  $("sheetBody").querySelectorAll("[data-day]").forEach((btn) => btn.addEventListener("click", () => familySheet(idx(x, y), Number(btn.dataset.day))));
   $("upgradeOne")?.addEventListener("click", () => {
     const why = upgradeAt(S, x, y, A);
     if (why) { toast(why, "bad"); sfx.deny(); return; }
@@ -807,6 +817,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-23",
   items: [
+    ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
     ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
     ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
     ["🧱", "مواد البناء", "كسارة الحجر تطلّع مواد تحتاجها لتطوير البيوت والمحلات، وإلا تشتريها من برا."],
@@ -924,6 +935,47 @@ function budget() {
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
 }
+// ---------- the people of the house ----------
+const kidsWord = (n) => (n === 1 ? "عيل واحد" : n === 2 ? "عيالين" : `${ar(n)} عيال`);
+function familiesHtml(i) {
+  A = analyze(S);
+  const fams = familiesAt(S, i);
+  if (!fams.length) return "";
+  const job = jobOf(S, A, i), wish = wishOf(S, A, i);
+  return `<h3>👨‍👩‍👧 العوايل اللي ساكنة هنا</h3>${fams.slice(0, 4).map((f, k) => {
+    const school = f.kids.filter((c) => c.age >= 6 && c.age <= 18).length;
+    return `<div class="family"><div class="fam-top"><b>${f.surname}</b><small>${ar(f.size)} أفراد</small></div>
+      <small>${f.kunya}${job ? ` · يشتغل في ${job.name}` : " · يدور شغل"} · ${f.mother}${f.kids.length ? ` · ${kidsWord(f.kids.length)}${school ? ` (${ar(school)} بسن المدرسة)` : ""}` : ""}</small>
+      ${wish && k === 0 ? `<small class="wish">💬 يتمنون: ${wish}</small>` : ""}
+      <div class="fam-btns"><button class="btn" type="button" data-day="${k}">يومهم</button>${job ? `<button class="btn go" type="button" data-follow="${k}">👁️ تابع ${f.kunya}</button>` : ""}</div></div>`;
+  }).join("")}${fams.length > 4 ? `<p class="hint">و${ar(fams.length - 4)} عوايل ثانية.</p>` : ""}`;
+}
+function familySheet(i, k) {
+  const f = familiesAt(S, i)[k];
+  if (!f) return;
+  const kids = f.kids.map((c) => `${c.name} (${ar(c.age)})`).join("، ");
+  sheet(`<h2>${f.surname}</h2><p>${f.kunya} و${f.mother}${kids ? `، وعيالهم: ${kids}` : ""}. ساكنين ${districtName(S, districtOf(i))}.</p>
+    <h3>يومهم</h3><div class="rows">${familyDay(S, A, i, f).map((l) => `<div class="row"><span>${l}</span></div>`).join("")}</div>
+    ${wishOf(S, A, i) ? `<div class="need">يتمنون: ${wishOf(S, A, i)}</div>` : `<div class="need ok">مرتاحين في بيتهم.</div>`}
+    ${jobOf(S, A, i) ? `<div class="sheet-actions"><button class="btn go block" id="famFollow" type="button">👁️ تابع ${f.kunya} وهو رايح دوامه</button></div>` : ""}`, "family");
+  $("famFollow")?.addEventListener("click", () => followFamily(i, k));
+}
+/** The camera walks with the father from his house to his work. */
+function followFamily(i, k) {
+  const f = familiesAt(S, i)[k], job = jobOf(S, A, i);
+  if (!f || !job) { toast("ما عنده دوام يوصله بطريق", "bad"); return; }
+  const path = roadPath(S, doorOf(S, i), doorOf(S, job.tile));
+  if (!path) { toast("ما فيه طريق يوصل بيته بدوامه", "bad"); return; }
+  closeSheet();
+  world.view.zoom = Math.max(world.view.zoom, 1.5);
+  world.followPerson(path, { name: `${f.kunya} ${f.surname}`, to: job.name });
+  $("followName").textContent = `${f.kunya} ${f.surname}`;
+  $("followWhat").textContent = `رايح لدوامه في ${job.name}`;
+  $("followTag").hidden = false;
+  sfx.tap();
+}
+$("followStop").addEventListener("click", () => { world.stopFollow(); $("followTag").hidden = true; sfx.tap(); });
+
 /** The materials part of an upgrade: from the store, or bought from outside. */
 function matsNote(pr) {
   if (!pr.mats) return "";
@@ -1110,6 +1162,9 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>أهل الرافعية</summary>
+      <p>كل بيت ساكنة فيه عوايل حقيقية: أسماءهم، ووين يشتغل الأب، وكم عيل عندهم، ووش يتمنون. اضغط على أي بيت وشوف «العوايل»، واضغط «تابع» تمشي معه وهو رايح دوامه. واللي يكتبون في النشرة ناس من الديرة، وتقدر تروح لبيت أي واحد منهم.</p></details>
+
     <details><summary>المرور والزحمة</summary>
       <p>الصبح والعصر الناس يطلعون من بيوتهم لدوامهم بسياراتهم. كل طريق يشيل عدد سيارات: الترابي قليل، والمسفلت ضعفه، و«الشارع الرئيسي» أكثر بكثير. التقاطعات تتزحم أكثر، و«الدوار» و«إشارة المرور» يفكونها، و«المواقف» جنب المحلات تخفف الطرق وتزيد البيع.</p>
       <p>الزحمة تأخر الموظفين، وتبعد الزباين، وتزعّل اللي ساكنين على الشارع. شوفها من «الأرقام ← اعرض الزحمة»، أو اضغط على أي طريق.</p></details>
@@ -1268,6 +1323,11 @@ function frame(now) {
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining }); if (playing) layoutSide(); }
   world.frame(dt, tod);
+  if (world.follow && world.followPos) {
+    const q = world.project(world.followPos), tag = $("followTag");
+    tag.style.transform = `translate(${Math.round(q.sx)}px, ${Math.round(q.sy - 70)}px) translate(-50%, -100%)`;
+    $("followWhat").textContent = world.follow.dir > 0 ? `رايح لدوامه في ${world.follow.label.to}` : "راجع لبيته";
+  }
   requestAnimationFrame(frame);
 }
 

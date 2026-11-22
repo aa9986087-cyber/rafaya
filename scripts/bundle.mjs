@@ -6,7 +6,7 @@ const read = (f) => readFile(new URL("../" + f, import.meta.url), "utf8");
 const html = await read("index.html");
 const css = await read("css/style.css");
 const icon = Buffer.from(await read("icon.svg")).toString("base64");
-const mods = ["data", "sim", "models", "world3d", "sound", "news", "main"];
+const mods = ["data", "sim", "people", "models", "world3d", "sound", "news", "main"];
 // One module: drop the local imports and exports; three.js is imported once from jsDelivr.
 const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
   .map((src) => src

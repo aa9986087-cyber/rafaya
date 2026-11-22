@@ -150,6 +150,28 @@ export function build(s, x, y, id) {
   return "";
 }
 
+// ---------- paths ----------
+/** The road tile beside a building (its door), or -1. */
+export function doorOf(s, i) {
+  const x = i % N, y = Math.floor(i / N);
+  for (const [dx, dy] of near4) if (inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)])) return idx(x + dx, y + dy);
+  return -1;
+}
+/** The shortest way along the roads between two road tiles (a list of tiles), or null. */
+export function roadPath(s, from, to) {
+  if (from < 0 || to < 0) return null;
+  const prev = new Int32Array(N * N).fill(-2); prev[from] = -1;
+  const q = [from];
+  for (let h = 0; h < q.length && prev[to] === -2; h++) {
+    const j = q[h], x = j % N, y = Math.floor(j / N);
+    for (const [dx, dy] of near4) { const xx = x + dx, yy = y + dy; if (!inMap(xx, yy)) continue; const k = idx(xx, yy); if (prev[k] === -2 && isRoad(s.tiles[k])) { prev[k] = j; q.push(k); } }
+  }
+  if (prev[to] === -2) return null;
+  const out = [];
+  for (let j = to; j !== -1; j = prev[j]) out.push(j);
+  return out.reverse();
+}
+
 // ---------- traffic ----------
 /**
  * Rush hour: from every home the residents drive to the nearest workplace along the roads (a
@@ -158,7 +180,8 @@ export function build(s, x, y, id) {
  */
 function traffic(s, a) {
   const load = new Float32Array(N * N), cap = new Float32Array(N * N), cong = new Float32Array(N * N);
-  const next = new Int32Array(N * N).fill(-1), dist = new Int32Array(N * N).fill(-1);
+  const next = new Int32Array(N * N).fill(-1), dist = new Int32Array(N * N).fill(-1), src = new Int32Array(N * N).fill(-1);
+  a.workOf = new Int32Array(N * N).fill(-1);
   const q = [];
   a.parkingNear = new Uint8Array(N * N);
   s.tiles.forEach((t, i) => {
@@ -177,7 +200,7 @@ function traffic(s, a) {
     // workplaces: their road doors are where the trips end
     if (def.jobs && t.b.id !== "house" && t.b.works !== false && !(t.b.build > 0)) {
       const x = i % N, y = Math.floor(i / N);
-      for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && isRoad(s.tiles[k]) && dist[k] < 0) { dist[k] = 0; q.push(k); } }
+      for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && isRoad(s.tiles[k]) && dist[k] < 0) { dist[k] = 0; src[k] = i; q.push(k); } }
     }
   });
   for (let h = 0; h < q.length; h++) {
@@ -186,7 +209,7 @@ function traffic(s, a) {
       const xx = x + dx, yy = y + dy;
       if (!inMap(xx, yy)) continue;
       const k = idx(xx, yy);
-      if (dist[k] < 0 && isRoad(s.tiles[k])) { dist[k] = dist[j] + 1; next[k] = j; q.push(k); }
+      if (dist[k] < 0 && isRoad(s.tiles[k])) { dist[k] = dist[j] + 1; next[k] = j; src[k] = src[j]; q.push(k); }
     }
   }
   let trips = 0;
@@ -196,6 +219,7 @@ function traffic(s, a) {
     let door = -1;
     for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && dist[k] >= 0 && (door < 0 || dist[k] < dist[door])) door = k; }
     if (door < 0) return;
+    a.workOf[i] = src[door];
     const cars = t.b.res * TRAFFIC.perResident;
     trips += cars;
     for (let j = door, n = 0; j >= 0 && n < 200; j = next[j], n++) load[j] += cars;

@@ -349,3 +349,15 @@ details .row { background: rgba(255, 255, 255, .45); }
 .prom.calm { opacity: .85; }
 .prom-top { display: flex; justify-content: space-between; gap: 8px; }
 .prom-top small { opacity: .75; }
+
+.family { display: grid; gap: 4px; padding: 8px 10px; margin: 6px 0; border-radius: 12px; background: var(--paper-2); }
+.family small { opacity: .8; font-size: 13px; }
+.family .wish { color: var(--teal); font-weight: 700; opacity: 1; }
+.fam-top { display: flex; justify-content: space-between; }
+.fam-btns { display: flex; gap: 6px; margin-top: 4px; }
+.fam-btns .btn { padding: 6px 12px; font-size: 14px; }
+.follow-tag { position: fixed; left: 0; top: 0; z-index: 7; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 14px; background: var(--ink); color: #fbf3e2; box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .7); pointer-events: auto; white-space: nowrap; }
+.follow-tag span { display: grid; }
+.follow-tag small { opacity: .8; font-size: 12px; }
+.follow-tag button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .15); color: #fff; }
+.home-btn { border: 0; background: none; color: var(--teal); font: inherit; font-size: 13px; font-weight: 700; padding: 2px 0; }

@@ -864,6 +864,57 @@ export class World {
     this.camelMesh.count = herd;
   }
 
+  /** Follow one person along the roads from home to work and back, the camera going with them. */
+  followPerson(path, label) {
+    if (!path || path.length < 1) return;
+    this.follow = { path, k: 0, dir: 1, wait: 1, label };
+    if (!this.followMesh) {
+      const mk = (k) => { const m = new THREE.InstancedMesh(model(k).matte, this.mats.matte, 1); m.frustumCulled = false; this.scene.add(m); return m; };
+      this.followMesh = [mk("manBody"), mk("manHeadRed")];
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.15, 24), new THREE.MeshBasicMaterial({ color: "#f3cf7a", transparent: true, opacity: 0.9, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; this.scene.add(ring); this.followRing = ring;
+    }
+    for (const m of this.followMesh) m.visible = true;
+    this.followRing.visible = true;
+  }
+  stopFollow() {
+    this.follow = null;
+    if (this.followMesh) for (const m of this.followMesh) m.visible = false;
+    if (this.followRing) this.followRing.visible = false;
+  }
+  stepFollow(dt) {
+    const f = this.follow;
+    if (!f) return;
+    if (f.wait > 0) f.wait -= dt;
+    else {
+      f.k += dt * 0.7 * f.dir;
+      const end = f.path.length - 1;
+      if (f.k >= end) { f.k = end; f.dir = -1; f.wait = 4; f.arrived = true; }
+      if (f.k <= 0) { f.k = 0; f.dir = 1; f.wait = 4; f.home = true; }
+    }
+    const j = Math.min(Math.max(0, f.path.length - 2), Math.floor(f.k)), t = f.k - j;
+    const a = tileCenter(f.path[j] % N, Math.floor(f.path[j] / N)), b = tileCenter(f.path[Math.min(f.path.length - 1, j + 1)] % N, Math.floor(f.path[Math.min(f.path.length - 1, j + 1)] / N));
+    const v = new THREE.Vector3().lerpVectors(a, b, t);
+    let dx = b.x - a.x, dz = b.z - a.z;
+    if (f.dir < 0) { dx = -dx; dz = -dz; }
+    v.x += -dz * 0.35; v.z += dx * 0.35;
+    v.y = Math.abs(Math.sin(this.clock * 9)) * 0.012;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-dz, dx));
+    const m4 = new THREE.Matrix4().compose(v, q, new THREE.Vector3(1.15, 1.15, 1.15));
+    for (const m of this.followMesh) { m.setMatrixAt(0, m4); m.instanceMatrix.needsUpdate = true; }
+    this.followRing.position.set(v.x, 0.02, v.z);
+    this.followPos = v;
+    // the camera keeps them in the middle of the screen
+    this.view.x += (v.x - this.view.x) * Math.min(1, dt * 2.5);
+    this.view.z += (v.z - this.view.z) * Math.min(1, dt * 2.5);
+    this.updateCamera();
+  }
+  /** A point in the world on the screen. */
+  project(v) {
+    const p = v.clone().project(this.camera);
+    return { sx: (p.x + 1) / 2 * this.w, sy: (1 - p.y) / 2 * this.h };
+  }
+
   stepLife(dt) {
     if (!this.people) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
@@ -1123,6 +1174,7 @@ export class World {
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);
     this.stepTrucks(dt);
+    this.stepFollow(dt);
     this.stepSmoke(dt);
     this.stepLife(dt);
     this.stepEffects(dt);

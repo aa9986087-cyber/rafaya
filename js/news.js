@@ -4,10 +4,13 @@
 // remember what they asked for and what the mayor promised, answer each other and react to decisions.
 import { B, ERAS, DECISIONS, MAP_SIZE } from "./data.js";
 import { districtOf, districtName } from "./sim.js";
+import { MEN, WOMEN, jobOf, someFamilies } from "./people.js";
 
 // The quarters people live in (by the names the mayor gave them), so a speaker says where they are from.
-let livedIn = [];
+let livedIn = [], families = [], townNow = null;
 function learnQuarters(s) {
+  townNow = s;
+  families = someFamilies(s);
   const ds = new Set();
   s.tiles.forEach((t, i) => { if (t.b?.id === "house") ds.add(districtOf(i)); });
   livedIn = [...ds].map((d) => districtName(s, d));
@@ -34,8 +37,6 @@ export const RESIDENTS = [
 ];
 export const residentById = (id) => RESIDENTS.find((r) => r.id === id);
 
-const MEN = ["فهد", "سعد", "ناصر", "خالد", "عبدالله", "محمد", "سلطان", "تركي", "مشعل", "فيصل", "بندر", "ماجد", "عبدالعزيز", "سعود", "راشد", "حمد", "نايف", "عادل", "مبارك", "صالح", "إبراهيم", "يوسف", "عمر", "زياد", "منصور", "بدر", "حمود", "عبدالرحمن", "سليمان", "متعب"];
-const WOMEN = ["نورة", "هيا", "سارة", "الجوهرة", "لطيفة", "منيرة", "ريم", "العنود", "دانة", "هند", "مها", "جواهر", "نوف", "شهد", "لولوة", "موضي", "حصة", "غادة", "أريج", "رهف"];
 const pickName = (list, r) => list[Math.floor(r() * list.length)];
 /** A new person of a kind: their name, their job in this town, and where they live. */
 export function makePerson(a, kindId, r = Math.random) {
@@ -44,6 +45,15 @@ export function makePerson(a, kindId, r = Math.random) {
   const first = k.gender === "f" ? pickName(WOMEN, r) : pickName(MEN, r);
   const name = k.gender === "mother" ? `أم ${pickName(MEN, r)}` : k.gender === "father" ? `أبو ${pickName(MEN, r)}` : k.gender === "elder" ? `الشايب أبو ${pickName(MEN, r)}` : k.gender === "uncle" ? `العم ${pickName(MEN, r)}` : `${k.title ? k.title + " " : ""}${first} ${family}`;
   const areas = livedIn.length ? livedIn : ["الحارة الشمالية", "الحارة الجنوبية", "الحارة الشرقية", "الحارة الغربية", "وسط البلد"];
+  // a real family of the town when there is one: the speaker's name, house and job are theirs
+  if (families.length && townNow) {
+    const { i, f } = families[Math.floor(r() * families.length)];
+    const girl = f.kids.find((c) => !c.boy && c.age >= 14), son = f.kids.find((c) => c.boy && c.age >= 16);
+    const real = k.gender === "mother" ? f.mother : k.gender === "father" ? `${f.kunya} ${f.surname}` : k.gender === "elder" ? `الشايب ${f.kunya}` : k.gender === "uncle" ? `العم ${f.father} ${f.surname}`
+      : k.gender === "f" ? `${k.title ? k.title + " " : ""}${girl ? girl.name : f.mother.replace("أم ", "")} ${f.surname}` : `${k.title ? k.title + " " : ""}${son && k.id === "saud" ? son.name : f.father} ${f.surname}`;
+    const job = (k.gender === "father" || k.gender === "m") && !k.title ? jobOf(townNow, a, i) : null;
+    return { name: real, role: job && r() < 0.6 ? `يشتغل في ${job.name}` : k.role(a, r), area: `من ${districtName(townNow, districtOf(i))}`, kind: k.id, home: i };
+  }
   const area = `من ${areas[Math.floor(r() * areas.length)]}`;
   return { name, role: k.role(a, r), area, kind: k.id };
 }

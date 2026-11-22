@@ -331,3 +331,15 @@ test("traffic: homes drive to work along the roads; a bigger road carries more",
   assert.ok(b.trafficCap[busiest] >= Bd.avenue.cap * 0.75);
   assert.ok(b.trafficCong[busiest] <= before, "the avenue takes the jam away");
 });
+
+test("people: each house has the same families every time, and fathers work where the roads lead", async () => {
+  const { familiesAt, jobOf } = await import("../js/people.js");
+  const s = autoplay(900, 3);
+  const a = analyze(s);
+  const home = s.tiles.findIndex((t) => t.b?.id === "house" && t.b.res >= 6 && a.workOf[s.tiles.indexOf(t)] >= 0);
+  assert.ok(home >= 0);
+  const f1 = familiesAt(s, home), f2 = familiesAt(s, home);
+  assert.deepEqual(f1, f2, "families are stable");
+  assert.equal(f1.reduce((n, f) => n + f.size, 0), s.tiles[home].b.res, "everyone in the house belongs to a family");
+  assert.ok(jobOf(s, a, home), "the father has a job");
+});
