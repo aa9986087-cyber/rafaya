@@ -135,6 +135,10 @@ function topics(s, a, season, f) {
 
   // ---- the residents who think it through: how much is missing, where, and what it costs ----
   const n = needs(s, a);
+  // homes the pipes do not reach, and where they are
+  const dryList = [];
+  s.tiles.forEach((t, i) => { if (t.b?.id === "house" && t.b.works && !a.watered?.[i]) dryList.push(i); });
+  if (dryList.length) add("water", -1, 8, [`umsaad:${nAr(dryList.length)} بيت ${areaOf(s, dryList)} ما يوصلها ماء أبد، نجيب الماء بالجوالين من بعيد. البئر يوصل لين ٥ مربعات بس، حطوا واحد عندنا.`]);
   if (n.wells > 0) add("water", -1, 7, [`abukhalid:حسبتها: الماء ناقص ${num(n.waterGap)} وحدة، والبئر يعطي ٣٠. يعني نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} زيادة${s.era >= 1 ? `، أو خزان واحد يكفي الكل` : ""}.`]);
   if (n.generators > 0) add("power", -1, 7, [`jawaher:الكهرباء ناقصة ${num(n.powerGap)}. مولد واحد يعطي ٧٠، فنحتاج ${nAr(n.generators)}${s.tech.solar ? `، والألواح الشمسية أنظف` : ""}.`]);
   if (n.jobGap >= 8) add("jobs", -1, 8, [`noura:فيه ${num(n.jobGap)} شخص يبي شغل زيادة عن الوظايف. ${n.jobIdea}`]);

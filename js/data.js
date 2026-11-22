@@ -55,13 +55,14 @@ export const B = {
   house: {
     cat: "home", name: "خيمة", cost: 50, upkeep: 0, era: 0, water: -1, power: -1,
     levels: [
+      // cost: what the mayor pays to upgrade to this level (nothing upgrades by itself)
       { name: "خيمة", cap: 3 },
-      { name: "بيت طين", cap: 6, needs: { road: 1, water: 1, happy: 45, pop: 30 } },
-      { name: "بيت شعبي", cap: 10, needs: { road: 1, water: 1, happy: 45 } },
-      { name: "فيلا", cap: 16, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
-      { name: "عمارة", cap: 48, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
+      { name: "بيت طين", cap: 6, cost: 200, needs: { road: 1, water: 1 } },
+      { name: "بيت شعبي", cap: 10, cost: 700, needs: { road: 1, water: 1, happy: 45 } },
+      { name: "فيلا", cap: 16, cost: 2000, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
+      { name: "عمارة", cap: 48, cost: 6000, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
     ],
-    text: "يبدأ خيمة، ولما يستقر الأهل (٣٠ ساكن وماء) يتطور وحده لبيت طين ثم شعبي ثم فيلا ثم عمارة إذا توفر له الطريق والماء والكهرباء والخدمات."
+    text: "تنصبها خيمة، وأنت اللي تطورها: بيت طين، ثم شعبي، ثم فيلا، ثم عمارة. كل مستوى له سعر، ويحتاج طريق وماء واصل، والأعلى يحتاج كهرباء وخدمات قريبة."
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
@@ -76,12 +77,13 @@ export const B = {
   datefactory: { cat: "farm", name: "مصنع تمور", cost: 1800, upkeep: 25, era: 1, tech: "packing", jobs: 30, income: 110, water: -6, power: -10, radius: 3, pollute: 6, text: "يغلّف التمور. كل مزرعة نخل تزيد دخله." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
 
-  well: { cat: "util", name: "بئر", cost: 100, upkeep: 2, era: 0, water: 30, text: "يعطي ماء لكل البلد." },
-  tank: { cat: "util", name: "خزان ماء", cost: 900, upkeep: 12, era: 1, water: 140, power: -2, text: "ماء أكثر بكثير." },
-  desal: { cat: "util", name: "محطة تحلية", cost: 4500, upkeep: 50, era: 2, tech: "desal", water: 700, power: -25, text: "ماء يكفي مدينة." },
-  generator: { cat: "util", name: "مولد كهرباء", cost: 700, upkeep: 14, era: 1, power: 70, radius: 3, pollute: 10, text: "كهرباء، بس دخانه يزعج." },
-  solar: { cat: "util", name: "ألواح شمسية", cost: 1600, upkeep: 6, era: 1, tech: "solar", power: 90, text: "كهرباء نظيفة من الشمس." },
-  powerplant: { cat: "util", name: "محطة كهرباء", cost: 5000, upkeep: 60, era: 2, power: 600, radius: 5, pollute: 12, text: "كهرباء تكفي مدينة." },
+  // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
+  well: { cat: "util", name: "بئر", cost: 100, upkeep: 2, era: 0, water: 30, reach: 5, text: "ماء ٣٠ وحدة، يوصل للبيوت اللي حوله لين ٥ مربعات." },
+  tank: { cat: "util", name: "خزان ماء", cost: 900, upkeep: 12, era: 1, water: 140, reach: 9, power: -2, text: "ماء ١٤٠ وحدة، يوصل لين ٩ مربعات." },
+  desal: { cat: "util", name: "محطة تحلية", cost: 4500, upkeep: 50, era: 2, tech: "desal", water: 700, reach: 15, power: -25, text: "ماء ٧٠٠ وحدة، يوصل لين ١٥ مربع." },
+  generator: { cat: "util", name: "مولد كهرباء", cost: 700, upkeep: 14, era: 1, power: 70, reach: 7, radius: 3, pollute: 10, text: "كهرباء ٧٠ وحدة لين ٧ مربعات، بس دخانه يزعج." },
+  solar: { cat: "util", name: "ألواح شمسية", cost: 1600, upkeep: 6, era: 1, tech: "solar", power: 90, reach: 6, text: "كهرباء ٩٠ وحدة نظيفة، توصل لين ٦ مربعات." },
+  powerplant: { cat: "util", name: "محطة كهرباء", cost: 5000, upkeep: 60, era: 2, power: 600, reach: 14, radius: 5, pollute: 12, text: "كهرباء ٦٠٠ وحدة توصل لين ١٤ مربع." },
 
   mosque: { cat: "serv", name: "مسجد", cost: 350, upkeep: 4, era: 0, water: -1, power: -1, radius: 5, happy: 14, service: "mosque", text: "يفرّح الحارة اللي حوله." },
   school: { cat: "serv", name: "مدرسة", cost: 600, upkeep: 10, era: 0, water: -2, power: -2, radius: 6, happy: 10, service: "school", text: "تعليم للعيال. البيوت القريبة تتطور أسرع." },
@@ -143,10 +145,10 @@ export const GOALS = [
   { text: "وصّل كل الخيام بطريق", test: (s) => s.count.house >= 6 && s.connectedHomes >= s.count.house, reward: 60 },
   { text: "ازرع مزرعة نخل ثالثة", test: (s) => s.count.palms >= 3, reward: 80 },
   { text: "احفر بئر ثاني", test: (s) => s.count.well >= 2, reward: 80 },
-  { text: "أول بيت طين (تحتاج ٣٠ ساكن)", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
+  { text: "طوّر خيمة إلى بيت طين", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
   { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 200 },
   { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 200 },
-  { text: "أول بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 250 },
+  { text: "طوّر بيت إلى بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 250 },
   { text: "ابنِ مدرسة", test: (s) => s.count.school >= 1, reward: 300 },
   { text: "ابحث الري بالتنقيط في المجلس البلدي", test: (s) => s.tech.irrigation, reward: 300 },
   { text: "صارت الرافعية بلدة (٢٥٠ ساكن)", test: (s) => s.pop >= 250, reward: 600 },

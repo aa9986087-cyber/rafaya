@@ -70,7 +70,7 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
   spots.sort(([ax, ay], [bx, by]) => (tiles[idx(ax, ay)].t === "wadi" ? 0 : 100) + Math.hypot(ax - cx, ay - cy) - (tiles[idx(bx, by)].t === "wadi" ? 0 : 100) - Math.hypot(bx - cx, by - cy));
   for (const [x, yy] of spots.slice(0, 2)) put(x, yy, "palms");
   return {
-    v: 1, hv: 2, fv: 1, size: N, owned: {}, seed, day: 3, // hour 3 of day 1: two hours after sunrise
+    v: 1, hv: 3, fv: 1, size: N, owned: {}, seed, day: 3, // hour 3 of day 1: two hours after sunrise
     money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
@@ -225,6 +225,17 @@ export function analyze(s) {
   const concrete = s.tech.concrete ? 1.25 : 1;
   const palms = [];
   const strike = s.events.some((e) => e.strike); // the council's staff are on strike
+  // Water and power only reach so far from their source (a well's pipes, a generator's wires).
+  a.watered = new Uint8Array(N * N); a.powered = new Uint8Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const b = s.tiles[idx(x, y)].b, def = b && B[b.id];
+    if (!def?.reach || b.build > 0 || b.ruin) continue;
+    const mark = def.water > 0 ? a.watered : def.power > 0 ? a.powered : null;
+    if (!mark) continue;
+    for (let yy = y - def.reach; yy <= y + def.reach; yy++) for (let xx = x - def.reach; xx <= x + def.reach; xx++)
+      if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= def.reach) mark[idx(xx, yy)] = 1;
+  }
+  a.dryHomes = 0; a.darkHomes = 0;
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const t = s.tiles[idx(x, y)];
     if (!t.b) continue;
@@ -237,14 +248,18 @@ export function analyze(s) {
     a.value += def.cost;
     a.repairBill += repairCost(t.b);
     t.b.works = works;
-    if (def.water > 0) a.waterSupply += def.water * f; else if (def.water && works) a.waterUse -= def.water;
-    if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works) a.powerUse -= def.power;
+    const here = idx(x, y);
+    // only places the pipes and wires reach draw water and power
+    if (def.water > 0) a.waterSupply += def.water * f; else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
+    if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
     a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += def.upkeep || 0;
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
       if (works) { a.connectedHomes++; a.cap += Math.round(def.levels[t.b.lvl].cap * concrete); }
-      a.waterUse += t.b.lvl; // bigger homes use more
+      if (a.watered[here]) a.waterUse += t.b.lvl; // bigger homes use more
+      else if (works) a.dryHomes++;
+      if (!a.powered[here] && works && t.b.lvl >= 3) a.darkHomes++;
     }
     if (works && def.jobs) a.jobs += def.jobs;
     if (t.b.id === "palms") palms.push(t);
@@ -333,7 +348,7 @@ export function analyze(s) {
   for (let i = 0; i < N * N; i++) {
     const t = s.tiles[i];
     if (!t.b || t.b.id !== "house" || !t.b.works) continue;
-    const local = Math.min(40, a.local[i]) - Math.min(30, a.pollution[i]);
+    const local = Math.min(40, a.local[i]) - Math.min(30, a.pollution[i]) - (a.watered[i] ? 0 : 10) - (a.grid && t.b.lvl >= 3 && !a.powered[i] ? 6 : 0); // villas and towers live on electricity
     t.b.local = local;
     const w = Math.max(1, t.b.res || 1);
     sum += local * w; weight += w;
@@ -363,12 +378,30 @@ export function houseBlocker(s, a, x, y) {
   if (next.era && s.era < next.era) return `تحتاج الرافعية تصير ${ERAS[next.era].name}`;
   const n = next.needs || {};
   if (n.road && !t.b.works) return "يحتاج طريق";
-  if (n.pop && s.pop < n.pop) return `الأهل ما استقروا بعد: تحتاج ${n.pop} ساكن (الحين ${s.pop})`;
-  if (n.water && a.waterRatio < 0.95) return "يحتاج ماء أكثر";
-  if (n.power && (!a.grid || a.powerSupply === 0 || a.powerRatio < 0.95)) return "يحتاج كهرباء";
+  const tile = idx(x, y);
+  if (n.water && !a.watered[tile]) return "ما يوصله ماء: ابنِ بئر قريب منه (البئر يوصل لين ٥ مربعات)";
+  if (n.water && a.waterRatio < 0.95) return "الماء ما يكفي البلد: زد الآبار";
+  if (n.power && !a.powered[tile]) return "ما توصله الكهرباء: ابنِ مولد قريب منه (يوصل لين ٧ مربعات)";
+  if (n.power && a.powerRatio < 0.95) return "الكهرباء ما تكفي: زد المولدات";
   const here = s.happy + (t.b.local || 0) * 0.6;
   if (n.happy && here < n.happy) return "يحتاج رضا أكثر (خدمات قريبة، حدائق، مساجد)";
   if (n.services && a.services[idx(x, y)].size < n.services) return `يحتاج ${n.services} خدمات قريبة (مسجد، مدرسة، مستوصف، أمن)`;
+  return "";
+}
+
+/** What the next level of this house costs (0 at the top). */
+export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0 : 0);
+
+/** The mayor upgrades a house one level. Returns why not, or "". */
+export function upgradeHouse(s, x, y, a = analyze(s)) {
+  const b = s.tiles[idx(x, y)]?.b;
+  if (b?.id !== "house") return "مو بيت";
+  const why = houseBlocker(s, a, x, y);
+  if (why) return why;
+  const cost = upgradeCost(b);
+  if (s.money < cost) return "ما يكفي المال";
+  s.money -= cost;
+  b.lvl++; b.cond = 100; b.ruin = 0; b.upAt = s.day;
   return "";
 }
 
@@ -400,14 +433,7 @@ export function step(s, r = Math.random) {
     const add = Math.min(room, left);
     t.b.res += add; left -= add;
   }
-  // Houses move up (or slip down) a level.
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const t = s.tiles[idx(x, y)];
-    if (t.b?.id !== "house") continue;
-    if (!houseBlocker(s, a, x, y) && t.b.res >= B.house.levels[t.b.lvl].cap * 0.6 && r() < 0.25) {
-      t.b.lvl++; t.b.upAt = s.day;
-    } else if (t.b.lvl > 0 && (a.waterRatio < 0.6 || s.happy < 25) && r() < 0.08) t.b.lvl--;
-  }
+  // Houses do not change by themselves: the mayor upgrades them (upgradeHouse); only neglect brings one down.
   // Building sites move on; a finished grand project is news.
   const done = [];
   for (const t of s.tiles) if (t.b?.build > 0 && --t.b.build <= 0) { delete t.b.build; done.push(B[t.b.id].name); }
@@ -611,14 +637,16 @@ export function unpack(text) {
   }
   o.size = N;
   o.owned ||= {};
-  const shift = o.hv === 2 ? 0 : 1; // saves from before tents: every house moves up one step
-  o.hv = 2;
+  // Version 3 (houses are upgraded by the mayor): every house in an older save goes back to a tent.
+  const toTents = o.hv !== 3;
+  const shift = 0;
+  o.hv = 3;
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
-    const b = id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null;
+    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     return { t: ground, b };

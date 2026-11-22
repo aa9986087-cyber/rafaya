@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -79,7 +79,7 @@ canvas.addEventListener("pointerdown", (e) => {
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: world.view.zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
     drag = null; return;
   }
-  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze");
+  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade");
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
   if (painting) paintAt(e.clientX, e.clientY);
 });
@@ -109,28 +109,39 @@ canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (playing) world
 
 function hoverAt(t) {
   if (!tool || !inMap(t.x, t.y)) { world.setHover(null); world.setGhost(null); return; }
+  if (tool.id === "upgrade") { world.setHover(t, canDo(t.x, t.y)); return; }
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
   world.setHover(t, ok);
   if (tool.id !== "bulldoze" && B[tool.id].cat !== "road" && !tile.b) world.setGhost(t, modelKey(tool.id, 0), ok, tile.t);
   else world.setGhost(null);
-  if (tool.id !== "bulldoze" && B[tool.id].radius) showReach(t.x, t.y, B[tool.id]);
+  if (tool.id !== "bulldoze" && (B[tool.id].radius || B[tool.id].reach)) showReach(t.x, t.y, B[tool.id]);
 }
 
 // ---------- choosing a spot, then confirming ----------
 // Nothing is built on a tap. The tap (or a drag, for roads and removal) marks the spot,
 // a preview shows it, and the ✓ button builds it.
 let pending = []; // [{ x, y }]
-const isMulti = () => tool && (tool.id === "bulldoze" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "bulldoze" ? 0 : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
-const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : !cantBuild(S, x, y, tool.id); };
+// "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
+const isMulti = () => tool && (tool.id === "bulldoze" || tool.id === "upgrade" || B[tool.id].cat === "road");
+const tileCost = (x, y) => (tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradeCost(S.tiles[idx(x, y)].b) : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const upgradeWhy = (x, y) => (S.tiles[idx(x, y)].b?.id !== "house" ? "اضغط على بيت" : houseBlocker(S, A, x, y));
+const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
+const whyNot = (x, y) => (tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
+/** Houses ready to move up a level right now (lit up while the upgrade tool is in hand). */
+function readyHouses() {
+  const values = new Float32Array(N * N);
+  S.tiles.forEach((t, i) => { if (t.b?.id === "house" && !houseBlocker(S, A, i % N, Math.floor(i / N))) values[i] = 1; });
+  return values;
+}
 
 function showPending() {
   if (!tool) return;
-  if (isMulti()) {
+  if (tool.id === "upgrade" && !pending.length) world.setOverlay(readyHouses(), "#e0a44a");
+  else if (isMulti()) {
     const values = new Float32Array(N * N);
     for (const p of pending) values[idx(p.x, p.y)] = 1;
-    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : "#2cb59c");
+    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : tool.id === "upgrade" ? "#e0a44a" : "#2cb59c");
     world.setHover(pending.length ? pending[pending.length - 1] : null, true);
   } else if (pending.length) hoverAt(pending[0]);
   else { world.setHover(null); world.setGhost(null); world.setOverlay(null); }
@@ -138,8 +149,14 @@ function showPending() {
   const ok = pending.filter((p) => canDo(p.x, p.y));
   const cost = ok.reduce((a, p) => a + tileCost(p.x, p.y), 0);
   $("toolOk").hidden = !pending.length;
-  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : "✓ ابنِ";
+  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" ? "✓ طوّر" : "✓ ابنِ";
   $("toolOk").disabled = !ok.length || cost > S.money;
+  if (tool.id === "upgrade") {
+    const ready = readyHouses().reduce((n, v) => n + v, 0);
+    $("toolName").textContent = !pending.length ? (ready ? `تطوير: ${ar(ready)} بيت جاهز (بالذهبي) · اضغط عليها` : "ما فيه بيت جاهز للتطوير الحين: اضغط على بيت تشوف وش ينقصه")
+      : !ok.length ? upgradeWhy(pending[0].x, pending[0].y) : `تطوير ${ar(ok.length)} بيت · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+    return;
+  }
   if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(d.cost)} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
   else if (tool.id === "bulldoze") $("toolName").textContent = `إزالة ${ar(ok.length)} ${ok.length === 1 ? "شي" : "أشياء"}؟`;
   else if (!ok.length) $("toolName").textContent = cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا";
@@ -175,7 +192,7 @@ function confirmPending() {
   if (!tool || !pending.length) return;
   const list = pending.filter((p) => canDo(p.x, p.y));
   const cost = list.reduce((a, p) => a + tileCost(p.x, p.y), 0);
-  if (!list.length) { toast(cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا", "bad"); sfx.deny(); return; }
+  if (!list.length) { toast(whyNot(pending[0].x, pending[0].y) || "ما ينفع هنا", "bad"); sfx.deny(); return; }
   if (cost > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
   for (const p of list) apply(p.x, p.y, list.length > 1);
   pending = [];
@@ -187,6 +204,15 @@ const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
 
 function apply(x, y, quiet) {
   const tile = S.tiles[idx(x, y)];
+  if (tool.id === "upgrade") {
+    const why = upgradeHouse(S, x, y, A);
+    if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
+    A = analyze(S);
+    sfx.levelUp(); sync(false);
+    floatAt(x, y, `⬆ ${B.house.levels[tile.b.lvl].name}`, "up");
+    refresh();
+    return;
+  }
   if (tool.id === "bulldoze") {
     if (!tile.b && tile.t !== "rock") return;
     const wasRoad = ["road", "asphalt"].includes(tile.b?.id);
@@ -212,11 +238,13 @@ function clearPreview(painting) {
   if (!painting) { world.setHover(null); world.setOverlay(null); }
 }
 
+/** Shows how far a building reaches: water in blue, power in gold, cheer in green, nuisance in red. */
 function showReach(x, y, def) {
+  const r = def.reach || def.radius;
   const values = new Float32Array(N * N);
-  for (let yy = y - def.radius; yy <= y + def.radius; yy++) for (let xx = x - def.radius; xx <= x + def.radius; xx++)
-    if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= def.radius) values[idx(xx, yy)] = 1;
-  world.setOverlay(values, def.pollute ? "#e0523f" : "#2cb59c");
+  for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++)
+    if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) values[idx(xx, yy)] = 1;
+  world.setOverlay(values, def.reach ? (def.water > 0 ? "#3b8fd6" : "#e8b730") : def.pollute ? "#e0523f" : "#2cb59c");
 }
 
 // ---------- build dock ----------
@@ -246,6 +274,7 @@ function renderCats() {
 }
 
 function lockReason(id) {
+  if (id === "upgrade") return "";
   const d = B[id];
   if (d.unique && S.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (d.era > S.era) return `تنفتح لما تصير ${ERAS[d.era].name}`;
@@ -258,7 +287,9 @@ function renderCards() {
   if (!openCat) { box.hidden = true; return; }
   const ids = Object.keys(B).filter((k) => B[k].cat === openCat);
   box.hidden = false;
-  box.innerHTML = ids.map((id, i) => {
+  const upgradeCard = openCat === "home" ? `<button type="button" class="card ${tool?.id === "upgrade" ? "on" : ""}" data-build="upgrade" style="--i:0">
+      <img alt="" src="${thumbnail(modelKey("house", 2))}"><b>تطوير البيوت</b><span class="price">من ${money(B.house.levels[1].cost)} ريال</span><span class="hours">خيمة ← طين ← شعبي ← فيلا ← عمارة</span></button>` : "";
+  box.innerHTML = upgradeCard + ids.map((id, i) => {
     const lock = lockReason(id);
     const afford = S.money >= B[id].cost;
     return `<button type="button" class="card ${tool?.id === id ? "on" : ""} ${lock ? "locked" : ""} ${!lock && !afford ? "poor" : ""}" data-build="${id}" style="--i:${i}">
@@ -308,7 +339,11 @@ function refresh() {
   $("sFace").innerHTML = face(S.happy < 35 ? 0 : S.happy < 55 ? 1 : S.happy < 75 ? 2 : 3);
   const set = (el, r, show) => { el.style.width = `${Math.round((show ? r : 1) * 100)}%`; el.classList.toggle("low", show && r < 0.95); };
   set($("sWater"), A.waterRatio, true);
-  set($("sPower"), A.powerRatio, A.grid);
+  $("sWater").classList.toggle("low", A.waterRatio < 0.95 || A.dryHomes > 0);
+  if (A.grid) { set($("sPower"), A.powerRatio, true); $("sPower").classList.toggle("low", A.powerRatio < 0.95 || A.darkHomes > 0); }
+  else { $("sPower").style.width = "0%"; $("sPower").classList.remove("low"); }
+  $("sPowerLabel").textContent = A.grid ? "كهرباء" : "كهرباء —";
+  $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
   $("sEra").textContent = ERAS[S.era].name;
   const se = seasonOf(S.day);
   $("sDay").textContent = `اليوم ${ar(dayOf(S.day))}`;
@@ -542,10 +577,15 @@ function inspect(x, y) {
   if (t.b.id === "house") {
     const cap = Math.round(d.levels[t.b.lvl].cap * (S.tech.concrete ? 1.25 : 1));
     html += row("السكان", `${ar(t.b.res || 0)} من ${ar(cap)}`);
-    const block = houseBlocker(S, A, x, y);
-    html += block === "أعلى مستوى" ? `<div class="need ok">وصل أعلى مستوى.</div>` : `<div class="need ${block ? "" : "ok"}">${block ? `عشان يصير «${d.levels[t.b.lvl + 1].name}»: ${block}` : `بيتطور قريب إلى «${d.levels[t.b.lvl + 1].name}»`}</div>`;
-    const levels = d.levels.map((l, i) => `<i class="${i <= t.b.lvl ? "on" : ""}">${l.name}</i>`).join("");
+    const i = idx(x, y);
+    html += row("الماء", A.watered[i] ? "واصل ✓" : "ما يوصله ✕", A.watered[i] ? "plus" : "minus");
+    if (A.grid || t.b.lvl >= 2) html += row("الكهرباء", A.powered[i] ? "واصلة ✓" : "ما توصله ✕", A.powered[i] ? "plus" : "minus");
+    const levels = d.levels.map((l, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${l.name}</i>`).join("");
     html += `<div class="ladder">${levels}</div>`;
+    const block = houseBlocker(S, A, x, y), next = d.levels[t.b.lvl + 1];
+    if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
+    else if (block) html += `<div class="need">عشان تطوره «${next.name}»: ${block}</div>`;
+    else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < next.cost ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(next.cost)} ريال</button></div>`;
   }
   if (d.jobs) html += row("الوظائف", ar(d.jobs));
   if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(d.income)} ريال`, "plus");
@@ -556,6 +596,13 @@ function inspect(x, y) {
   html += `</div><div class="sheet-actions"><button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, d);
+  $("upgradeOne")?.addEventListener("click", () => {
+    const why = upgradeHouse(S, x, y, A);
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.levelUp(); A = analyze(S); sync(false); refresh(); save();
+    floatAt(x, y, `⬆ ${B.house.levels[S.tiles[idx(x, y)].b.lvl].name}`, "up");
+    inspect(x, y);
+  });
   $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); refresh(); save(); inspect(x, y); });
   $("demolish").addEventListener("click", () => { demolish(S, x, y); sfx.remove(); closeSheet(); sync(["road", "asphalt"].includes(t.b?.id)); refresh(); });
 }
@@ -645,6 +692,25 @@ function budget() {
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
 }
+/** Water and power: how much there is, who it does not reach, and a map of where it goes. */
+function utilSheet() {
+  sheet(`<h2>الماء والكهرباء</h2><p>كل بئر وخزان ومولد يوصل لمسافة محدودة. البيت اللي برا المسافة ما يجيه شي، حتى لو الكمية تكفي.</p>
+    <h3>الماء</h3><div class="rows">
+      ${row("المتوفر / المطلوب", `${money(A.waterSupply)} / ${money(A.waterUse)}`, A.waterRatio < 1 ? "minus" : "plus")}
+      ${A.dryHomes ? `<div class="need">${ar(A.dryHomes)} بيت ما يوصلها ماء: ابنِ بئر قريب منها.</div>` : `<div class="need ok">الماء واصل لكل البيوت.</div>`}
+      <button class="btn block" id="showWater" type="button">💧 اعرض وين يوصل الماء</button>
+    </div>
+    <h3>الكهرباء</h3><div class="rows">
+      ${A.grid ? row("المتوفر / المطلوب", `${money(A.powerSupply)} / ${money(A.powerUse)}`, A.powerRatio < 1 ? "minus" : "plus") : `<div class="need">ما فيه كهرباء بالبلد. المولد ينفتح لما تصير بلدة، والفلل تحتاجها.</div>`}
+      ${A.grid && A.darkHomes ? `<div class="need">${ar(A.darkHomes)} فيلا وعمارة ما توصلها الكهرباء.</div>` : ""}
+      ${A.grid ? `<button class="btn block" id="showPower" type="button">⚡ اعرض وين توصل الكهرباء</button>` : ""}
+    </div>`, "util");
+  const show = (arr, color) => { const v = new Float32Array(N * N); arr.forEach((x, i) => { v[i] = x; }); closeSheet(); setTimeout(() => world.setOverlay(v, color), 200); setTimeout(() => { if (!tool) world.setOverlay(null); }, 6000); };
+  $("showWater").addEventListener("click", () => show(A.watered, "#3b8fd6"));
+  $("showPower")?.addEventListener("click", () => show(A.powered, "#e8b730"));
+}
+$("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
+
 for (const id of ["budgetBtn", "statMoney", "statPop", "statHappy"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
@@ -701,13 +767,16 @@ function howTo(fromMenu) {
       <div class="row"><span>اختر من تحت، اضغط مكانه، ثم «✓ ابنِ»</span><b>تبني</b></div>
       <div class="row"><span>اسحب بالطريق ثم «✓ ابنِ»</span><b>ترسمه مرة وحدة</b></div>
       <div class="row"><span>✕ مرة</span><b>تلغي المكان اللي اخترته</b></div>
+      <div class="row"><span>سكن ← «تطوير البيوت»</span><b>تطور الخيام والبيوت بنفسك</b></div>
+      <div class="row"><span>البئر والمولد</span><b>يوصلون لمسافة محدودة</b></div>
+      <div class="row"><span>اضغط مربع الماء والكهرباء فوق</span><b>تشوف وين يوصلون</b></div>
       <div class="row"><span>اضغط على الأرض اللي ورا السياج</span><b>تشتريها وتكبر فيها</b></div>
       <div class="row"><span>«مشاريع كبرى»</span><b>تنبني على أيام وتجيب دخل كبير</b></div>
       <div class="row"><span>القائمة ← الإنجازات</span><b>تشوف وش حققت</b></div>
       <div class="row"><span>اضغط على أي مبنى</span><b>تشوف وش ينقصه</b></div>
     </div>
     <h3>كيف تكبر الرافعية؟</h3>
-    <p>انصب خيام جنب الطرق، واحفر آبار للماء، وابنِ مزارع ومحلات عشان الوظائف. المساجد والمدارس والحدائق تفرّح الناس. البيوت تتطور لحالها: خيمة، طين، شعبي، فيلا، عمارة. وكل ما كبر عدد السكان، تصير بلدة ثم مدينة ثم محافظة، وتنفتح مباني جديدة.</p>`, fromMenu ? "settings-menu" : "how");
+    <p>انصب خيام جنب الطرق، واحفر آبار قريبة منها (البئر يوصل لين ٥ مربعات)، وابنِ مزارع ومحلات عشان الوظائف. المساجد والمدارس والحدائق تفرّح الناس. وأنت اللي تطور البيوت بفلوسك: خيمة، طين، شعبي، فيلا، عمارة، وكل مستوى يسكّن ناس أكثر. وكل ما كبر عدد السكان، تصير بلدة ثم مدينة ثم محافظة، وتنفتح مباني جديدة.</p>`, fromMenu ? "settings-menu" : "how");
 }
 
 function pauseMenu() {

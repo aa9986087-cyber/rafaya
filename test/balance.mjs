@@ -1,6 +1,6 @@
 // Automatic mayors, to check the economy: can a sensible player grow the town, and can a careless
 // one go broke? Runs are repeatable (seeded randomness).
-import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll } from "../js/sim.js";
+import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll, upgradeHouse, upgradeCost, houseBlocker } from "../js/sim.js";
 import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS } from "../js/data.js";
 
 /**
@@ -33,8 +33,23 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
     };
     return (wadiFirst && free((x, y) => ok(x, y, true))) || free((x, y) => ok(x, y, false));
   };
+  // Water and power reach only so far: put a source next to the homes it should serve.
+  const placeNear = (id, targets, needRoad = false) => {
+    if (!targets.length || s.money < B[id].cost) return false;
+    const cx = targets.reduce((n, i) => n + (i % N), 0) / targets.length, cy = targets.reduce((n, i) => n + Math.floor(i / N), 0) / targets.length;
+    const spots = [];
+    for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
+      const t = s.tiles[idx(x, y)];
+      if (!owns(s, x, y) || t.b || t.t === "rock" || t.t === "fayda" || x % 4 === 0 || y % 3 === 0) continue;
+      if (needRoad && !nearRoad(x, y)) continue;
+      spots.push([Math.hypot(x - cx, y - cy), x, y]);
+    }
+    spots.sort((p, q) => p[0] - q[0]);
+    for (const [, x, y] of spots.slice(0, needRoad ? 60 : 12)) if (!build(s, x, y, id)) return true;
+    return false;
+  };
   const services = ["mosque", "school", "clinic", "park", "police", "civil", "stadium", "bigmosque", "hospital"];
-  let si = 0;
+  let si = 0, lastPower = -99;
   for (let h = 0; h < hours; h++) {
     const a = analyze(s);
     if (style === "taxer") s.tax = 20;
@@ -57,8 +72,22 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place("generator");
     } else if (!saving) {
       // 1. water and power before they run short
-      if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 3) place(s.era >= 2 && s.tech.desal ? "desal" : s.era >= 1 ? "tank" : "well");
-      if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place(s.tech.solar ? "solar" : s.era >= 2 ? "powerplant" : "generator");
+      const waterSrc = s.era >= 2 && s.tech.desal ? "desal" : s.era >= 1 ? "tank" : "well";
+      const powerSrc = s.tech.solar ? "solar" : s.era >= 2 ? "powerplant" : "generator";
+      const homes = [];
+      s.tiles.forEach((t, i) => { if (t.b?.id === "house" && t.b.works) homes.push(i); });
+      // homes waiting for power to become villas, or villas without it
+      const dark = homes.filter((i) => !a.powered[i] && (s.tiles[i].b.lvl >= 3 || (s.tiles[i].b.lvl === 2 && s.happy + (s.tiles[i].b.local || 0) * 0.6 >= 60 && /الكهرباء/.test(houseBlocker(s, a, i % N, Math.floor(i / N))))));
+      const dry = homes.filter((i) => !a.watered[i]);
+      if (dry.length) placeNear(waterSrc, dry);
+      else if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 3) placeNear(waterSrc, homes);
+      if (s.era >= 1 && h - lastPower >= 24 && s.money > B[powerSrc].cost + 2500) {
+        if ((dark.length && placeNear(powerSrc, dark)) || (a.grid && a.powerRatio < 1 && placeNear(powerSrc, homes))) lastPower = h;
+      }
+      // upgrade homes that are ready, cheapest first, keeping money for running the town
+      const ready = homes.filter((i) => !houseBlocker(s, a, i % N, Math.floor(i / N))).sort((p, q) => s.tiles[p].b.lvl - s.tiles[q].b.lvl);
+      let ups = 0;
+      for (const i of ready) { if (ups >= 2 || s.money < upgradeCost(s.tiles[i].b) * 1.3 + 200) break; if (!upgradeHouse(s, i % N, Math.floor(i / N), a)) ups++; }
       // 2. income: farms and industry sell outside; shops only while the market has room
       if (a.net < target || a.unemployment > 0.25) {
         // a shop if the market has room and it can be paid for; otherwise what sells outside
@@ -66,12 +95,13 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
         place(!marketFull && s.money >= B[shop].cost ? shop : farm);
       }
       // 3. homes when the town is nearly full, with a road
-      if (s.pop >= a.cap * 0.85 || a.cap < 20) { place("house"); if (a.unconnected) place("road"); }
+      // homes close together, near the others (pipes and wires reach only so far)
+      if (s.pop >= a.cap * 0.7 || a.cap < 20) { if (!placeNear("house", homes.length ? homes : [idx(N / 2, N / 2 + 3)], true)) place("house"); if (a.unconnected) place("road"); }
       if (h % 5 === 0) place("road");
       // 4. services only when the income carries them
       // (it counts the new building's running cost before deciding)
-      if (style !== "miser") { const id = services[si % services.length]; if (B[id].era > s.era) si++; else if (a.net - B[id].upkeep > target + 5 && s.money > B[id].cost + 300 && s.pop >= 70 * services.slice(0, si).filter((k) => a.count[k]).length + 20) { place(id); si++; } }
-      if (style !== "miser" && s.era >= 1 && a.net > target + 60 && s.money > 6000) place(["mandi", "cafe", "stadium"][h % 3]);
+      if (style !== "miser") { const id = services[si % services.length]; if (B[id].era > s.era) si++; else if (a.net - B[id].upkeep > target + 5 && s.money > B[id].cost + 300 && s.pop >= 70 * services.slice(0, si).filter((k) => a.count[k]).length + 20) { placeNear(id, homes.length ? homes : [idx(N / 2, N / 2 + 3)], true) || place(id); si++; } }
+      if (style !== "miser" && s.era >= 1 && a.net > target + 60 && s.money > 6000) placeNear(["mandi", "cafe", "stadium", "park"][h % 4], homes, true);
       if (s.era >= 2 && a.net > target + 200 && s.money > 15000) place(["mall", "hotel", "factory"][h % 3]);
     }
     for (const p of PLOTS) if (!s.owned[p.id] && s.money > plotPrice(s) * 1.5) buyPlot(s, p.id);
