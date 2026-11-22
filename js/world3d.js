@@ -264,19 +264,59 @@ export class World {
     for (const { x, y } of Object.values(signAt)) { const c0 = tileCenter(x, y); signs.push(this.place(c0.x, c0.z, Math.atan2(c0.x, c0.z) + Math.PI / 2, 1.3)); }
     this.fenceMeshes = [...this.addInstances(model("fencePost"), posts), ...this.addInstances(model("saleSign"), signs, true)];
 
-    // After rain the wadi runs: a thin sheet of water along its bed.
-    if (this.flood) { this.scene.remove(this.flood); this.flood.geometry.dispose(); }
-    const wp = [];
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "wadi") {
-      const x0 = x - HALF + 0.08, z0 = y - HALF + 0.08, x1 = x0 + 0.84, z1 = z0 + 0.84;
-      for (const [qx, qz] of [[x0, z0], [x0, z1], [x1, z1], [x0, z0], [x1, z1], [x1, z0]]) wp.push(qx, 0.012, qz);
-    }
-    const wg = new THREE.BufferGeometry();
-    wg.setAttribute("position", new THREE.Float32BufferAttribute(wp, 3));
-    wg.computeVertexNormals();
-    this.flood = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: "#5aa6c4", roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }));
+    // After rain the wadi runs: wet dark sand along the bed, and a stream of water with ragged
+    // banks and pools that flows (drawn into a soft mask, not tile squares).
+    if (this.flood) { this.scene.remove(this.flood); this.flood.traverse((m) => { m.geometry?.dispose(); m.material?.alphaMap?.dispose(); m.material?.map?.dispose(); m.material?.dispose(); }); }
+    this.flood = new THREE.Group();
     this.flood.visible = false;
     this.scene.add(this.flood);
+    this.streamTex = null;
+    const wadi = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "wadi") wadi.push([x, y]);
+    if (wadi.length) {
+      const minX = Math.max(0, Math.min(...wadi.map((p) => p[0])) - 1), maxX = Math.min(N, Math.max(...wadi.map((p) => p[0])) + 2);
+      const minY = Math.max(0, Math.min(...wadi.map((p) => p[1])) - 1), maxY = Math.min(N, Math.max(...wadi.map((p) => p[1])) + 2);
+      const W = maxX - minX, H = maxY - minY, PX = 28;
+      const isW = (x, y) => inMap(x, y) && s.tiles[idx(x, y)].t === "wadi";
+      // how deep in the bed a tile is: the middle of the wadi holds the stream, the edges stay damp
+      const depth = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].filter(([dx, dy]) => isW(x + dx, y + dy)).length / 8;
+      const mask = (size, blur, keep) => {
+        const cv = document.createElement("canvas"); cv.width = W * PX; cv.height = H * PX;
+        const cx = cv.getContext("2d");
+        cx.fillStyle = "#000"; cx.fillRect(0, 0, cv.width, cv.height);
+        cx.filter = `blur(${blur}px)`; cx.fillStyle = "#fff";
+        for (const [x, y] of wadi) {
+          const d = depth(x, y), h = hash(x, y, 41);
+          if (d < keep) continue;
+          const r = PX * size(d, h);
+          if (r <= 0) continue;
+          cx.beginPath();
+          cx.ellipse((x - minX + 0.5 + (hash(x, y, 42) - 0.5) * 0.4) * PX, (y - minY + 0.5 + (hash(x, y, 43) - 0.5) * 0.4) * PX, r, r * (0.7 + h * 0.5), h * 6, 0, Math.PI * 2);
+          cx.fill();
+        }
+        return new THREE.CanvasTexture(cv);
+      };
+      const plane = (y, mat) => {
+        const pg = new THREE.PlaneGeometry(W, H); pg.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(pg, mat);
+        m.position.set(minX - HALF + W / 2, y, minY - HALF + H / 2);
+        m.renderOrder = 1;
+        this.flood.add(m);
+        return m;
+      };
+      // damp sand over the whole bed
+      plane(0.008, new THREE.MeshStandardMaterial({ color: "#7d6a48", alphaMap: mask(() => 0.75, 10, 0), transparent: true, opacity: 0.5, roughness: 1, depthWrite: false }));
+      // the stream: wide in the middle of the bed, pools here and there, nothing on the edges
+      const stream = (d, h) => (d > 0.85 ? 0.55 + h * 0.25 : d > 0.6 ? 0.25 + h * 0.35 : h > 0.8 ? 0.3 : 0);
+      plane(0.016, new THREE.MeshStandardMaterial({ color: "#4fa3c8", alphaMap: mask(stream, 8, 0.3), transparent: true, opacity: 0.85, roughness: 0.12, metalness: 0.2, depthWrite: false }));
+      // the current: light streaks sliding along
+      const rc = document.createElement("canvas"); rc.width = rc.height = 128;
+      const rx = rc.getContext("2d");
+      rx.strokeStyle = "rgba(255,255,255,.55)"; rx.lineWidth = 1.4;
+      for (let k = 0; k < 18; k++) { const y0 = (k * 29) % 128, x0 = (k * 47) % 128; rx.beginPath(); rx.moveTo(x0, y0); rx.quadraticCurveTo(x0 + 10, y0 - 3, x0 + 22, y0); rx.stroke(); }
+      this.streamTex = new THREE.CanvasTexture(rc); this.streamTex.wrapS = this.streamTex.wrapT = THREE.RepeatWrapping; this.streamTex.repeat.set(W / 2, H / 2);
+      plane(0.022, new THREE.MeshBasicMaterial({ map: this.streamTex, alphaMap: mask((d, h) => stream(d, h) * 0.85, 8, 0.3), transparent: true, opacity: 0.4, depthWrite: false }));
+    }
     // The dam lake: one body of water with an uneven shore, a band of wet sand around it, and ripples.
     this.removeAll(this.lakeMeshes || []);
     this.lakeMeshes = [];
@@ -1231,6 +1271,7 @@ export class World {
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);
     this.stepTrucks(dt);
+    if (this.streamTex && this.flood?.visible) { this.streamTex.offset.x = (this.streamTex.offset.x - dt * 0.25) % 1; }
     if (this.ripples) { const m = this.ripples.material.map; m.offset.x = (m.offset.x + dt * 0.02) % 1; m.offset.y = (m.offset.y + dt * 0.012) % 1; }
     this.stepFollow(dt);
     this.stepSmoke(dt);
