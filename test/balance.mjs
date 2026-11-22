@@ -57,10 +57,14 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place("generator");
     } else if (!saving) {
       // 1. water and power before they run short
-      if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 10) place(s.era >= 2 && s.tech.desal ? "desal" : s.era >= 1 ? "tank" : "well");
+      if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 3) place(s.era >= 2 && s.tech.desal ? "desal" : s.era >= 1 ? "tank" : "well");
       if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place(s.tech.solar ? "solar" : s.era >= 2 ? "powerplant" : "generator");
       // 2. income: farms and industry sell outside; shops only while the market has room
-      if (a.net < target || a.unemployment > 0.25) place(!marketFull ? (s.era >= 1 ? "souq" : "grocery") : s.era >= 1 ? (s.tech.packing && h % 2 ? "datefactory" : "workshop") : (h % 2 ? "palms" : "veg"));
+      if (a.net < target || a.unemployment > 0.25) {
+        // a shop if the market has room and it can be paid for; otherwise what sells outside
+        const shop = s.era >= 1 ? "souq" : "grocery", farm = s.era >= 1 ? (s.tech.packing && h % 2 ? "datefactory" : "workshop") : (h % 2 ? "palms" : "veg");
+        place(!marketFull && s.money >= B[shop].cost ? shop : farm);
+      }
       // 3. homes when the town is nearly full, with a road
       if (s.pop >= a.cap * 0.85 || a.cap < 20) { place("house"); if (a.unconnected) place("road"); }
       if (h % 5 === 0) place("road");

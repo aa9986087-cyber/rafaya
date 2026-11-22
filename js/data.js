@@ -114,9 +114,9 @@ export const B = {
 
 // A long game: building is dear next to what the town earns. Every price above is multiplied
 // here (roads less, so a player can still lay out streets).
-export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6 };
+export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6, shop: 2 };
 for (const d of Object.values(B)) {
-  d.cost = Math.round(d.cost * (d.cat === "road" || d.cat === "deco" ? PRICE.road : PRICE.build));
+  d.cost = Math.round(d.cost * (d.cat === "road" || d.cat === "deco" ? PRICE.road : PRICE.build) * (d.cat === "shop" ? PRICE.shop : 1)); // shops cost double again
   d.upkeep = Math.round((d.upkeep || 0) * PRICE.upkeep);
   if (d.income && d.era >= 2) d.income = Math.round(d.income * PRICE.bigIncome); // big city earners pay less
 }
@@ -331,7 +331,7 @@ export const DECISIONS = [
  * Repairing costs REPAIR of the building's price for the damage done. Insurance: INSURE of the value of
  * everything built, per hour; it pays back INSURE_PAYS of a building lost to fire, flood or collapse.
  */
-export const UPKEEP_RULES = { decay: 100 / (24 * 24), mudDecay: 100 / (24 * 16), weak: 40, repair: 0.2, ruinHours: 48, insure: 0.0012, insurePays: 0.7 };
+export const UPKEEP_RULES = { decay: 100 / (24 * 24), mudDecay: 100 / (24 * 16), weak: 40, repair: 0.2, ruinHours: 48, insure: 0.0003, insurePays: 0.7 };
 /** Paid once a year (12 days) to the province, by stage. */
 export const PROVINCE_FEES = [0, 1500, 6000, 20000];
 export const YEAR_HOURS = 24 * 12;
