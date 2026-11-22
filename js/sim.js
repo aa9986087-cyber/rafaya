@@ -1165,7 +1165,7 @@ export function deputyCatchUp(s, hours, r = Math.random) {
 // ---------- saving ----------
 
 export function pack(s) {
-  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}` : ""));
+  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}${t.b.rot ? `:${t.b.rot}` : ""}` : ""));
   const { tiles: _, ...rest } = s;
   return JSON.stringify({ ...rest, tiles });
 }
@@ -1193,11 +1193,12 @@ export function unpack(text) {
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
-    const [t, id, lvl, res, build, cond] = String(str).split(":");
+    const [t, id, lvl, res, build, cond, rot] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
     const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
+    if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it
     return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));

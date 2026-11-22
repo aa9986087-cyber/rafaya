@@ -464,6 +464,13 @@ export class World {
   // ---------- buildings ----------
 
   /** Put every building (and rock) in place. Buildings turn their front to a neighbouring road. */
+  /** The way a building on this tile faces by itself: +z of the model toward the first road beside it. */
+  faceAngle(s, x, y) {
+    const dirs = [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]];
+    for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) return a;
+    return 0;
+  }
+
   syncBuildings(s) {
     const groups = new Map();
     const push = (key, ground, m) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
@@ -480,10 +487,8 @@ export class World {
         continue;
       }
       if (roadAt(t)) continue;
-      // Face the road: +z of the model points at the first road neighbour.
-      let angle = 0;
-      const dirs = [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]];
-      for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
+      // Face the road, then any quarter turns the mayor gave it.
+      let angle = this.faceAngle(s, x, y) + (t.b.rot || 0) * Math.PI / 2;
       if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
@@ -1233,13 +1238,14 @@ export class World {
     this.hoverMesh.material.color.set(ok === false ? "#ff5a4a" : "#ffffff");
   }
 
-  setGhost(tile, key, ok, ground) {
+  setGhost(tile, key, ok, ground, angle = 0) {
     this.ghost.clear();
     if (!tile || !key) return;
     const geo = model(key, ground);
     if (!geo) return;
     const mesh = new THREE.Mesh(geo.matte, ok ? this.mats.ghost : this.mats.ghostBad);
     mesh.position.copy(tileCenter(tile.x, tile.y));
+    mesh.rotation.y = angle;
     this.ghost.add(mesh);
   }
 

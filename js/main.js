@@ -149,6 +149,10 @@ canvas.addEventListener("pointerup", (e) => {
 canvas.addEventListener("pointercancel", (e) => { pointers.delete(e.pointerId); drag = null; pinch = null; });
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (playing) world.zoomBy(e.deltaY < 0 ? 1.12 : 0.89); }, { passive: false });
 
+/** Quarter turns for the next building, chosen with ↻ before ✓ (kept for the next one too). */
+let placeRot = 0;
+const canTurn = (id) => !!B[id] && B[id].cat !== "road" && !["dam", "pivot"].includes(id);
+const ghostAngle = (x, y, id) => (canTurn(id) ? world.faceAngle(S, x, y) + placeRot * Math.PI / 2 : 0);
 function hoverAt(t) {
   if (!tool || !inMap(t.x, t.y)) { world.setHover(null); world.setGhost(null); return; }
   if (tool.id === "upgrade" || tool.id === "fill") { world.setHover(t, canDo(t.x, t.y)); return; }
@@ -156,7 +160,7 @@ function hoverAt(t) {
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
   world.setHover(t, ok);
-  if (tool.id !== "bulldoze" && B[tool.id].cat !== "road" && !tile.b) world.setGhost(t, modelKey(tool.id, 0), ok, tile.t);
+  if (tool.id !== "bulldoze" && B[tool.id].cat !== "road" && !tile.b) world.setGhost(t, modelKey(tool.id, 0), ok, tile.t, ghostAngle(t.x, t.y, tool.id));
   else world.setGhost(null);
   if (tool.id !== "bulldoze" && (B[tool.id].radius || B[tool.id].reach)) showReach(t.x, t.y, B[tool.id]);
 }
@@ -195,6 +199,7 @@ function showPending() {
   const ok = pending.filter((p) => canDo(p.x, p.y));
   const cost = ok.reduce((a, p) => a + tileCost(p.x, p.y), 0);
   $("toolOk").hidden = !pending.length;
+  $("toolRot").hidden = !canTurn(tool.id);
   $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" ? "✓ طوّر" : tool.id === "fill" ? "✓ اردم" : "✓ ابنِ";
   if (tool.id === "fill") {
     $("toolName").textContent = !pending.length ? `ردم الوادي: اسحب على أرض الوادي (${money(FILL_COST)} للمربع). ما يجيها سيل، بس تروح خصوبتها` : !ok.length ? whyNot(pending[0].x, pending[0].y) : `ردم ${ar(ok.length)} مربع · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
@@ -322,6 +327,7 @@ function apply(x, y, quiet) {
   } else {
     const why = build(S, x, y, tool.id);
     if (why) { if (!quiet || why === "ما يكفي المال") { toast(why, "bad"); sfx.deny(); } return; }
+    if (placeRot && canTurn(tool.id)) tile.b.rot = placeRot;
     const road = B[tool.id].cat === "road";
     road ? sfx.road() : sfx.build();
     sync(road);
@@ -433,6 +439,11 @@ function setTool(t) {
 // ✕ first clears the chosen spot; a second ✕ puts the tool away.
 $("toolCancel").addEventListener("click", () => { sfx.tap(); if (pending.length) { pending = []; world.setGhost(null); world.setHover(null); world.setOverlay(null); showPending(); } else setTool(null); });
 $("toolOk").addEventListener("click", () => confirmPending());
+// ↻ turns the building a quarter before it is built; the preview turns with it.
+$("toolRot").addEventListener("click", () => {
+  sfx.tap(); placeRot = (placeRot + 1) % 4;
+  if (pending.length) hoverAt(pending[0]); else toast("اختر المكان، وتشوف الاتجاه قبل ما تبني", "");
+});
 
 // ---------- HUD ----------
 
@@ -756,7 +767,7 @@ function inspect(x, y) {
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
-  html += `</div><div class="sheet-actions"><button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
+  html += `</div><div class="sheet-actions">${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
   $("sheetBody").querySelectorAll("[data-follow]").forEach((btn) => btn.addEventListener("click", () => followFamily(idx(x, y), Number(btn.dataset.follow))));
@@ -769,6 +780,7 @@ function inspect(x, y) {
     inspect(x, y);
   });
   $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); refresh(); save(); inspect(x, y); });
+  $("turnOne")?.addEventListener("click", () => { sfx.tap(); t.b.rot = ((t.b.rot || 0) + 1) % 4; world.sync(S, { buildings: true }); save(); });
   $("demolish").addEventListener("click", () => { demolish(S, x, y); sfx.remove(); closeSheet(); sync(ROAD_IDS.includes(t.b?.id)); refresh(); });
 }
 
@@ -1326,6 +1338,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-25",
   items: [
+    ["↻", "لفّ المباني", "قبل ما تبني اضغط ↻ وتشوف المبنى يلف قدامك، وبعد ما تبنيه اضغط عليه واختر «لفّ المبنى» ببلاش."],
     ["🌦️", "الجو على حسب الفصل", "المطر بالخريف والشتاء والربيع بس، والصيف حر وغبار وقيلولة، والشتاء برد. ومطر الشتاء هو اللي يخضّر الربيع."],
     ["💬", "ردود ذكية", "الأهالي يردون على حسب السالفة: تشكرهم على المطر بالدعاء، وعلى العيد بالتهنئة، وكل شكوى فيها «وش يبي» واضح."],
     ["ℹ️", "كل مربع فوق يشرح نفسه", "اضغط الميزانية أو السكان أو الرضا أو الماء والكهرب أو الوقت والموسم، ويطلع لك وش وراه وش يصلحه."],
