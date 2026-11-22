@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -35,29 +35,34 @@ export function buyPlot(s, id) {
   return "";
 }
 
-/** Sand, a winding wadi and scattered rocks over the whole map. */
-function makeLand(r) {
+/** Sand, a winding wadi and scattered rocks over the whole map, shaped by the kind of land. */
+function makeLand(r, terrain = "wadi") {
   const tiles = Array.from({ length: N * N }, () => ({ t: "sand", b: null }));
-  // A dry wadi winding across the land: fertile ground for farms.
-  let y = Math.floor(N * 0.3 + r() * N * 0.2);
-  for (let x = 0; x < N; x++) {
-    for (let w = -1; w <= 1; w++) if (inMap(x, y + w)) tiles[idx(x, y + w)].t = "wadi";
-    if (r() < 0.35) y = clamp(y + (r() < 0.5 ? -1 : 1), 2, N - 3);
+  const shape = { wadi: [1, 0.053, 5], mountain: [0, 0.16, 2], dunes: [-1, 0.008, 2], meadow: [1, 0.03, 9], bigwadi: [2, 0.04, 4], plain: [1, 0.035, 5] }[terrain] || [1, 0.053, 5];
+  const [half, rocks, faydas] = shape;
+  // A dry wadi winding across the land: fertile ground for farms (none in the dunes).
+  if (half >= 0) {
+    let y = Math.floor(N * 0.3 + r() * N * 0.2);
+    for (let x = 0; x < N; x++) {
+      for (let w = -half; w <= half; w++) if (inMap(x, y + w)) tiles[idx(x, y + w)].t = "wadi";
+      if (r() < 0.35) y = clamp(y + (r() < 0.5 ? -1 : 1), 2, N - 3);
+    }
   }
-  // Rocks here and there (cost a little to clear).
-  for (let i = 0; i < N * N * 0.053; i++) {
+  // Rocks here and there (cost a little to clear); mountain land is full of them.
+  for (let i = 0; i < N * N * rocks; i++) {
     const x = Math.floor(r() * N), yy = Math.floor(r() * N), t = tiles[idx(x, yy)];
     if (t.t === "sand") t.t = "rock";
   }
-  addFayda(tiles, r);
+  addFayda(tiles, r, faydas);
   return tiles;
 }
 
 // ---------- new game ----------
 
-export function newGame(seed = Math.floor(Math.random() * 1e9)) {
+export function newGame(seed = Math.floor(Math.random() * 1e9), opts = {}) {
   const r = rng(seed);
-  const tiles = makeLand(r);
+  const terrain = opts.terrain || "wadi";
+  const tiles = makeLand(r, terrain);
   // The old settlement in the middle: a lane, three tents, a well and palms on the wadi.
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
   const put = (x, yy, id) => { const t = tiles[idx(x, yy)]; t.t = t.t === "rock" ? "sand" : t.t; t.b = { id, lvl: 0, res: id === "house" ? 3 : 0 }; };
@@ -71,7 +76,9 @@ export function newGame(seed = Math.floor(Math.random() * 1e9)) {
   for (const [x, yy] of spots.slice(0, 2)) put(x, yy, "palms");
   return {
     v: 1, hv: 3, fv: 1, size: N, owned: {}, seed, day: 3, // hour 3 of day 1: two hours after sunrise
-    money: START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
+    name: opts.name || "الرافعية", site: opts.site || "main", terrain,
+    aquifer: terrain === "mountain" ? 65 : 100,
+    money: opts.money ?? START_MONEY, tax: 10, era: 0, pop: 9, happy: 55, tiles,
     tech: {}, research: null, events: [], goal: 0, history: [], log: [], savedAt: Date.now(), cam: null
   };
 }
@@ -95,10 +102,10 @@ export function seasonOf(hour) {
  * Faydah (فيضة): low ground where rainwater gathers. In spring it fills with annual plants and
  * flowers, and people go out to enjoy it. A few patches away from the old settlement.
  */
-function addFayda(tiles, r) {
+function addFayda(tiles, r, count = 5) {
   const cx = Math.floor(N / 2), cy = Math.floor(N / 2) + 3;
   let made = 0;
-  for (let tries = 0; tries < 300 && made < 5; tries++) {
+  for (let tries = 0; tries < 300 && made < count; tries++) {
     const x = 3 + Math.floor(r() * (N - 6)), y = 3 + Math.floor(r() * (N - 6));
     if (Math.hypot(x - cx, y - cy) < 8 || tiles[idx(x, y)].t !== "sand" || tiles[idx(x, y)].b) continue;
     const size = 7 + Math.floor(r() * 6), cells = [[x, y]];
@@ -342,7 +349,7 @@ function stepGround(s, a, raining, msgs) {
   const share = a.waterSupply ? Math.min(1, a.groundSupply / a.waterSupply) : 0;
   const pumped = Math.min(a.waterUse, a.waterSupply) * share;
   const lakes = (s.lake || 0) > 10 ? a.count.dam : 0;
-  const delta = -pumped * GROUND.pump - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0);
+  const delta = -pumped * GROUND.pump * (s.terrain === "plain" ? 0.6 : 1) - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0);
   s.aquifer = Math.max(0, Math.min(100, before + delta));
   if (before >= GROUND.low && s.aquifer < GROUND.low) msgs.push({ kind: "event", title: "الماء الجوفي", text: `الآبار بدت تنشف: الماء الجوفي نزل لـ${Math.round(s.aquifer)}٪، والآبار تعطي أقل. ابنِ سد يجمع المطر أو خفف الضخ.` });
   if (before >= 15 && s.aquifer < 15) msgs.push({ kind: "event", title: "الماء الجوفي", text: "الماء الجوفي قرب يخلص! الآبار والخزانات صارت تعطي ثلث ماها. تحتاج سدود أو تحلية." });
@@ -620,7 +627,7 @@ export function analyze(s) {
     const def = B[t.b.id];
     if (!def.income) continue;
     if (def.cat === "farm" && (t.b.id === "palms" || t.b.id === "veg")) {
-      const wadi = t.t === "wadi" ? 1.5 : 1;
+      const wadi = t.t === "wadi" ? 1.5 : s.terrain === "dunes" ? 0.7 : 1;
       a.farmIncome += def.income * bizLevel(t.b).income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
     } else {
       let inc = def.income * bizLevel(t.b).income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
@@ -635,7 +642,9 @@ export function analyze(s) {
       else a.industryIncome += inc;
     }
   }
-  a.shopDemand = s.pop * 0.6 * shopMult;
+  // Towns linked by road in the region: their people shop here and their traders buy here.
+  a.neighbourPop = (s.neighbours || []).reduce((n, t) => n + (t.pop || 0), 0);
+  a.shopDemand = (s.pop + a.neighbourPop * 0.15) * 0.6 * shopMult;
   // Traffic jams keep customers away from the shops.
   a.congestion = Math.min(0.4, a.jam * 0.3);
   a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion) * (a.prayer && a.prayer.id !== "fajr" ? 0.6 : 1);
@@ -643,7 +652,7 @@ export function analyze(s) {
   // so much: past that, extra output sells at about a third of the price.
   if ((s.materials || 0) >= MAT.cap) a.industryIncome += a.matMade * MAT.sell;
   a.industryRaw = a.industryIncome;
-  a.exportDemand = 300 + s.pop * 0.9;
+  a.exportDemand = 300 + s.pop * 0.9 + a.neighbourPop * 0.4;
   if (a.industryRaw > a.exportDemand) a.industryIncome = a.exportDemand + (a.industryRaw - a.exportDemand) * 0.35;
   a.income = a.shopIncome + a.visitorIncome + a.industryIncome;
   // Thefts: in a big town, shops in quarters no police reaches lose part of their takings.
@@ -884,7 +893,7 @@ export function step(s, r = Math.random) {
     s.tiles.forEach((t, i) => {
       if (t.t !== "wadi" || !t.b || i % N > firstDam || t.b.id === "dam") return;
       const isRoad = ROAD_IDS.includes(t.b.id);
-      if (r() < (isRoad ? 0.3 : 0.45)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
+      if (r() < (isRoad ? 0.3 : 0.45) * (s.terrain === "bigwadi" ? 1.4 : 1)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
       else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
     });
     if (lost.length || damaged.length) {
@@ -1067,6 +1076,7 @@ export function unpack(text) {
   }
   o.size = N;
   o.owned ||= {};
+  o.name ||= "الرافعية"; o.site ||= "main"; o.terrain ||= "wadi";
   // Version 3 (houses are upgraded by the mayor): every house in an older save goes back to a tent.
   const toTents = o.hv !== 3;
   const shift = 0;

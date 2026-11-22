@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
@@ -22,8 +22,16 @@ const settings = { quality: store.get("rafaya-quality") || (matchMedia("(pointer
 
 // ---------- state ----------
 
+// The region: every town has its own save; the region remembers them and the roads between them.
+const REGION_KEY = "rafaya-region-v1";
+const townKey = (id) => (id === "main" ? SAVE : `rafaya-town-${id}`);
+let RG = null;
+try { RG = JSON.parse(store.get(REGION_KEY) || "null"); } catch { RG = null; }
+if (!RG || !RG.towns) RG = { towns: {}, roads: [], active: "main" };
+const saveRegion = () => store.set(REGION_KEY, JSON.stringify(RG));
+
 let S = null;
-try { const raw = store.get(SAVE); if (raw) S = unpack(raw); } catch { S = null; }
+try { const raw = store.get(townKey(RG.active)) || store.get(SAVE); if (raw) S = unpack(raw); } catch { S = null; }
 const hadSave = !!S;
 if (!S) S = newGame();
 let A = analyze(S);
@@ -47,7 +55,19 @@ function clockAt(p, d) {
   return `${ar(((hh + 11) % 12) + 1)}:${ar(String(mm).padStart(2, "0"))} ${hh < 12 ? "ص" : "م"}`;
 }
 
-function save() { S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget }; S.savedAt = Date.now(); store.set(SAVE, pack(S)); }
+function save() {
+  S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
+  S.savedAt = Date.now();
+  store.set(townKey(S.site || "main"), pack(S));
+  noteTown();
+}
+/** Keep the region's note of this town up to date (what the region map shows for it). */
+function noteTown() {
+  const id = S.site || "main";
+  RG.towns[id] = { name: S.name || "الرافعية", terrain: S.terrain || "wadi", pop: S.pop, era: S.era, money: Math.round(S.money), net: Math.round(A?.net || 0) };
+  RG.active = id;
+  saveRegion();
+}
 
 // ---------- the 3D town ----------
 
@@ -431,7 +451,7 @@ function refresh() {
   else { $("sPower").style.width = "0%"; $("sPower").classList.remove("low"); }
   $("sPowerLabel").textContent = A.grid ? "كهرباء" : "كهرباء —";
   $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
-  $("sEra").textContent = ERAS[S.era].name;
+  $("sEra").textContent = !S.site || S.site === "main" ? ERAS[S.era].name : S.name;
   const se = seasonOf(S.day);
   $("sDay").textContent = `اليوم ${ar(dayOf(S.day))}`;
   $("sSeason").textContent = `${se.name} · اليوم ${ar(se.dayIn)} من ${ar(SEASON_DAYS)}`;
@@ -771,6 +791,7 @@ function council() {
   }));
 }
 $("councilBtn").addEventListener("click", () => { sfx.tap(); council(); });
+document.querySelector(".when")?.addEventListener("click", () => { sfx.tap(); regionSheet(); });
 
 /** The quarters: who lives where, how happy, what is missing, and their names (the mayor can rename them). */
 function quartersSheet() {
@@ -800,6 +821,100 @@ function quartersSheet() {
   }));
 }
 
+// ---------- the region ----------
+const linked = (a, b) => RG.roads.some(([p, q]) => (p === a && q === b) || (p === b && q === a));
+const siteOf = (id) => SITES.find((x) => x.id === id);
+const regionOpen = () => (RG.towns.main?.era ?? (S.site === "main" ? S.era : 0)) >= REGION.unlockEra;
+/** What linked towns this town trades with (their people shop and their traders buy here). */
+function noteNeighbours() {
+  const here = S.site || "main";
+  S.neighbours = Object.keys(RG.towns).filter((id) => id !== here && linked(here, id)).map((id) => ({ id, name: RG.towns[id].name, pop: RG.towns[id].pop }));
+}
+function regionSheet(pick) {
+  noteTown();
+  const here = S.site || "main", towns = RG.towns, ids = Object.keys(towns);
+  const totalPop = ids.reduce((n, id) => n + (towns[id].pop || 0), 0), totalMoney = ids.reduce((n, id) => n + (towns[id].money || 0), 0);
+  const title = ids.length >= 3 ? "أمير المنطقة" : "عمدة الرافعية";
+  const sel = pick || here, site = siteOf(sel), t = towns[sel];
+  const founded = ids.length - 1, price = REGION.found[Math.min(founded, REGION.found.length - 1)];
+  const roads = RG.roads.map(([p, q]) => { const a = siteOf(p), b = siteOf(q); return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="rg-road"/>`; }).join("");
+  const dots = SITES.map((x) => {
+    const tt = towns[x.id], cur = x.id === here, on = x.id === sel;
+    return `<g class="rg-site ${tt ? "town" : "free"} ${cur ? "cur" : ""} ${on ? "on" : ""}" data-site="${x.id}" transform="translate(${x.x} ${x.y})">
+      <circle r="${tt ? 3.2 + Math.min(4, Math.log10((tt.pop || 1) + 1) * 1.3) : 3}"/>${tt ? "" : `<text class="plus" y="1.3">+</text>`}
+      <text class="lbl" y="${tt ? -6.5 : -5}">${tt ? tt.name : TERRAINS[x.terrain].name}</text>${tt ? `<text class="pop" y="${9}">${ar((tt.pop || 0).toLocaleString("en-US"))}</text>` : ""}</g>`;
+  }).join("");
+  let detail;
+  if (t) {
+    detail = `<div class="rg-card"><div class="rg-top"><b>${t.name}</b><small>${ERAS[t.era || 0].name} · ${TERRAINS[t.terrain]?.name || ""}</small></div>
+      <div class="rows">${row("السكان", money(t.pop || 0))}${row("الميزانية", `${money(t.money || 0)} ريال`, (t.money || 0) < 0 ? "minus" : "")}${row("الدخل بالساعة", `${(t.net || 0) >= 0 ? "+" : "−"}${money(Math.abs(t.net || 0))}`, (t.net || 0) >= 0 ? "plus" : "minus")}</div>
+      ${sel === here ? `<p class="hint">أنت فيها الحين.</p>` : `<div class="sheet-actions"><button class="btn go block" id="rgEnter" type="button">ادخل ${t.name}</button></div>
+        ${linked(here, sel) ? `<p class="hint">🛣️ موصولة بطريق: يتسوقون ويتاجرون مع بعض.</p><div class="rg-send"><span>حوّل لها من ميزانيتك:</span>${[1000, 5000, 20000].map((v) => `<button class="btn" type="button" data-send="${v}" ${S.money < v ? "disabled" : ""}>${money(v)}</button>`).join("")}</div>`
+          : `<div class="sheet-actions"><button class="btn block" id="rgRoad" type="button" ${S.money < roadCost(here, sel) ? "disabled" : ""}>🛣️ وصّل طريق من ${S.name} بـ${money(roadCost(here, sel))} ريال</button></div><p class="hint">المدن الموصولة بطريق يتسوق ناسها عند بعض، والتجار يشترون من ورشهم.</p>`}`}</div>`;
+  } else {
+    detail = `<div class="rg-card"><div class="rg-top"><b>أرض ${TERRAINS[site.terrain].name}</b><small>مكان لهجرة جديدة</small></div><p>${TERRAINS[site.terrain].text}</p>
+      ${regionOpen() ? `<label class="rg-name">اسمها <input id="rgName" type="text" maxlength="20" value="${site.name}"></label>
+        <div class="sheet-actions"><button class="btn go block" id="rgFound" type="button" ${S.money < price ? "disabled" : ""}>أسس هجرة هنا بـ${money(price)} ريال</button></div>
+        <p class="hint">تندفع من ميزانية ${S.name}، والهجرة الجديدة تبدأ بثلاث خيام و${money(REGION.startMoney)} ريال. المدن اللي ما أنت فيها توقف لين ترجع لها.</p>`
+        : `<div class="need">تنفتح لما تصير الرافعية ${ERAS[REGION.unlockEra].name} (${money(ERAS[REGION.unlockEra].pop)} ساكن).</div>`}</div>`;
+  }
+  sheet(`<h2>🗺️ منطقة الرافعية</h2><p>لقبك: <b>${title}</b> · ${ar(ids.length)} ${ids.length === 1 ? "مدينة" : "مدن"} · ${money(totalPop)} ساكن · ${money(totalMoney)} ريال</p>
+    <svg class="rg-map" viewBox="0 0 100 100" role="img" aria-label="خريطة المنطقة"><defs><radialGradient id="rgSand" cx="50%" cy="45%" r="70%"><stop offset="0" stop-color="#f1d9a6"/><stop offset="1" stop-color="#d9b47a"/></radialGradient></defs>
+      <rect width="100" height="100" rx="6" fill="url(#rgSand)"/>
+      <path d="M0 52 C 20 46, 35 60, 50 54 S 80 44, 100 50" class="rg-wadi"/>
+      <path d="M6 12 l6 -6 l6 6 z M12 30 l5 -5 l5 5 z M24 16 l4 -4 l4 4 z" class="rg-hill"/>
+      <path d="M68 10 q 6 -4 12 0 q 6 4 12 0 M70 30 q 6 -4 12 0" class="rg-dune"/>
+      ${roads}${dots}</svg>
+    ${detail}`, "region");
+  $("sheetBody").querySelectorAll("[data-site]").forEach((g) => g.addEventListener("click", () => { sfx.tap(); regionSheet(g.dataset.site); }));
+  $("rgEnter")?.addEventListener("click", () => switchTown(sel));
+  $("rgRoad")?.addEventListener("click", () => {
+    const c = roadCost(here, sel);
+    if (S.money < c) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+    S.money -= c; RG.roads.push([here, sel]); noteNeighbours(); save(); sfx.build(); toast(`انفتح الطريق بين ${S.name} و${t.name} 🛣️`, "goal"); refresh(); regionSheet(sel);
+  });
+  $("sheetBody").querySelectorAll("[data-send]").forEach((b) => b.addEventListener("click", () => {
+    const v = Number(b.dataset.send);
+    if (S.money < v) return;
+    const raw = store.get(townKey(sel));
+    if (!raw) return;
+    const other = unpack(raw);
+    other.money += v; S.money -= v;
+    store.set(townKey(sel), pack(other));
+    RG.towns[sel].money = Math.round(other.money);
+    save(); refresh(); sfx.coin(); toast(`حوّلت ${money(v)} ريال لـ${t.name}`, "goal"); regionSheet(sel);
+  }));
+  $("rgFound")?.addEventListener("click", () => {
+    if (S.money < price) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+    const name = ($("rgName").value || site.name).trim().slice(0, 20);
+    S.money -= price; save();
+    const town = newGame(Math.floor(Math.random() * 1e9), { terrain: site.terrain, name, site: site.id, money: REGION.startMoney });
+    store.set(townKey(site.id), pack(town));
+    RG.towns[site.id] = { name, terrain: site.terrain, pop: town.pop, era: 0, money: town.money, net: 0 };
+    saveRegion();
+    sfx.era(); toast(`تأسست «${name}»! 🎉`, "era");
+    switchTown(site.id);
+  });
+}
+const roadCost = (a, b) => { const p = siteOf(a), q = siteOf(b); return Math.round(Math.hypot(p.x - q.x, p.y - q.y) * REGION.roadPerUnit); };
+/** Leave this town (it waits as it is) and open another. */
+function switchTown(id) {
+  const raw = store.get(townKey(id));
+  if (!raw) { toast("ما لقيت حفظ المدينة", "bad"); return; }
+  save();
+  let next;
+  try { next = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
+  S = next; RG.active = id;
+  noteNeighbours();
+  A = analyze(S);
+  closeSheet(); setTool(null);
+  world.stopFollow?.(); $("followTag").hidden = true;
+  world.sync(S, { tiles: true, roads: true, buildings: true });
+  if (S.cam) { world.view.x = S.cam.x; world.view.z = S.cam.z; world.view.zoom = S.cam.zoom; world.updateCamera(); } else { focusTown(); world.view.zoom = 0.9; world.updateCamera(); }
+  save(); refresh(); showNewsCount?.();
+  toast(`دخلت ${S.name}`, "goal");
+}
+
 /** The result of the yearly election. */
 function electionSheet(m) {
   const pct = Math.round(m.share * 100);
@@ -817,6 +932,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-23",
   items: [
+    ["🗺️", "خريطة المنطقة", "أسس هجر جديدة على أراضي مختلفة، ووصّلها بطرق، وصر أمير المنطقة."],
     ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
     ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
     ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
@@ -1162,6 +1278,10 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>المنطقة والمدن الثانية</summary>
+      <p>لما تصير الرافعية بلدة تنفتح «خريطة المنطقة» (اضغط مربع الوقت فوق، أو من القائمة). تأسس فيها هجر جديدة على أراضي مختلفة: جبلية فيها حجر كثير، ونفود واسعة، وروضة خضرا، وشعيب خصب بس سيوله قوية، وسهل ماه الجوفي كثير.</p>
+      <p>وصّل المدن بطرق: ناسها يتسوقون عند بعض وتجارها يشترون من ورش بعض. وتقدر تحوّل فلوس من مدينة لثانية. المدن اللي ما أنت فيها توقف لين ترجع لها. وإذا صار عندك ٣ مدن صرت «أمير المنطقة».</p></details>
+
     <details><summary>أهل الرافعية</summary>
       <p>كل بيت ساكنة فيه عوايل حقيقية: أسماءهم، ووين يشتغل الأب، وكم عيل عندهم، ووش يتمنون. اضغط على أي بيت وشوف «العوايل»، واضغط «تابع» تمشي معه وهو رايح دوامه. واللي يكتبون في النشرة ناس من الديرة، وتقدر تروح لبيت أي واحد منهم.</p></details>
 
@@ -1206,6 +1326,7 @@ function pauseMenu() {
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
     <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
+    <button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
@@ -1213,6 +1334,7 @@ function pauseMenu() {
   $("pmResume").addEventListener("click", closeSheet);
   $("pmHow").addEventListener("click", () => howTo(false));
   $("pmNew").addEventListener("click", () => whatsNewSheet());
+  $("pmRegion").addEventListener("click", () => regionSheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
   $("pmMain").addEventListener("click", () => { save(); closeSheet(); showMenu(); });
@@ -1249,6 +1371,8 @@ $("mNew").addEventListener("click", () => {
   const b = $("mNew");
   if ((hadSave || S.day > 3) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
   delete b.dataset.sure;
+  for (const id of Object.keys(RG.towns)) if (id !== "main") { try { localStorage.removeItem(townKey(id)); } catch { /* fine */ } }
+  RG = { towns: {}, roads: [], active: "main" };
   S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
   try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
   sfx.goal(); startPlaying();
@@ -1296,6 +1420,7 @@ function frame(now) {
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
         (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
+        if (m.kind === "era" && S.era === REGION.unlockEra && (S.site || "main") === "main") setTimeout(() => toast("🗺️ انفتحت خريطة المنطقة: اضغط على مربع الوقت فوق وأسس هجر جديدة", "era"), 2500);
       }
       sync(false);
       // Rush hours: the first hours of the morning and the afternoon.

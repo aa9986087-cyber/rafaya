@@ -361,3 +361,25 @@ details .row { background: rgba(255, 255, 255, .45); }
 .follow-tag small { opacity: .8; font-size: 12px; }
 .follow-tag button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .15); color: #fff; }
 .home-btn { border: 0; background: none; color: var(--teal); font: inherit; font-size: 13px; font-weight: 700; padding: 2px 0; }
+
+.when { cursor: pointer; }
+.rg-map { width: 100%; max-width: 420px; display: block; margin: 8px auto; border-radius: 14px; }
+.rg-wadi { fill: none; stroke: #b8a36a; stroke-width: 4; opacity: .6; stroke-linecap: round; }
+.rg-hill { fill: #c4a676; opacity: .8; }
+.rg-dune { fill: none; stroke: #e7c98f; stroke-width: 1.2; }
+.rg-road { stroke: #7a5530; stroke-width: 1.1; stroke-dasharray: 2 1; }
+.rg-site { cursor: pointer; }
+.rg-site circle { fill: #fbf3e2; stroke: #7a5530; stroke-width: .6; stroke-dasharray: 1.2 .8; }
+.rg-site.town circle { fill: #2c8a7a; stroke: #1f5f55; stroke-dasharray: none; }
+.rg-site.cur circle { fill: #d4a53a; stroke: #8a6a1c; }
+.rg-site.on circle { stroke: #2a221d; stroke-width: 1.1; }
+.rg-site text { font: 700 3.6px var(--body, sans-serif); text-anchor: middle; fill: #2a221d; }
+.rg-site .plus { font-size: 5px; fill: #7a5530; }
+.rg-site .pop { font-size: 3px; fill: #5a4a3a; }
+.rg-card { display: grid; gap: 8px; padding: 10px; border-radius: 14px; background: var(--paper-2); }
+.rg-top { display: flex; justify-content: space-between; align-items: baseline; }
+.rg-top small { opacity: .75; }
+.rg-name { display: flex; gap: 8px; align-items: center; }
+.rg-name input { flex: 1; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font: inherit; background: #fffaf0; color: var(--ink); }
+.rg-send { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rg-send .btn { padding: 6px 12px; }

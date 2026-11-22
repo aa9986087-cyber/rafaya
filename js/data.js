@@ -204,6 +204,28 @@ export const ROAD_IDS = ["road", "asphalt", "avenue", "roundabout", "signal"];
 // four roads meeting) carries this share of its road's capacity unless it has a roundabout or lights.
 export const TRAFFIC = { perResident: 0.3, crossing: 0.75 };
 
+// The region around الرافعية: places where new towns can be founded, each on its own kind of land.
+// x, y are positions on the region map (0–100).
+export const TERRAINS = {
+  wadi: { name: "على الوادي", text: "وادي وسط رمل وصخور: الأرض اللي بدأت فيها الرافعية." },
+  mountain: { name: "جبلية", text: "صخور كثيرة (حجر للكسارات) ووادي ضيق، والماء الجوفي أقل." },
+  dunes: { name: "نفود", text: "رمل بلا صخور ولا وادي: أرض واسعة للبناء، بس المزارع ما تحب الرمل." },
+  meadow: { name: "روضة", text: "فياض كثيرة تخضر بالربيع: الحلال يرعى، والناس يحبون الكشتات." },
+  bigwadi: { name: "شعيب كبير", text: "وادي عريض وخصب للمزارع، بس السيول فيه قوية." },
+  plain: { name: "سهل", text: "أرض مستوية فيها ماء جوفي كثير: الآبار تعطي زين." }
+};
+export const SITES = [
+  { id: "main", x: 50, y: 50, terrain: "wadi", name: "الرافعية" },
+  { id: "jabal", x: 18, y: 24, terrain: "mountain", name: "هجرة الجبل" },
+  { id: "nafud", x: 80, y: 20, terrain: "dunes", name: "النفود" },
+  { id: "rawdah", x: 82, y: 74, terrain: "meadow", name: "روضة الخزامى" },
+  { id: "shuaib", x: 20, y: 76, terrain: "bigwadi", name: "الشعيب" },
+  { id: "abar", x: 52, y: 90, terrain: "plain", name: "أم الآبار" }
+];
+// Founding a town: paid by the town you are in; each one costs more. A road between two towns costs
+// per unit of distance on the region map. Linked towns buy from each other.
+export const REGION = { found: [15000, 30000, 60000, 120000, 200000], startMoney: 2500, roadPerUnit: 120, unlockEra: 1 };
+
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [
   { id: "small", name: "قرض صغير", amount: 3000, days: 5, rate: 0.15 },
