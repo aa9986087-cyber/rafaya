@@ -1,7 +1,7 @@
 // Automatic mayors, to check the economy: can a sensible player grow the town, and can a careless
 // one go broke? Runs are repeatable (seeded randomness).
 import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll, upgradeHouse, upgradeCost, houseBlocker, takeLoan } from "../js/sim.js";
-import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS, LOANS } from "../js/data.js";
+import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS, LOANS, ROAD_IDS } from "../js/data.js";
 
 /**
  * Player styles:
@@ -15,7 +15,7 @@ import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS, LOANS } from "../js/dat
 export function autoplay(hours = 250, seed = 42, log = false, style = "careful") {
   const s = newGame(seed);
   const r = rng(seed * 31 + 7);
-  const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ["road", "asphalt"].includes(s.tiles[idx(x + dx, y + dy)].b?.id));
+  const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ROAD_IDS.includes(s.tiles[idx(x + dx, y + dy)].b?.id));
   const free = (cb) => { for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) if (owns(s, x, y) && cb(x, y)) return true; return false; };
   // Streets on a grid (every 4th column and 3rd row) so there is always room to grow.
   const place = (id) => {

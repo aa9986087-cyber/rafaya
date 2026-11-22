@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -126,7 +126,8 @@ export function cantBuild(s, x, y, id) {
   if (!techUnlocked(s, def)) return `تحتاج بحث «${TECH[def.tech].name}»`;
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (t.b) {
-    if (id === "asphalt" && t.b.id === "road") return s.money < def.cost ? "ما يكفي المال" : "";
+    // a better road can be laid over an old one
+    if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
     return "المكان مشغول";
   }
   if (t.t === "lake") return "هذي بحيرة السد";
@@ -147,6 +148,77 @@ export function build(s, x, y, id) {
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
+}
+
+// ---------- traffic ----------
+/**
+ * Rush hour: from every home the residents drive to the nearest workplace along the roads (a
+ * multi-source search from the workplaces' doors gives every road tile its way to work). Each road
+ * tile then carries a load against its capacity; where the load is more than it can take, it jams.
+ */
+function traffic(s, a) {
+  const load = new Float32Array(N * N), cap = new Float32Array(N * N), cong = new Float32Array(N * N);
+  const next = new Int32Array(N * N).fill(-1), dist = new Int32Array(N * N).fill(-1);
+  const q = [];
+  a.parkingNear = new Uint8Array(N * N);
+  s.tiles.forEach((t, i) => {
+    if (!t.b) return;
+    const def = B[t.b.id];
+    if (isRoad(t)) {
+      const x = i % N, y = Math.floor(i / N);
+      const ways = near4.filter(([dx, dy]) => inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)])).length;
+      cap[i] = (def.cap || 45) * (ways >= 3 && !def.junction ? TRAFFIC.crossing : 1);
+      return;
+    }
+    if (t.b.id === "parking") {
+      const x = i % N, y = Math.floor(i / N);
+      for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 2; xx <= x + 2; xx++) if (inMap(xx, yy)) a.parkingNear[idx(xx, yy)] = 1;
+    }
+    // workplaces: their road doors are where the trips end
+    if (def.jobs && t.b.id !== "house" && t.b.works !== false && !(t.b.build > 0)) {
+      const x = i % N, y = Math.floor(i / N);
+      for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && isRoad(s.tiles[k]) && dist[k] < 0) { dist[k] = 0; q.push(k); } }
+    }
+  });
+  for (let h = 0; h < q.length; h++) {
+    const j = q[h], x = j % N, y = Math.floor(j / N);
+    for (const [dx, dy] of near4) {
+      const xx = x + dx, yy = y + dy;
+      if (!inMap(xx, yy)) continue;
+      const k = idx(xx, yy);
+      if (dist[k] < 0 && isRoad(s.tiles[k])) { dist[k] = dist[j] + 1; next[k] = j; q.push(k); }
+    }
+  }
+  let trips = 0;
+  s.tiles.forEach((t, i) => {
+    if (t.b?.id !== "house" || !t.b.res) return;
+    const x = i % N, y = Math.floor(i / N);
+    let door = -1;
+    for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && dist[k] >= 0 && (door < 0 || dist[k] < dist[door])) door = k; }
+    if (door < 0) return;
+    const cars = t.b.res * TRAFFIC.perResident;
+    trips += cars;
+    for (let j = door, n = 0; j >= 0 && n < 200; j = next[j], n++) load[j] += cars;
+  });
+  // parking takes cars off the roads around the shops
+  for (let i = 0; i < N * N; i++) if (load[i] && a.parkingNear[i]) load[i] *= 0.8;
+  let jamWeighted = 0, jammed = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (!cap[i] || !load[i]) continue;
+    cong[i] = Math.max(0, Math.min(2, load[i] / cap[i] - 1));
+    jamWeighted += cong[i] * load[i];
+    if (cong[i] > 0.3) jammed++;
+  }
+  a.trafficLoad = load; a.trafficCap = cap; a.trafficCong = cong;
+  a.trips = Math.round(trips);
+  a.jam = load.reduce((n, v) => n + v, 0) ? jamWeighted / load.reduce((n, v) => n + v, 0) : 0;
+  a.jammedRoads = jammed;
+  // living on a jammed street is no fun
+  s.tiles.forEach((t, i) => {
+    if (t.b?.id !== "house") return;
+    const x = i % N, y = Math.floor(i / N);
+    for (const [dx, dy] of near4) { const k = idx(x + dx, y + dy); if (inMap(x + dx, y + dy) && cong[k] > 0.5) { a.local[i] -= 4; break; } }
+  });
 }
 
 // ---------- production chains ----------
@@ -298,7 +370,7 @@ export const moveCost = (b) => (b ? Math.max(5, Math.round(B[b.id].cost * 0.1)) 
 export function moveBlocker(s, fx, fy, tx, ty) {
   const from = inMap(fx, fy) && s.tiles[idx(fx, fy)].b;
   if (!from) return "ما فيه مبنى هنا";
-  if (["road", "asphalt"].includes(from.id)) return "الطرق ما تنقل: أزلها وارسمها من جديد";
+  if (ROAD_IDS.includes(from.id)) return "الطرق ما تنقل: أزلها وارسمها من جديد";
   if (from.build > 0) return "تحت الإنشاء: انتظر لين يخلص";
   if (!inMap(tx, ty)) return "خارج الأرض";
   if (!owns(s, tx, ty)) return "الأرض هذي مو لك";
@@ -342,7 +414,7 @@ export function demolish(s, x, y) {
 // ---------- wear, repairs and insurance ----------
 
 /** Buildings that wear out (roads and tents do not; tents are mended by their families). */
-const wears = (b) => b && !["road", "asphalt"].includes(b.id) && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
+const wears = (b) => b && !ROAD_IDS.includes(b.id) && b.id !== "parking" && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
 /** A worn building (below the WEAK line) works at 60%. */
 export const condFactor = (b) => ((b?.cond ?? 100) < UPKEEP_RULES.weak ? 0.6 : 1);
 /** What it costs to bring a building back to new. */
@@ -372,7 +444,7 @@ export function lose(s, t) {
 // ---------- analysis: what the town looks like right now ----------
 
 const near4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const isRoad = (t) => t && t.b && (t.b.id === "road" || t.b.id === "asphalt");
+const isRoad = (t) => t && t.b && ROAD_IDS.includes(t.b.id);
 
 export function onRoad(s, x, y) {
   return near4.some(([dx, dy]) => inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)]));
@@ -477,9 +549,11 @@ export function analyze(s) {
   // Until the town builds its first power source nothing runs on electricity (and nothing misses it).
   a.grid = a.powerSupply > 0;
   a.powerRatio = !a.grid ? 1 : a.powerUse ? clamp(a.powerSupply / a.powerUse, 0, 1) : 1;
+  traffic(s, a);
   a.workers = Math.round(s.pop * 0.55);
   a.employed = Math.min(a.workers, a.jobs);
-  a.staffing = a.jobs ? a.employed / a.jobs : 0;
+  // stuck in traffic: some arrive late, and the work suffers
+  a.staffing = (a.jobs ? a.employed / a.jobs : 0) * (1 - Math.min(0.25, a.jam * 0.2));
   a.unemployment = a.workers ? 1 - a.employed / a.workers : 0;
 
   // Money for one day.
@@ -531,15 +605,15 @@ export function analyze(s) {
       if (t.b.id === "mazayen") inc *= 1 + Math.min(1, a.count.pen * 0.05);
       if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1.5;
       if (t.b.id === "pivot") inc *= a.groundFactor;
+      if (def.cat === "shop" && a.parkingNear?.[idx(x, y)]) inc *= 1.1;
       if (def.visitors) a.visitorIncome += inc * shopMult;
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
       else a.industryIncome += inc;
     }
   }
   a.shopDemand = s.pop * 0.6 * shopMult;
-  // Traffic: too many people for the roads, and dirt roads at that, keep customers away.
-  const roadsAll = a.count.road + a.count.asphalt;
-  a.congestion = roadsAll ? Math.max(0, Math.min(0.4, s.pop / (roadsAll * 20) - 1)) * (a.count.road / roadsAll) : 0;
+  // Traffic jams keep customers away from the shops.
+  a.congestion = Math.min(0.4, a.jam * 0.3);
   a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion) * (a.prayer && a.prayer.id !== "fajr" ? 0.6 : 1);
   // Workshops and factories sell outside, but the traders who buy from a town of this size only take
   // so much: past that, extra output sells at about a third of the price.
@@ -785,13 +859,13 @@ export function step(s, r = Math.random) {
     let refund = 0;
     s.tiles.forEach((t, i) => {
       if (t.t !== "wadi" || !t.b || i % N > firstDam || t.b.id === "dam") return;
-      const isRoad = t.b.id === "road" || t.b.id === "asphalt";
+      const isRoad = ROAD_IDS.includes(t.b.id);
       if (r() < (isRoad ? 0.3 : 0.45)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
       else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
     });
     if (lost.length || damaged.length) {
       s.lastFlood = s.day;
-      const names = [...new Set(lost.filter((x) => x.id !== "road" && x.id !== "asphalt").map((x) => B[x.id].name))].slice(0, 3);
+      const names = [...new Set(lost.filter((x) => !ROAD_IDS.includes(x.id)).map((x) => B[x.id].name))].slice(0, 3);
       msgs.push({ kind: "flood", lost: lost.map((x) => x.i), damaged, text: `سيل جارف نزل الوادي! راح ${lost.length} مبنى وطريق${names.length ? ` (منها ${names.join("، ")})` : ""}، وتضرر ${damaged.length}.${refund ? ` التأمين عوّضك ${refund} ريال.` : s.insured ? "" : " ما كان فيه تأمين."}` });
     }
   }

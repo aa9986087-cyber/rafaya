@@ -318,3 +318,16 @@ test("production chains: farms linked by road feed their factory; quarries make 
   s.materials = 1000;
   assert.equal(upgradePrice(s, villa).total, B.house.levels[3].cost);
 });
+
+test("traffic: homes drive to work along the roads; a bigger road carries more", async () => {
+  const { B: Bd } = await import("../js/data.js");
+  const s = autoplay(1600, 2);
+  const a = analyze(s);
+  assert.ok(a.trips > 0, "people drive to work");
+  const busiest = a.trafficLoad.reduce((m, v, i) => (v > a.trafficLoad[m] ? i : m), 0);
+  const before = a.trafficCong[busiest];
+  s.tiles[busiest].b = { id: "avenue", lvl: 0, res: 0 };
+  const b = analyze(s);
+  assert.ok(b.trafficCap[busiest] >= Bd.avenue.cap * 0.75);
+  assert.ok(b.trafficCong[busiest] <= before, "the avenue takes the jam away");
+});

@@ -120,8 +120,12 @@ export const B = {
   tower: { cat: "proj", visitors: true, name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
   airport: { cat: "proj", visitors: true, name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
 
-  road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, text: "يوصل البيوت والمحلات ببعض." },
-  asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, text: "أنظف وأحسن من الترابي." }
+  road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },
+  asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 110, text: "أنظف وأحسن من الترابي، ويشيل ضعف السيارات." },
+  avenue: { cat: "road", name: "شارع رئيسي", cost: 60, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 300, text: "مسارين بكل اتجاه وجزيرة نخل بالنص. يشيل زحمة كبيرة: حطه على الطرق اللي توصل الحارات بالشغل." },
+  roundabout: { cat: "road", name: "دوار", cost: 120, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 3, cap: 240, junction: true, text: "حطه على التقاطعات: السيارات تمشي بدون ما توقف، والتقاطع يشيل أكثر بكثير." },
+  signal: { cat: "road", name: "إشارة مرور", cost: 80, upkeep: 1, era: 1, tech: "asphalt", cap: 170, junction: true, text: "تنظّم التقاطع الزحمة. أرخص من الدوار بس تشيل أقل." },
+  parking: { cat: "road", name: "مواقف", cost: 60, upkeep: 0, era: 1, tech: "asphalt", radius: 2, text: "جنب المحلات: الزباين يلقون مكان، فالمحلات القريبة تبيع ١٠٪ أكثر والطرق حولها تخف." }
 };
 
 // A long game: building is dear next to what the town earns. Every price above is multiplied
@@ -193,6 +197,12 @@ export const CHAINS = [
 // Building materials: quarries and block factories make them; upgrades use them. What is missing is
 // bought from outside at MAT_PRICE a unit; the store holds MAT_CAP, and the rest is sold at MAT_SELL.
 export const MAT = { price: 25, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 10, 30, 100], biz: [0, 0, 15] };
+
+// Everything a car can drive on.
+export const ROAD_IDS = ["road", "asphalt", "avenue", "roundabout", "signal"];
+// Traffic: each resident makes this many car trips an hour at rush time; a plain crossing (three or
+// four roads meeting) carries this share of its road's capacity unless it has a roundabout or lights.
+export const TRAFFIC = { perResident: 0.3, crossing: 0.75 };
 
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [

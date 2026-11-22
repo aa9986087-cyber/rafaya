@@ -1,12 +1,12 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
-import { MAP_SIZE as N, B } from "./data.js";
+import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets } from "./sim.js";
 import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
-const roadAt = (t) => t?.b && (t.b.id === "road" || t.b.id === "asphalt");
+const roadAt = (t) => t?.b && ROAD_IDS.includes(t.b.id);
 /** A steady pseudo-random number in 0..1 for a tile (the same every time). */
 const hash = (x, y, k = 0) => {
   let n = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(k | 0, 1442695041)) | 0;
@@ -305,7 +305,7 @@ export class World {
   syncRoads(s) {
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); }
     this.removeAll(this.lampMeshes);
-    const lamps = [];
+    const lamps = [], medians = [], islands = [], lights = [];
     this.lampGlows = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
@@ -315,7 +315,7 @@ export class World {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       if (!roadAt(t)) continue;
-      const paved = t.b.id === "asphalt";
+      const kind = t.b.id, paved = kind !== "road";
       const cx = x - HALF + 0.5, cz = y - HALF + 0.5;
       if (paved) {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.004, (x + y) % 2 ? "#d9cfbb" : "#d2c7b1");
@@ -329,7 +329,24 @@ export class World {
       if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
       if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : "#a98457");
       if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (paved) {
+      if (kind === "avenue") {
+        // a full-width avenue: two lanes each way and a palm median along the way it runs
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
+        const ew = link(1, 0) || link(-1, 0), ns = link(0, 1) || link(0, -1);
+        if (ew && !ns) { quad(cx - 0.5, cz - 0.05, cx + 0.5, cz + 0.05, 0.009, "#cdbf9f"); for (const zz of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + o - 0.07, cz + zz - 0.01, cx + o + 0.07, cz + zz + 0.01, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
+        else if (ns && !ew) { quad(cx - 0.05, cz - 0.5, cx + 0.05, cz + 0.5, 0.009, "#cdbf9f"); for (const xx of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + xx - 0.01, cz + o - 0.07, cx + xx + 0.01, cz + o + 0.07, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
+      } else if (kind === "roundabout") {
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
+        islands.push(this.place(cx, cz, 0));
+      } else if (kind === "signal") {
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
+        // zebra crossings on each arm and a light on two corners
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (link(dx, dy)) for (let k = -2; k <= 2; k++) {
+          if (dx) quad(cx + dx * 0.38 - 0.04, cz + k * 0.08 - 0.025, cx + dx * 0.38 + 0.04, cz + k * 0.08 + 0.025, 0.01, "#f3efe6");
+          else quad(cx + k * 0.08 - 0.025, cz + dy * 0.38 - 0.04, cx + k * 0.08 + 0.025, cz + dy * 0.38 + 0.04, 0.01, "#f3efe6");
+        }
+        lights.push(this.place(cx + 0.45, cz + 0.45, Math.PI * 0.75), this.place(cx - 0.45, cz - 0.45, -Math.PI * 0.25));
+      } else if (paved) {
         // dashed centre lines and kerbs
         if (link(1, 0) || link(-1, 0)) for (const o of [-0.3, 0.05, 0.3]) quad(cx + o - 0.06, cz - 0.012, cx + o + 0.06, cz + 0.012, 0.008, "#f3d77a");
         if (link(0, 1) || link(0, -1)) for (const o of [-0.3, 0.05, 0.3]) quad(cx - 0.012, cz + o - 0.06, cx + 0.012, cz + o + 0.06, 0.008, "#f3d77a");
@@ -339,7 +356,7 @@ export class World {
         if (link(0, 1) || link(0, -1)) for (const o of [-0.12, 0.12]) quad(cx + o - 0.015, cz - 0.5, cx + o + 0.015, cz + 0.5, 0.007, "#8a6842");
       }
     }
-    this.lampMeshes = this.addInstances(model("lamp"), lamps, true);
+    this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true)];
     if (!pos.length) { this.roadMesh = null; return; }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -523,7 +540,7 @@ export class World {
   }
 
   syncCars() {
-    const want = this.quality === "low" ? 0 : Math.min(40, Math.floor(this.roads.length / 5));
+    const want = this.quality === "low" ? 0 : Math.min(40, Math.floor((this.roads.length / 5) * (this.rush ? 1.8 : 1)));
     if (!this.carMesh) {
       // Pickups (جيب حوض): mostly white, some beige, silver, red and navy. Paint per car, trim shared.
       this.carMesh = new THREE.InstancedMesh(model("pickupBody").matte, this.mats.shiny, 40);
@@ -546,7 +563,8 @@ export class World {
     if (!this.carMesh || !this.cars.length) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
     this.cars.forEach((c, i) => {
-      c.t += dt * c.speed;
+      const jam = this.trafficCong ? this.trafficCong[idx(c.x, c.y)] || 0 : 0;
+      c.t += (dt * c.speed) / (1 + jam * 2.5);
       if (c.t >= 1) {
         c.x = c.tx; c.y = c.ty; c.t = 0;
         const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(c.x + dx, c.y + dy) && roadAt(s.tiles[idx(c.x + dx, c.y + dy)]) && !(c.x + dx === c.px && c.y + dy === c.py));
@@ -1084,9 +1102,13 @@ export class World {
     const cells = [];
     for (let i = 0; i < N * N; i++) if (values[i] > 0) cells.push(i);
     const g = new THREE.PlaneGeometry(0.96, 0.96); g.rotateX(-Math.PI / 2);
-    this.overlay = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3, depthWrite: false }), Math.max(1, cells.length));
-    const m = new THREE.Matrix4();
-    cells.forEach((i, k) => { const p = tileCenter(i % N, Math.floor(i / N)); m.makeTranslation(p.x, 0.015, p.z); this.overlay.setMatrixAt(k, m); });
+    const heat = color === "heat";
+    this.overlay = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: heat ? "#ffffff" : color, transparent: true, opacity: heat ? 0.55 : 0.3, depthWrite: false }), Math.max(1, cells.length));
+    const m = new THREE.Matrix4(), hc = new THREE.Color();
+    cells.forEach((i, k) => {
+      const p = tileCenter(i % N, Math.floor(i / N)); m.makeTranslation(p.x, 0.015, p.z); this.overlay.setMatrixAt(k, m);
+      if (heat) { const v = Math.min(1, values[i]); hc.setHSL(0.33 * (1 - v), 0.85, 0.5); this.overlay.setColorAt(k, hc); }
+    });
     this.overlay.count = cells.length;
     this.overlay.renderOrder = 1;
     this.scene.add(this.overlay);

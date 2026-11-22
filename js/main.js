@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
@@ -234,7 +234,7 @@ function moveTap(t) {
   const from = tool.from;
   if (from && from.x === t.x && from.y === t.y) { tool.from = null; pending = []; sfx.tap(); showMove(); return; }
   if (b) {
-    const why = ["road", "asphalt"].includes(b.id) ? "الطرق ما تنقل: أزلها وارسمها من جديد" : b.build > 0 ? "تحت الإنشاء: انتظر لين يخلص" : "";
+    const why = ROAD_IDS.includes(b.id) ? "الطرق ما تنقل: أزلها وارسمها من جديد" : b.build > 0 ? "تحت الإنشاء: انتظر لين يخلص" : "";
     if (why) { toast(why, "bad"); sfx.deny(); return; }
     tool.from = t; pending = []; sfx.tap(); showMove(); return;
   }
@@ -267,7 +267,7 @@ function confirmMove() {
   tool.from = null; pending = []; showMove(); refresh(); save();
 }
 
-const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ["road", "asphalt"].includes(S.tiles[idx(x + dx, y + dy)].b?.id));
+const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ROAD_IDS.includes(S.tiles[idx(x + dx, y + dy)].b?.id));
 
 function apply(x, y, quiet) {
   const tile = S.tiles[idx(x, y)];
@@ -289,7 +289,7 @@ function apply(x, y, quiet) {
   }
   if (tool.id === "bulldoze") {
     if (!tile.b && tile.t !== "rock") return;
-    const wasRoad = ["road", "asphalt"].includes(tile.b?.id);
+    const wasRoad = ROAD_IDS.includes(tile.b?.id);
     const why = demolish(S, x, y);
     if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
     sfx.remove(); sync(wasRoad);
@@ -710,6 +710,11 @@ function inspect(x, y) {
       <p class="hint">يزيد دخله ${ar(Math.round((bizLevelNext(t.b).income / up.income - 1) * 100))}٪، ويحتاج موظفين ومصروف أكثر.</p>${matsNote(pr)}`;
   }
   html += chainInfo(t, x, y);
+  if (ROAD_IDS.includes(t.b.id) && A.trafficCap?.[idx(x, y)]) {
+    const i = idx(x, y), ld = Math.round(A.trafficLoad[i]), cp = Math.round(A.trafficCap[i]), cg = A.trafficCong[i];
+    html += row("السيارات وقت الذروة", `${ar(ld)} من ${ar(cp)} يشيلها`, cg > 0.3 ? "minus" : "plus");
+    if (cg > 0.3) html += `<div class="need">زحمة هنا! ${t.b.id === "road" ? "سفلته أو حوله شارع رئيسي" : t.b.id === "asphalt" ? "حوله شارع رئيسي، أو حط دوار على التقاطع" : "فك الزحمة بطرق ثانية توصل الحارات بالشغل"}.</div>`;
+  }
   if (d.jobs) html += row("الوظائف", ar(Math.round(d.jobs * up.jobs)));
   if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(Math.round(d.income * up.income))} ريال`, "plus");
   if (d.upkeep) html += row("المصروف بالساعة", `${money(Math.round(d.upkeep * up.upkeep))} ريال`, "minus");
@@ -727,7 +732,7 @@ function inspect(x, y) {
     inspect(x, y);
   });
   $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); refresh(); save(); inspect(x, y); });
-  $("demolish").addEventListener("click", () => { demolish(S, x, y); sfx.remove(); closeSheet(); sync(["road", "asphalt"].includes(t.b?.id)); refresh(); });
+  $("demolish").addEventListener("click", () => { demolish(S, x, y); sfx.remove(); closeSheet(); sync(ROAD_IDS.includes(t.b?.id)); refresh(); });
 }
 
 function council() {
@@ -802,6 +807,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-23",
   items: [
+    ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
     ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
     ["🧱", "مواد البناء", "كسارة الحجر تطلّع مواد تحتاجها لتطوير البيوت والمحلات، وإلا تشتريها من برا."],
     ["🤝", "الوعود صارت واضحة", "إذا رجعوا يطالبون تشوف وش طلبوا ووش وعدتهم ومتى، وفي النشرة قائمة «وعودك»."],
@@ -875,7 +881,11 @@ function budget() {
       ${row("المجموع", `−${fine(A.upkeep)}`, "minus")}
     </div>
     ${S.staffRaise ? `<p>رواتب البلدية زادت ${ar(Math.round(S.staffRaise * 100))}٪ من العلاوات السنوية. وكل سنة تدفع رسوم المحافظة.</p>` : ""}
-    ${A.congestion > 0.02 ? `<div class="need">زحمة بالطرق الترابية: المحلات تخسر ${ar(Math.round(A.congestion * 100))}٪ من زباينها. سفلت الطرق أو زد عددها.</div>` : ""}
+    <h3>🚦 المرور</h3><div class="rows">
+      ${row("مشاوير الدوام وقت الذروة", `${ar(A.trips || 0)} سيارة`)}
+      ${row("طرق مزحومة", ar(A.jammedRoads || 0), A.jammedRoads ? "minus" : "plus")}
+      ${A.congestion > 0.02 ? `<div class="need">الزحمة تأخر الموظفين وتبعد الزباين: المحلات تخسر ${ar(Math.round(A.congestion * 100))}٪. سفلت الطرق المزحومة، أو حط شارع رئيسي ودوارات.</div>` : ""}
+      <button class="btn block" id="showTraffic" type="button">🚦 اعرض الزحمة على الخريطة</button></div>
     ${productionHtml()}
     <h3>البنك</h3>
     <div class="rows">${(S.loans || []).length ? row("قروض عليك", `${ar(S.loans.length)} · ${fine(S.loans.reduce((n, l) => n + l.per, 0))} بالساعة`, "minus") : row("القروض", "ما عليك قروض")}
@@ -902,6 +912,14 @@ function budget() {
     <h3>السكان</h3>${spark(h.map((x) => x.p), "#2c8a7a")}
     <h3>الميزانية</h3>${spark(h.map((x) => x.m), "#c48a24")}`, "budget");
   $("openBank").addEventListener("click", () => { sfx.tap(); bankSheet(); });
+  $("showTraffic").addEventListener("click", () => {
+    closeSheet();
+    const v = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) if (A.trafficLoad?.[i] > 0) v[i] = Math.max(0.02, Math.min(1, (A.trafficLoad[i] / A.trafficCap[i]) / 2));
+    setTimeout(() => world.setOverlay(v, "heat"), 220);
+    toast("الأخضر سالك، والأصفر يتزحم، والأحمر زحمة", "");
+    setTimeout(() => { if (!tool) world.setOverlay(null); }, 7000);
+  });
   $("repairAll")?.addEventListener("click", () => { const r = repairAll(S); if (!r.n) { toast("ما يكفي المال", "bad"); sfx.deny(); return; } sfx.build(); toast(`رممت ${ar(r.n)} مبنى بـ${money(r.spent)} ريال`, "goal"); refresh(); save(); budget(); });
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
@@ -1092,6 +1110,10 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>المرور والزحمة</summary>
+      <p>الصبح والعصر الناس يطلعون من بيوتهم لدوامهم بسياراتهم. كل طريق يشيل عدد سيارات: الترابي قليل، والمسفلت ضعفه، و«الشارع الرئيسي» أكثر بكثير. التقاطعات تتزحم أكثر، و«الدوار» و«إشارة المرور» يفكونها، و«المواقف» جنب المحلات تخفف الطرق وتزيد البيع.</p>
+      <p>الزحمة تأخر الموظفين، وتبعد الزباين، وتزعّل اللي ساكنين على الشارع. شوفها من «الأرقام ← اعرض الزحمة»، أو اضغط على أي طريق.</p></details>
+
     <details><summary>سلاسل الإنتاج ومواد البناء</summary>
       <p>المزارع ترسل إنتاجها بالشاحنات للمصانع، بس لازم طريق يوصل بينهم: النخل لمصنع التمور، الحظائر لمصنع الألبان وسوق الماشية، المزارع المحورية للصوامع، والكسارات لمصنع البلوك. المصنع يشتغل كامل إذا وصله العدد اللي يحتاجه.</p>
       <p>تطوير البيوت الكبيرة والمحلات يحتاج مواد بناء. «كسارة حجر» تنبني على الصخور وتطلّعها، وإذا ما عندك تنشرى من برا غالي. تابعها في «الأرقام».</p></details>
@@ -1221,6 +1243,8 @@ function frame(now) {
         if (m.kind === "era" && openCat) renderCards();
       }
       sync(false);
+      // Rush hours: the first hours of the morning and the afternoon.
+      { const h = hourOf(S.day), D = seasonOf(S.day).daylight * HOURS; world.rush = h <= 2 || (h >= Math.round(D * 0.75) && h <= Math.round(D * 0.75) + 1); world.trafficCong = A.trafficCong; }
       // Prayer time: a soft call, and the men walk to the mosque.
       const pr = prayerNow(S);
       world.prayer = pr;
