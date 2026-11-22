@@ -131,7 +131,9 @@ export const TECH = {
   zakat: { name: "تنظيم الميزانية", cost: 1000, days: 6, era: 1, text: "مصاريف المباني أقل بـ١٥٪." },
   tourism: { name: "السياحة", cost: 2500, days: 12, era: 2, text: "يفتح الفندق، ومهرجان الرافعية يجيب زوار ودخل." },
   desal: { name: "تحلية المياه", cost: 3000, days: 12, era: 2, text: "يفتح محطة التحلية." },
-  smart: { name: "المدينة الذكية", cost: 6000, days: 16, era: 3, text: "الدخل كله أكثر بـ٢٠٪." }
+  smart: { name: "المدينة الذكية", cost: 6000, days: 16, era: 3, text: "الدخل كله أكثر بـ٢٠٪." },
+  pest: { name: "مكافحة الآفات", cost: 400, days: 12, era: 0, text: "الجراد ما يضر المزارع إلا شوي." },
+  dams: { name: "سدود الأودية", cost: 1200, days: 24, era: 1, text: "سدود صغيرة على الوادي تخفف السيول: خطرها ينزل كثير." }
 };
 for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);
 
@@ -163,7 +165,8 @@ export const GOALS = [
 // days: how long it lasts, in hours.
 export const EVENTS = [
   { id: "rain", name: "مطر الوسم", text: "نزل المطر! المزارع تنتج أكثر.", days: 18, weight: 3, farm: 1.5, happy: 6 },
-  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد. الناس متضايقين.", days: 10, weight: 3, happy: -10 },
+  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد والطرق الترابية انطمرت. الناس متضايقين.", days: 10, weight: 3, happy: -10 },
+  { id: "locust", name: "جراد", text: "سرب جراد نزل على المزارع! المحصول بيقل يوم كامل.", days: 24, weight: 2, farm: 0.4 },
   { id: "drought", name: "جفاف", text: "الآبار نقصت. وفّروا الماء.", days: 36, weight: 2, water: 0.7 },
   { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 72, weight: 2, shop: 1.3, happy: 8 },
   { id: "eid", name: "العيد", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, weight: 2, happy: 15, shop: 1.2 },
@@ -246,6 +249,30 @@ export const DECISIONS = [
       { label: "خذ القرض", note: "+٣٠٠٠ الحين، وتدفع ٤٠ بالساعة ٤ أيام (٣٨٤٠)", money: 3000, boost: { name: "أقساط القرض", hours: 96, repay: 40 } },
       { label: "نشد الحزام", note: "الضريبة +٣٪ ورضا −٤", tax: 3, boost: { name: "تقشّف", hours: 48, happy: -4 } }
     ] },
+  { id: "raise", weight: 0, title: "موظفو البلدية يطالبون بعلاوة", text: "مرت سنة، وموظفو البلدية يطالبون بزيادة رواتبهم ١٥٪. يقولون الأسعار زادت.",
+    when: () => false, // comes every year by itself
+    options: [
+      { label: "اعطهم العلاوة", note: "رواتب البلدية +١٥٪ دايم", raise: 0.15, boost: { name: "الموظفين مبسوطين", hours: 24, happy: 3 } },
+      { label: "ارفض", note: "إضراب يوم كامل: المساجد والمدارس والمستوصفات تقفل", boost: { name: "إضراب الموظفين", hours: 24, strike: true, happy: -6 } }
+    ] },
+  { id: "needy", weight: 3, title: "عوايل محتاجة", text: "فيه عوايل بالرافعية ما عندها تدفئة ولا أكل يكفي. أهل الخير يطالبون البلدية تساهم.",
+    when: (s, a, season) => (season.id === "winter" || s.events.some((e) => e.id === "ramadan")) && s.pop >= 50,
+    options: [
+      { label: "ادعمهم", note: "ريالين عن كل ساكن، والرضا +٨ يومين", costPer: { people: 2 }, boost: { name: "دعم المحتاجين", hours: 48, happy: 8 } },
+      { label: "خلها على أهل الخير", note: "رضا −٥ يومين", boost: { name: "عتب على البلدية", hours: 48, happy: -5 } }
+    ] },
+  { id: "invest", weight: 2, title: "فرصة استثمار", text: "تاجر من الرياض يعرض على البلدية تدخل معه في مشروع: يقول بيرجع الضعف خلال ٣ أيام، بس مافي ضمان.",
+    when: (s) => s.money >= 3000,
+    options: [
+      { label: "ادخل بـ٢٠٠٠", note: "ممكن ترجع ٤٠٠٠، وممكن تروح كلها", cost: 2000, invest: { amount: 2000, back: 4000, chance: 0.6, hours: 72 } },
+      { label: "لا، شكرًا", note: "ما يصير شي" }
+    ] },
+  { id: "contractor", weight: 3, title: "شركة مقاولات", text: "شركة كبيرة تعرض تخلّص المشروع اللي تحت الإنشاء بنص الوقت، مقابل مبلغ.",
+    when: (s) => s.tiles.some((t) => t.b?.build > 24),
+    options: [
+      { label: "اتفق معهم", note: "ربع سعر المشروع، ويخلص بنص الوقت الباقي", costPer: { project: 0.25 }, hurry: 0.5 },
+      { label: "نكمل بعمالنا", note: "ما يصير شي" }
+    ] },
   // ---- life and chances ----
   { id: "investor", title: "مستثمر على الباب", text: "تاجر يبي يفتح مصنع على حسابه قرب البلد، ويدفع للبلدية رسوم. بس الناس خايفين من الدخان.",
     when: (s) => s.pop >= 60,
@@ -296,6 +323,18 @@ export const DECISIONS = [
       { label: "ما نحتاج", note: "ما يصير شي" }
     ] }
 ];
+
+/**
+ * What it costs to keep the town standing.
+ * decay: condition lost per hour (100 = new); below WEAK a building works at 60%; at 0 it stops working,
+ * and after RUIN_HOURS more without repair it falls down.
+ * Repairing costs REPAIR of the building's price for the damage done. Insurance: INSURE of the value of
+ * everything built, per hour; it pays back INSURE_PAYS of a building lost to fire, flood or collapse.
+ */
+export const UPKEEP_RULES = { decay: 100 / (24 * 24), mudDecay: 100 / (24 * 16), weak: 40, repair: 0.2, ruinHours: 48, insure: 0.0012, insurePays: 0.7 };
+/** Paid once a year (12 days) to the province, by stage. */
+export const PROVINCE_FEES = [0, 1500, 6000, 20000];
+export const YEAR_HOURS = 24 * 12;
 
 /** Achievements: test(s, a) with the town state and its analysis. */
 const PROJECTS = ["gate", "heritage", "tower", "airport"];

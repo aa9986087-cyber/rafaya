@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -140,7 +140,7 @@ export function build(s, x, y, id) {
   const t = s.tiles[idx(x, y)];
   s.money -= B[id].cost + (t.t === "rock" ? ROCK_CLEAR : 0);
   if (t.t === "rock") t.t = "sand";
-  t.b = { id, lvl: 0, res: 0, day: s.day };
+  t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
 }
@@ -161,6 +161,36 @@ export function demolish(s, x, y) {
     s.money -= ROCK_CLEAR; t.t = "sand"; return "";
   }
   return "ما فيه شي هنا";
+}
+
+// ---------- wear, repairs and insurance ----------
+
+/** Buildings that wear out (roads and tents do not; tents are mended by their families). */
+const wears = (b) => b && !["road", "asphalt"].includes(b.id) && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
+/** A worn building (below the WEAK line) works at 60%. */
+export const condFactor = (b) => ((b?.cond ?? 100) < UPKEEP_RULES.weak ? 0.6 : 1);
+/** What it costs to bring a building back to new. */
+export const repairCost = (b) => (wears(b) ? Math.round(B[b.id].cost * UPKEEP_RULES.repair * (100 - (b.cond ?? 100)) / 100) : 0);
+export function repair(s, x, y) {
+  const b = s.tiles[idx(x, y)].b, cost = repairCost(b);
+  if (!cost) return "ما يحتاج ترميم";
+  if (s.money < cost) return "ما يكفي المال";
+  s.money -= cost; b.cond = 100; b.ruin = 0;
+  return "";
+}
+/** Repair everything that needs it (worst first) while the money lasts. Returns how many and the cost. */
+export function repairAll(s) {
+  const list = s.tiles.filter((t) => repairCost(t.b) > 0).sort((p, q) => (p.b.cond ?? 100) - (q.b.cond ?? 100));
+  let n = 0, spent = 0;
+  for (const t of list) { const c = repairCost(t.b); if (s.money < c) break; s.money -= c; spent += c; t.b.cond = 100; t.b.ruin = 0; n++; }
+  return { n, spent };
+}
+/** A building is lost (fire, flood, collapse): insurance pays part of it back. Returns the refund. */
+export function lose(s, t) {
+  const refund = s.insured && t.b ? Math.round(B[t.b.id].cost * UPKEEP_RULES.insurePays) : 0;
+  s.money += refund;
+  t.b = null;
+  return refund;
 }
 
 // ---------- analysis: what the town looks like right now ----------
@@ -188,11 +218,13 @@ export function analyze(s) {
   const a = {
     count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: B.house.levels.map(() => 0),
     waterSupply: 0, waterUse: 0, powerSupply: 0, powerUse: 0, cap: 0, jobs: 0, income: 0, farmIncome: 0,
-    upkeep: 0, costs: { services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0 }, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
+    upkeep: 0, costs: { services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0, insurance: 0, health: 0, theft: 0 },
+    value: 0, repairBill: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
     services: Array.from({ length: N * N }, () => new Set())
   };
   const concrete = s.tech.concrete ? 1.25 : 1;
   const palms = [];
+  const strike = s.events.some((e) => e.strike); // the council's staff are on strike
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const t = s.tiles[idx(x, y)];
     if (!t.b) continue;
@@ -200,10 +232,13 @@ export function analyze(s) {
     a.count[t.b.id]++;
     if (t.b.build > 0) { t.b.works = false; a.costs.sites += Math.round((def.upkeep || 0) / 4); continue; } // still being built
     // A bankrupt council cannot pay the people who run its services: they close.
-    const works = (!needsRoad(def) || onRoad(s, x, y)) && !(s.broke && def.cat === "serv");
+    const works = (!needsRoad(def) || onRoad(s, x, y)) && !((s.broke || strike) && def.cat === "serv") && !(t.b.ruin > 0);
+    const f = condFactor(t.b);
+    a.value += def.cost;
+    a.repairBill += repairCost(t.b);
     t.b.works = works;
-    if (def.water > 0) a.waterSupply += def.water; else if (def.water && works) a.waterUse -= def.water;
-    if (def.power > 0) a.powerSupply += def.power; else if (def.power && works) a.powerUse -= def.power;
+    if (def.water > 0) a.waterSupply += def.water * f; else if (def.water && works) a.waterUse -= def.water;
+    if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works) a.powerUse -= def.power;
     a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += def.upkeep || 0;
     if (t.b.id === "house") {
       a.homes++;
@@ -218,7 +253,7 @@ export function analyze(s) {
       for (let yy = y - def.radius; yy <= y + def.radius; yy++) for (let xx = x - def.radius; xx <= x + def.radius; xx++) {
         if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > def.radius) continue;
         const i = idx(xx, yy);
-        if (def.happy) a.local[i] += s.money < 0 && def.cat === "serv" ? def.happy / 2 : def.happy;
+        if (def.happy) a.local[i] += (s.money < 0 && def.cat === "serv" ? def.happy / 2 : def.happy) * f;
         if (def.pollute) a.pollution[i] += def.pollute;
         if (def.service) a.services[i].add(def.service);
       }
@@ -227,17 +262,20 @@ export function analyze(s) {
   // Running the town, per hour: the council's own staff (more of them at each stage), cleaning and
   // rubbish for every resident, keeping the water network up, road repairs and street lights, loans.
   const c = a.costs;
-  c.staff = [3, 25, 90, 250][s.era] + s.pop * 0.02;
+  c.staff = ([3, 25, 90, 250][s.era] + s.pop * 0.02) * (1 + (s.staffRaise || 0));
   c.cleaning = s.pop * 0.05;
   c.waterNet = a.waterUse * 0.04;
   c.roads = a.count.road * 0.05 + a.count.asphalt * 0.15;
   c.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0);
+  c.insurance = s.insured ? a.value * UPKEEP_RULES.insure : 0;
+  // Smoke and noise next to homes make people ill: the clinic's bill.
+  for (let i = 0; i < N * N; i++) { const t = s.tiles[i]; if (t.b?.id === "house" && a.pollution[i] > 0) c.health += (t.b.res || 0) * Math.min(30, a.pollution[i]) * 0.004; }
   if (s.tech.zakat) for (const k of ["services", "utilities", "business", "staff"]) c[k] *= 0.85;
   a.upkeep = Object.values(c).reduce((n, v) => n + v, 0);
   a.peopleCost = c.staff + c.cleaning + c.waterNet; a.roadCost = c.roads; a.loan = c.loan;
   a.waterSupply *= activeEvent(s, "water");
   a.powerSupply *= activeEvent(s, "power");
-  if (seasonOf(s.day).id === "summer") a.waterUse = Math.round(a.waterUse * 1.1);
+  if (seasonOf(s.day).id === "summer") { a.waterUse = Math.round(a.waterUse * 1.1); a.powerUse = Math.round(a.powerUse * 1.15); } // heat: more water, air conditioners
   a.waterRatio = a.waterUse ? clamp(a.waterSupply / a.waterUse, 0, 1) : 1;
   // Until the town builds its first power source nothing runs on electricity (and nothing misses it).
   a.grid = a.powerSupply > 0;
@@ -249,7 +287,10 @@ export function analyze(s) {
 
   // Money for one day.
   const shopMult = activeEvent(s, "shop") * (s.tech.smart ? 1.2 : 1);
-  const farmMult = activeEvent(s, "farm") * (s.tech.irrigation ? 1.3 : 1) * (s.tech.smart ? 1.2 : 1);
+  // Locusts take 60% of the harvest, or 15% with pest control.
+  let farmEvents = activeEvent(s, "farm");
+  if (s.tech.pest && s.events.some((e) => e.id === "locust")) farmEvents = (farmEvents / 0.4) * 0.85;
+  const farmMult = farmEvents * (s.tech.irrigation ? 1.3 : 1) * (s.tech.smart ? 1.2 : 1);
   // Local shops can only sell what the residents spend (about 0.6 riyal a person an hour, more in
   // Ramadan and Eid); more shops than that share the same customers. Visitors' places (hotel, the
   // grand projects) and industry sell outside the town, so they are not capped.
@@ -261,9 +302,9 @@ export function analyze(s) {
     if (!def.income) continue;
     if (def.cat === "farm" && (t.b.id === "palms" || t.b.id === "veg")) {
       const wadi = t.t === "wadi" ? 1.5 : 1;
-      a.farmIncome += def.income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing);
+      a.farmIncome += def.income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
     } else {
-      let inc = def.income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio);
+      let inc = def.income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
       if (t.b.id === "datefactory") inc *= 1 + Math.min(1, palms.length * 0.1);
       if (def.visitors) a.visitorIncome += inc * shopMult;
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
@@ -271,8 +312,18 @@ export function analyze(s) {
     }
   }
   a.shopDemand = s.pop * 0.6 * shopMult;
-  a.shopIncome = Math.min(a.shopRaw, a.shopDemand);
+  // Traffic: too many people for the roads, and dirt roads at that, keep customers away.
+  const roadsAll = a.count.road + a.count.asphalt;
+  a.congestion = roadsAll ? Math.max(0, Math.min(0.4, s.pop / (roadsAll * 20) - 1)) * (a.count.road / roadsAll) : 0;
+  a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion);
   a.income = a.shopIncome + a.visitorIncome + a.industryIncome;
+  // Thefts: in a big town, shops in quarters no police reaches lose part of their takings.
+  if (s.pop >= 300) {
+    let homes = 0, safe = 0;
+    for (let i = 0; i < N * N; i++) if (s.tiles[i].b?.id === "house" && s.tiles[i].b.works) { homes++; if (a.services[i].has("safety")) safe++; }
+    a.costs.theft = homes ? a.shopIncome * 0.12 * (1 - safe / homes) : 0;
+    a.upkeep += a.costs.theft;
+  }
   // Tax per person falls a little as the town grows, so big cities do not drown in money.
   a.tax = s.pop * (s.tax / 100) * (3 - Math.min(1.2, s.pop / 2500));
   a.net = Math.round(a.income + a.farmIncome + a.tax - a.upkeep);
@@ -360,18 +411,65 @@ export function step(s, r = Math.random) {
   // Building sites move on; a finished grand project is news.
   const done = [];
   for (const t of s.tiles) if (t.b?.build > 0 && --t.b.build <= 0) { delete t.b.build; done.push(B[t.b.id].name); }
+  // Wear: every building loses a little every hour; mud houses faster. At zero it falls down.
+  const fell = [];
+  s.tiles.forEach((t, i) => {
+    if (!wears(t.b)) return;
+    const rate = t.b.id === "house" && t.b.lvl === 1 ? UPKEEP_RULES.mudDecay : B[t.b.id].cat === "deco" ? UPKEEP_RULES.decay / 2 : UPKEEP_RULES.decay;
+    t.b.cond = Math.max(0, (t.b.cond ?? 100) - rate);
+    if (t.b.cond > 0) return;
+    // Worn out: it stops working, and after two days more it falls down.
+    t.b.ruin = (t.b.ruin || 0) + 1;
+    if (t.b.ruin === 1) fell.push({ i, name: B[t.b.id].name, warn: true });
+    if (t.b.ruin < UPKEEP_RULES.ruinHours) return;
+    if (t.b.id === "house") { t.b.lvl--; t.b.cond = 60; t.b.ruin = 0; fell.push({ i, name: "بيت", house: true }); }
+    else { const name = B[t.b.id].name; fell.push({ i, name, refund: lose(s, t) }); }
+  });
   s.money += a.net;
   s.happy = Math.round((s.happy * 0.7 + a.happyTarget * 0.3) * 10) / 10;
-  const seasonBefore = seasonOf(s.day).i;
+  const seasonBefore = seasonOf(s.day).i, yearBefore = Math.floor((s.day - 1) / YEAR_HOURS);
   s.day++;
 
   const msgs = done.map((name) => ({ kind: "goal", text: `اكتمل مشروع «${name}»! 🎉` }));
+  for (const f of fell) msgs.push(f.warn ? { kind: "event", title: "مبنى خربان", tile: f.i, text: `«${f.name}» خرب ووقف عن الشغل. رمّمه خلال يومين وإلا بيطيح.` } : { kind: "collapse", tile: f.i, text: f.house ? "بيت انهار من الإهمال ورجع أصغر. رمّم بيوتك قبل لا تطيح." : `انهار «${f.name}» من الإهمال!${f.refund ? ` التأمين عوّضك ${f.refund} ريال.` : " ما كان عليه تأمين."}` });
+  // A flash flood down the wadi, now and then while it rains (much rarer with dams).
+  const raining = s.events.some((e) => e.id === "rain");
+  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.008 : 0.03)) {
+    const lost = [], damaged = [];
+    let refund = 0;
+    s.tiles.forEach((t, i) => {
+      if (t.t !== "wadi" || !t.b) return;
+      const isRoad = t.b.id === "road" || t.b.id === "asphalt";
+      if (r() < (isRoad ? 0.3 : 0.45)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
+      else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
+    });
+    if (lost.length || damaged.length) {
+      s.lastFlood = s.day;
+      const names = [...new Set(lost.filter((x) => x.id !== "road" && x.id !== "asphalt").map((x) => B[x.id].name))].slice(0, 3);
+      msgs.push({ kind: "flood", lost: lost.map((x) => x.i), damaged, text: `سيل جارف نزل الوادي! راح ${lost.length} مبنى وطريق${names.length ? ` (منها ${names.join("، ")})` : ""}، وتضرر ${damaged.length}.${refund ? ` التأمين عوّضك ${refund} ريال.` : s.insured ? "" : " ما كان فيه تأمين."}` });
+    }
+  }
+  // Investments come due: the trader pays double, or the money is gone.
+  s.investments = (s.investments || []).filter((v) => {
+    if (s.day < v.at) return true;
+    if (r() < v.chance) { s.money += v.back; msgs.push({ kind: "goal", text: `الاستثمار نجح! رجع لك ${v.back} ريال.` }); }
+    else msgs.push({ kind: "event", title: "خسارة", text: `التاجر خسر في المشروع وراحت الـ${v.amount} ريال.` });
+    return false;
+  });
+  // Contractors sometimes run late.
+  for (const t of s.tiles) if (t.b?.build > 0 && r() < 0.003) { t.b.build += 24; msgs.push({ kind: "event", title: "تأخير", text: `المقاول تعثّر في «${B[t.b.id].name}»، والمشروع تأخر يوم.` }); }
   // Stage of the town never goes back.
   for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
   // Bankruptcy: deep in debt the council stops paying its services; back above zero they reopen.
   const limit = 1500 + a.upkeep * 12;
   if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
   else if (s.broke && s.money >= 0) { s.broke = false; msgs.push({ kind: "goal", text: "سددت الديون! الخدمات رجعت تشتغل." }); }
+  // A new year: the province's fee, and the council's staff ask for a raise.
+  if (Math.floor((s.day - 1) / YEAR_HOURS) > yearBefore) {
+    const fee = PROVINCE_FEES[s.era];
+    if (fee) { s.money -= fee; msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
+    if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }
+  }
   // A new season.
   const season = seasonOf(s.day);
   if (season.i !== seasonBefore) msgs.push({ kind: "season", title: season.name, text: season.start });
@@ -389,6 +487,7 @@ export function step(s, r = Math.random) {
     const ev = pool.find((e) => (roll -= e.weight) < 0) || pool[0];
     s.events.push({ id: ev.id, left: ev.days });
     let text = ev.text;
+    if (ev.id === "dust" && a.count.road) { const clean = a.count.road * 3; s.money -= clean; text += ` (تنظيف الطرق الترابية: ${clean} ريال)`; }
     if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); s.money += g; text += ` (+${g} ريال)`; }
     msgs.push({ kind: "event", title: ev.name, text });
   }
@@ -417,7 +516,10 @@ export function step(s, r = Math.random) {
 
 /** What an option costs right now (some depend on how many tents or roads there are). */
 export function optionCost(s, a, o) {
-  if (o.costPer) return Math.round((o.costPer.tents || 0) * a.levels[0] + (o.costPer.roads || 0) * a.count.road);
+  if (o.costPer) {
+    const site = s.tiles.find((t) => t.b?.build > 0);
+    return Math.round((o.costPer.tents || 0) * a.levels[0] + (o.costPer.roads || 0) * a.count.road + (o.costPer.people || 0) * s.pop + (o.costPer.project && site ? o.costPer.project * B[site.b.id].cost : 0));
+  }
   return o.cost || 0;
 }
 
@@ -435,10 +537,13 @@ export function decide(s, i) {
   if (o.destroy) {
     const spots = [];
     s.tiles.forEach((t) => { if (t.b && o.destroy.includes(t.b.id)) spots.push(t); });
-    if (spots.length) { const t = spots[Math.floor(Math.random() * spots.length)]; lost = B[t.b.id].name; t.b = null; }
+    if (spots.length) { const t = spots[Math.floor(Math.random() * spots.length)]; lost = B[t.b.id].name; lose(s, t); }
   }
   s.money += (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms;
   if (o.tax) s.tax = clamp(s.tax + o.tax, 0, 25);
+  if (o.raise) s.staffRaise = (s.staffRaise || 0) + o.raise;
+  if (o.invest) (s.investments ||= []).push({ ...o.invest, at: s.day + o.invest.hours });
+  if (o.hurry) for (const t of s.tiles) if (t.b?.build > 0) t.b.build = Math.max(1, Math.round(t.b.build * o.hurry));
   if (o.boost) s.events.push({ id: "boost", left: o.boost.hours, ...o.boost });
   let built = "";
   if (o.freeBuild) {
@@ -486,7 +591,7 @@ export function catchUp(s, now = Date.now()) {
 // ---------- saving ----------
 
 export function pack(s) {
-  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}${t.b.build ? `:${t.b.build}` : ""}` : ""));
+  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}` : ""));
   const { tiles: _, ...rest } = s;
   return JSON.stringify({ ...rest, tiles });
 }
@@ -511,10 +616,11 @@ export function unpack(text) {
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
-    const [t, id, lvl, res, build] = String(str).split(":");
+    const [t, id, lvl, res, build, cond] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
     const b = id && B[id] ? { id, lvl: Math.min((Number(lvl) || 0) + (id === "house" ? shift : 0), (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
+    if (b) b.cond = cond === undefined ? 100 : Number(cond);
     return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));

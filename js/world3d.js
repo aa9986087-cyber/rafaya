@@ -411,6 +411,9 @@ export class World {
   }
 
   sync(s, what = { tiles: true, roads: true, buildings: true }) {
+    // While a flood sweeps the wadi the old buildings must stay on screen to be carried away;
+    // the town is redrawn once the water has passed.
+    if (this.floodAnim) { this.pendingSync = { s, what: { tiles: true, roads: true, buildings: true } }; return; }
     const season = seasonOf(s.day).i;
     if (this.season !== undefined && this.season !== season) what = { ...what, tiles: true, buildings: true };
     this.season = season;
@@ -571,6 +574,106 @@ export class World {
       }
       pos.needsUpdate = true; col.needsUpdate = true;
     } else if (this.fw) this.fw.visible = false;
+  }
+
+  // ---------- the flash flood ----------
+
+  /**
+   * Muddy water rushes down the wadi from west to east, rising as its front passes; buildings it
+   * takes tilt, sink and break up; then the water slowly drains away and the town is redrawn.
+   * lost: tile indexes carried away; damaged: tile indexes left standing but hurt.
+   */
+  playFlood(lost, damaged) {
+    const s = this.state;
+    if (!s) return;
+    const tiles = [];
+    s.tiles.forEach((t, i) => { if (t.t === "wadi") tiles.push(i); });
+    if (!tiles.length) return;
+    if (this.floodAnim) this.endFlood();
+    const g = new THREE.PlaneGeometry(1.25, 1.25); g.rotateX(-Math.PI / 2);
+    // Muddy water with light streaks that flow downstream (the texture slides each frame).
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const x = c.getContext("2d");
+    x.fillStyle = "#8a7150"; x.fillRect(0, 0, 64, 64);
+    x.strokeStyle = "rgba(235, 220, 190, .35)"; x.lineWidth = 2;
+    for (let k = 0; k < 5; k++) { x.beginPath(); for (let px = 0; px <= 64; px += 4) x.lineTo(px, k * 13 + 4 + Math.sin(px / 64 * Math.PI * 2 + k) * 3); x.stroke(); }
+    const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+    const water = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.2, metalness: 0.15, transparent: true, opacity: 0.9, depthWrite: false }), tiles.length);
+    water.frustumCulled = false; water.renderOrder = 2;
+    this.scene.add(water);
+    const foamGeo = new THREE.BufferGeometry();
+    foamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(400 * 3).fill(-50), 3));
+    const foam = new THREE.Points(foamGeo, new THREE.PointsMaterial({ color: "#f4efe2", size: 0.14, transparent: true, opacity: 0.9, depthWrite: false }));
+    foam.frustumCulled = false;
+    this.scene.add(foam);
+    const xs = tiles.map((i) => i % N), minX = Math.min(...xs), maxX = Math.max(...xs);
+    const arrive = (i) => ((i % N) - minX) / Math.max(1, maxX - minX) * 2.6; // seconds for the front to reach a tile
+    this.floodAnim = { t: 0, tiles, water, foam, arrive, lost: new Set(lost), damaged: new Set(damaged) };
+    for (const i of lost) this.puff(tileCenter(i % N, Math.floor(i / N)), 0);
+  }
+
+  stepFlood(dt) {
+    const f = this.floodAnim;
+    if (!f) return;
+    f.t += dt;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3();
+    const drain = f.t < 5.5 ? 1 : Math.max(0, 1 - (f.t - 5.5) / 2.5);
+    // the water: each tile fills as the front passes, with a little swell
+    f.tiles.forEach((i, k) => {
+      const c = tileCenter(i % N, Math.floor(i / N));
+      const fill = Math.max(0, Math.min(1, (f.t - f.arrive(i)) / 0.45)) * drain;
+      const swell = Math.sin(f.t * 6 + i) * 0.015;
+      p.set(c.x, 0.02 + 0.16 * fill + swell * fill, c.z);
+      sc.set(Math.max(0.001, fill), 1, Math.max(0.001, fill));
+      m.compose(p, q.identity(), sc);
+      f.water.setMatrixAt(k, m);
+    });
+    f.water.instanceMatrix.needsUpdate = true;
+    f.water.material.opacity = 0.9 * drain;
+    f.water.material.map.offset.x -= dt * 1.6; // the current
+    // foam on the moving front
+    const pos = f.foam.geometry.attributes.position;
+    let n = 0;
+    for (const i of f.tiles) {
+      const d = f.t - f.arrive(i);
+      if (d < 0 || d > 0.6 || n >= 400) continue;
+      const c = tileCenter(i % N, Math.floor(i / N));
+      for (let j = 0; j < 6 && n < 400; j++, n++) pos.setXYZ(n, c.x + (Math.random() - 0.3) * 0.9, 0.2 + Math.random() * 0.15, c.z + (Math.random() - 0.5) * 1);
+    }
+    for (; n < 400; n++) pos.setXYZ(n, 0, -50, 0);
+    pos.needsUpdate = true;
+    // buildings the water takes: they lean with the current, sink and break up
+    if (this.where) for (const tile of f.lost) {
+      const w = this.where.get(tile), inst = w && this.instances.get(w.k);
+      if (!inst) continue;
+      const g = Math.max(0, Math.min(1, (f.t - f.arrive(tile) - 0.25) / 1.4));
+      if (g <= 0) continue;
+      if (g < 1 && Math.random() < dt * 8) this.puff(tileCenter(tile % N, Math.floor(tile / N)), 2);
+      q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -0.7 * g);
+      const tilt = new THREE.Matrix4().makeRotationFromQuaternion(q);
+      const down = new THREE.Matrix4().makeTranslation(0.25 * g, -0.6 * g, 0);
+      const shrink = new THREE.Matrix4().makeScale(1 - 0.5 * g, 1 - 0.7 * g, 1 - 0.5 * g);
+      m.copy(w.m).multiply(down).multiply(tilt).multiply(shrink);
+      for (const set of ["matte", "shiny", "lights"]) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
+    }
+    // once the water has passed, redraw the town (the lost buildings are gone)
+    if (f.t > 5 && !f.synced) {
+      f.synced = true;
+      const pend = this.pendingSync;
+      this.floodAnim = null; this.pendingSync = null;
+      this.sync(pend?.s || this.state, pend?.what);
+      this.floodAnim = f;
+    }
+    if (f.t > 8) this.endFlood();
+  }
+
+  endFlood() {
+    const f = this.floodAnim;
+    if (!f) return;
+    this.scene.remove(f.water, f.foam);
+    f.water.dispose(); f.foam.geometry.dispose();
+    this.floodAnim = null;
+    if (this.pendingSync) { const p = this.pendingSync; this.pendingSync = null; this.sync(p.s, p.what); }
   }
 
   /** Pools of warm light under lamps, by doors and around tent hearths. Seen only at night. */
@@ -892,6 +995,7 @@ export class World {
     this.stepLife(dt);
     this.stepEffects(dt);
     this.stepWeather(dt);
+    this.stepFlood(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
     this.renderer.render(this.scene, this.camera);

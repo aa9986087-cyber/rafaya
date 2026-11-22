@@ -1,6 +1,6 @@
 // Automatic mayors, to check the economy: can a sensible player grow the town, and can a careless
 // one go broke? Runs are repeatable (seeded randomness).
-import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns } from "../js/sim.js";
+import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll } from "../js/sim.js";
 import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS } from "../js/data.js";
 
 /**
@@ -42,6 +42,10 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       const d = DECISIONS.find((x) => x.id === s.decision.id), c0 = optionCost(s, a, d.options[0]);
       decide(s, style === "yesman" ? (c0 <= s.money ? 0 : d.options.length - 1) : d.id === "loan" || c0 <= s.money * 0.4 ? 0 : d.options.length - 1);
     }
+    // Upkeep: the careful mayors repair once things wear (spender and miser never do), and insure a big town.
+    if (style !== "spender" && style !== "miser" && a.repairBill > 0 && (h % 24 === 0 || a.repairBill > s.money * 0.5)) repairAll(s);
+    const saving = style !== "spender" && a.repairBill > s.money; // repairs come before anything new
+    if (style === "careful" || style === "yesman") s.insured = s.era >= 1;
     const target = 10 + s.pop * 0.04; // the income a careful mayor wants to keep
     const marketFull = a.shopRaw >= a.shopDemand * 0.85;
     if (style === "spender") {
@@ -51,7 +55,7 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       if (a.unconnected || r() < 0.3) place("road");
       if (a.waterRatio < 1) place(s.era >= 1 ? "tank" : "well");
       if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place("generator");
-    } else {
+    } else if (!saving) {
       // 1. water and power before they run short
       if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 10) place(s.era >= 2 && s.tech.desal ? "desal" : s.era >= 1 ? "tank" : "well");
       if (s.era >= 1 && (!a.grid || a.powerRatio < 1)) place(s.tech.solar ? "solar" : s.era >= 2 ? "powerplant" : "generator");

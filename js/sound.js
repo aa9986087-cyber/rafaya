@@ -68,6 +68,19 @@ export const sfx = {
   coin() { tone(988, 0.08, { type: "triangle", vol: 0.06 }); tone(1319, 0.14, { type: "triangle", vol: 0.06, at: 0.07 }); },
   goal() { [659, 784, 988].forEach((f, i) => tone(f, 0.16, { type: "triangle", vol: 0.07, at: i * 0.09 })); },
   era() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.28, { type: "triangle", vol: 0.08, at: i * 0.12 })); },
+  /** Rushing water: filtered noise that swells and fades over a few seconds. */
+  flood() {
+    if (!on) return;
+    try {
+      const a = ac(), t = a.currentTime, src = a.createBufferSource();
+      src.buffer = noiseBuffer(a);
+      src.loop = true;
+      const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(1100, t + 1.5); f.frequency.linearRampToValueAtTime(400, t + 6);
+      const g = a.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 1.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 6.5);
+      src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + 7);
+    } catch { /* no audio */ }
+    tone(90, 0.8, { type: "sawtooth", vol: 0.04, slide: -40 });
+  },
   levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },
   event() { tone(440, 0.2, { type: "sine", vol: 0.06 }); tone(554, 0.25, { type: "sine", vol: 0.05, at: 0.12 }); }
 };

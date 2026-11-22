@@ -118,6 +118,16 @@ function topics(s, a, season, f) {
   if (s.happy < 35) add("growth", -1, 6, [`الناس زعلانين، والرضا ${nAr(Math.round(s.happy))}٪ بس. لازم العمدة يسمع لنا.`]);
   if (f.tents >= 10 && a.levels.slice(1).every((n) => !n)) add("change", 0, 4, [`abunasser:الخيام كثرت والحمد لله. إذا صرنا ٣٠ واستقرينا نبني بيوت طين مثل أول.`]);
 
+  // Wear, floods, thefts, illness, traffic, strikes
+  const worn = s.tiles.filter((t) => t.b && ((t.b.cond ?? 100) < 40 || t.b.ruin)).length;
+  if (worn) add("repair", -1, 5 + Math.min(5, worn), [`abuabdullah:فيه ${nAr(worn)} مبنى متهالك بالبلد، وكلفة الترميم ${num(a.repairBill)} ريال. كل ما تأخرنا زاد الخراب، والمبنى اللي يخرب يطيح بعد يومين.`, `umsaad:سقف المدرسة يقطّر والجدران مشققة. رمّموها قبل لا تطيح على العيال.`]);
+  if (s.lastFlood !== undefined && s.day - s.lastFlood < 48) add("flood", -1, 9, [`abukhalid:السيل أخذ مزرعتي اللي بالوادي. قلت لهم الوادي خصب بس خطير، والحين ${s.tech.dams ? "حتى السدود ما كفت" : "نحتاج سدود"}.`, `mubarak:الله يعوضنا. السيل جرف كل اللي بقاع الوادي. لا تبنون فيه إلا وأنتم مأمّنين.`]);
+  if (a.costs.theft > 1) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة من محلات البلد. نبي شرطة تغطي الحارات.`]);
+  if (a.costs.health > 2) add("pollution", -1, 6, [`drYousef:المستوصف مليان أمراض صدر من الدخان. علاجهم يكلف البلدية ${num(a.costs.health)} بالساعة. بعدوا المصانع عن البيوت.`]);
+  if (a.congestion > 0.05) add("traffic", -1, 5, [`mishal:الزحمة ما تنطاق! الطرق الترابية ضيقة والناس صاروا ما يوصلون للسوق. سفلتوها.`]);
+  if (s.events.some((e) => e.strike)) add("strike", -1, 8, [`saud:موظفين البلدية مضربين! المدرسة مقفلة والمستوصف مسكّر. أعطوهم حقهم.`]);
+  if (s.events.some((e) => e.id === "locust")) add("farms", -1, 6, [`abukhalid:الجراد أكل نص الزرع! ${s.tech.pest ? "الحمد لله على المكافحة، خففت الضرر." : "لو عندنا مكافحة آفات كان سلمنا."}`]);
+
   // The market and the council's money
   if (a.shopRaw > a.shopDemand * 1.3 && a.shopRaw > 10) add("shops", -1, 6, [`abufahad:المحلات كثرت والزباين نفسهم! الأهالي يصرفون ${num(a.shopDemand)} بالساعة بس، وكل محل يقاسم الثاني. نبي ناس أكثر مو محلات أكثر.`, `jawaher:السوق مشبع، فتحت المشغل وما جاني إلا القليل. البلد تحتاج سكان قبل المحلات.`]);
   if (s.broke) add("money", -1, 12, [`umsaad:البلدية أفلست! المدرسة مقفلة والمستوصف مسكّر. وين راحت الفلوس؟`, `abuabdullah:الإفلاس ما يجي فجأة. المصاريف ${num(a.upkeep)} بالساعة والدخل أقل. قفلوا اللي ما يرجع وارفعوا الدخل.`]);
@@ -191,7 +201,7 @@ export function needs(s, a) {
 
 // ---------- memory: what people asked for, and what the mayor promised ----------
 
-const TOPIC_NAMES = { water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
+const TOPIC_NAMES = { repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
 /** Is anyone still upset about this topic right now? */
 const stillMissing = (s, a, season, topic) => topics(s, a, season, townFacts(s, a, season)).some((t) => t.topic === topic && t.mood < 0);
 
@@ -338,7 +348,7 @@ export function moodOf(s, who, change = 0) {
   return s.trust;
 }
 
-const PROMISE_LINE = { mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
+const PROMISE_LINE = { repair: "أبشر، بنرمم المباني", traffic: "أبشر، بنسفلت ونوسع الطرق", strike: "أبشر، بنعطيهم حقهم",  mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
   water: "أبشر، بنحفر بئر جديد", power: "أبشر، بنزيد الكهرباء", jobs: "أبشر، بنفتح محلات ومزارع للشباب", tax: "أبشر، بنخفف الضريبة", dust: "أبشر، بنسفلت الطرق", roads: "أبشر، بنوصل البيوت بطريق",
   housing: "أبشر، بنبني بيوت جديدة", money: "أبشر، بنرتب الميزانية", pollution: "أبشر، بنبعد الدخان عن البيوت" };
 const BUILDING_FOR = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" };

@@ -53,7 +53,7 @@ test("research takes days and stays", () => {
 });
 
 test("a sensible mayor grows the village into a town and then a city", () => {
-  const s = autoplay(1600, 42);
+  const s = autoplay(2000, 42);
   assert.ok(s.era >= 2, `reached stage ${s.era} with ${s.pop} people`);
   assert.ok(s.money > 0);
   const a = analyze(s);
@@ -159,4 +159,39 @@ test("money is not guaranteed: a spender goes broke, a careful mayor does not", 
   assert.ok(careful.money > 0 && !careful.broke, "the careful mayor stays in credit");
   const a = analyze(careful);
   assert.ok(a.shopIncome <= a.shopDemand + 1e-6, "shops never sell more than people spend");
+});
+
+test("buildings wear out: a worn one works less, a ruined one stops and then falls; repairs and insurance help", async () => {
+  const { repair, repairCost } = await import("../js/sim.js");
+  const s = newGame(13);
+  const t = s.tiles.find((x) => x.b?.id === "well");
+  t.b.cond = 30;
+  assert.ok(repairCost(t.b) > 0);
+  const before = analyze(s).waterSupply;
+  t.b.cond = 100;
+  assert.ok(analyze(s).waterSupply > before, "a worn well gives less water");
+  t.b.cond = 0.01;
+  step(s, fixedRandom());
+  assert.ok(t.b.ruin > 0, "at zero it stops working");
+  for (let i = 0; i < 48; i++) step(s, fixedRandom());
+  assert.equal(t.b, null, "two days later it falls down");
+  // repair and insurance
+  const w = s.tiles.findIndex((x) => x.b?.id === "palms");
+  s.tiles[w].b.cond = 50;
+  s.money = 10000;
+  assert.equal(repair(s, w % N, Math.floor(w / N)), "");
+  assert.equal(s.tiles[w].b.cond, 100);
+});
+
+test("a flash flood on the wadi takes buildings; insurance pays part back", () => {
+  const s = newGame(13);
+  s.insured = true;
+  s.events = [{ id: "rain", left: 10 }];
+  const onWadi = s.tiles.filter((t) => t.t === "wadi" && t.b).length;
+  assert.ok(onWadi > 0, "the start has palms on the wadi");
+  const money = s.money;
+  const { msgs } = step(s, () => 0.001); // every roll comes up: a flood, and everything goes
+  const flood = msgs.find((m) => m.kind === "flood");
+  assert.ok(flood && flood.lost.length, "the flood took something");
+  assert.ok(s.money > money - 200, "insurance paid back part of what was lost");
 });
