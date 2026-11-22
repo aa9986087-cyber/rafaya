@@ -341,7 +341,7 @@ export class World {
   /** Put every building (and rock) in place. Buildings turn their front to a neighbouring road. */
   syncBuildings(s) {
     const groups = new Map();
-    const push = (key, ground, m) => { const k = key === "palms" ? `palms:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
+    const push = (key, ground, m) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
     const seen = new Map(), where = new Map(), glows = [];
@@ -365,13 +365,13 @@ export class World {
       let key = t.b.build > 0 ? "construction" : modelKey(t.b.id, t.b.lvl);
       const variants = VARIANTS[key];
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
-      const gk = key === "palms" ? `palms:${t.t}` : key;
+      const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
       push(key, t.t, m4.clone());
       const i = idx(x, y);
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
       if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
-      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
+      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk.replace(/[12]$/, ""))) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
       if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
     }

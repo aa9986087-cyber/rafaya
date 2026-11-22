@@ -217,3 +217,24 @@ test("bank: a loan pays out, costs every hour, and can be paid off early", async
   assert.equal(payLoan(s, 0), "");
   assert.equal(s.loans.length, 0);
 });
+
+test("farms, shops and workshops upgrade in place and earn more", async () => {
+  const { upgradeBiz, upgradeCost, bizBlocker } = await import("../js/sim.js");
+  const s = newGame(8);
+  s.money = 100000;
+  let at = null;
+  const road = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.tiles[idx(x + dx, y + dy)]?.b?.id === "road");
+  for (let y = 6; y < 34 && !at; y++) for (let x = 6; x < 34 && !at; x++) if (road(x, y) && !s.tiles[idx(x, y)].b && !build(s, x, y, "grocery")) at = { x, y };
+  assert.ok(at, "grocery built");
+  const b = s.tiles[idx(at.x, at.y)].b;
+  const a0 = analyze(s);
+  assert.equal(upgradeCost(b), Math.round(B.grocery.cost * 0.7));
+  const before = s.money;
+  assert.equal(upgradeBiz(s, at.x, at.y, a0), "");
+  assert.equal(b.lvl, 1);
+  assert.equal(s.money, before - Math.round(B.grocery.cost * 0.7));
+  assert.ok(analyze(s).shopRaw > a0.shopRaw, "earns more after the upgrade");
+  assert.match(bizBlocker(s, analyze(s), at.x, at.y), /بلدة|الرافعية/, "the top level waits for a town");
+  // the level survives a save
+  assert.equal(unpack(pack(s)).tiles[idx(at.x, at.y)].b.lvl, 1);
+});

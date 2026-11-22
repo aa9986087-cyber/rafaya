@@ -127,6 +127,26 @@ for (const d of Object.values(B)) {
   if (SUBSIDY[d.cat]) { d.fullCost = d.cost; d.cost = Math.round(d.cost * (1 - SUBSIDY[d.cat])); }
 }
 
+// Farms, shops and workshops grow in place: each step costs part of the building's price and
+// earns more (with more staff and running costs). The last step needs a town (بلدة) and, for shops and
+// workshops, electricity reaching the building; for farms, water reaching it.
+export const BIZ_LEVELS = {
+  palms: ["مزرعة نخل", "نخل بالري الحديث", "نخيل كبرى"],
+  veg: ["مزرعة خضار", "بيوت محمية", "مزرعة حديثة"],
+  grocery: ["بقالة", "تموينات", "سوبرماركت"],
+  cafe: ["مقهى", "مقهى كبير", "كوفي حديث"],
+  souq: ["سوق شعبي", "سوق مسقوف", "سوق كبير"],
+  mandi: ["مطعم مندي", "مطعم مندي كبير", "مطاعم ومطابخ"],
+  workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"]
+};
+/** What each step does: its price (× the building's price) and how income, staff and running costs grow. */
+export const BIZ_UP = [
+  { cost: 0, income: 1, jobs: 1, upkeep: 1 },
+  { cost: 0.7, income: 1.6, jobs: 1.4, upkeep: 1.5 },
+  { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, era: 1 }
+];
+export const bizLevel = (b) => BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0] || BIZ_UP[0];
+
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [
   { id: "small", name: "قرض صغير", amount: 3000, days: 5, rate: 0.15 },
@@ -152,26 +172,26 @@ for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);
 
 /** Goals that guide a new mayor; each pays a reward. */
 export const GOALS = [
-  { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 60 },
-  { text: "وصّل كل الخيام بطريق", test: (s) => s.count.house >= 6 && s.connectedHomes >= s.count.house, reward: 60 },
-  { text: "ازرع مزرعة نخل ثالثة", test: (s) => s.count.palms >= 3, reward: 80 },
-  { text: "احفر بئر ثاني", test: (s) => s.count.well >= 2, reward: 80 },
-  { text: "طوّر خيمة إلى بيت طين", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 150 },
-  { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 200 },
-  { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 200 },
-  { text: "طوّر بيت إلى بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 250 },
-  { text: "ابنِ مدرسة", test: (s) => s.count.school >= 1, reward: 300 },
-  { text: "ابحث الري بالتنقيط في المجلس البلدي", test: (s) => s.tech.irrigation, reward: 300 },
-  { text: "صارت الرافعية بلدة (٢٥٠ ساكن)", test: (s) => s.pop >= 250, reward: 600 },
-  { text: "ابنِ مولد كهرباء أو ألواح شمسية", test: (s) => s.count.generator + s.count.solar >= 1, reward: 400 },
-  { text: "أول فيلا", test: (s) => s.levels[3] >= 1, reward: 500 },
-  { text: "رضا الناس ٧٠٪", test: (s) => s.happy >= 70, reward: 600 },
-  { text: "دخل ٥٠٠ ريال بالساعة", test: (s) => s.net >= 500, reward: 800 },
-  { text: "صارت الرافعية مدينة (١٢٠٠ ساكن)", test: (s) => s.pop >= 1200, reward: 1500 },
-  { text: "ابنِ مستشفى", test: (s) => s.count.hospital >= 1, reward: 1500 },
-  { text: "أول عمارة", test: (s) => s.levels[4] >= 1, reward: 1500 },
-  { text: "صارت الرافعية محافظة (٤٠٠٠ ساكن)", test: (s) => s.pop >= 4000, reward: 5000 },
-  { text: "ابنِ جامعة الرافعية", test: (s) => s.count.university >= 1, reward: 5000 }
+  { text: "انصب ٣ خيام جديدة", test: (s) => s.count.house >= 6, reward: 450 },
+  { text: "وصّل كل الخيام بطريق", test: (s) => s.count.house >= 6 && s.connectedHomes >= s.count.house, reward: 150 },
+  { text: "ازرع مزرعة نخل ثالثة", test: (s) => s.count.palms >= 3, reward: 450 },
+  { text: "احفر بئر ثاني", test: (s) => s.count.well >= 2, reward: 300 },
+  { text: "طوّر خيمة إلى بيت طين", test: (s) => s.levels[1] + s.levels[2] + s.levels[3] + s.levels[4] >= 1, reward: 250 },
+  { text: "وصل عدد السكان ٤٠", test: (s) => s.pop >= 40, reward: 400 },
+  { text: "ابنِ مسجدًا", test: (s) => s.count.mosque + s.count.bigmosque >= 1, reward: 1050 },
+  { text: "طوّر بيت إلى بيت شعبي", test: (s) => s.levels[2] >= 1, reward: 800 },
+  { text: "ابنِ مدرسة", test: (s) => s.count.school >= 1, reward: 1800 },
+  { text: "ابحث الري بالتنقيط في المجلس البلدي", test: (s) => s.tech.irrigation, reward: 1500 },
+  { text: "صارت الرافعية بلدة (٢٥٠ ساكن)", test: (s) => s.pop >= 250, reward: 1500 },
+  { text: "ابنِ مولد كهرباء أو ألواح شمسية", test: (s) => s.count.generator + s.count.solar >= 1, reward: 2100 },
+  { text: "أول فيلا", test: (s) => s.levels[3] >= 1, reward: 2200 },
+  { text: "رضا الناس ٧٠٪", test: (s) => s.happy >= 70, reward: 1500 },
+  { text: "دخل ٥٠٠ ريال بالساعة", test: (s) => s.net >= 500, reward: 2500 },
+  { text: "صارت الرافعية مدينة (١٢٠٠ ساكن)", test: (s) => s.pop >= 1200, reward: 4000 },
+  { text: "ابنِ مستشفى", test: (s) => s.count.hospital >= 1, reward: 12600 },
+  { text: "أول عمارة", test: (s) => s.levels[4] >= 1, reward: 6500 },
+  { text: "صارت الرافعية محافظة (٤٠٠٠ ساكن)", test: (s) => s.pop >= 4000, reward: 10000 },
+  { text: "ابنِ جامعة الرافعية", test: (s) => s.count.university >= 1, reward: 18000 }
 ];
 
 /** Things that happen. weight: how often; effect lasts `days`. */

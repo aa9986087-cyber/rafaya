@@ -311,3 +311,4 @@ body:not(.at-menu) .menu .menu-title { transform: scale(1.08); }
 .card .price s { color: var(--ink-2, #8a7a66); font-size: 11px; opacity: .75; }
 .row > span > small { display: block; font-size: 12px; opacity: .75; font-weight: 500; }
 .row > .btn { flex: none; padding: 8px 14px; }
+.hint { margin: 2px 0 0; font-size: 13px; opacity: .75; }

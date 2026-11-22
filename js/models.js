@@ -789,7 +789,7 @@ function recolor(geo, swaps) {
 
 /** The model for a building (key like "house3", "mosque", "rock", or a variant "house3~1"); built once, then reused. */
 export function model(key, ground = "sand") {
-  const k = key === "palms" ? `palms:${ground}` : key;
+  const k = key.startsWith("palms") ? `${key}:${ground}` : key;
   if (!cache.has(k)) {
     const [base, v] = key.split("~");
     if (v !== undefined) {
@@ -811,8 +811,44 @@ export function model(key, ground = "sand") {
 export function compose(fn) { const b = new Builder(); fn(b, MAKERS); return b.done(); }
 export function makerSeeded(key, seed) { const b = new Builder(); MAKERS[key](b, "sand", seed); return b.done(); }
 
+// Upgraded farms, shops and workshops: the same building with more added on at each level.
+const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop"];
+function bizExtras(b, id, lvl) {
+  if (id === "palms") {
+    for (const z of [-0.2, 0.2]) b.box(0.8, 0.012, 0.014, "#3b3f44", { y: 0.018, z }); // drip lines
+    b.box(0.12, 0.12, 0.12, C.plaster, { x: 0.38, z: 0.3 }); b.box(0.13, 0.02, 0.13, C.stone, { x: 0.38, y: 0.12, z: 0.3 });
+    if (lvl >= 2) { palm(b, 0, 0, 0.8, 0.15); b.cyl(0.07, 0.07, 0.2, C.white, { x: -0.36, z: 0.32 }, 10); b.cyl(0.075, 0.075, 0.02, C.grey, { x: -0.36, y: 0.2, z: 0.32 }, 10); }
+    return;
+  }
+  if (id === "veg") {
+    const tunnel = (z) => b.add(new THREE.CylinderGeometry(0.17, 0.17, 0.84, 10, 1, true, 0, Math.PI), "#cfe3ea", { y: 0.015, z, rz: Math.PI / 2 }, "shiny");
+    tunnel(0.24);
+    if (lvl >= 2) { tunnel(-0.12); b.cyl(0.07, 0.07, 0.22, C.white, { x: -0.38, z: -0.38 }, 10); }
+    return;
+  }
+  if (id === "workshop") {
+    b.cyl(0.035, 0.035, 0.55, C.grey, { x: 0.3, z: -0.22 }, 8);
+    for (let i = 0; i < 3; i++) b.box(0.1, 0.08, 0.1, i % 2 ? C.orange : C.wood, { x: 0.12 + i * 0.12, z: 0.42 });
+    if (lvl >= 2) { b.box(0.7, 0.2, 0.16, "#9a978f", { z: -0.39 }); b.box(0.72, 0.02, 0.18, C.grey, { y: 0.2, z: -0.39 }); }
+    return;
+  }
+  // shops: a tall sign with a gold star per level, a side room, and at the top level a store room and lights
+  b.cyl(0.012, 0.012, 0.52, C.dark, { x: 0.42, z: 0.42 }, 5);
+  b.box(0.22, 0.12, 0.03, "#1f6f5c", { x: 0.42, y: 0.5, z: 0.42 });
+  for (let i = 0; i < lvl; i++) b.box(0.035, 0.035, 0.034, C.gold, { x: 0.42 - (lvl - 1) * 0.03 + i * 0.06, y: 0.54, z: 0.42 });
+  b.box(0.16, 0.03, 0.032, C.light, { x: 0.42, y: 0.5, z: 0.43 }, "lights");
+  if (id !== "souq") { b.box(0.14, 0.24, 0.36, C.plaster, { x: -0.42, z: 0.02 }); b.box(0.16, 0.02, 0.38, C.stone, { x: -0.42, y: 0.24, z: 0.02 }); }
+  else for (const x of [-0.3, 0.3]) b.box(0.32, 0.006, 0.02, C.light, { x, y: 0.3, z: 0 }, "lights");
+  if (lvl >= 2) {
+    if (id !== "souq") b.box(0.56, 0.2, 0.14, "#d8ccb4", { z: -0.41 });
+    else b.add(new THREE.BoxGeometry(0.92, 0.015, 0.92), "#e6d3a8", { y: 0.36 });
+  }
+}
+for (const id of BIZ) for (const lvl of [1, 2]) MAKERS[`${id}${lvl}`] = (b, ground, seed) => { MAKERS[id](b, ground, seed); bizExtras(b, id, lvl); };
+
 export function modelKey(id, lvl) {
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;
+  if (lvl > 0 && BIZ.includes(id)) return `${id}${lvl}`;
   return id;
 }
 

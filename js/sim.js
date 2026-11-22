@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -245,14 +245,15 @@ export function analyze(s) {
     // A bankrupt council cannot pay the people who run its services: they close.
     const works = (!needsRoad(def) || onRoad(s, x, y)) && !((s.broke || strike) && def.cat === "serv") && !(t.b.ruin > 0);
     const f = condFactor(t.b);
-    a.value += def.cost;
+    const up = bizLevel(t.b);
+    a.value += def.cost * (1 + (t.b.lvl && BIZ_LEVELS[t.b.id] ? BIZ_UP.slice(1, t.b.lvl + 1).reduce((n, u) => n + u.cost, 0) : 0));
     a.repairBill += repairCost(t.b);
     t.b.works = works;
     const here = idx(x, y);
     // only places the pipes and wires reach draw water and power
     if (def.water > 0) a.waterSupply += def.water * f; else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
     if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
-    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += def.upkeep || 0;
+    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += (def.upkeep || 0) * up.upkeep;
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
@@ -261,7 +262,7 @@ export function analyze(s) {
       else if (works) a.dryHomes++;
       if (!a.powered[here] && works && t.b.lvl >= 3) a.darkHomes++;
     }
-    if (works && def.jobs) a.jobs += def.jobs;
+    if (works && def.jobs) a.jobs += Math.round(def.jobs * up.jobs);
     if (t.b.id === "palms") palms.push(t);
     // Services and nuisances spread over their radius.
     if (works && def.radius && (def.happy || def.pollute)) {
@@ -317,9 +318,9 @@ export function analyze(s) {
     if (!def.income) continue;
     if (def.cat === "farm" && (t.b.id === "palms" || t.b.id === "veg")) {
       const wadi = t.t === "wadi" ? 1.5 : 1;
-      a.farmIncome += def.income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
+      a.farmIncome += def.income * bizLevel(t.b).income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
     } else {
-      let inc = def.income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
+      let inc = def.income * bizLevel(t.b).income * (0.3 + 0.7 * a.staffing) * (0.4 + 0.6 * a.powerRatio) * condFactor(t.b);
       if (t.b.id === "datefactory") inc *= 1 + Math.min(1, palms.length * 0.1);
       if (def.visitors) a.visitorIncome += inc * shopMult;
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
@@ -395,7 +396,42 @@ export function houseBlocker(s, a, x, y) {
 }
 
 /** What the next level of this house costs (0 at the top). */
-export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0 : 0);
+export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
+  : BIZ_LEVELS[b?.id] && BIZ_UP[b.lvl + 1] ? Math.round(B[b.id].cost * BIZ_UP[b.lvl + 1].cost) : 0);
+/** Can this building be upgraded at all (a house, a farm, a shop, a workshop)? */
+export const upgradable = (b) => b?.id === "house" || !!BIZ_LEVELS[b?.id];
+/** Why this farm, shop or workshop cannot move up a level now, or "". */
+export function bizBlocker(s, a, x, y) {
+  const b = s.tiles[idx(x, y)]?.b;
+  if (!b || !BIZ_LEVELS[b.id]) return "ما يتطور";
+  const next = BIZ_UP[b.lvl + 1];
+  if (!next) return "أعلى مستوى";
+  if (b.build > 0) return "تحت الإنشاء";
+  if (b.ruin > 0 || (b.cond ?? 100) < 40) return "رمّمه أول";
+  if (b.works === false) return "ما يشتغل: يحتاج طريق";
+  if (next.era && s.era < next.era) return `يحتاج تصير الرافعية ${ERAS[next.era].name}`;
+  const here = idx(x, y), farm = B[b.id].cat === "farm" && b.id !== "workshop";
+  if (next.era && farm && !a.watered[here]) return "ما يوصله ماء: ابنِ بئر قريب منه";
+  if (next.era && !farm && !a.powered[here]) return "ما توصله الكهرباء: ابنِ مولد قريب منه";
+  return "";
+}
+/** Why a building cannot be upgraded now (house or business), or "". */
+export const upgradeBlocker = (s, a, x, y) => (s.tiles[idx(x, y)]?.b?.id === "house" ? houseBlocker(s, a, x, y) : bizBlocker(s, a, x, y));
+/** Upgrade a farm, shop or workshop one level. Returns why not, or "". */
+export function upgradeBiz(s, x, y, a = analyze(s)) {
+  const b = s.tiles[idx(x, y)]?.b;
+  const why = bizBlocker(s, a, x, y);
+  if (why) return why;
+  const cost = upgradeCost(b);
+  if (s.money < cost) return "ما يكفي المال";
+  s.money -= cost;
+  b.lvl++; b.cond = 100; b.upAt = s.day;
+  return "";
+}
+/** Upgrade whatever is on this tile. */
+export const upgradeAt = (s, x, y, a = analyze(s)) => (s.tiles[idx(x, y)]?.b?.id === "house" ? upgradeHouse(s, x, y, a) : upgradeBiz(s, x, y, a));
+/** The name of a building at its level. */
+export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
 
 /** The mayor upgrades a house one level. Returns why not, or "". */
 export function upgradeHouse(s, x, y, a = analyze(s)) {
@@ -691,7 +727,7 @@ export function unpack(text) {
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
-    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || 1) - 1), res: Number(res) || 0 } : null;
+    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     return { t: ground, b };
