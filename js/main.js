@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -110,6 +110,7 @@ canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (playing) world
 function hoverAt(t) {
   if (!tool || !inMap(t.x, t.y)) { world.setHover(null); world.setGhost(null); return; }
   if (tool.id === "upgrade") { world.setHover(t, canDo(t.x, t.y)); return; }
+  if (tool.id === "move") return; // the move tool shows its own preview
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
   world.setHover(t, ok);
@@ -123,7 +124,7 @@ function hoverAt(t) {
 // a preview shows it, and the ✓ button builds it.
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
-const isMulti = () => tool && (tool.id === "bulldoze" || tool.id === "upgrade" || B[tool.id].cat === "road");
+const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || B[tool.id].cat === "road");
 const tileCost = (x, y) => (tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradeCost(S.tiles[idx(x, y)].b) : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
@@ -139,6 +140,7 @@ function readyHouses() {
 
 function showPending() {
   if (!tool) return;
+  if (tool.id === "move") { showMove(); return; }
   if (tool.id === "upgrade" && !pending.length) world.setOverlay(readyHouses(), "#e0a44a");
   else if (isMulti()) {
     const values = new Float32Array(N * N);
@@ -180,6 +182,7 @@ function tap(sx, sy) {
   const t = world.pick(sx, sy);
   if (!inMap(t.x, t.y)) return;
   if (tool) {
+    if (tool.id === "move") { moveTap(t); return; }
     if (isMulti()) {
       const at = pending.findIndex((p) => p.x === t.x && p.y === t.y);
       if (at >= 0) pending.splice(at, 1); else pending.push(t);
@@ -192,6 +195,7 @@ function tap(sx, sy) {
 }
 
 function confirmPending() {
+  if (tool?.id === "move") { confirmMove(); return; }
   if (!tool || !pending.length) return;
   const list = pending.filter((p) => canDo(p.x, p.y));
   const cost = list.reduce((a, p) => a + tileCost(p.x, p.y), 0);
@@ -201,6 +205,45 @@ function confirmPending() {
   pending = [];
   world.setHover(null); world.setGhost(null); world.setOverlay(null);
   showPending();
+}
+
+// ---------- moving buildings (tap one, tap where it goes, then ✓) ----------
+function moveTap(t) {
+  const b = S.tiles[idx(t.x, t.y)].b;
+  const from = tool.from;
+  if (from && from.x === t.x && from.y === t.y) { tool.from = null; pending = []; sfx.tap(); showMove(); return; }
+  if (b) {
+    const why = ["road", "asphalt"].includes(b.id) ? "الطرق ما تنقل: أزلها وارسمها من جديد" : b.build > 0 ? "تحت الإنشاء: انتظر لين يخلص" : "";
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    tool.from = t; pending = []; sfx.tap(); showMove(); return;
+  }
+  if (!from) { toast("اضغط أول على المبنى اللي تبي تنقله", "bad"); sfx.deny(); return; }
+  pending = [t]; sfx.tap(); showMove();
+}
+function showMove() {
+  const from = tool.from, to = pending[0];
+  const values = new Float32Array(N * N);
+  if (from) values[idx(from.x, from.y)] = 1;
+  world.setOverlay(from ? values : null, "#e0a44a");
+  const b = from && S.tiles[idx(from.x, from.y)].b;
+  const why = b && to ? moveBlocker(S, from.x, from.y, to.x, to.y) : "";
+  if (b && to) { world.setHover(to, !why); world.setGhost(to, modelKey(b.id, b.lvl), !why, S.tiles[idx(to.x, to.y)].t); }
+  else { world.setHover(null); world.setGhost(null); }
+  $("toolOk").hidden = !(b && to);
+  $("toolOk").textContent = "✓ انقل";
+  $("toolOk").disabled = !!why;
+  $("toolName").textContent = !b ? "نقل: اضغط على المبنى اللي تبي تنقله"
+    : !to ? `«${levelName(b)}» · اضغط المكان الجديد (أجرة النقل ${money(moveCost(b))} ريال)`
+    : why || `انقل «${levelName(b)}» هنا بـ${money(moveCost(b) + (S.tiles[idx(to.x, to.y)].t === "rock" ? ROCK_CLEAR : 0))} ريال؟${["home", "shop", "serv"].includes(B[b.id].cat) && !nearRoad(to.x, to.y) ? " ⚠️ ما جنبه طريق" : ""}`;
+}
+function confirmMove() {
+  const from = tool.from, to = pending[0];
+  if (!from || !to) return;
+  const name = levelName(S.tiles[idx(from.x, from.y)].b);
+  const why = moveBuilding(S, from.x, from.y, to.x, to.y);
+  if (why) { toast(why, "bad"); sfx.deny(); return; }
+  sfx.build(); A = analyze(S); sync(false); floatAt(to.x, to.y, `↔ ${name}`, "up");
+  tool.from = null; pending = []; showMove(); refresh(); save();
 }
 
 const nearRoad = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && ["road", "asphalt"].includes(S.tiles[idx(x + dx, y + dy)].b?.id));
@@ -262,16 +305,18 @@ const ICONS = {
   serv: `<path ${F} d="M5 20v-6h10v6zM6 14c0-3 1.8-5 4-6.2 2.2 1.2 4 3.2 4 6.2z"/><path d="M3 20h18M5 20v-6h10v6M6 14c0-3 1.8-5 4-6.2 2.2 1.2 4 3.2 4 6.2M10 7.8V5.5M18 20V9l1-2.5L20 9v11M8.5 20v-2.5a1.5 1.5 0 0 1 3 0V20"/>`,
   deco: `<path ${F} d="M12 4c2 2.5 2 5 0 7-2-2-2-4.5 0-7zM6 9c3 0 5 2 6 4-3 0-5-1.5-6-4zM18 9c-3 0-5 2-6 4 3 0 5-1.5 6-4z"/><path d="M12 4c2 2.5 2 5 0 7-2-2-2-4.5 0-7zM6 9c3 0 5 2 6 4-3 0-5-1.5-6-4zM18 9c-3 0-5 2-6 4 3 0 5-1.5 6-4zM12 13v8M8 21h8"/>`,
   proj: `<path ${F} d="M10 21V8l2-5 2 5v13z"/><path d="M10 21V8l2-5 2 5v13M7 21h10M10 12h4M10 16h4M4 21v-6h3M20 21v-6h-3"/>`,
+  move: `<path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>`,
   road: `<path ${F} d="M8 3h8l4 18H4z"/><path d="M8 3 4 21M16 3l4 18M12 4v3M12 10v3M12 16v3"/>`,
   bulldoze: `<path ${F} d="M3 13h9v4H3zM5 9h5v4H5z"/><path d="M3 13h9v4H3zM5 9h5v4H5zM12 14l4-3 2 1-1 5h-5M18 12l3 5M4 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M9 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0"/>`
 };
-const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name })), { id: "bulldoze", name: "إزالة" }];
+const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name })), { id: "move", name: "نقل" }, { id: "bulldoze", name: "إزالة" }];
 function renderCats() {
   $("cats").innerHTML = toolsBar.map((c) => `<button type="button" class="cat ${c.id === "bulldoze" ? "danger" : ""} ${(openCat === c.id || tool?.id === c.id) ? "on" : ""}" data-cat="${c.id}"><svg viewBox="0 0 24 24">${ICONS[c.id]}</svg><span>${c.name}</span></button>`).join("");
   $("cats").querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => {
     sfx.tap();
     const id = b.dataset.cat;
     if (id === "bulldoze") { openCat = null; setTool(tool?.id === "bulldoze" ? null : { id: "bulldoze" }); return; }
+    if (id === "move") { openCat = null; setTool(tool?.id === "move" ? null : { id: "move", from: null }); return; }
     openCat = openCat === id ? null : id;
     renderCats(); renderCards();
   }));
@@ -775,6 +820,7 @@ $("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
 for (const id of ["budgetBtn", "statMoney", "statPop", "statHappy"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
+$("guideBtn").addEventListener("click", () => { sfx.tap(); howTo(false); });
 
 function goals() {
   const done = GOALS.slice(0, S.goal).map((x) => `<div class="row done"><span>${x.text}</span><b class="plus">✓</b></div>`).join("");
@@ -819,26 +865,68 @@ function settingsSheet(fromMenu) {
   });
 }
 
+/** The guide: how to play, how the town grows into a city, and how to upgrade. */
 function howTo(fromMenu) {
-  sheet(`<h2>طريقة اللعب</h2>
-    <div class="rows">
-      <div class="row"><span>اسحب بإصبع</span><b>تتحرك في الخريطة</b></div>
-      <div class="row"><span>بإصبعين</span><b>تكبّر وتصغّر</b></div>
+  const next = ERAS[S.era + 1];
+  const pct = next ? Math.min(100, Math.round((S.pop / next.pop) * 100)) : 100;
+  const opens = (e) => Object.values(B).filter((d) => d.era === e.id && d.cat !== "road" && d.cat !== "deco").map((d) => d.name).slice(0, 6).join("، ");
+  const step = (n, text) => `<div class="row g-step"><b class="g-n">${ar(n)}</b><span>${text}</span></div>`;
+  sheet(`<h2>شرح اللعبة</h2>
+    <p>أنت عمدة الرافعية. تبدأ بثلاث خيام وبئر جنب الوادي، وهدفك تكبّرها من قرية إلى بلدة ثم مدينة ثم محافظة، وأهلها مبسوطين وميزانيتها سليمة.</p>
+    <div class="g-now"><div class="row"><span>الرافعية الحين</span><b>${ERAS[S.era].name}</b></div>
+      ${next ? `<div class="row"><span>عشان تصير «${next.name}»</span><b>${money(S.pop)} / ${money(next.pop)} ساكن</b></div><i class="prog"><i style="width:${pct}%"></i></i>` : `<div class="need ok">وصلت أعلى مرحلة 🎉</div>`}</div>
+
+    <details open><summary>البداية خطوة بخطوة</summary><div class="rows">
+      ${step(1, "انصب خيام جنب الطريق (من «سكن»). كل خيمة يسكنها ٣.")}
+      ${step(2, "احفر بئر قريب منها: البئر يوصل الماء لين ٥ مربعات بس.")}
+      ${step(3, "ازرع نخل في الوادي وافتح بقالة: وظائف ودخل.")}
+      ${step(4, "طوّر الخيام إلى بيوت طين عشان يسكن ناس أكثر.")}
+      ${step(5, "ابنِ مسجد ومدرسة لما يكثر الناس: يرفعون الرضا ويخلون البيوت تتطور.")}
+      ${step(6, "تابع «المهمة» فوق: كل مهمة تعطيك مكافأة تغطي تكلفتها.")}
+    </div></details>
+
+    <details><summary>كيف تصير بلدة ومدينة؟</summary>
+      <p>المرحلة تتحدد بعدد السكان. والسكان يجون إذا فيه بيوت فاضية والناس مبسوطين، ويطلعون إذا زعلوا.</p>
+      <div class="rows">${ERAS.map((e) => `<div class="row ${e.id === S.era ? "now" : e.id < S.era ? "done" : ""}"><span><b>${e.name}</b><small>${e.pop ? `من ${money(e.pop)} ساكن` : "البداية"}${opens(e) ? ` · تفتح: ${opens(e)}` : ""}</small></span><b>${e.id < S.era ? "✓" : e.id === S.era ? "الحين" : ""}</b></div>`).join("")}</div>
+      <p>عشان يزيد السكان: بيوت أكثر وأكبر، ماء وكهرباء واصلة، وظائف، وخدمات قريبة (مسجد، مدرسة، مستوصف، حديقة)، وضريبة معقولة.</p>
+    </details>
+
+    <details><summary>التطوير</summary>
+      <p><b>البيوت:</b> اضغط على البيت أو اختر «سكن ← تطوير البيوت». كل مستوى يسكّن ناس أكثر:</p>
+      <div class="rows">${B.house.levels.map((l, k) => `<div class="row"><span><b>${l.name}</b><small>${k ? `${money(l.cost)} ريال · يحتاج: ${[l.needs.road && "طريق", l.needs.water && "ماء واصل", l.needs.power && "كهرباء واصلة", l.needs.happy && `رضا ${ar(l.needs.happy)}٪`, l.needs.services && `${ar(l.needs.services)} خدمات قريبة`, l.era && `تكون ${ERAS[l.era].name}`].filter(Boolean).join("، ")}` : "تنصبها من «سكن»"}</small></span><b>${ar(l.cap)} ساكن</b></div>`).join("")}</div>
+      <p><b>المحلات والمزارع والورش:</b> لها ٣ مستويات. اضغط عليها أو اختر «تطوير» من قسمها. المستوى الثاني يزيد الدخل ٦٠٪، والثالث يضاعفه، ويحتاج تكون بلدة مع كهرباء (للمحلات) أو ماء (للمزارع).</p>
+      <p><b>الأبحاث:</b> من «المجلس» تبحث أشياء تفتح مباني وتزيد الإنتاج.</p>
+    </details>
+
+    <details><summary>الفلوس</summary><div class="rows">
+      <div class="row"><span>الدخل</span><b>ضرائب، محلات، مزارع، ورش، زوار</b></div>
+      <div class="row"><span>المصروف</span><b>رواتب، نظافة، صيانة، تشغيل المباني</b></div>
+      <div class="row"><span>المحلات</span><b>تبيع على قد اللي يصرفه أهل البلد</b></div>
+      <div class="row"><span>الورش والمصانع</span><b>تبيع لبرا، والزايد بثلث السعر</b></div>
+      <div class="row"><span>البنك (من «تجارة»)</span><b>قروض تسددها بالساعة مع فايدة</b></div>
+      <div class="row"><span>الضريبة (من «الأرقام»)</span><b>أعلى = دخل أكثر ورضا أقل</b></div>
+      </div><div class="need">لو صارت الديون كبيرة تفلس البلدية وتقفل الخدمات. تابع «الأرقام» دايم.</div></details>
+
+    <details><summary>الماء والكهرباء</summary>
+      <p>كل بئر وخزان ومولد يوصل لمسافة محدودة. البيت اللي برا المسافة ما يجيه شي. اضغط مربع الماء والكهرباء فوق عشان تشوف وين واصل، ولما تمسك بئر أو مولد يبين لك وين بيوصل.</p></details>
+
+    <details><summary>الخسائر والصيانة</summary>
+      <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
+
+    <details><summary>الناس والنشرة والقرارات</summary>
+      <p>في «النشرة» الأهالي يتكلمون عن اللي ناقصهم واللي مبسوطين فيه، وترد عليهم بوعد أو تسكيت أو رفض. الوعد لازم توفي فيه. ومرة كل كم يوم يجيك قرار من المجلس تختار فيه.</p></details>
+
+    <details><summary>الأدوات</summary><div class="rows">
+      <div class="row"><span>اسحب بإصبع / بإصبعين</span><b>تتحرك / تكبّر وتصغّر</b></div>
       <div class="row"><span>زر «لفّ»</span><b>تدوّر المنظر</b></div>
-      <div class="row"><span>اختر من تحت، اضغط مكانه، ثم «✓ ابنِ»</span><b>تبني</b></div>
-      <div class="row"><span>اسحب بالطريق ثم «✓ ابنِ»</span><b>ترسمه مرة وحدة</b></div>
-      <div class="row"><span>✕ مرة</span><b>تلغي المكان اللي اخترته</b></div>
-      <div class="row"><span>سكن ← «تطوير البيوت»</span><b>تطور الخيام والبيوت بنفسك</b></div>
-      <div class="row"><span>تجارة / زراعة ← «تطوير»</span><b>كبّر محلاتك ومزارعك مكانها: دخل أكثر</b></div>
-      <div class="row"><span>البئر والمولد</span><b>يوصلون لمسافة محدودة</b></div>
-      <div class="row"><span>اضغط مربع الماء والكهرباء فوق</span><b>تشوف وين يوصلون</b></div>
-      <div class="row"><span>اضغط على الأرض اللي ورا السياج</span><b>تشتريها وتكبر فيها</b></div>
-      <div class="row"><span>«مشاريع كبرى»</span><b>تنبني على أيام وتجيب دخل كبير</b></div>
-      <div class="row"><span>القائمة ← الإنجازات</span><b>تشوف وش حققت</b></div>
+      <div class="row"><span>اختر من تحت، اضغط مكانه، ثم ✓</span><b>تبني</b></div>
+      <div class="row"><span>اسحب بالطريق ثم ✓</span><b>ترسمه مرة وحدة</b></div>
+      <div class="row"><span>«نقل»: اضغط المبنى ثم مكانه الجديد</span><b>ترتب ديرتك (أجرة ١٠٪)</b></div>
+      <div class="row"><span>«إزالة»</span><b>تشيل المبنى ويرجع لك ثلث سعره</b></div>
+      <div class="row"><span>اضغط على الأرض ورا السياج</span><b>تشتريها وتكبر فيها</b></div>
       <div class="row"><span>اضغط على أي مبنى</span><b>تشوف وش ينقصه</b></div>
-    </div>
-    <h3>كيف تكبر الرافعية؟</h3>
-    <p>انصب خيام جنب الطرق، واحفر آبار قريبة منها (البئر يوصل لين ٥ مربعات)، وابنِ مزارع ومحلات عشان الوظائف. المساجد والمدارس والحدائق تفرّح الناس. وأنت اللي تطور البيوت بفلوسك: خيمة، طين، شعبي، فيلا، عمارة، وكل مستوى يسكّن ناس أكثر. وكل ما كبر عدد السكان، تصير بلدة ثم مدينة ثم محافظة، وتنفتح مباني جديدة.</p>`, fromMenu ? "settings-menu" : "how");
+      <div class="row"><span>القائمة ← الإنجازات</span><b>تشوف وش حققت</b></div>
+    </div></details>`, fromMenu ? "settings-menu" : "how");
 }
 
 function pauseMenu() {

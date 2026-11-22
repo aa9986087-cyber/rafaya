@@ -238,3 +238,21 @@ test("farms, shops and workshops upgrade in place and earn more", async () => {
   // the level survives a save
   assert.equal(unpack(pack(s)).tiles[idx(at.x, at.y)].b.lvl, 1);
 });
+
+test("a building can be moved, keeping its level and residents", async () => {
+  const { moveBuilding, moveCost, moveBlocker } = await import("../js/sim.js");
+  const s = newGame(9);
+  const from = s.tiles.findIndex((t) => t.b?.id === "house");
+  const fx = from % N, fy = Math.floor(from / N);
+  s.tiles[from].b.lvl = 1;
+  const res = s.tiles[from].b.res;
+  let to = null;
+  for (let y = fy - 3; y <= fy + 3 && !to; y++) for (let x = fx - 3; x <= fx + 3 && !to; x++) if (owns(s, x, y) && !s.tiles[idx(x, y)].b && s.tiles[idx(x, y)].t === "sand") to = { x, y };
+  const money = s.money, fee = moveCost(s.tiles[from].b);
+  assert.equal(moveBuilding(s, fx, fy, to.x, to.y), "");
+  assert.equal(s.tiles[from].b, null);
+  const b = s.tiles[idx(to.x, to.y)].b;
+  assert.equal(b.lvl, 1); assert.equal(b.res, res);
+  assert.equal(s.money, money - fee);
+  assert.notEqual(moveBlocker(s, to.x, to.y, to.x, to.y), "", "cannot move onto a taken tile");
+});

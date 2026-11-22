@@ -145,6 +145,33 @@ export function build(s, x, y, id) {
   return "";
 }
 
+// ---------- moving a building ----------
+/** Movers' fee: a tenth of the building's price. Level, residents and condition move with it. */
+export const moveCost = (b) => (b ? Math.max(5, Math.round(B[b.id].cost * 0.1)) : 0);
+/** Why this building cannot move to (tx, ty), or "". */
+export function moveBlocker(s, fx, fy, tx, ty) {
+  const from = inMap(fx, fy) && s.tiles[idx(fx, fy)].b;
+  if (!from) return "ما فيه مبنى هنا";
+  if (["road", "asphalt"].includes(from.id)) return "الطرق ما تنقل: أزلها وارسمها من جديد";
+  if (from.build > 0) return "تحت الإنشاء: انتظر لين يخلص";
+  if (!inMap(tx, ty)) return "خارج الأرض";
+  if (!owns(s, tx, ty)) return "الأرض هذي مو لك";
+  const t = s.tiles[idx(tx, ty)];
+  if (t.b) return "المكان مشغول";
+  if (s.money < moveCost(from) + (t.t === "rock" ? ROCK_CLEAR : 0)) return "ما يكفي المال";
+  return "";
+}
+/** Move a building to an empty tile you own. Returns why not, or "". */
+export function moveBuilding(s, fx, fy, tx, ty) {
+  const why = moveBlocker(s, fx, fy, tx, ty);
+  if (why) return why;
+  const src = s.tiles[idx(fx, fy)], dst = s.tiles[idx(tx, ty)];
+  s.money -= moveCost(src.b) + (dst.t === "rock" ? ROCK_CLEAR : 0);
+  if (dst.t === "rock") dst.t = "sand";
+  dst.b = src.b; src.b = null;
+  return "";
+}
+
 /** Remove a building (a third of its price comes back) or clear a rock. */
 export function demolish(s, x, y) {
   const t = s.tiles[idx(x, y)];

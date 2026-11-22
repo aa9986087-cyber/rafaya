@@ -312,3 +312,14 @@ body:not(.at-menu) .menu .menu-title { transform: scale(1.08); }
 .row > span > small { display: block; font-size: 12px; opacity: .75; font-weight: 500; }
 .row > .btn { flex: none; padding: 8px 14px; }
 .hint { margin: 2px 0 0; font-size: 13px; opacity: .75; }
+
+details { margin: 8px 0; border-radius: 14px; background: var(--paper-2); padding: 0 12px; }
+details > summary { cursor: pointer; padding: 12px 0; font-weight: 800; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "◂ "; color: var(--teal); }
+details[open] > summary::before { content: "▾ "; }
+details[open] { padding-bottom: 10px; }
+details .row { background: rgba(255, 255, 255, .45); }
+.g-now { display: grid; gap: 6px; margin: 8px 0 4px; }
+.g-step { justify-content: flex-start; }
+.g-n { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: #fff; font-size: 14px; }
