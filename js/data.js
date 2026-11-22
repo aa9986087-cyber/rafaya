@@ -199,7 +199,7 @@ export const CHAINS = [
 ];
 // Building materials: quarries and block factories make them; upgrades use them. What is missing is
 // bought from outside at MAT_PRICE a unit; the store holds MAT_CAP, and the rest is sold at MAT_SELL.
-export const MAT = { price: 25, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 10, 30, 100], biz: [0, 0, 15] };
+export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80], biz: [0, 0, 12] };
 
 // Everything a car can drive on.
 export const ROAD_IDS = ["road", "asphalt", "avenue", "roundabout", "signal"];
