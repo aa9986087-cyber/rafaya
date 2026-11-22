@@ -224,6 +224,29 @@ export const SITES = [
 // per unit of distance on the region map. Linked towns buy from each other.
 export const REGION = { found: [15000, 30000, 60000, 120000, 200000], startMoney: 2500, roadPerUnit: 120, unlockEra: 1 };
 
+// The world of al-Jouf: one map shared by every player, in plots (COLS × ROWS). Each part of the
+// region has its own land; the names mark where the real places are (roughly).
+export const WORLD = {
+  cols: 24, rows: 16,
+  places: [
+    { name: "القريات", x: 3, y: 3, terrain: "mountain", r: 3.2 },
+    { name: "طبرجل", x: 8, y: 5, terrain: "plain", r: 3 },
+    { name: "دومة الجندل", x: 11, y: 9, terrain: "bigwadi", r: 2.6 },
+    { name: "سكاكا", x: 14, y: 7, terrain: "wadi", r: 3 },
+    { name: "الحماد", x: 13, y: 2, terrain: "mountain", r: 4 },
+    { name: "النفود الكبير", x: 18, y: 13, terrain: "dunes", r: 6 },
+    { name: "روضات الجوف", x: 20, y: 4, terrain: "meadow", r: 3 }
+  ]
+};
+/** The kind of land of a plot: the nearest place inside its reach, the dunes to the south-east, plain elsewhere. */
+export function worldTerrain(plot) {
+  const x = plot % WORLD.cols, y = Math.floor(plot / WORLD.cols);
+  let best = null, bd = 1e9;
+  for (const p of WORLD.places) { const d = Math.hypot(x - p.x, y - p.y) / p.r; if (d < 1 && d < bd) { bd = d; best = p; } }
+  if (best) return best.terrain;
+  return y >= 11 || (x >= 17 && y >= 8) ? "dunes" : "plain";
+}
+
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [
   { id: "small", name: "قرض صغير", amount: 3000, days: 5, rate: 0.15 },

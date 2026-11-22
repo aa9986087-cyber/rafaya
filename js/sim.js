@@ -887,7 +887,7 @@ export function step(s, r = Math.random) {
       msgs.push({ kind: "event", title: "السد حجز السيل", text: "نزل سيل قوي والسد حجزه! البحيرة امتلت والماء الجوفي بيرتفع، وما تضرر شي." });
     }
   }
-  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.02 : 0.03)) {
+  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.02 : 0.03) * (s.away ? 0.3 : 1)) {
     const lost = [], damaged = [];
     let refund = 0;
     s.tiles.forEach((t, i) => {
@@ -1051,6 +1051,53 @@ export function catchUp(s, now = Date.now()) {
   const msgs = [];
   for (let i = 0; i < days; i++) { msgs.push(...step(s).msgs); if (s.decision) decideDefault(s); }
   return { days, pop: s.pop - start.pop, money: Math.round(s.money - start.money), msgs };
+}
+
+// ---------- the world: the deputy mayor while the mayor is away ----------
+/** Standing orders the mayor leaves the deputy. */
+export const DEPUTY = { repair: true, floor: 2000, tax: true };
+/** How many hours the deputy runs the town in full; after that the town is kept steady. */
+export const DEPUTY_FULL_HOURS = 168;
+/** After this long away (a week of real time, in town hours) the town sleeps: nothing changes. */
+export const SLEEP_HOURS = Math.round((7 * 86400) / 50);
+/**
+ * The town carries on while its mayor is away: the deputy runs it (repairs, pays, answers with the
+ * safe choice, raises the tax a little if money runs short) under the shield: the town never goes
+ * bankrupt while away and never loses more than 5% of its people a day. The first week of town time
+ * is worked out hour by hour; after that the town is kept as it is and only earns (or pays) its
+ * steady income, until it falls asleep. Returns a summary.
+ */
+export function deputyCatchUp(s, hours, r = Math.random) {
+  if (hours <= 0) return null;
+  const orders = { ...DEPUTY, ...(s.deputy || {}) };
+  const start = { pop: s.pop, money: s.money, tax: s.tax };
+  const msgs = [], did = { repairs: 0, decisions: 0, shield: 0, taxUp: 0 };
+  const full = Math.min(hours, DEPUTY_FULL_HOURS);
+  s.away = true;
+  let dayPop = s.pop;
+  for (let i = 0; i < full; i++) {
+    msgs.push(...step(s, r).msgs);
+    if (s.decision) { decideDefault(s); did.decisions++; }
+    if (s.money < 0) { s.money = 0; did.shield++; }
+    if (i % 24 === 23) {
+      if (s.pop < Math.ceil(dayPop * 0.95)) { s.pop = Math.ceil(dayPop * 0.95); did.shield++; }
+      dayPop = s.pop;
+      if (orders.repair) { const bill = analyze(s).repairBill; if (bill && s.money - bill > orders.floor) { repairAll(s); did.repairs++; } }
+      // only when the money is short and still falling
+      if (orders.tax && s.money < orders.floor && s.tax < 15 && analyze(s).net < 0) { s.tax++; did.taxUp++; }
+    }
+  }
+  s.away = false;
+  // the rest of the time: steady, the deputy careful with money (80% of the income)
+  const rest = Math.min(hours, SLEEP_HOURS) - full;
+  let steady = 0;
+  if (rest > 0) {
+    const net = analyze(s).net;
+    steady = Math.round(net > 0 ? net * rest * 0.8 : Math.max(net * rest, -Math.max(0, s.money - orders.floor)));
+    s.money = Math.max(0, s.money + steady);
+  }
+  s.day += hours - full; // the town keeps the world's hour
+  return { hours, full, steady, slept: hours > SLEEP_HOURS, pop: s.pop - start.pop, money: Math.round(s.money - start.money), taxFrom: start.tax, did, msgs };
 }
 
 // ---------- saving ----------

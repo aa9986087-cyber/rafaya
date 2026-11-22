@@ -405,3 +405,16 @@ body.visiting .speeds, body.visiting #councilBtn { opacity: .35; pointer-events:
 body.visiting .wn-chip { display: none; }
 .mbtn.news { background: linear-gradient(135deg, #f3cf7a, #d4a53a); color: #2a221d; border-color: #b88a2a; }
 .mbtn.news small { color: #4a3a20; }
+
+.world-time { display: none; padding: 0 10px; font-weight: 800; font-size: 14px; white-space: nowrap; align-self: center; }
+body.world .speeds [data-speed] { display: none; }
+body.world .world-time { display: block; }
+.mbtn.world { background: linear-gradient(135deg, #2c8a7a, #1f6f5c); color: #fbf3e2; border-color: #1f5f55; }
+.mbtn.world small { color: #d7efe9; }
+.wm-wrap { overflow: auto; border-radius: 14px; margin: 8px 0; -webkit-overflow-scrolling: touch; }
+.wm-map { width: 100%; display: block; }
+.wm-cell { stroke: rgba(122, 85, 48, .18); stroke-width: .15; cursor: pointer; }
+.wm-cell.on { stroke: #2a221d; stroke-width: .6; }
+.wm-town { fill: #2c8a7a; stroke: #fbf3e2; stroke-width: .35; cursor: pointer; }
+.wm-town.mine { fill: #d4a53a; }
+.wm-place { font: 800 2.6px var(--body, sans-serif); text-anchor: middle; fill: rgba(42, 34, 29, .55); pointer-events: none; }

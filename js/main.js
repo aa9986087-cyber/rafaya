@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -56,10 +56,12 @@ function clockAt(p, d) {
 }
 
 let visiting = null; // { code, town, comments } while looking at another player's town
+let worldMode = false; // playing a town in the shared world of al-Jouf
 function save() {
   if (visiting) return;
   S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
   S.savedAt = Date.now();
+  if (worldMode) { store.set(WORLD_SAVE, pack(S)); worldSync(); return; }
   store.set(townKey(S.site || "main"), pack(S));
   noteTown();
 }
@@ -456,7 +458,8 @@ function refresh() {
   $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
   $("sEra").textContent = !S.site || S.site === "main" ? ERAS[S.era].name : S.name;
   const se = seasonOf(S.day);
-  $("sDay").textContent = `اليوم ${ar(dayOf(S.day))}`;
+  // in the world the calendar is shared; the day shown is the town's own (counted from its founding)
+  $("sDay").textContent = `اليوم ${ar(S.world?.start != null ? Math.max(1, dayOf(S.day - S.world.start + 3)) : dayOf(S.day))}`;
   $("sSeason").textContent = `${se.name} · اليوم ${ar(se.dayIn)} من ${ar(SEASON_DAYS)}`;
   $("sSeason").dataset.s = se.id;
   $("sSeasonBar").style.width = `${Math.round(se.progress * 100)}%`;
@@ -794,7 +797,7 @@ function council() {
   }));
 }
 $("councilBtn").addEventListener("click", () => { sfx.tap(); council(); });
-document.querySelector(".when")?.addEventListener("click", () => { sfx.tap(); regionSheet(); });
+document.querySelector(".when")?.addEventListener("click", () => { sfx.tap(); if (worldMode) worldMapSheet(); else regionSheet(); });
 
 /** The quarters: who lives where, how happy, what is missing, and their names (the mayor can rename them). */
 function quartersSheet() {
@@ -875,15 +878,17 @@ async function publishTown() {
     onlineSheet();
   } catch { toast("ما قدرت أنشر الحين، جرب بعدين", "bad"); }
 }
-async function visitTown(code) {
-  if (!code) { toast("اكتب الكود", "bad"); return; }
+async function visitTown(code, inWorld) {
+  if (code === "" || code == null) { toast("اكتب الكود", "bad"); return; }
   if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
   let data;
-  try { data = await api(`/town/${encodeURIComponent(code)}`); } catch { toast("ما لقيت مدينة بهالكود", "bad"); return; }
+  try { data = await api(inWorld ? `/world/town/${code}` : `/town/${encodeURIComponent(code)}`); } catch { toast("ما لقيت المدينة", "bad"); return; }
+  if (inWorld) data.town = { ...data.town, name: data.town.town, mayor: data.town.owner };
+  if (!data.town.snapshot) { toast("صاحبها للحين ما بدأ يلعب فيها", ""); return; }
   let town;
   try { town = unpack(data.town.snapshot); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   save();
-  visiting = { code, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
+  visiting = { code, world: !!inWorld, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
   S = town; A = analyze(S);
   closeSheet(); setTool(null);
   world.stopFollow?.(); $("followTag").hidden = true;
@@ -912,19 +917,201 @@ function visitComments() {
     <div class="rows">${v.comments.length ? v.comments.map((c) => `<div class="row ol-com"><span><b>${c.author}</b><small>${new Date(c.at).toLocaleDateString("ar-SA")}</small></span><p>${c.text}</p></div>`).join("") : `<p class="hint">ما أحد علّق للحين.</p>`}</div>
     <h3>اكتب تعليقك</h3>
     <textarea id="olText" maxlength="200" rows="3" placeholder="مدينتك حلوة! عجبني…"></textarea>
-    <div class="sheet-actions keep"><button class="btn go block" id="olSend" type="button">أرسل باسم ${store.get("rafaya-mayor") || "زائر"}</button></div>`, "online");
+    <div class="sheet-actions keep"><button class="btn go block" id="olSend" type="button">أرسل باسم ${v.world ? me()?.name || "زائر" : store.get("rafaya-mayor") || "زائر"}</button></div>`, "online");
   $("olSend").addEventListener("click", async () => {
     const text = $("olText").value.trim();
     if (!text) return;
     try {
-      await api(`/town/${v.code}/comment`, { author: store.get("rafaya-mayor") || "زائر", text });
-      v.comments.unshift({ author: store.get("rafaya-mayor") || "زائر", text, at: Date.now() });
+      const id = me();
+      if (v.world) { if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; } await api(`/world/town/${v.code}/comment`, { name: id.name, secret: id.secret, text }); }
+      else await api(`/town/${v.code}/comment`, { author: store.get("rafaya-mayor") || "زائر", text });
+      v.comments.unshift({ author: v.world ? id.name : store.get("rafaya-mayor") || "زائر", text, at: Date.now() });
       sfx.coin(); toast("وصل تعليقك ✓", "goal"); visitComments();
     } catch { toast("ما وصل التعليق، جرب بعدين", "bad"); }
   });
 }
 $("visitBack").addEventListener("click", () => { sfx.tap(); leaveVisit(); });
 $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments(); });
+
+// ---------- the world of al-Jouf ----------
+const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town";
+let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0 }, lastSync = 0, soloS = null;
+const worldMsNow = () => Date.now() + worldClock.offset - worldClock.epoch;
+const worldHourNow = () => Math.floor(worldMsNow() / HOUR_MS) + 3;
+const me = () => JSON.parse(store.get(WORLD_ID) || "null");
+async function loadClock() {
+  try { const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now() }; } catch { /* keep the local guess */ }
+}
+/** Send the town to the server (at most every 5 minutes, or now when leaving). */
+function worldSync(force) {
+  const id = me();
+  if (!worldMode || !id?.plot && id?.plot !== 0 || !onlineOk()) return;
+  if (!force && Date.now() - lastSync < 5 * 60000) return;
+  lastSync = Date.now();
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: S.pop, happy: Math.round(S.happy), money: Math.round(S.money), era: S.era,
+    snapshot: pack({ ...S, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
+  if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
+  else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => {});
+}
+addEventListener("pagehide", () => worldSync(true));
+document.addEventListener("visibilitychange", () => { if (document.hidden) worldSync(true); });
+
+/** The way into the world: a name first, then the map. */
+async function openWorld() {
+  if (!onlineOk()) { toast("عالم الجوف يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev", "bad"); return; }
+  await loadClock();
+  if (!me()) { worldJoinSheet(); return; }
+  worldMapSheet();
+}
+function worldJoinSheet(recover) {
+  sheet(`<h2>🌍 عالم الجوف</h2>
+    <p>عالم واحد يجمع كل اللاعبين على خريطة الجوف: كل واحد يأسس مدينته في أرض، والكل يشوف مدن الثاني ويدخلها. العالم يمشي دايم، وإذا طلعت يمسك مدينتك «نائب العمدة».</p>
+    ${recover ? `<label class="rg-name">اسمك <input id="wjName" type="text" maxlength="16"></label>
+      <label class="rg-name">كود الاسترجاع <input id="wjCode" type="text" maxlength="12" style="text-transform:uppercase"></label>
+      <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">رجّع حسابي</button></div>`
+      : `<label class="rg-name">اختر اسمك <input id="wjName" type="text" maxlength="16" placeholder="مثلاً: أبو_فهد"></label>
+      <p class="hint">٣ إلى ١٦ حرف (عربي أو إنجليزي أو أرقام). يطلع للكل فوق مدينتك، فلا تكتب اسمك الكامل.</p>
+      <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">ادخل العالم</button></div>
+      <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>`}`, "world");
+  $("wjRecover")?.addEventListener("click", () => worldJoinSheet(true));
+  $("wjGo").addEventListener("click", async () => {
+    const name = $("wjName").value.trim();
+    try {
+      if (recover) {
+        const r = await api("/world/recover", { name, recovery: $("wjCode").value.trim().toUpperCase() });
+        store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
+        toast(`رجع حسابك يا ${r.name} ✓`, "goal"); worldMapSheet();
+      } else {
+        const r = await api("/world/join", { name });
+        store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: null }));
+        sheet(`<h2>هلا ${r.name}!</h2><p>هذا كود الاسترجاع حقك. احفظه عندك (صوّره أو انسخه): لو غيرت جوالك ترجع فيه لاسمك ومدينتك.</p>
+          <div class="row"><span>كود الاسترجاع</span><b class="ol-code">${r.recovery}</b></div>
+          <div class="sheet-actions keep"><button class="btn block" id="wjCopy" type="button">انسخ الكود</button><button class="btn go block" id="wjNext" type="button">حفظته، كمّل للخريطة</button></div>`, "world");
+        $("wjCopy").addEventListener("click", () => navigator.clipboard?.writeText(r.recovery).then(() => toast("نسخت ✓", "goal")));
+        $("wjNext").addEventListener("click", () => worldMapSheet());
+      }
+    } catch (e) {
+      toast(String(e.message) === "409" ? "الاسم مأخوذ، اختر غيره" : String(e.message) === "400" ? "الاسم ما يصلح: ٣ إلى ١٦ حرف بدون رموز" : "ما زبط، تأكد من الاسم والكود", "bad");
+    }
+  });
+}
+let worldPick = null;
+async function worldMapSheet(pick) {
+  worldPick = pick ?? worldPick;
+  const id = me();
+  let plots = [];
+  try { plots = (await api("/world/map")).plots; } catch { toast("ما قدرت أوصل للسيرفر", "bad"); return; }
+  const byPlot = new Map(plots.map((p) => [p.plot, p]));
+  const { cols, rows } = WORLD, cell = 5;
+  const colors = { mountain: "#b9a58a", plain: "#e6cf9c", bigwadi: "#c9b878", wadi: "#d8c38e", dunes: "#efc98a", meadow: "#b8c27a" };
+  let cells = "";
+  for (let i = 0; i < cols * rows; i++) {
+    const x = (i % cols) * cell, y = Math.floor(i / cols) * cell, t = byPlot.get(i), mine = id?.plot === i;
+    cells += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${colors[worldTerrain(i)]}" class="wm-cell ${worldPick === i ? "on" : ""}" data-plot="${i}"/>`;
+    if (t) cells += `<circle cx="${x + cell / 2}" cy="${y + cell / 2}" r="${1.2 + Math.min(1.6, Math.log10((t.pop || 1) + 1) * 0.6)}" class="wm-town ${mine ? "mine" : ""}" data-plot="${i}"/>`;
+  }
+  const labels = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-place">${p.name}</text>`).join("");
+  const sel = worldPick, t = sel != null ? byPlot.get(sel) : null;
+  let detail = `<p class="hint">اضغط على أي أرض: المدن بالأخضر، ومدينتك بالذهبي.</p>`;
+  if (sel != null) {
+    const terr = TERRAINS[worldTerrain(sel)];
+    if (t) {
+      const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
+      detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · أرض ${terr.name}</small></div>
+        <div class="rows">${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
+        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>` : `<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
+    } else {
+      detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
+        ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
+          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
+    }
+  }
+  sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
+    <div class="wm-wrap"><svg class="wm-map" viewBox="0 0 ${cols * cell} ${rows * cell}" role="img" aria-label="خريطة الجوف">${cells}${labels}</svg></div>
+    ${detail}
+    ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}`, "world");
+  $("sheetBody").querySelectorAll("[data-plot]").forEach((el) => el.addEventListener("click", () => { sfx.tap(); worldMapSheet(Number(el.dataset.plot)); }));
+  $("wmMine")?.addEventListener("click", () => worldMapSheet(id.plot));
+  $("wmEnter")?.addEventListener("click", () => enterWorldTown());
+  $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
+  $("wmReport")?.addEventListener("click", async () => {
+    try { await api("/world/report", { name: id?.name, secret: id?.secret, plot: sel, reason: "اسم أو كلام مسيء" }); toast("وصل البلاغ، شكرًا", "goal"); } catch { toast("سجّل اسمك أول", "bad"); }
+  });
+  $("wmClaim")?.addEventListener("click", async () => {
+    const town = ($("wmTown").value || "").trim() || `هجرة ${id.name}`;
+    try {
+      await api("/world/claim", { name: id.name, secret: id.secret, plot: sel, town, terrain: worldTerrain(sel) });
+      store.set(WORLD_ID, JSON.stringify({ ...id, plot: sel }));
+      const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(sel), name: town, site: "world" });
+      s.day = worldHourNow();
+      s.world = { plot: sel, owner: id.name, start: s.day };
+      store.set(WORLD_SAVE, pack(s));
+      sfx.era(); toast(`تأسست «${town}» في عالم الجوف! 🎉`, "era");
+      enterWorldTown();
+    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
+  });
+}
+/** Play your own town in the world: the deputy's report first if you were away. */
+async function enterWorldTown() {
+  const id = me();
+  let raw = store.get(WORLD_SAVE);
+  if (!raw && id?.plot != null) { // a new phone: take the town from the server
+    try { const d = await api(`/world/town/${id.plot}`); raw = d.town.snapshot || null; } catch { raw = null; }
+  }
+  if (!raw) { toast("ما لقيت مدينتك", "bad"); return; }
+  let town;
+  try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
+  if (!worldMode) { if (playing) save(); soloS = S; }
+  worldMode = true; document.body.classList.add("world");
+  S = town;
+  const gap = worldHourNow() - S.day;
+  const report = gap > 1 ? deputyCatchUp(S, gap) : null;
+  if (gap > 0 && !report) S.day = worldHourNow();
+  A = analyze(S);
+  closeSheet(); setTool(null);
+  world.sync(S, { tiles: true, roads: true, buildings: true });
+  if (S.cam) { world.view.x = S.cam.x; world.view.z = S.cam.z; world.view.zoom = S.cam.zoom; world.updateCamera(); } else { focusTown(); world.view.zoom = 0.9; world.updateCamera(); }
+  startPlaying();
+  save(); worldSync(true);
+  if (report) deputyReport(report);
+}
+function deputyReport(r) {
+  const h = r.hours, d = Math.round(h / 24), span = h < 24 ? `${ar(h)} ساعة` : d === 1 ? "يوم" : d === 2 ? "يومين" : `${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`;
+  sheet(`<h2>🧑‍💼 تقرير نائب العمدة</h2><p>غبت ${span} من وقت العالم، والنائب مسك البلد.${r.slept ? " وبعد أسبوع من الغياب دخلت المدينة في سبات لين رجعت." : ""}</p>
+    <div class="rows">
+      ${row("الميزانية", `${r.money >= 0 ? "+" : "−"}${money(Math.abs(r.money))} ريال`, r.money >= 0 ? "plus" : "minus")}
+      ${row("السكان", `${r.pop >= 0 ? "+" : "−"}${money(Math.abs(r.pop))}`, r.pop >= 0 ? "plus" : "minus")}
+      ${r.did.repairs ? row("رمّم المباني", `${ar(r.did.repairs)} مرة`) : ""}
+      ${r.did.decisions ? row("قرارات أخذها بالخيار الآمن", ar(r.did.decisions)) : ""}
+      ${r.did.taxUp ? row("رفع الضريبة", `من ${ar(r.taxFrom)}٪ إلى ${ar(S.tax)}٪`, "minus") : ""}
+      ${r.did.shield ? row("🛡️ درع الغياب حماك", `${ar(r.did.shield)} مرة`, "plus") : ""}
+    </div>
+    ${r.msgs.filter((m) => m.text && m.kind !== "ach").slice(-4).map((m) => `<p class="hint">• ${m.title ? m.title + ": " : ""}${m.text}</p>`).join("")}
+    <div class="sheet-actions keep"><button class="btn go block" id="depOk" type="button">تمام</button></div>`, "away");
+  $("depOk").addEventListener("click", closeSheet);
+}
+/** Standing orders for the deputy mayor. */
+function deputySheet() {
+  const o = { ...DEPUTY, ...(S.deputy || {}) };
+  sheet(`<h2>🧑‍💼 نائب العمدة</h2><p>إذا طلعت من اللعبة، النائب يمسك مدينتك والعالم يكمل. هذي أوامرك له:</p>
+    <div class="rows">
+      <label class="row toggle"><span>يرمم المباني اللي تخرب</span><input type="checkbox" id="dpRepair" ${o.repair ? "checked" : ""}></label>
+      <label class="row toggle"><span>يرفع الضريبة شوي إذا قلّت الفلوس</span><input type="checkbox" id="dpTax" ${o.tax ? "checked" : ""}></label>
+      <div class="row"><span>ما يصرف لو الميزانية تحت</span><select id="dpFloor">${[0, 2000, 5000, 20000, 50000].map((v) => `<option value="${v}" ${o.floor === v ? "selected" : ""}>${money(v)}</option>`).join("")}</select></div>
+    </div>
+    <p class="hint">النائب ما يبني ولا يهد شي، ويختار الخيار الآمن في القرارات، ويرد على الناس بـ«نشوف».</p>
+    <h3>🛡️ درع الغياب</h3>
+    <p class="hint">وأنت طالع ما تفلس، وما تخسر أكثر من ٥٪ من سكانك باليوم، والسيول أخف. وإذا غبت أكثر من أسبوع تدخل مدينتك في سبات وما يتغير فيها شي.</p>`, "deputy");
+  const set = () => { S.deputy = { repair: $("dpRepair").checked, tax: $("dpTax").checked, floor: Number($("dpFloor").value) }; save(); };
+  for (const k of ["dpRepair", "dpTax", "dpFloor"]) $(k).addEventListener("change", set);
+}
+/** Back to the menu (or the solo game) from the world. */
+function leaveWorld() {
+  if (!worldMode) return;
+  save(); worldSync(true);
+  worldMode = false; document.body.classList.remove("world");
+  if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
+}
 
 // ---------- the region ----------
 const linked = (a, b) => RG.roads.some(([p, q]) => (p === a && q === b) || (p === b && q === a));
@@ -1037,8 +1224,9 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-23",
+  v: "2026-11-24",
   items: [
+    ["🌍", "عالم الجوف", "عالم أونلاين واحد لكل اللاعبين على خريطة الجوف: سمّ نفسك، أسس مدينتك، وادخل مدن غيرك. العالم يمشي دايم، ونائب العمدة يمسك مدينتك وأنت طالع."],
     ["🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
     ["🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
     ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
@@ -1076,6 +1264,7 @@ function showWhatsNewDot() {
 }
 $("wnChip").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
+$("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
 showWhatsNewDot();
 function maybeWhatsNew() {
   let seen = null;
@@ -1396,6 +1585,10 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>عالم الجوف (أونلاين)</summary>
+      <p>من الشاشة الرئيسية «🌍 عالم الجوف»: تختار اسمك (واحفظ كود الاسترجاع)، وتختار أرض في خريطة الجوف وتأسس مدينتك: القريات وطبرجل وسكاكا ودومة الجندل والحماد والنفود الكبير، كل منطقة لها أرضها. وتضغط على أي مدينة بالخريطة وتدخلها وتشوفها وتعلق عليها.</p>
+      <p>وقت العالم واحد للكل ويمشي دايم، فما فيه تسريع. وإذا طلعت يمسك مدينتك «نائب العمدة» حسب أوامرك (من القائمة)، ومعه «درع الغياب»: ما تفلس، وما تخسر أكثر من ٥٪ من ناسك باليوم، وبعد أسبوع غياب تنام مدينتك لين ترجع. وأول ما ترجع يعطيك تقريره.</p></details>
+
     <details><summary>مدن الربع والصدارة</summary>
       <p>من «القائمة ← مدن الربع» تنشر مدينتك وتاخذ كود ترسله لربعك، وهم يزورونها بالكود ويشوفونها بالـ3D ويعلقون عليها. وفيه لوحة صدارة: أكبر مدينة، وأسعد أهالي، وأغنى بلدية. الزيارة للفرجة بس، ما تقدر تبني في مدينة غيرك.</p></details>
 
@@ -1447,8 +1640,9 @@ function pauseMenu() {
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
     <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
-    <button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>
-    <button class="row link" id="pmOnline" type="button"><span>🌐 مدن الربع والصدارة</span><b>←</b></button>
+    ${worldMode ? `<button class="row link" id="pmWorld" type="button"><span>🌍 خريطة عالم الجوف</span><b>←</b></button>
+    <button class="row link" id="pmDeputy" type="button"><span>🧑‍💼 أوامر نائب العمدة</span><b>←</b></button>` : `<button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>
+    <button class="row link" id="pmOnline" type="button"><span>🌐 مدن الربع والصدارة</span><b>←</b></button>`}
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
@@ -1456,11 +1650,13 @@ function pauseMenu() {
   $("pmResume").addEventListener("click", closeSheet);
   $("pmHow").addEventListener("click", () => howTo(false));
   $("pmNew").addEventListener("click", () => whatsNewSheet());
-  $("pmRegion").addEventListener("click", () => regionSheet());
-  $("pmOnline").addEventListener("click", () => onlineSheet());
+  $("pmRegion")?.addEventListener("click", () => regionSheet());
+  $("pmOnline")?.addEventListener("click", () => onlineSheet());
+  $("pmWorld")?.addEventListener("click", () => worldMapSheet());
+  $("pmDeputy")?.addEventListener("click", () => deputySheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
-  $("pmMain").addEventListener("click", () => { save(); closeSheet(); showMenu(); });
+  $("pmMain").addEventListener("click", () => { save(); leaveWorld(); closeSheet(); showMenu(); });
 }
 $("pauseMenuBtn").addEventListener("click", () => { sfx.tap(); pauseMenu(); });
 
@@ -1488,7 +1684,7 @@ function startPlaying() {
   for (const ms of [0, 300, 700, 1400]) setTimeout(layoutSide, ms);
 }
 
-$("mContinue").addEventListener("click", () => { sfx.goal(); startPlaying(); const r = away; away = null; if (r) showAway(r); else maybeWhatsNew(); });
+$("mContinue").addEventListener("click", () => { sfx.goal(); leaveWorld(); startPlaying(); const r = away; away = null; if (r) showAway(r); else maybeWhatsNew(); });
 $("mNew").addEventListener("click", () => {
   sfx.tap();
   const b = $("mNew");
@@ -1520,45 +1716,53 @@ function showAway(r) {
 
 let ambT = 0;
 let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
+/** One town hour: the simulation moves on, and the screen shows what happened. */
+function runHour() {
+  const { msgs } = step(S);
+  for (const m of msgs) {
+    if (m.kind === "decision") continue; // its own sheet opens
+    if (m.kind === "land") continue; // the ground is redrawn by the sync below
+    if (m.kind === "ach") { toast(m.text, "ach"); sfx.goal(); continue; }
+    if (m.kind === "flood") {
+      // look at the wadi where the water comes down, then let it run
+      const spots = m.lost.length ? m.lost : m.damaged;
+      if (spots.length) { const cx = spots.reduce((n, i) => n + (i % N), 0) / spots.length, cy = spots.reduce((n, i) => n + Math.floor(i / N), 0) / spots.length; world.focus(Math.round(cx), Math.round(cy)); world.view.zoom = Math.min(world.view.zoom, 1.1); world.updateCamera(); }
+      world.playFlood(m.lost, m.damaged); sfx.flood(); toast(m.text, "bad"); continue;
+    }
+    if (m.kind === "collapse") { toast(m.text, "bad"); sfx.remove(); continue; }
+    if (m.kind === "election") { electionSheet(m); continue; }
+    toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
+    (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
+    if (m.kind === "era" && openCat) renderCards();
+    if (m.kind === "era" && S.era === REGION.unlockEra && (S.site || "main") === "main") setTimeout(() => toast("🗺️ انفتحت خريطة المنطقة: اضغط على مربع الوقت فوق وأسس الرديفة والأضارع وصفان", "era"), 2500);
+  }
+  sync(false);
+  // Rush hours: the first hours of the morning and the afternoon.
+  { const h = hourOf(S.day), D = seasonOf(S.day).daylight * HOURS; world.rush = h <= 2 || (h >= Math.round(D * 0.75) && h <= Math.round(D * 0.75) + 1); world.trafficCong = A.trafficCong; }
+  // Prayer time: a soft call, and the men walk to the mosque.
+  const pr = prayerNow(S);
+  world.prayer = pr;
+  if (pr && speed <= 5) { toast(`🕌 حان وقت صلاة ${pr.name}${A.count.mosque + A.count.bigmosque ? "" : " · وما فيه مسجد بالرافعية"}`, ""); sfx.prayer(); }
+  refresh();
+  save();
+  hourEffects();
+  hourNews(msgs);
+  if (sheetFor === "budget") budget();
+  if (sheetFor === "council") council();
+}
+
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (playing && !visiting && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor)) {
+  const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor);
+  if (playing && !visiting && worldMode) {
+    // the world's clock: one town hour every 50 seconds of real time, for everyone, always
+    const wh = worldHourNow();
+    if (!paused && S.day < wh) runHour();
+    acc = Math.max(0, Math.min(HOUR_MS - 1, worldMsNow() % HOUR_MS));
+  } else if (playing && !visiting && speed > 0 && !paused) {
     acc += dt * 1000 * speed;
-    while (acc >= HOUR_MS) {
-      acc -= HOUR_MS;
-      const { msgs } = step(S);
-      for (const m of msgs) {
-        if (m.kind === "decision") continue; // its own sheet opens
-        if (m.kind === "land") continue; // the ground is redrawn by the sync below
-        if (m.kind === "ach") { toast(m.text, "ach"); sfx.goal(); continue; }
-        if (m.kind === "flood") {
-          // look at the wadi where the water comes down, then let it run
-          const spots = m.lost.length ? m.lost : m.damaged;
-          if (spots.length) { const cx = spots.reduce((n, i) => n + (i % N), 0) / spots.length, cy = spots.reduce((n, i) => n + Math.floor(i / N), 0) / spots.length; world.focus(Math.round(cx), Math.round(cy)); world.view.zoom = Math.min(world.view.zoom, 1.1); world.updateCamera(); }
-          world.playFlood(m.lost, m.damaged); sfx.flood(); toast(m.text, "bad"); continue;
-        }
-        if (m.kind === "collapse") { toast(m.text, "bad"); sfx.remove(); continue; }
-        if (m.kind === "election") { electionSheet(m); continue; }
-        toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
-        (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
-        if (m.kind === "era" && openCat) renderCards();
-        if (m.kind === "era" && S.era === REGION.unlockEra && (S.site || "main") === "main") setTimeout(() => toast("🗺️ انفتحت خريطة المنطقة: اضغط على مربع الوقت فوق وأسس الرديفة والأضارع وصفان", "era"), 2500);
-      }
-      sync(false);
-      // Rush hours: the first hours of the morning and the afternoon.
-      { const h = hourOf(S.day), D = seasonOf(S.day).daylight * HOURS; world.rush = h <= 2 || (h >= Math.round(D * 0.75) && h <= Math.round(D * 0.75) + 1); world.trafficCong = A.trafficCong; }
-      // Prayer time: a soft call, and the men walk to the mosque.
-      const pr = prayerNow(S);
-      world.prayer = pr;
-      if (pr && speed <= 5) { toast(`🕌 حان وقت صلاة ${pr.name}${A.count.mosque + A.count.bigmosque ? "" : " · وما فيه مسجد بالرافعية"}`, ""); sfx.prayer(); }
-      refresh();
-      save();
-      hourEffects();
-      hourNews(msgs);
-      if (sheetFor === "budget") budget();
-      if (sheetFor === "council") council();
-    }
+    while (acc >= HOUR_MS) { acc -= HOUR_MS; runHour(); }
   }
   if (playing) {
     const d = seasonOf(S.day).daylight, p = (hourOf(S.day) + acc / HOUR_MS) / HOURS;

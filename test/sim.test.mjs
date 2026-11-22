@@ -358,3 +358,17 @@ test("region: towns on other kinds of land", () => {
   assert.ok(a1.shopDemand > a0.shopDemand && a1.exportDemand > a0.exportDemand);
   assert.equal(unpack(pack(s)).name, "الرافعية");
 });
+
+test("the deputy keeps the town while the mayor is away, under the shield", async () => {
+  const { deputyCatchUp, DEPUTY_FULL_HOURS, SLEEP_HOURS, rng } = await import("../js/sim.js");
+  const s = autoplay(900, 6);
+  const day = s.day, pop = s.pop;
+  const r = deputyCatchUp(s, 2000, rng(3));
+  assert.equal(s.day, day + 2000, "the town keeps the world's hour");
+  assert.ok(s.money >= 0, "never bankrupt while away");
+  assert.ok(s.pop >= Math.floor(pop * Math.pow(0.95, DEPUTY_FULL_HOURS / 24)) , "no big loss of people");
+  assert.equal(r.full, DEPUTY_FULL_HOURS);
+  const t = autoplay(300, 7), before = t.money;
+  const r2 = deputyCatchUp(t, SLEEP_HOURS * 3, rng(4));
+  assert.ok(r2.slept);
+});
