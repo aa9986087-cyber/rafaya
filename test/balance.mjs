@@ -1,7 +1,7 @@
 // Automatic mayors, to check the economy: can a sensible player grow the town, and can a careless
 // one go broke? Runs are repeatable (seeded randomness).
-import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll, upgradeHouse, upgradeCost, houseBlocker } from "../js/sim.js";
-import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS } from "../js/data.js";
+import { newGame, step, build, cantBuild, startResearch, analyze, idx, inMap, buyPlot, plotPrice, decide, optionCost, rng, owns, repairAll, upgradeHouse, upgradeCost, houseBlocker, takeLoan } from "../js/sim.js";
+import { B, TECH, MAP_SIZE as N, ERAS, PLOTS, DECISIONS, LOANS } from "../js/data.js";
 
 /**
  * Player styles:
@@ -49,10 +49,15 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
     return false;
   };
   const services = ["mosque", "school", "clinic", "park", "police", "civil", "stadium", "bigmosque", "hospital"];
-  let si = 0, lastPower = -99;
+  let si = 0, lastPower = -99, lastWater = -99;
   for (let h = 0; h < hours; h++) {
     const a = analyze(s);
     if (style === "taxer") s.tax = 20;
+    // borrower: careful, but builds a bank early and always keeps the biggest loan it can get
+    if (style === "borrower") {
+      if (!a.count.bank && s.money > B.bank.cost + 300) place("bank");
+      if (a.count.bank && !(s.loans || []).length) for (const o of [...LOANS].reverse()) if (!takeLoan(s, o.id, a)) break;
+    }
     if (s.decision) {
       const d = DECISIONS.find((x) => x.id === s.decision.id), c0 = optionCost(s, a, d.options[0]);
       decide(s, style === "yesman" ? (c0 <= s.money ? 0 : d.options.length - 1) : d.id === "loan" || c0 <= s.money * 0.4 ? 0 : d.options.length - 1);
@@ -79,7 +84,7 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       // homes waiting for power to become villas, or villas without it
       const dark = homes.filter((i) => !a.powered[i] && (s.tiles[i].b.lvl >= 3 || (s.tiles[i].b.lvl === 2 && s.happy + (s.tiles[i].b.local || 0) * 0.6 >= 60 && /الكهرباء/.test(houseBlocker(s, a, i % N, Math.floor(i / N))))));
       const dry = homes.filter((i) => !a.watered[i]);
-      if (dry.length) placeNear(waterSrc, dry);
+      if (dry.length && h - lastWater >= 24) { if (placeNear(waterSrc, dry)) lastWater = h; }
       else if (a.waterRatio < 1 || a.waterSupply < a.waterUse + 3) placeNear(waterSrc, homes);
       if (s.era >= 1 && h - lastPower >= 24 && s.money > B[powerSrc].cost + 2500) {
         if ((dark.length && placeNear(powerSrc, dark)) || (a.grid && a.powerRatio < 1 && placeNear(powerSrc, homes))) lastPower = h;
@@ -107,6 +112,8 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
     for (const p of PLOTS) if (!s.owned[p.id] && s.money > plotPrice(s) * 1.5) buyPlot(s, p.id);
     for (const t of Object.keys(TECH)) if (!s.research && !s.tech[t] && s.money > TECH[t].cost * 2) startResearch(s, t);
     step(s, r);
+    if (s.era > (s.eraAt || []).length) (s.eraAt ||= []).push(s.day);
+    if (s.money < (s.low ?? 1e9)) s.low = s.money;
     if (log && s.day % 100 === 0) { const b = analyze(s); console.log(`hour ${s.day} | ${ERAS[s.era].name} | pop ${s.pop} | money ${Math.round(s.money)} | net/hour ${b.net} | happy ${Math.round(s.happy)} | water ${b.waterRatio.toFixed(2)} power ${b.powerRatio.toFixed(2)} | houses ${b.levels}${s.broke ? " | BANKRUPT" : ""}`); }
   }
   return s;

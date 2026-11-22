@@ -117,7 +117,7 @@ export const B = {
 
 // A long game: building is dear next to what the town earns. Every price above is multiplied
 // here (roads less, so a player can still lay out streets).
-export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6, shop: 2 };
+export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.85, shop: 2 };
 // State support for trade: shops and markets cost 30% less (the full price is kept to show the saving).
 export const SUBSIDY = { shop: 0.3 };
 for (const d of Object.values(B)) {

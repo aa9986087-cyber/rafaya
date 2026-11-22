@@ -331,6 +331,11 @@ export function analyze(s) {
   const roadsAll = a.count.road + a.count.asphalt;
   a.congestion = roadsAll ? Math.max(0, Math.min(0.4, s.pop / (roadsAll * 20) - 1)) * (a.count.road / roadsAll) : 0;
   a.shopIncome = Math.min(a.shopRaw, a.shopDemand) * (1 - a.congestion);
+  // Workshops and factories sell outside, but the traders who buy from a town of this size only take
+  // so much: past that, extra output sells at about a third of the price.
+  a.industryRaw = a.industryIncome;
+  a.exportDemand = 300 + s.pop * 0.9;
+  if (a.industryRaw > a.exportDemand) a.industryIncome = a.exportDemand + (a.industryRaw - a.exportDemand) * 0.35;
   a.income = a.shopIncome + a.visitorIncome + a.industryIncome;
   // Thefts: in a big town, shops in quarters no police reaches lose part of their takings.
   if (s.pop >= 300) {
@@ -603,7 +608,7 @@ export function decide(s, i) {
   if (o.destroy) {
     const spots = [];
     s.tiles.forEach((t) => { if (t.b && o.destroy.includes(t.b.id)) spots.push(t); });
-    if (spots.length) { const t = spots[Math.floor(Math.random() * spots.length)]; lost = B[t.b.id].name; lose(s, t); }
+    if (spots.length) { const t = spots[(s.day * 7919 + spots.length) % spots.length]; lost = B[t.b.id].name; lose(s, t); }
   }
   s.money += (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms;
   if (o.tax) s.tax = clamp(s.tax + o.tax, 0, 25);
