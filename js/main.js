@@ -872,7 +872,7 @@ $("mNew").addEventListener("click", () => {
 $("mHow").addEventListener("click", () => { sfx.tap(); howTo(true); });
 $("mSettings").addEventListener("click", () => { sfx.tap(); settingsSheet(true); });
 
-let away = hadSave ? catchUp(S) : null;
+let away = null; // the town waits while you are away (nothing runs until you come back)
 function showAway(r) {
   sheet(`<h2>وأنت غايب…</h2><p>مرّ على الرافعية ${ar(r.days)} ساعة.</p><div class="rows">
     ${row("السكان", `${r.pop >= 0 ? "+" : "−"}${money(Math.abs(r.pop))}`, r.pop >= 0 ? "plus" : "minus")}
@@ -944,7 +944,7 @@ document.addEventListener("touchend", (e) => {
 }, { passive: false });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) save();
-  else if (playing) { const r = catchUp(S); if (r) showAway(r); refresh(); }
+  else if (playing) refresh();
 });
 addEventListener("pagehide", save);
 
