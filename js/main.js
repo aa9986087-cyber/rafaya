@@ -469,7 +469,7 @@ function refresh() {
   $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : "<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!";
   // The banner shows the main event, or else the strongest boost from a decision.
   const main = S.events.find((e) => e.id !== "boost"), boost = S.events.find((e) => e.id === "boost");
-  const ev = main ? EVENTS.find((e) => e.id === main.id) : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
+  const ev = main ? { ...EVENTS.find((e) => e.id === main.id), ...(main.name ? { name: main.name } : {}) } : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
   $("event").hidden = !ev;
   if (ev) $("event").innerHTML = `<b>${ev.name}</b> ${ev.text}`;
   $("councilDot").hidden = !!S.research || !Object.entries(TECH).some(([id, t]) => !S.tech[id] && t.era <= S.era && S.money >= t.cost);
@@ -1772,7 +1772,9 @@ function runHour() {
   }
   sync(false);
   // Rush hours: the first hours of the morning and the afternoon.
-  { const h = hourOf(S.day), D = seasonOf(S.day).daylight * HOURS; world.rush = h <= 2 || (h >= Math.round(D * 0.75) && h <= Math.round(D * 0.75) + 1); world.trafficCong = A.trafficCong; }
+  { const h = hourOf(S.day), D = seasonOf(S.day).daylight * HOURS; world.rush = h <= 2 || (h >= Math.round(D * 0.75) && h <= Math.round(D * 0.75) + 1); world.trafficCong = A.trafficCong;
+    // القايلة: in summer the streets empty at midday, everyone stays in from the heat
+    world.siesta = seasonOf(S.day).id === "summer" && h >= Math.round(D * 0.4) && h < Math.round(D * 0.7); }
   // Prayer time: a soft call, and the men walk to the mosque.
   const pr = prayerNow(S);
   world.prayer = pr;
@@ -1807,7 +1809,7 @@ function frame(now) {
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
   ambT -= dt;
-  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining }); if (playing) layoutSide(); }
+  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); if (playing) layoutSide(); }
   world.frame(dt, tod);
   if (world.follow && world.followPos) {
     const q = world.project(world.followPos), tag = $("followTag");

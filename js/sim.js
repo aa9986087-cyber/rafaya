@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -357,6 +357,12 @@ function stepGround(s, a, raining, msgs) {
   if (s.aquifer < GROUND.low) s.aqBack = false;
 }
 
+// ---------- the year's weather ----------
+/** How green spring is: from the rain of the autumn and winter before it (0.3 dry … 1 a good year). */
+export const springGreen = (s) => clamp(0.3 + (s.wet ?? 24) / 34, 0.3, 1);
+/** Decisions that suit a season come up more in it. */
+const SEASON_DECISIONS = { fire: { summer: 2, winter: 1.3, spring: 0.7, autumn: 0.7 }, powercut: { summer: 2, winter: 1.3, spring: 0.6, autumn: 0.6 }, thirst: { summer: 1.6, winter: 0.6 }, fever: { winter: 1.6, summer: 0.7 }, dusty: { spring: 1.5, summer: 1.5, winter: 0.3 } };
+
 // ---------- prayers ----------
 /** The prayer whose time it is this town hour, or null. */
 export function prayerNow(s) {
@@ -388,7 +394,7 @@ export function districtStats(s, a = analyze(s)) {
 /** The share of the vote the mayor would get today (0–1). */
 export function voteShare(s) {
   const r = s.record || {};
-  const v = 0.2 + ((s.trust ?? 60) / 100) * 0.35 + ((s.happy - 40) / 100) * 0.6 + (r.kept || 0) * 0.02 - (r.broken || 0) * 0.04 - (s.broke ? 0.15 : s.money < 0 ? 0.05 : 0);
+  const v = 0.25 + ((s.trust ?? 60) / 100) * 0.35 + ((s.happy - 40) / 100) * 0.6 + (r.kept || 0) * 0.02 - (r.broken || 0) * 0.04 - (s.broke ? 0.15 : s.money < 0 ? 0.05 : 0);
   return Math.max(0.05, Math.min(0.95, v));
 }
 /** Hours until the next election (the end of the year). */
@@ -635,7 +641,7 @@ export function analyze(s) {
       const ch = a.chainAt.get(idx(x, y));
       if (ch) inc *= 0.3 + 1.7 * ch.fill;
       if (t.b.id === "mazayen") inc *= 1 + Math.min(1, a.count.pen * 0.05);
-      if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1.5;
+      if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1 + 0.5 * springGreen(s); // a dry spring has little grass
       if (t.b.id === "pivot") inc *= a.groundFactor;
       if (def.cat === "shop" && a.parkingNear?.[idx(x, y)]) inc *= 1.1;
       if (def.visitors) a.visitorIncome += inc * shopMult;
@@ -686,7 +692,7 @@ export function analyze(s) {
   a.season = season;
   a.fayda = 0;
   if (season.id === "spring") for (const t of s.tiles) if (t.t === "fayda" && !t.b) a.fayda++;
-  a.faydaHappy = Math.min(8, a.fayda * 0.35);
+  a.faydaHappy = Math.min(8, a.fayda * 0.35) * springGreen(s);
   // How much people trust the mayor (from answering them in the news): ±8 at most.
   a.councilMood = Math.max(-8, Math.min(8, ((s.trust ?? 60) - 60) * 0.3));
   a.happyTarget = clamp(
@@ -977,7 +983,12 @@ export function step(s, r = Math.random) {
   } else if (s.pop >= 30 && hoursToElection(s) === 48) msgs.push({ kind: "event", title: "الانتخابات", text: `انتخابات المجلس البلدي بعد يومين. لو صارت اليوم بتاخذ ${Math.round(voteShare(s) * 100)}٪ من الأصوات.` });
   // A new season.
   const season = seasonOf(s.day);
-  if (season.i !== seasonBefore) msgs.push({ kind: "season", title: season.name, text: season.start });
+  if (season.i !== seasonBefore) {
+    let text = season.start;
+    if (season.id === "spring") text += springGreen(s) < 0.6 ? " بس الوسم والشتاء ما نزل فيهم مطر يكفي، فالربيع هالسنة ضعيف." : springGreen(s) >= 0.95 ? " والمطر اللي نزل بالشتاء خلى الربيع ما شاء الله." : "";
+    if (season.id === "summer") s.wet = 0;
+    msgs.push({ kind: "season", title: season.name, text });
+  }
   // Research.
   if (s.research && --s.research.left <= 0) {
     s.tech[s.research.id] = true;
@@ -987,23 +998,31 @@ export function step(s, r = Math.random) {
   // Bank loans: one instalment an hour (it is in the costs above) until paid.
   if (s.loans?.length) s.loans = s.loans.filter((l) => { if (--l.left > 0) return true; msgs.push({ kind: "event", title: "البنك", text: `خلصت أقساط «${l.name}». الله يبارك لك.` }); return false; });
   // Events.
+  // Rain that falls in autumn and winter makes next spring green.
+  if (s.events.some((e) => e.id === "rain") && ["autumn", "winter"].includes(seasonOf(s.day).id)) s.wet = (s.wet ?? 24) + 1;
+  // Eid al-Fitr comes the day Ramadan ends.
+  const ramadanEnds = s.events.some((e) => e.id === "ramadan" && e.left === 1);
   s.events = s.events.filter((e) => --e.left > 0);
+  if (ramadanEnds) { const eid = EVENTS.find((e) => e.id === "eid"); s.events.push({ id: "eid", left: eid.days }); msgs.push({ kind: "event", title: eid.name, text: eid.text }); }
+  const sid = seasonOf(s.day).id;
   if (!s.events.some((e) => e.id !== "boost") && s.day > 12 && r() < 0.025) {
-    const pool = EVENTS.filter((e) => !e.tech || s.tech[e.tech]);
-    let roll = r() * pool.reduce((t, e) => t + e.weight, 0);
-    const ev = pool.find((e) => (roll -= e.weight) < 0) || pool[0];
-    s.events.push({ id: ev.id, left: ev.days });
+    const pool = EVENTS.filter((e) => (!e.tech || s.tech[e.tech]) && (e.seasons?.[sid] || 0) > 0);
+    let roll = r() * pool.reduce((t, e) => t + e.seasons[sid], 0);
+    const ev = pool.find((e) => (roll -= e.seasons[sid]) < 0) || pool[0];
+    const name = ev.id === "rain" ? RAIN_NAMES[sid] || ev.name : ev.name;
+    s.events.push({ id: ev.id, left: ev.days, name });
     let text = ev.text;
     if (ev.id === "dust" && a.count.road) { const clean = a.count.road * 3; s.money -= clean; text += ` (تنظيف الطرق الترابية: ${clean} ريال)`; }
     if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); s.money += g; text += ` (+${g} ريال)`; }
-    msgs.push({ kind: "event", title: ev.name, text });
+    msgs.push({ kind: "event", title: name, text });
   }
   // Now and then a choice for the mayor, with at least three days between them.
   if (!s.decision && s.day > 30 && s.day - (s.lastDecisionAt || 0) >= 72 && r() < 0.015) {
     s.lastDecisionAt = s.day;
     const pool = DECISIONS.filter((d) => d.when(s, a, season) && d.id !== s.lastDecision);
-    let roll = r() * pool.reduce((n, d) => n + (d.weight || 1), 0);
-    if (pool.length) { const d = pool.find((x) => (roll -= x.weight || 1) < 0) || pool[0]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
+    const w = (d) => (d.weight || 1) * (SEASON_DECISIONS[d.id]?.[season.id] ?? 1);
+    let roll = r() * pool.reduce((n, d) => n + w(d), 0);
+    if (pool.length) { const d = pool.find((x) => (roll -= w(x)) < 0) || pool[0]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
   }
   // Goals.
   const g = GOALS[s.goal];

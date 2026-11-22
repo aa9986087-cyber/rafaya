@@ -3,7 +3,7 @@
 // one of the residents in their own voice. They work out what is needed and how much, say where,
 // remember what they asked for and what the mayor promised, answer each other and react to decisions.
 import { B, ERAS, DECISIONS, MAP_SIZE } from "./data.js";
-import { districtOf, districtName } from "./sim.js";
+import { districtOf, districtName, springGreen } from "./sim.js";
 import { MEN, WOMEN, jobOf, someFamilies } from "./people.js";
 
 // The quarters people live in (by the names the mayor gave them), so a speaker says where they are from.
@@ -119,15 +119,19 @@ function topics(s, a, season, f) {
   if (f.roadsDirt >= 20 && !s.tech.asphalt) add("dust", -1, 4, [`mishal:الجيب صار لونه لون التراب! الطرق الترابية كثرت، متى السفلتة؟`, `umsaad:كل ما مرت سيارة دخل الغبار البيت. نبي طرق مسفلتة.`]);
   if (f.roadsPaved >= 10 && Math.random() < 0.4) add("asphalt", 1, 2, [`mishal:الطريق المسفلت فرق كبير! وصلت المحل بنص الوقت.`]);
   // Season and weather
-  if (season.id === "spring" && f.faydaGreen > 0) add("fayda", 1, 5, [`الفيضة اخضرّت ونوّرت الخزامى! الإبل شبعت والناس طلعوا يكشتون. لا تبنون عليها تكفون.`, `haya:الله على ريحة الخزامى بالفيضة العصر. هالربيع خير.`]);
+  if (season.id === "spring" && f.faydaGreen > 0 && springGreen(s) < 0.6) add("season", -1, 4, [`mubarak:الربيع هالسنة ضعيف، الوسم ما نزل والفيضة ما اخضرت مثل كل سنة. الحلال بيحتاج علف.`]);
+  if (season.id === "spring" && f.faydaGreen > 0 && springGreen(s) >= 0.6) add("fayda", 1, 5, [`الفيضة اخضرّت ونوّرت الخزامى! الإبل شبعت والناس طلعوا يكشتون. لا تبنون عليها تكفون.`, `haya:الله على ريحة الخزامى بالفيضة العصر. هالربيع خير.`]);
   if (season.id === "summer") add("season", -1, 3, [`الحر لاهب، والبيوت تبي ماء أكثر بالصيف. زيدوا الآبار قبل لا ينقص الماء.`, `abufahad:بالقايلة ما أحد يطلع والشارع فاضي لين المغرب، والبيع واقف. لو فيه مقهى أو مكان يجتمع فيه الناس بالليل، تتحرك البلد.`]);
   if (season.id === "winter" && f.tents >= 3) add("season", -1, 4, [`umsaad:البرد قارص والخيام ما تدفّي. متى نسكن بيوت طين؟`]);
   if (season.id === "autumn" && f.palms >= 1) add("dates", 1, 3, [`abukhalid:بدا الصرام! تمر هالسنة ممتاز، السكري والخلاص ما شاء الله.`]);
   for (const e of s.events) {
-    if (e.id === "rain") add("rain", 1, 6, [`الحمد لله على المطر! الوادي سال والنخل ارتوى.`, `مطر الوسم نزل، الأرض بتربع إن شاء الله.`]);
+    if (e.id === "rain") add("rain", 1, 6, season.id === "autumn" ? [`الحمد لله على مطر الوسم! الأرض شربت، والربيع الجاي بيكون زين إن شاء الله.`, `abukhalid:الوسم نزل والنخل ارتوى. هذا المطر اللي ننتظره كل سنة.`] : season.id === "winter" ? [`الحمد لله على المطر! الوادي سال والنخل ارتوى.`, `مطر الشتاء والبرد… والله إن الدلة والضو ما يفارقون المجلس.`] : [`الحمد لله على مطر الربيع! الفياض بتخضر أكثر.`, `mubarak:مطر الربيع نزل، والإبل بتشبع من العشب.`]);
     if (e.id === "dust") add("dust", -1, 5, [`الغبار ما خلى شي نظيف. سكروا الشبابيك.`]);
     if (e.id === "drought") add("water", -1, 7, [`الجفاف نشّف البئر. وفّروا الماء وادعوا بالمطر.`]);
     if (e.id === "ramadan") add("events", 1, 6, [`رمضان كريم! السوق بعد التراويح زحمة والحمد لله.`, `الفوانيس بالشوارع شي يشرح الصدر.`]);
+    if (e.id === "adha") add("events", 1, 6, [`عيد الأضحى مبارك! ذبحنا الأضحية ووزعنا على الجيران.`, `abunasser:العيد ما يكمل إلا بزيارة الأرحام، الله يعيده علينا بخير.`]);
+    if (e.id === "heat") add("season", -1, 5, [`abufahad:الحر ذبحنا! بالقايلة الشوارع فاضية، والكهرباء تطفي من ضغط المكيفات. نبي مولدات تكفي.`]);
+    if (e.id === "cold") add("season", -1, 4, [`umsaad:البرد قارس والعيال مزكمين. البيوت تبي دفايات، والكهرباء تنقطع من الضغط.`]);
     if (e.id === "eid") add("events", 1, 6, [`عيدكم مبارك! الألعاب النارية البارحة ما شاء الله.`, `abunasser:العيدية وزعناها على عيال الحي كلهم.`]);
     if (e.mazayen) add("camels", 1, 6, [`mubarak:مزاين الإبل جابت ناس من كل مكان! ناقتي أخذت المركز الثالث.`]);
   }
@@ -454,6 +458,7 @@ const GOOD_REPLIES = {
 /** Which answers fit a good-news post. */
 function goodKey(post) {
   if (post.topic === "events") return /رمضان|الفوانيس|التراويح/.test(post.text) ? "ramadan" : "eid";
+  if (post.topic === "season" && post.mood > 0) return "credit";
   return GOOD_REPLIES[post.topic] ? post.topic : "credit";
 }
 const SLOTS = ["promise", "calm", "refuse"];

@@ -1,7 +1,7 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
-import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets } from "./sim.js";
+import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen } from "./sim.js";
 import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
@@ -284,7 +284,7 @@ export class World {
       if (t.b || t.t === "rock" || t.t === "lake") continue;
       const p = tileCenter(x, y), h = hash(x, y, 5), j = (k) => (hash(x, y, k) - 0.5) * 0.6;
       if (t.t === "fayda") {
-        if (spring) for (let k = 0; k < 5; k++) lists.bloom.push(this.place(p.x + j(20 + k), p.z + j(30 + k), hash(x, y, 40 + k) * 6, 0.9 + hash(x, y, 50 + k) * 0.5));
+        if (spring) for (let k = 0; k < Math.round(5 * springGreen(s)); k++) lists.bloom.push(this.place(p.x + j(20 + k), p.z + j(30 + k), hash(x, y, 40 + k) * 6, 0.9 + hash(x, y, 50 + k) * 0.5));
         else if (h < 0.6) lists.grassTuft.push(this.place(p.x + j(6), p.z + j(7), h * 30, 0.7));
       } else if (t.t === "wadi") {
         if (h < 0.08) lists.acacia.push(this.place(p.x + j(6), p.z + j(7), h * 60, 0.8 + h * 2));
@@ -610,8 +610,9 @@ export class World {
   /** What the season's events look like: lanterns for Ramadan and Eid, rain, a camel fair. */
   syncFestive(s) {
     const has = (id) => s.events.some((e) => e.id === id);
-    this.festive = has("ramadan") || has("eid");
-    this.eid = has("eid");
+    this.festive = has("ramadan") || has("eid") || has("adha");
+    this.eid = has("eid") || has("adha");
+    this.dusty = has("dust");
     this.raining = has("rain");
     this.mazayen = s.events.some((e) => e.mazayen);
     this.removeAll(this.festiveMeshes);
@@ -918,7 +919,7 @@ export class World {
   stepLife(dt) {
     if (!this.people) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = !!this.nightTime && !this.festive;
+    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = (!!this.nightTime || !!this.siesta) && !this.festive;
     const M = this.peopleMesh, col = new THREE.Color();
     const winter = seasonOf(this.state.day).id === "winter";
     const thobes = winter ? ["#f2efe6", "#c9b79a", "#8a8f94", "#6b5a48", "#ece6d8"] : ["#f6f5f0", "#f1ede2", "#ebe7dc", "#f6f5f0"];
@@ -1059,6 +1060,8 @@ export class World {
     const sky = new THREE.Color("#22305a").lerp(new THREE.Color("#f6e2b8"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
     if (this.raining) { sky.lerp(new THREE.Color("#7d8794"), 0.45); this.sun.intensity *= 0.45; this.hemi.intensity *= 0.75; }
+    // a dust storm: the sky goes ochre and the light dims
+    if (this.dusty) { sky.lerp(new THREE.Color("#c9a46a"), 0.55); this.sun.intensity *= 0.6; this.sun.color.lerp(new THREE.Color("#e0b070"), 0.6); }
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? "#fff4dd" : "#8fa0d8");

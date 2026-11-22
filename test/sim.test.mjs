@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newGame, step, build, demolish, cantBuild, analyze, catchUp, pack, unpack, idx, startResearch, houseBlocker, owns, buyPlot, plotAt } from "../js/sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, catchUp, pack, unpack, idx, startResearch, houseBlocker, owns, buyPlot, plotAt, rng, seasonOf } from "../js/sim.js";
 import { B, MAP_SIZE as N, START_MONEY } from "../js/data.js";
 import { autoplay } from "./balance.mjs";
 
@@ -384,4 +384,23 @@ test("upgrades say what they change; the mosque and the hospital can grow", asyn
   assert.ok(m.happyNext > m.happyNow && m.radiusNext === m.radiusNow + 1);
   const h = upgradeEffect(s, { id: "house", lvl: 0 });
   assert.ok(h.capNext > h.capNow && h.taxGain > 0);
+});
+
+test("weather follows the season: no rain in summer, Eid al-Fitr after Ramadan", () => {
+  const s = newGame(5), r = rng(9), seen = {};
+  let eidAfterRamadan = 0;
+  for (let h = 0; h < 288 * 12; h++) {
+    const before = s.events.map((e) => e.id);
+    step(s, r); if (s.decision) s.decision = null;
+    for (const e of s.events) if (!before.includes(e.id)) {
+      const k = seasonOf(s.day).id;
+      (seen[e.id] ||= new Set()).add(k);
+      if (e.id === "eid" && before.includes("ramadan")) eidAfterRamadan++;
+    }
+  }
+  assert.ok(!seen.rain?.has("summer"), "no rain in summer");
+  assert.ok(!seen.heat || [...seen.heat].every((k) => k === "summer"));
+  assert.ok(!seen.cold || [...seen.cold].every((k) => k === "winter"));
+  assert.ok(!seen.locust || [...seen.locust].every((k) => k === "spring"));
+  if (seen.eid) assert.ok(eidAfterRamadan > 0);
 });

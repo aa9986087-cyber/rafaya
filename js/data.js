@@ -305,17 +305,27 @@ export const GOALS = [
 
 /** Things that happen. weight: how often; effect lasts `days`. */
 // days: how long it lasts, in hours.
+// Weather follows the season, as in al-Jouf: rain in autumn (الوسم), winter and spring and never in
+// summer; dust storms in spring and summer; heat waves in summer, cold snaps in winter; locusts in
+// spring; the date harvest from late summer into autumn. Ramadan and Eid al-Adha follow the moon, so
+// they can fall in any season; Eid al-Fitr comes right after Ramadan (it is never drawn on its own).
+// seasons: how likely each is in each season (0 = never).
 export const EVENTS = [
-  { id: "rain", name: "مطر الوسم", text: "نزل المطر! المزارع تنتج أكثر.", days: 18, weight: 3, farm: 1.5, happy: 6 },
-  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد والطرق الترابية انطمرت. الناس متضايقين.", days: 10, weight: 3, happy: -10 },
-  { id: "locust", name: "جراد", text: "سرب جراد نزل على المزارع! المحصول بيقل يوم كامل.", days: 24, weight: 2, farm: 0.4 },
-  { id: "drought", name: "جفاف", text: "الآبار نقصت. وفّروا الماء.", days: 36, weight: 2, water: 0.7 },
-  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 72, weight: 2, shop: 1.3, happy: 8 },
-  { id: "eid", name: "العيد", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, weight: 2, happy: 15, shop: 1.2 },
-  { id: "dates", name: "موسم التمور", text: "موسم الصرام! أسعار التمور فوق.", days: 36, weight: 3, farm: 1.4 },
-  { id: "visit", name: "زيارة المحافظ", text: "المحافظ زار البلد وأعجبه، وصرف دعم.", days: 1, weight: 1, gift: true },
-  { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 36, weight: 2, tech: "tourism", shop: 1.6, happy: 10 }
+  { id: "rain", name: "مطر", text: "نزل المطر! المزارع تنتج أكثر، والماء الجوفي يرتفع.", days: 18, seasons: { spring: 3, summer: 0, autumn: 3, winter: 4 }, farm: 1.5, happy: 6 },
+  { id: "dust", name: "عاصفة غبار", text: "غبار يغطي البلد والطرق الترابية انطمرت. الناس متضايقين.", days: 10, seasons: { spring: 3, summer: 3, autumn: 1, winter: 0.3 }, happy: -10 },
+  { id: "heat", name: "موجة حر", text: "حر شديد: الناس ما يطلعون بالنهار، والمكيفات شغالة طول الوقت والكهرباء تتعب.", days: 24, seasons: { summer: 3 }, happy: -6, power: 0.85 },
+  { id: "cold", name: "موجة برد", text: "برد قارس: الناس يدفّون بالدفايات والحطب، والكهرباء عليها ضغط.", days: 24, seasons: { winter: 3 }, happy: -4, power: 0.9 },
+  { id: "locust", name: "جراد", text: "سرب جراد نزل على المزارع! المحصول بيقل يوم كامل.", days: 24, seasons: { spring: 2 }, farm: 0.4 },
+  { id: "drought", name: "جفاف", text: "ما نزل مطر من زمان والآبار نقصت. وفّروا الماء.", days: 36, seasons: { summer: 3, autumn: 1 }, water: 0.7 },
+  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 72, seasons: { spring: 1, summer: 1, autumn: 1, winter: 1 }, shop: 1.3, happy: 8 },
+  { id: "eid", name: "عيد الفطر", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, seasons: {}, happy: 15, shop: 1.2 },
+  { id: "adha", name: "عيد الأضحى", text: "عيد الأضحى مبارك! الأضاحي والزيارات في كل البيوت.", days: 24, seasons: { spring: 0.7, summer: 0.7, autumn: 0.7, winter: 0.7 }, happy: 12, shop: 1.15 },
+  { id: "dates", name: "موسم الصرام", text: "موسم الصرام! أسعار التمور فوق.", days: 36, seasons: { summer: 2, autumn: 3 }, farm: 1.4 },
+  { id: "visit", name: "زيارة المحافظ", text: "المحافظ زار البلد وأعجبه، وصرف دعم.", days: 1, seasons: { spring: 1, summer: 0.6, autumn: 1, winter: 1 }, gift: true },
+  { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 36, seasons: { spring: 2, autumn: 2, winter: 1 }, tech: "tourism", shop: 1.6, happy: 10 }
 ];
+/** What the rain is called in each season. */
+export const RAIN_NAMES = { spring: "مطر الربيع", autumn: "مطر الوسم", winter: "مطر الشتاء" };
 
 /**
  * Choices the mayor gets now and then. when(s, a, season) says if it can come up;
@@ -423,13 +433,13 @@ export const DECISIONS = [
       { label: "ارفض", note: "الأهالي يشكرونك", boost: { name: "الأهالي راضين بقرارك", hours: 24, happy: 4 } }
     ] },
   { id: "mazayen", title: "مزاين الإبل", text: "الفيضة خضرا وأهل الإبل يبون يقيمون مزاين عندكم. تجيب زوار من كل مكان.",
-    when: (s, a, season) => season.id === "spring" && s.pop >= 40,
+    when: (s, a, season) => season.id === "spring" && s.pop >= 40 && a.faydaHappy >= 2, // only when the faydah is green
     options: [
       { label: "أقيموها", note: "تكلف ١٥٠٠، تفرّح الناس والمحلات تبيع أكثر يومين", cost: 1500, boost: { name: "مزاين الإبل", hours: 48, happy: 10, shop: 1.4, mazayen: true } },
       { label: "مو هالسنة", note: "ما يصير شي" }
     ] },
   { id: "kashta", title: "كشتة جماعية", text: "الأهالي يبون يطلعون كشتة بالفيضة، ويطلبون البلدية تجهّز الخيام والقهوة.",
-    when: (s, a, season) => season.id === "spring",
+    when: (s, a, season) => season.id === "spring" && a.faydaHappy >= 1.5,
     options: [
       { label: "جهّزوها", note: "تكلف ٤٠٠، رضا +٨ ليوم", cost: 400, boost: { name: "كشتة الربيع", hours: 24, happy: 8 } },
       { label: "خلّهم على حسابهم", note: "رضا +٢", boost: { name: "كشتة", hours: 12, happy: 2 } }

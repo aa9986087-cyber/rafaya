@@ -42,14 +42,15 @@ function startAmbience() {
 }
 export const ambience = {
   /** Call a few times a second with what is going on. */
-  update({ playing, night, raining }) {
+  update({ playing, night, raining, season, dusty }) {
     if (!on || !playing) { if (amb) { const t = ctx.currentTime; amb.wind.gain.setTargetAtTime(0, t, 0.3); amb.rain.gain.setTargetAtTime(0, t, 0.3); } return; }
     try {
       if (!amb) startAmbience();
       const t = ctx.currentTime;
-      amb.wind.gain.setTargetAtTime(night ? 0.012 : 0.03, t, 1.5);
+      // wind: strong in a dust storm, cold and loud on winter nights
+      amb.wind.gain.setTargetAtTime(dusty ? 0.08 : season === "winter" ? (night ? 0.03 : 0.04) : night ? 0.012 : 0.03, t, 1.5);
       amb.rain.gain.setTargetAtTime(raining ? 0.05 : 0, t, 1);
-      if (night && !raining && t > amb.nextChirp) { // crickets: three quick high chirps
+      if (night && !raining && season !== "winter" && t > amb.nextChirp) { // no crickets in the winter cold // crickets: three quick high chirps
         for (let i = 0; i < 3; i++) tone(4300 + Math.random() * 300, 0.035, { type: "sine", vol: 0.012, at: i * 0.06 });
         amb.nextChirp = t + 0.6 + Math.random() * 1.6;
       }
