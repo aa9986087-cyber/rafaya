@@ -407,12 +407,61 @@ const PROMISE_LINE = { season: "أبشر، بنسوي أماكن يجتمع في
 const BUILDING_FOR = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" };
 
 /** The answers on offer under a post: promise (cheers), calm (they come back later), refuse (upsets). */
+/**
+ * Good news needs a fitting answer. What the mayor did (a well, a job, low tax) is thanked, and the
+ * mayor can be gracious or proud; what God sent (rain, a green spring, the harvest, Ramadan and Eid)
+ * is nobody's doing, and the answers are a prayer, a word of care, or a practical thought.
+ * Each answer has the resident's reply to it and how it moves their trust.
+ */
+const GOOD_REPLIES = {
+  rain: [
+    { label: "الحمد لله، اللهم صيّبًا نافعًا 🤲", back: "آمين يا رب. الله يجعله غيث خير وبركة على البلد.", change: 3 },
+    { label: "الحمد لله. انتبهوا للوادي، المطر يجيب سيل", back: (s) => (s.tiles?.some((t) => t.b?.id === "dam") ? "صدقت، والحمد لله السد يحمينا. بس بنبعد الحلال عن المجرى احتياط." : "صدقت والله. بنبعد الحلال عن مجرى الوادي، وياليت يصير عندنا سد يوم."), change: 4 },
+    { label: "فرصة للمزارعين، ازرعوا زيادة", back: "إن شاء الله، الأرض شربت والموسم بيكون زين.", change: 2 }
+  ],
+  fayda: [
+    { label: "ما شاء الله، الله يديمها نعمة 🌼", back: "آمين. الربيع هالسنة ما شفنا مثله من زمان.", change: 3 },
+    { label: "اطلعوا استانسوا، بس نظّفوا مكانكم", back: "أبشر، الكشتة ما تحلى إلا والمكان نظيف. كلام عاقل.", change: 4 },
+    { label: "الفيضة للحلال والناس، ما راح نبني فيها", back: "هذا الكلام الزين! كثير بلدان دفنت فياضها بالمباني وندمت.", change: 5 }
+  ],
+  dates: [
+    { label: "الله يبارك في صرامكم 🌴", back: "الله يبارك فيك. والله التمر هالسنة يستاهل.", change: 3 },
+    { label: "خلونا نفتح سوق للتمر يبيعون فيه", back: (s) => (s.tiles?.some((t) => t.b?.id === "datefactory") ? "عندنا مصنع التمور الحمد لله، بس سوق للتمر بعد يجيب ناس من برا." : "فكرة! ولو صار مصنع تمور يغلّف ويصدّر يكون أحسن."), change: 3 },
+    { label: "لا تنسون الزكاة والجيران", back: "جزاك الله خير على التذكير. أول شي نطلع حق الله.", change: 2 }
+  ],
+  ramadan: [
+    { label: "مبارك عليكم الشهر، تقبل الله منا ومنكم 🌙", back: "ومنكم صالح الأعمال، وعساك من عواده.", change: 3 },
+    { label: "انتبهوا للسواقة قبل الفطور", back: "صدقت، الناس تستعجل قبل المغرب. الله يحفظ الجميع.", change: 3 },
+    { label: "بنسوي إفطار صايم بالجامع", back: "الله يجزاك خير! هذا اللي يحبه الناس.", change: 5 }
+  ],
+  eid: [
+    { label: "عيدكم مبارك، وعساكم من عواده 🎉", back: "ومنكم وعساك من الفايزين يا العمدة.", change: 3 },
+    { label: "العيدية على حساب البلدية للعيال!", back: "هههه الله يسعدك! العيال بيدعون لك.", change: 5 },
+    { label: "لا تنسون تزورون كبار السن", back: "صدقت، العيد ما يكمل إلا بزيارتهم. جزاك الله خير.", change: 3 }
+  ],
+  camels: [
+    { label: "مبروك! الله يبارك في حلالك 🐪", back: "الله يبارك فيك. والمرة الجاية المركز الأول إن شاء الله.", change: 3 },
+    { label: "نبيها كل سنة في الرافعية", back: "إن شاء الله! المزاين تجيب ناس وتحرّك السوق.", change: 3 },
+    { label: "لا تتأخرون بالإبل على الطريق", back: "أبشر، بنمشيها بعيد عن الطرق.", change: 1 }
+  ],
+  // what the mayor did: thanked
+  credit: [
+    { label: "الله يسعدك، هذا واجبنا 🤝", back: "الله يحفظك يا العمدة، الرافعية بخير دامك فيها.", change: 4 },
+    { label: "الشكر لله ثم لكم، أنتم اللي صبرتوا", back: "ما شاء الله تواضع! الله يكثر من أمثالك.", change: 6 },
+    { label: "خلّونا من المدح واشتغلوا", back: "طيب… كنت أشكرك بس 😐", change: -6 }
+  ]
+};
+/** Which answers fit a good-news post. */
+function goodKey(post) {
+  if (post.topic === "events") return /رمضان|الفوانيس|التراويح/.test(post.text) ? "ramadan" : "eid";
+  return GOOD_REPLIES[post.topic] ? post.topic : "credit";
+}
+const SLOTS = ["promise", "calm", "refuse"];
 export function replyOptions(post) {
-  if (post.mood > 0) return [
-    { kind: "promise", label: "الله يسعدك، هذا واجبنا 🤝" },
-    { kind: "calm", label: "شكرًا لك" },
-    { kind: "refuse", label: "خلّونا من المدح واشتغلوا" }
-  ];
+  if (post.mood > 0) {
+    const set = GOOD_REPLIES[goodKey(post)], key = goodKey(post);
+    return set.map((o, i) => ({ kind: SLOTS[i], label: o.label, tone: key === "credit" ? SLOTS[i] : i === 0 ? "promise" : "calm" }));
+  }
   const opts = [
     { kind: "promise", label: PROMISE_LINE[post.topic] || "معك حق، بنحلها قريب" },
     { kind: "calm", label: "إن شاء الله، نشوف الموضوع" },
@@ -430,10 +479,9 @@ export function answerPost(s, a, season, post, kind) {
   const missing = TOPIC_NAMES[post.topic] && stillMissing(s, a, season, post.topic);
   const building = BUILDING_FOR[post.topic] && B[BUILDING_FOR[post.topic]];
   if (post.mood > 0) {
-    const change = kind === "promise" ? 4 : kind === "refuse" ? -6 : 1;
-    moodOf(s, post.who, change);
-    const text = kind === "promise" ? "الله يحفظك يا العمدة، الرافعية بخير دامك فيها." : kind === "refuse" ? "طيب… كنت أشكرك بس 😐" : "العفو، الله يعطيك العافية.";
-    return { text, change };
+    const o = GOOD_REPLIES[goodKey(post)][Math.max(0, SLOTS.indexOf(kind))];
+    moodOf(s, post.who, o.change);
+    return { text: typeof o.back === "function" ? o.back(s) : o.back, change: o.change };
   }
   if (kind === "promise") {
     const change = post.noCalm ? 6 : 8;
@@ -448,7 +496,7 @@ export function answerPost(s, a, season, post, kind) {
   if (kind === "calm") {
     s.comebacks ||= [];
     if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, at: s.day + 24, day: s.day, asked: post.text });
-    const text = post.who === "abunasser" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : "طيب، بنصبر يوم. بس بكرة أبي جواب.";
+    const text = post.who === "abunasser" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : `طيب، بنصبر يوم على ${TOPIC_NAMES[post.topic] || "طلبنا"}. بس بكرة أبي جواب واضح.`;
     return { text, change: 0 };
   }
   // refuse: hurts, and hurts more when the money is plainly there
