@@ -346,14 +346,14 @@ test("people: each house has the same families every time, and fathers work wher
 
 test("region: towns on other kinds of land", () => {
   const rocks = (s) => s.tiles.filter((t) => t.t === "rock").length, wadi = (s) => s.tiles.filter((t) => t.t === "wadi").length;
-  const base = newGame(5), hill = newGame(5, { terrain: "mountain", name: "هجرة الجبل", site: "jabal", money: 2500 }), dunes = newGame(5, { terrain: "dunes" }), big = newGame(5, { terrain: "bigwadi" });
+  const base = newGame(5), hill = newGame(5, { terrain: "mountain", name: "الأضارع", site: "adharea", money: 2500 }), dunes = newGame(5, { terrain: "dunes" }), big = newGame(5, { terrain: "bigwadi" });
   assert.ok(rocks(hill) > rocks(base) * 2, "mountain land is rocky");
   assert.equal(wadi(dunes), 0, "no wadi in the dunes");
   assert.ok(wadi(big) > wadi(base), "a big wadi is wider");
-  assert.equal(hill.name, "هجرة الجبل"); assert.equal(hill.money, 2500);
+  assert.equal(hill.name, "الأضارع"); assert.equal(hill.money, 2500);
   // linked towns bring customers and traders
   const s = autoplay(800, 4), a0 = analyze(s);
-  s.neighbours = [{ id: "jabal", name: "هجرة الجبل", pop: 2000 }];
+  s.neighbours = [{ id: "saffan", name: "صفان", pop: 2000 }];
   const a1 = analyze(s);
   assert.ok(a1.shopDemand > a0.shopDemand && a1.exportDemand > a0.exportDemand);
   assert.equal(unpack(pack(s)).name, "الرافعية");

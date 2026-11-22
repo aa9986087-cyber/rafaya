@@ -215,12 +215,10 @@ export const TERRAINS = {
   plain: { name: "سهل", text: "أرض مستوية فيها ماء جوفي كثير: الآبار تعطي زين." }
 };
 export const SITES = [
-  { id: "main", x: 50, y: 50, terrain: "wadi", name: "الرافعية" },
-  { id: "jabal", x: 18, y: 24, terrain: "mountain", name: "هجرة الجبل" },
-  { id: "nafud", x: 80, y: 20, terrain: "dunes", name: "النفود" },
-  { id: "rawdah", x: 82, y: 74, terrain: "meadow", name: "روضة الخزامى" },
-  { id: "shuaib", x: 20, y: 76, terrain: "bigwadi", name: "الشعيب" },
-  { id: "abar", x: 52, y: 90, terrain: "plain", name: "أم الآبار" }
+  { id: "main", x: 50, y: 52, terrain: "wadi", name: "الرافعية" },
+  { id: "radifah", x: 22, y: 30, terrain: "meadow", name: "الرديفة" },
+  { id: "adharea", x: 24, y: 78, terrain: "mountain", name: "الأضارع" },
+  { id: "saffan", x: 80, y: 26, terrain: "dunes", name: "صفان" }
 ];
 // Founding a town: paid by the town you are in; each one costs more. A road between two towns costs
 // per unit of distance on the region map. Linked towns buy from each other.

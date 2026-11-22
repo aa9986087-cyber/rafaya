@@ -928,7 +928,8 @@ $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments();
 
 // ---------- the region ----------
 const linked = (a, b) => RG.roads.some(([p, q]) => (p === a && q === b) || (p === b && q === a));
-const siteOf = (id) => SITES.find((x) => x.id === id);
+// (towns founded before the region had its real names keep a place on the map)
+const siteOf = (id) => SITES.find((x) => x.id === id) || { id, x: 50, y: 86, terrain: RG.towns[id]?.terrain || "plain", name: RG.towns[id]?.name || "" };
 const regionOpen = () => (RG.towns.main?.era ?? (S.site === "main" ? S.era : 0)) >= REGION.unlockEra;
 /** What linked towns this town trades with (their people shop and their traders buy here). */
 function noteNeighbours() {
@@ -943,11 +944,12 @@ function regionSheet(pick) {
   const sel = pick || here, site = siteOf(sel), t = towns[sel];
   const founded = ids.length - 1, price = REGION.found[Math.min(founded, REGION.found.length - 1)];
   const roads = RG.roads.map(([p, q]) => { const a = siteOf(p), b = siteOf(q); return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="rg-road"/>`; }).join("");
-  const dots = SITES.map((x) => {
+  const dots = [...SITES, ...Object.keys(towns).filter((id) => !SITES.some((x) => x.id === id)).map(siteOf)].map((x) => {
     const tt = towns[x.id], cur = x.id === here, on = x.id === sel;
+    const rad = tt ? 3.2 + Math.min(4, Math.log10((tt.pop || 1) + 1) * 1.3) : 3;
     return `<g class="rg-site ${tt ? "town" : "free"} ${cur ? "cur" : ""} ${on ? "on" : ""}" data-site="${x.id}" transform="translate(${x.x} ${x.y})">
-      <circle r="${tt ? 3.2 + Math.min(4, Math.log10((tt.pop || 1) + 1) * 1.3) : 3}"/>${tt ? "" : `<text class="plus" y="1.3">+</text>`}
-      <text class="lbl" y="${tt ? -6.5 : -5}">${tt ? tt.name : TERRAINS[x.terrain].name}</text>${tt ? `<text class="pop" y="${9}">${ar((tt.pop || 0).toLocaleString("en-US"))}</text>` : ""}</g>`;
+      <circle r="${rad}"/>${tt ? "" : `<text class="plus" y="1.3">+</text>`}
+      <text class="lbl" y="${-rad - 1.6}">${tt ? tt.name : x.name}</text>${tt ? `<text class="pop" y="${rad + 3.4}">${ar((tt.pop || 0).toLocaleString("en-US"))}</text>` : ""}</g>`;
   }).join("");
   let detail;
   if (t) {
@@ -957,10 +959,10 @@ function regionSheet(pick) {
         ${linked(here, sel) ? `<p class="hint">🛣️ موصولة بطريق: يتسوقون ويتاجرون مع بعض.</p><div class="rg-send"><span>حوّل لها من ميزانيتك:</span>${[1000, 5000, 20000].map((v) => `<button class="btn" type="button" data-send="${v}" ${S.money < v ? "disabled" : ""}>${money(v)}</button>`).join("")}</div>`
           : `<div class="sheet-actions"><button class="btn block" id="rgRoad" type="button" ${S.money < roadCost(here, sel) ? "disabled" : ""}>🛣️ وصّل طريق من ${S.name} بـ${money(roadCost(here, sel))} ريال</button></div><p class="hint">المدن الموصولة بطريق يتسوق ناسها عند بعض، والتجار يشترون من ورشهم.</p>`}`}</div>`;
   } else {
-    detail = `<div class="rg-card"><div class="rg-top"><b>أرض ${TERRAINS[site.terrain].name}</b><small>مكان لهجرة جديدة</small></div><p>${TERRAINS[site.terrain].text}</p>
-      ${regionOpen() ? `<label class="rg-name">اسمها <input id="rgName" type="text" maxlength="20" value="${site.name}"></label>
-        <div class="sheet-actions"><button class="btn go block" id="rgFound" type="button" ${S.money < price ? "disabled" : ""}>أسس هجرة هنا بـ${money(price)} ريال</button></div>
-        <p class="hint">تندفع من ميزانية ${S.name}، والهجرة الجديدة تبدأ بثلاث خيام و${money(REGION.startMoney)} ريال. المدن اللي ما أنت فيها توقف لين ترجع لها.</p>`
+    detail = `<div class="rg-card"><div class="rg-top"><b>${site.name}</b><small>أرض ${TERRAINS[site.terrain].name}</small></div><p>${TERRAINS[site.terrain].text}</p>
+      ${regionOpen() ? `<input id="rgName" type="hidden" value="${site.name}">
+        <div class="sheet-actions"><button class="btn go block" id="rgFound" type="button" ${S.money < price ? "disabled" : ""}>أسس ${site.name} بـ${money(price)} ريال</button></div>
+        <p class="hint">تندفع من ميزانية ${S.name}، و${site.name} تبدأ بثلاث خيام و${money(REGION.startMoney)} ريال. المدن اللي ما أنت فيها توقف لين ترجع لها.</p>`
         : `<div class="need">تنفتح لما تصير الرافعية ${ERAS[REGION.unlockEra].name} (${money(ERAS[REGION.unlockEra].pop)} ساكن).</div>`}</div>`;
   }
   sheet(`<h2>🗺️ منطقة الرافعية</h2><p>لقبك: <b>${title}</b> · ${ar(ids.length)} ${ids.length === 1 ? "مدينة" : "مدن"} · ${money(totalPop)} ساكن · ${money(totalMoney)} ريال</p>
@@ -1038,7 +1040,7 @@ const WHATS_NEW = {
   v: "2026-11-23",
   items: [
     ["🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
-    ["🗺️", "خريطة المنطقة", "أسس هجر جديدة على أراضي مختلفة، ووصّلها بطرق، وصر أمير المنطقة."],
+    ["🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
     ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
     ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
     ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
@@ -1388,7 +1390,7 @@ function howTo(fromMenu) {
       <p>من «القائمة ← مدن الربع» تنشر مدينتك وتاخذ كود ترسله لربعك، وهم يزورونها بالكود ويشوفونها بالـ3D ويعلقون عليها. وفيه لوحة صدارة: أكبر مدينة، وأسعد أهالي، وأغنى بلدية. الزيارة للفرجة بس، ما تقدر تبني في مدينة غيرك.</p></details>
 
     <details><summary>المنطقة والمدن الثانية</summary>
-      <p>لما تصير الرافعية بلدة تنفتح «خريطة المنطقة» (اضغط مربع الوقت فوق، أو من القائمة). تأسس فيها هجر جديدة على أراضي مختلفة: جبلية فيها حجر كثير، ونفود واسعة، وروضة خضرا، وشعيب خصب بس سيوله قوية، وسهل ماه الجوفي كثير.</p>
+      <p>لما تصير الرافعية بلدة تنفتح «خريطة المنطقة» (اضغط مربع الوقت فوق، أو من القائمة). تأسس فيها مدن المنطقة: «الرديفة» في روضة تخضر بالربيع، و«الأضارع» في أرض جبلية فيها حجر كثير، و«صفان» في النفود: رمل واسع بلا وادي.</p>
       <p>وصّل المدن بطرق: ناسها يتسوقون عند بعض وتجارها يشترون من ورش بعض. وتقدر تحوّل فلوس من مدينة لثانية. المدن اللي ما أنت فيها توقف لين ترجع لها. وإذا صار عندك ٣ مدن صرت «أمير المنطقة».</p></details>
 
     <details><summary>أهل الرافعية</summary>
@@ -1531,7 +1533,7 @@ function frame(now) {
         toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
         (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
         if (m.kind === "era" && openCat) renderCards();
-        if (m.kind === "era" && S.era === REGION.unlockEra && (S.site || "main") === "main") setTimeout(() => toast("🗺️ انفتحت خريطة المنطقة: اضغط على مربع الوقت فوق وأسس هجر جديدة", "era"), 2500);
+        if (m.kind === "era" && S.era === REGION.unlockEra && (S.site || "main") === "main") setTimeout(() => toast("🗺️ انفتحت خريطة المنطقة: اضغط على مربع الوقت فوق وأسس الرديفة والأضارع وصفان", "era"), 2500);
       }
       sync(false);
       // Rush hours: the first hours of the morning and the afternoon.
