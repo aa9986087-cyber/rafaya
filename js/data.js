@@ -207,7 +207,7 @@ export const TRAFFIC = { perResident: 0.3, crossing: 0.75 };
 // The region around الرافعية: places where new towns can be founded, each on its own kind of land.
 // x, y are positions on the region map (0–100).
 export const TERRAINS = {
-  wadi: { name: "على الوادي", text: "وادي وسط رمل وصخور: الأرض اللي بدأت فيها الرافعية." },
+  wadi: { name: "على الوادي", text: "وادي يمر بين الرمل والصخور: أرض خصبة للنخل والمزارع، بس تجيه السيول." },
   mountain: { name: "جبلية", text: "صخور كثيرة (حجر للكسارات) ووادي ضيق، والماء الجوفي أقل." },
   dunes: { name: "نفود", text: "رمل بلا صخور ولا وادي: أرض واسعة للبناء، بس المزارع ما تحب الرمل." },
   meadow: { name: "روضة", text: "فياض كثيرة تخضر بالربيع: الحلال يرعى، والناس يحبون الكشتات." },
@@ -232,12 +232,18 @@ export const WORLD = {
     { name: "القريات", x: 3, y: 3, terrain: "mountain", r: 3.2 },
     { name: "طبرجل", x: 8, y: 5, terrain: "plain", r: 3 },
     { name: "دومة الجندل", x: 11, y: 9, terrain: "bigwadi", r: 2.6 },
+    { name: "الرافعية", x: 6, y: 10, terrain: "wadi", r: 2.2 },
     { name: "سكاكا", x: 14, y: 7, terrain: "wadi", r: 3 },
     { name: "الحماد", x: 13, y: 2, terrain: "mountain", r: 4 },
     { name: "النفود الكبير", x: 18, y: 13, terrain: "dunes", r: 6 },
     { name: "روضات الجوف", x: 20, y: 4, terrain: "meadow", r: 3 }
   ]
 };
+/** The nearest named place to a plot. */
+export function worldPlace(plot) {
+  const x = plot % WORLD.cols, y = Math.floor(plot / WORLD.cols);
+  return WORLD.places.reduce((b, p) => (Math.hypot(x - p.x, y - p.y) / p.r < Math.hypot(x - b.x, y - b.y) / b.r ? p : b)).name;
+}
 /** The kind of land of a plot: the nearest place inside its reach, the dunes to the south-east, plain elsewhere. */
 export function worldTerrain(plot) {
   const x = plot % WORLD.cols, y = Math.floor(plot / WORLD.cols);
