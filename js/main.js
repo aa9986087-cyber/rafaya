@@ -4,7 +4,7 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgra
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
-import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf } from "./news.js";
+import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 
 const $ = (id) => document.getElementById(id);
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -547,18 +547,41 @@ function postHtml(p) {
   return `<article class="post" data-post="${p.id}">
     <div class="post-head"><div><b>${r.name}</b><small>${[r.role, r.area, when].filter(Boolean).join(" · ")}</small></div>${moodTag(p.mood)}</div>
     <p>${p.text}</p>
+    ${p.ref ? refHtml(p) : ""}
     ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : m.person ? m.person.name : r.name}</b>${m.person?.role ? `<small> (${m.person.role})</small>` : ""} ${m.text}</div>`).join("")}
     <div class="post-foot"><span>👥 ${ar(p.likes || 1)} ${(p.likes || 1) > 10 ? "من الأهالي" : ""} يوافقونه</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? "الناس ارتاحوا" : p.change < 0 ? "الناس زعلوا" : "بيرجع لك بكرة"}</span>` : ""}</div>
     ${p.answered || p.id.startsWith("d-") ? "" : `<div class="answers">${replyOptions(p).map((o) => `<button type="button" class="ans ${o.kind}" data-post="${p.id}" data-kind="${o.kind}">${o.label}</button>`).join("")}</div>`}
   </article>`;
 }
 
+/** The promise (or the "we'll see") a follow-up post is about: what they asked, what the mayor said, and when. */
+function refHtml(p) {
+  const r = p.ref, when = r.day != null ? `اليوم ${ar(dayOf(r.day))} · ${ar(hourOf(r.day))}:٠٠` : "";
+  return `<div class="pref">
+    ${r.asked ? `<div><small>طلبهم ${when ? `(${when})` : ""}</small><q>${r.asked}</q></div>` : ""}
+    <div><small>${r.calm ? "رديت عليهم" : "وعدك لهم"}</small><b>«${r.said}»</b></div>
+    ${p.mood < 0 && FIX_HINT[p.topic] ? `<div class="pfix">🛠️ عشان توفي: ${FIX_HINT[p.topic]}</div>` : ""}
+  </div>`;
+}
+/** Promises the mayor has made that are still open, and people waiting for a real answer. */
+function promisesHtml() {
+  const open = (S.promises || []).map((p) => {
+    const left = 48 - (S.day - p.day), name = p.person?.name || "واحد من الأهالي";
+    return `<div class="prom ${left <= 0 ? "late" : ""}"><div class="prom-top"><b>${topicName(p.topic)}</b><small>${left > 0 ? `باقي ${ar(left)} ساعة قبل لا يذكّرونك` : "تأخرت عليهم!"}</small></div>
+      <small>وعدت ${name}${p.person?.area ? ` ${p.person.area}` : ""}: «${p.said}»</small>
+      ${FIX_HINT[p.topic] ? `<div class="pfix">🛠️ ${FIX_HINT[p.topic]}</div>` : ""}</div>`;
+  });
+  const waiting = (S.comebacks || []).map((c) => `<div class="prom calm"><div class="prom-top"><b>${topicName(c.topic)}</b><small>بيرجعون لك بعد ${ar(Math.max(1, c.at - S.day))} ساعة</small></div><small>قلت لـ${c.person?.name || "واحد من الأهالي"}: «إن شاء الله، نشوف»</small></div>`);
+  if (!open.length && !waiting.length) return "";
+  return `<details class="proms" open><summary>🤝 وعودك (${ar(open.length)})${waiting.length ? ` · ينتظرون جواب (${ar(waiting.length)})` : ""}</summary>${open.join("")}${waiting.join("")}</details>`;
+}
 function newsSheet() {
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
   const trust = Math.round(moodOf(S, null));
   sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون أهل الرافعية عن بلدهم. اختار ردك: الوعد يريّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
     <div class="trust"><span>ثقة الأهالي بالعمدة</span><i class="bar"><i style="width:${trust}%" class="${trust < 45 ? "low" : ""}"></i></i><b>${ar(trust)}٪</b></div></div>
+    ${promisesHtml()}
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
   $("sheetBody").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => answer(b.dataset.post, b.dataset.kind)));
 }

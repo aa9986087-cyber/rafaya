@@ -213,6 +213,28 @@ export function needs(s, a) {
 
 const TOPIC_NAMES = { repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
 /** Is anyone still upset about this topic right now? */
+/** What the mayor has to do to keep each kind of promise. */
+export const FIX_HINT = {
+  water: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء",
+  power: "ابنِ مولد أو ألواح شمسية قريب من البيوت",
+  jobs: "افتح محلات أو مزارع أو ورش عشان الوظائف",
+  mosque: "ابنِ مسجد قريب من البيوت",
+  school: "ابنِ مدرسة قريبة من البيوت",
+  health: "ابنِ مستوصف قريب من البيوت",
+  safety: "ابنِ مركز شرطة قريب من الحارة",
+  parks: "ابنِ حديقة قريبة من البيوت",
+  roads: "وصّل البيوت بطريق",
+  tax: "نزّل الضريبة من «الأرقام»",
+  housing: "انصب خيام جديدة أو طوّر البيوت",
+  dust: "سفلت الطرق (بحث «سفلتة الطرق» من المجلس)",
+  money: "رجّع الميزانية فوق الصفر",
+  pollution: "انقل الورش والمصانع بعيد عن البيوت",
+  repair: "رمّم المباني من «الأرقام»",
+  traffic: "زد الطرق أو سفلتها",
+  strike: "وافق على علاوة الموظفين"
+};
+export const topicName = (t) => TOPIC_NAMES[t] || "الطلب";
+
 const stillMissing = (s, a, season, topic) => topics(s, a, season, townFacts(s, a, season)).some((t) => t.topic === topic && t.mood < 0);
 
 /**
@@ -223,12 +245,13 @@ export function followUps(s, a, season) {
   learnQuarters(s);
   const posts = [];
   s.demands ||= {}; s.promises ||= [];
-  const post = (rec, text, mood, topic) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who: rec.who, person: rec.person || makePerson(a, rec.who), text, mood, topic, likes: agreeing(s, 8) });
+  const post = (rec, text, mood, topic, ref) => posts.push({ id: `f-${s.day}-${posts.length}-${topic}`, day: s.day, who: rec.who, person: rec.person || makePerson(a, rec.who), text, mood, topic, likes: agreeing(s, 8), ...(ref ? { ref } : {}) });
+  const refOf = (p) => ({ asked: p.asked || "", said: p.said || "", day: p.day });
   // Promises first: a kept promise is thanked once (and closes the same wish); a broken one hurts.
   s.promises = s.promises.filter((p) => {
-    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. قلت «${p.said.slice(0, 40)}» وصار. الرجال كلمة 👏`, 1, p.topic); moodOf(s, p.who, +10); (s.record ||= {}).kept = (s.record.kept || 0) + 1; delete s.demands[p.topic]; return false; }
+    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. وعدتنا بـ${topicName(p.topic)} وصار. الرجال كلمة 👏`, 1, p.topic, refOf(p)); moodOf(s, p.who, +10); (s.record ||= {}).kept = (s.record.kept || 0) + 1; delete s.demands[p.topic]; return false; }
     if (!p.reminded && s.day - p.day >= 48) {
-      post(p, `يا العمدة، وعدتنا قبل يومين: «${p.said.slice(0, 40)}». ما صار شي، والوعد دين.`, -1, p.topic);
+      post(p, `يا العمدة، قبل يومين طلبنا ${topicName(p.topic)} ووعدتنا. للحين ما صار شي، والوعد دين.`, -1, p.topic, refOf(p));
       posts[posts.length - 1].noCalm = true;
       moodOf(s, p.who, -15); (s.record ||= {}).broken = (s.record.broken || 0) + 1; p.reminded = true;
     }
@@ -238,7 +261,7 @@ export function followUps(s, a, season) {
   s.comebacks = (s.comebacks || []).filter((c) => {
     if (s.day < c.at) return true;
     if (stillMissing(s, a, season, c.topic)) {
-      post(c, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][Math.floor(Math.random() * 2)], -1, c.topic);
+      post(c, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][s.day % 2], -1, c.topic, { asked: c.asked || "", said: "إن شاء الله، نشوف الموضوع", day: c.day ?? c.at - 24, calm: true });
       posts[posts.length - 1].noCalm = true;
     }
     return false;
@@ -397,7 +420,7 @@ export function answerPost(s, a, season, post, kind) {
   if (kind === "promise") {
     const change = post.noCalm ? 6 : 8;
     moodOf(s, post.who, change);
-    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, person: post.person, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "بنحلها" }); }
+    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, person: post.person, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "معك حق، بنحلها قريب", asked: post.text }); }
     s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
     const n = needs(s, a);
     const detail = post.topic === "water" && n.wells ? ` ترى نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} بالضبط.` : post.topic === "power" && n.generators ? ` نحتاج ${nAr(n.generators)} مولد على الأقل.` : post.topic === "jobs" && n.jobGap ? ` ${num(n.jobGap)} شخص ينتظرون.` : "";
@@ -406,7 +429,7 @@ export function answerPost(s, a, season, post, kind) {
   }
   if (kind === "calm") {
     s.comebacks ||= [];
-    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, at: s.day + 24 });
+    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, at: s.day + 24, day: s.day, asked: post.text });
     const text = post.who === "abunasser" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : "طيب، بنصبر يوم. بس بكرة أبي جواب.";
     return { text, change: 0 };
   }

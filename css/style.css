@@ -338,3 +338,14 @@ details .row { background: rgba(255, 255, 255, .45); }
 .vote .plus { color: var(--palm); } .vote .minus { color: var(--red); }
 .row.wn { justify-content: flex-start; }
 .wn-i { flex: none; font-size: 22px; width: 32px; text-align: center; }
+
+.pref { display: grid; gap: 6px; margin: 6px 0; padding: 8px 10px; border-radius: 12px; background: rgba(44, 138, 122, .08); border-inline-start: 3px solid var(--teal); font-size: 14px; }
+.pref small { display: block; opacity: .7; font-size: 12px; }
+.pref q { display: block; font-style: italic; }
+.pfix { font-size: 13px; color: var(--teal); font-weight: 700; }
+.proms { background: rgba(212, 165, 58, .12); }
+.prom { display: grid; gap: 3px; padding: 8px 10px; margin: 6px 0; border-radius: 12px; background: rgba(255, 255, 255, .55); }
+.prom.late { box-shadow: inset 0 0 0 2px var(--red); }
+.prom.calm { opacity: .85; }
+.prom-top { display: flex; justify-content: space-between; gap: 8px; }
+.prom-top small { opacity: .75; }
