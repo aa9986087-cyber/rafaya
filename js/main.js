@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -170,7 +170,7 @@ const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || t
 const tileCost = (x, y) => (tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
-const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
+const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : tool?.cat === "serv" ? "اضغط على مسجد أو مستشفى" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
 const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; if (tool.id === "fill") return owns(S, x, y) && t.t === "wadi" && !t.b; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
 const whyNot = (x, y) => (tool.id === "fill" ? (S.tiles[idx(x, y)].t !== "wadi" ? "الردم على أرض الوادي بس" : "شيل اللي عليها أول") : tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
 /** Buildings ready to move up a level right now (lit up while the upgrade tool is in hand). */
@@ -203,9 +203,9 @@ function showPending() {
   $("toolOk").disabled = !ok.length || cost > S.money;
   if (tool.id === "upgrade") {
     const ready = readyHouses().reduce((n, v) => n + v, 0);
-    const what = tool.cat === "shop" ? "محل" : tool.cat === "farm" ? "مزرعة وورشة" : "بيت";
+    const what = tool.cat === "shop" ? "محل" : tool.cat === "farm" ? "مزرعة وورشة" : tool.cat === "serv" ? "مسجد ومستشفى" : "بيت";
     $("toolName").textContent = !pending.length ? (ready ? `تطوير: ${ar(ready)} ${what} جاهز (بالذهبي) · اضغط عليها` : `ما فيه ${what} جاهز للتطوير الحين: اضغط على واحد تشوف وش ينقصه`)
-      : !ok.length ? upgradeWhy(pending[0].x, pending[0].y) : `تطوير ${ar(ok.length)} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+      : !ok.length ? upgradeWhy(pending[0].x, pending[0].y) : `تطوير ${ar(ok.length)} · ${money(cost)} ريال${(() => { let inc = 0, upk = 0, tax = 0; for (const q of ok) { const e = upgradeEffect(S, S.tiles[idx(q.x, q.y)].b); if (!e) continue; if (e.house) tax += e.taxGain; else { inc += e.incomeNext - e.incomeNow; upk += e.upkeepNext - e.upkeepNow; } } return inc || upk || tax ? ` · دخل +${fine(inc + tax)} مصروف +${fine(upk)}` : ""; })()}${cost > S.money ? " · ما يكفي المال" : ""}`;
     return;
   }
   if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(d.cost)} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
@@ -394,6 +394,7 @@ function renderCards() {
     shop: { key: modelKey("grocery", 2), name: "تطوير المحلات", from: upgradeCost({ id: "grocery", lvl: 0 }), path: "بقالة ← تموينات ← سوبرماركت" },
     farm: { key: modelKey("palms", 2), name: "تطوير المزارع والورش", from: upgradeCost({ id: "palms", lvl: 0 }), path: "مزرعة ← بالري ← كبرى" }
   };
+  UP_CARDS.serv = { key: modelKey("mosque", 2), name: "تطوير الخدمات", from: upgradeCost({ id: "mosque", lvl: 0 }), path: "مسجد ← بمنارتين ← جامع · مستشفى ← تخصصي ← مدينة طبية" };
   UP_CARDS.util = { key: "dam", name: "ردم الوادي", from: FILL_COST, path: "يحمي من السيل · للمربع", tool: "fill" };
   const uc = UP_CARDS[openCat];
   const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === (uc.tool || "upgrade") && (uc.tool || tool.cat === openCat) ? "on" : ""}" data-build="${uc.tool || "upgrade"}" style="--i:0">
@@ -732,7 +733,7 @@ function inspect(x, y) {
     const block = houseBlocker(S, A, x, y), next = d.levels[t.b.lvl + 1];
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next.name}»: ${block}</div>`;
-    else { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${matsNote(pr)}`; }
+    else { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`; }
   }
   if (BIZ_LEVELS[t.b.id] && !t.b.build) {
     const names = BIZ_LEVELS[t.b.id], next = names[t.b.lvl + 1];
@@ -741,7 +742,7 @@ function inspect(x, y) {
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next}»: ${block}</div>`;
     else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < cost ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(cost)} ريال</button></div>
-      <p class="hint">يزيد دخله ${ar(Math.round((bizLevelNext(t.b).income / up.income - 1) * 100))}٪، ويحتاج موظفين ومصروف أكثر.</p>${matsNote(pr)}`;
+      ${effectHtml(t.b)}${matsNote(pr)}`;
   }
   html += chainInfo(t, x, y);
   if (ROAD_IDS.includes(t.b.id) && A.trafficCap?.[idx(x, y)]) {
@@ -754,10 +755,10 @@ function inspect(x, y) {
   if (d.upkeep) html += row("المصروف بالساعة", `${money(Math.round(d.upkeep * up.upkeep))} ريال`, "minus");
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
-  if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius)} مربعات`);
+  if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
   html += `</div><div class="sheet-actions"><button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
-  if (d.radius) showReach(x, y, d);
+  if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
   $("sheetBody").querySelectorAll("[data-follow]").forEach((btn) => btn.addEventListener("click", () => followFamily(idx(x, y), Number(btn.dataset.follow))));
   $("sheetBody").querySelectorAll("[data-day]").forEach((btn) => btn.addEventListener("click", () => familySheet(idx(x, y), Number(btn.dataset.day))));
   $("upgradeOne")?.addEventListener("click", () => {
@@ -1399,6 +1400,21 @@ function followFamily(i, k) {
 }
 $("followStop").addEventListener("click", () => { world.stopFollow(); $("followTag").hidden = true; sfx.tap(); });
 
+/** What an upgrade changes: income and costs an hour, jobs, cheer, reach, homes (before → after). */
+function effectHtml(b) {
+  const e = upgradeEffect(S, b);
+  if (!e) return "";
+  const ch = (label, a, z, good = true, unit = "") => {
+    const d = z - a; if (!d) return "";
+    const up = d > 0, cls = up === good ? "plus" : "minus";
+    return `<div class="row eff"><span>${label}</span><b class="${cls}">${fine(a)} ← ${fine(z)}${unit} <small>(${up ? "+" : "−"}${fine(Math.abs(d))})</small></b></div>`;
+  };
+  const rows = e.house
+    ? ch("يسكنه", e.capNow, e.capNext, true, " ساكن") + (e.taxGain ? `<div class="row eff"><span>ضريبة زيادة تقريبًا</span><b class="plus">+${fine(e.taxGain)} بالساعة</b></div>` : "")
+    : ch("الدخل بالساعة", e.incomeNow, e.incomeNext) + ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false) + ch("الوظائف", e.jobsNow, e.jobsNext) + ch("يفرّح اللي حوله", e.happyNow, e.happyNext) + ch("يوصل تأثيره", e.radiusNow, e.radiusNext, true, " مربع");
+  const net = e.house ? null : (e.incomeNext - e.upkeepNext) - (e.incomeNow - e.upkeepNow);
+  return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${rows}${net != null && (e.incomeNow || e.incomeNext) ? `<div class="row eff"><span>الصافي بالساعة</span><b class="${net >= 0 ? "plus" : "minus"}">${net >= 0 ? "+" : "−"}${fine(Math.abs(net))}</b></div>` : ""}</div><p class="hint">${e.house ? "تقريبي: إذا امتلى البيت، على نسبة الضريبة الحين." : "تقريبي: يعتمد على الموظفين والكهرباء والزباين."}</p></div>`;
+}
 /** The materials part of an upgrade: from the store, or bought from outside. */
 function matsNote(pr) {
   if (!pr.mats) return "";

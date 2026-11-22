@@ -949,7 +949,7 @@ export function compose(fn) { const b = new Builder(); fn(b, MAKERS); return b.d
 export function makerSeeded(key, seed) { const b = new Builder(); MAKERS[key](b, "sand", seed); return b.done(); }
 
 // Upgraded farms, shops and workshops: the same building with more added on at each level.
-const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop", "pen"];
+const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop", "pen", "mosque", "hospital"];
 function bizExtras(b, id, lvl) {
   if (id === "palms") {
     for (const z of [-0.2, 0.2]) b.box(0.8, 0.012, 0.014, "#3b3f44", { y: 0.018, z }); // drip lines
@@ -961,6 +961,19 @@ function bizExtras(b, id, lvl) {
     const tunnel = (z) => b.add(new THREE.CylinderGeometry(0.17, 0.17, 0.84, 10, 1, true, 0, Math.PI), "#cfe3ea", { y: 0.015, z, rz: Math.PI / 2 }, "shiny");
     tunnel(0.24);
     if (lvl >= 2) { tunnel(-0.12); b.cyl(0.07, 0.07, 0.22, C.white, { x: -0.38, z: -0.38 }, 10); }
+    return;
+  }
+  if (id === "mosque") {
+    // a second minaret, then a walled courtyard with a shaded arcade
+    b.box(0.1, 0.62, 0.1, C.white, { x: 0.36, z: -0.36 }); b.cone(0.07, 0.12, C.green, { x: 0.36, y: 0.62, z: -0.36 }, 8);
+    b.box(0.08, 0.03, 0.08, C.gold, { x: 0.36, y: 0.5, z: -0.36 }, "lights");
+    if (lvl >= 2) { for (const [w, d, x, z] of [[0.94, 0.04, 0, 0.46], [0.04, 0.94, -0.46, 0], [0.04, 0.94, 0.46, 0]]) b.box(w, 0.12, d, "#e8dcc4", { x, z }); b.box(0.5, 0.02, 0.14, "#d9c3a0", { y: 0.2, z: 0.38 }); for (const x of [-0.2, 0, 0.2]) b.cyl(0.015, 0.015, 0.2, C.white, { x, z: 0.42 }, 6); }
+    return;
+  }
+  if (id === "hospital") {
+    // a new wing, then a helicopter pad on the roof and an ambulance bay
+    b.box(0.3, 0.32, 0.36, "#eef2f4", { x: -0.32, z: 0.24 }); b.box(0.08, 0.02, 0.24, "#c33", { x: -0.32, y: 0.33, z: 0.24 }); b.box(0.24, 0.02, 0.08, "#c33", { x: -0.32, y: 0.33, z: 0.24 });
+    if (lvl >= 2) { b.cyl(0.18, 0.18, 0.02, "#3b3f44", { x: 0.15, y: 0.9, z: -0.1 }, 16); b.box(0.12, 0.004, 0.02, "#f3efe6", { x: 0.15, y: 0.925, z: -0.1 }); b.box(0.02, 0.004, 0.1, "#f3efe6", { x: 0.1, y: 0.925, z: -0.1 }); b.box(0.02, 0.004, 0.1, "#f3efe6", { x: 0.2, y: 0.925, z: -0.1 }); b.box(0.16, 0.09, 0.08, "#f4f4f2", { x: 0.34, z: 0.4 }); b.box(0.16, 0.02, 0.02, "#c33", { x: 0.34, y: 0.06, z: 0.441 }); }
     return;
   }
   if (id === "pen") {

@@ -153,13 +153,16 @@ export const BIZ_LEVELS = {
   workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"],
   dairy: ["مصنع ألبان ومسلخ", "مصنع ألبان كبير", "مجمع أغذية"],
   mill: ["صوامع ومطحنة", "صوامع كبيرة", "مجمع حبوب"],
-  pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة"]
+  pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة"],
+  // services grow too: they cheer more people, further away
+  mosque: ["مسجد", "مسجد بمنارتين", "جامع الحي"],
+  hospital: ["مستشفى", "مستشفى تخصصي", "مدينة طبية"]
 };
 /** What each step does: its price (× the building's price) and how income, staff and running costs grow. */
 export const BIZ_UP = [
-  { cost: 0, income: 1, jobs: 1, upkeep: 1 },
-  { cost: 0.7, income: 1.6, jobs: 1.4, upkeep: 1.5 },
-  { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, era: 1 }
+  { cost: 0, income: 1, jobs: 1, upkeep: 1, happy: 1, radius: 0 },
+  { cost: 0.7, income: 1.6, jobs: 1.4, upkeep: 1.5, happy: 1.35, radius: 1 },
+  { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, happy: 1.7, radius: 2, era: 1 }
 ];
 export const bizLevel = (b) => BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0] || BIZ_UP[0];
 

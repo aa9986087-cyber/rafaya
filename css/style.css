@@ -424,3 +424,6 @@ body.world .side .world-only { display: grid; }
 .side-btn { border-radius: 14px; }
 .side-btn > span { font-size: 10px; }
 .side-btn svg { width: 22px; height: 22px; }
+
+.effect { display: grid; gap: 6px; margin: 6px 0; padding: 8px; border-radius: 12px; background: rgba(44, 138, 122, .08); }
+.row.eff b small { opacity: .75; font-weight: 600; }

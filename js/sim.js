@@ -550,10 +550,11 @@ export function analyze(s) {
     if (t.b.id === "palms") palms.push(t);
     // Services and nuisances spread over their radius.
     if (works && def.radius && (def.happy || def.pollute)) {
-      for (let yy = y - def.radius; yy <= y + def.radius; yy++) for (let xx = x - def.radius; xx <= x + def.radius; xx++) {
-        if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > def.radius) continue;
+      const rad = def.radius + (up.radius || 0), cheer = (def.happy || 0) * (up.happy || 1);
+      for (let yy = y - rad; yy <= y + rad; yy++) for (let xx = x - rad; xx <= x + rad; xx++) {
+        if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > rad) continue;
         const i = idx(xx, yy);
-        if (def.happy) a.local[i] += (s.money < 0 && def.cat === "serv" ? def.happy / 2 : def.happy) * f;
+        if (def.happy) a.local[i] += (s.money < 0 && def.cat === "serv" ? cheer / 2 : cheer) * f;
         if (def.pollute) a.pollution[i] += def.pollute;
         if (def.service) a.services[i].add(def.service);
       }
@@ -757,6 +758,28 @@ export function upgradeBiz(s, x, y, a = analyze(s)) {
   if (paid) return paid;
   b.lvl++; b.cond = 100; b.upAt = s.day;
   return "";
+}
+/** What the next level changes, in numbers (income and costs an hour, jobs, cheer and reach, homes). */
+export function upgradeEffect(s, b) {
+  if (!b) return null;
+  const def = B[b.id];
+  if (b.id === "house") {
+    const now = def.levels[b.lvl], next = def.levels[b.lvl + 1];
+    if (!next) return null;
+    const concrete = s.tech?.concrete ? 1.25 : 1, perHead = (s.tax / 100) * (3 - Math.min(1.2, s.pop / 2500));
+    const capNow = Math.round(now.cap * concrete), capNext = Math.round(next.cap * concrete);
+    return { house: true, capNow, capNext, taxGain: (capNext - capNow) * perHead };
+  }
+  if (!BIZ_LEVELS[b.id] || !BIZ_UP[b.lvl + 1]) return null;
+  const u0 = bizLevel(b), u1 = BIZ_UP[b.lvl + 1];
+  return {
+    incomeNow: (def.income || 0) * u0.income, incomeNext: (def.income || 0) * u1.income,
+    upkeepNow: (def.upkeep || 0) * u0.upkeep, upkeepNext: (def.upkeep || 0) * u1.upkeep,
+    jobsNow: Math.round((def.jobs || 0) * u0.jobs), jobsNext: Math.round((def.jobs || 0) * u1.jobs),
+    happyNow: (def.happy || 0) * (u0.happy || 1), happyNext: (def.happy || 0) * (u1.happy || 1),
+    // reach only matters for what cheers or bothers its neighbours
+    radiusNow: def.radius && (def.happy || def.pollute) ? def.radius + (u0.radius || 0) : 0, radiusNext: def.radius && (def.happy || def.pollute) ? def.radius + (u1.radius || 0) : 0
+  };
 }
 /** Upgrade whatever is on this tile. */
 export const upgradeAt = (s, x, y, a = analyze(s)) => (s.tiles[idx(x, y)]?.b?.id === "house" ? upgradeHouse(s, x, y, a) : upgradeBiz(s, x, y, a));
