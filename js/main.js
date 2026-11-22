@@ -95,10 +95,10 @@ function layoutSide() {
   const side = document.querySelector(".side"), speeds = document.querySelector(".speeds"), dock = document.querySelector(".dock");
   if (!side || !speeds || !dock) return;
   const top = speeds.getBoundingClientRect().bottom + 10, bottom = dock.getBoundingClientRect().top - 10;
-  const n = side.children.length, gap = 6, avail = Math.max(0, bottom - top);
+  const n = [...side.children].filter((c) => getComputedStyle(c).display !== "none").length, gap = 6, avail = Math.max(0, bottom - top);
   let size = Math.floor((avail - gap * (n - 1)) / n), cols = 1;
   if (size < 40) { cols = 2; size = Math.floor((avail - gap * (Math.ceil(n / 2) - 1)) / Math.ceil(n / 2)); }
-  size = Math.max(36, Math.min(58, size));
+  size = Math.max(36, Math.min(50, size));
   side.style.top = `${Math.round(top)}px`;
   side.style.setProperty("--sz", `${size}px`);
   side.classList.toggle("compact", size < 50);
@@ -1243,7 +1243,7 @@ const WHATS_NEW = {
     ["↔️", "نقل المباني", "رتب ديرتك: زر «نقل» تحت، تنقل أي مبنى بمستواه وأهله."],
     ["⬆️", "تطوير المحلات والمزارع", "كل محل ومزرعة وورشة لها ٣ مستويات، دخلها يزيد مع كل مستوى."],
     ["🏦", "البنك ودعم التجارة", "قروض تسددها بالساعة، والمحلات أرخص ٣٠٪ بدعم الدولة."],
-    ["❓", "الشرح", "زر «الشرح» على اليسار: كيف تكبر وتصير بلدة ومدينة."],
+    ["❓", "الشرح", "من «القائمة ← الشرح»: كيف تكبر وتصير بلدة ومدينة."],
     ["🎯", "مكافآت المهام", "صارت تغطي تكلفة اللي تطلبه المهمة."],
     ["⏸️", "البلد تنتظرك", "اللعبة توقف وأنت طالع منها، وترجع تلقاها مثل ما تركتها."]
   ]
@@ -1492,7 +1492,8 @@ $("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
 for (const id of ["budgetBtn", "statMoney", "statPop", "statHappy"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
-$("guideBtn").addEventListener("click", () => { sfx.tap(); howTo(false); });
+$("worldBtn").addEventListener("click", () => { sfx.tap(); worldMapSheet(); });
+$("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 
 function goals() {
   const done = GOALS.slice(0, S.goal).map((x) => `<div class="row done"><span>${x.text}</span><b class="plus">✓</b></div>`).join("");
@@ -1638,7 +1639,7 @@ function howTo(fromMenu) {
 function pauseMenu() {
   sheet(`<h2>القائمة</h2><div class="rows">
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
-    <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
+    <button class="row link" id="pmHow" type="button"><span>❓ الشرح</span><b>←</b></button>
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
     ${worldMode ? `<button class="row link" id="pmWorld" type="button"><span>🌍 خريطة عالم الجوف</span><b>←</b></button>
     <button class="row link" id="pmDeputy" type="button"><span>🧑‍💼 أوامر نائب العمدة</span><b>←</b></button>` : `<button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>

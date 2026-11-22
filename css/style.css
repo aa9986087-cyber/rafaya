@@ -418,3 +418,9 @@ body.world .world-time { display: block; }
 .wm-town { fill: #2c8a7a; stroke: #fbf3e2; stroke-width: .35; cursor: pointer; }
 .wm-town.mine { fill: #d4a53a; }
 .wm-place { font: 800 2.6px var(--body, sans-serif); text-anchor: middle; fill: rgba(42, 34, 29, .55); pointer-events: none; }
+
+.side .world-only { display: none; }
+body.world .side .world-only { display: grid; }
+.side-btn { border-radius: 14px; }
+.side-btn > span { font-size: 10px; }
+.side-btn svg { width: 22px; height: 22px; }
