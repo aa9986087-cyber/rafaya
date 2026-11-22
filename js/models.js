@@ -380,6 +380,24 @@ const MAKERS = {
     b.box(0.16, 0.18, 0.16, C.plaster, { x: 0.36, z: -0.36 });
     b.cyl(0.05, 0.05, 0.08, C.white, { x: 0.36, y: 0.18, z: -0.36 }, 8);
   },
+  dam(b) {
+    // a concrete wall across the wadi (the water comes from the west, -x)
+    b.box(0.26, 0.42, 1.0, "#c9c3b6");
+    b.box(0.3, 0.04, 1.02, "#b3ad9f", { y: 0.42 });
+    for (const z of [-0.47, 0.47]) b.box(0.3, 0.06, 0.02, C.grey, { y: 0.46, z });
+    b.box(0.08, 0.3, 0.22, "#a8a294", { x: 0.16, z: 0 });
+    b.box(0.3, 0.01, 0.2, C.water, { x: 0.3, y: 0.01, z: 0 }, "shiny");
+    for (const z of [-0.3, 0.3]) b.box(0.04, 0.28, 0.06, "#b3ad9f", { x: -0.15, z });
+  },
+  pivot(b) {
+    b.box(0.98, 0.012, 0.98, "#c9ad7c");
+    b.add(new THREE.CylinderGeometry(0.47, 0.47, 0.02, 32), "#7fae4c", { y: 0.012 });
+    b.add(new THREE.CylinderGeometry(0.33, 0.33, 0.022, 28), "#8fbd57", { y: 0.013 });
+    b.add(new THREE.CylinderGeometry(0.16, 0.16, 0.024, 20), "#6e9e42", { y: 0.014 });
+    b.cyl(0.03, 0.03, 0.14, C.grey, { y: 0.02 }, 8);
+    b.box(0.46, 0.012, 0.014, "#9aa0a4", { x: 0.23, y: 0.14 });
+    for (const x of [0.15, 0.3, 0.44]) { b.box(0.012, 0.13, 0.012, C.grey, { x, y: 0.02 }); b.box(0.04, 0.02, 0.04, C.dark, { x, y: 0.015 }); }
+  },
   pen(b) {
     b.box(0.94, 0.015, 0.94, "#c9ad7c");
     fenceRing(b, 0.44);

@@ -132,6 +132,8 @@ function topics(s, a, season, f) {
   const worn = s.tiles.filter((t) => t.b && ((t.b.cond ?? 100) < 40 || t.b.ruin)).length;
   if (worn) add("repair", -1, 5 + Math.min(5, worn), [`abuabdullah:فيه ${nAr(worn)} مبنى متهالك بالبلد، وكلفة الترميم ${num(a.repairBill)} ريال. كل ما تأخرنا زاد الخراب، والمبنى اللي يخرب يطيح بعد يومين.`, `umsaad:سقف المدرسة يقطّر والجدران مشققة. رمّموها قبل لا تطيح على العيال.`]);
   if (s.lastFlood !== undefined && s.day - s.lastFlood < 48) add("flood", -1, 9, [`abukhalid:السيل أخذ مزرعتي اللي بالوادي. قلت لهم الوادي خصب بس خطير، والحين ${s.tech.dams ? "حتى السدود ما كفت" : "نحتاج سدود"}.`, `mubarak:الله يعوضنا. السيل جرف كل اللي بقاع الوادي. لا تبنون فيه إلا وأنتم مأمّنين.`]);
+  if (a.aquifer < 40) add("aquifer", -1, 8, [`abukhalid:البئر اللي بمزرعتي صار يطلّع نص ماه. الماء الجوفي نزل لـ${nAr(Math.round(a.aquifer))}٪. نبي سد يجمع المطر قبل لا تنشف الآبار كلها.`, `abuabdullah:كل بئر جديد يسحب من نفس الماء. الماء الجوفي ${nAr(Math.round(a.aquifer))}٪ بس، والحل سد على الوادي أو تحلية.`]);
+  if ((s.lake || 0) > 40 && a.lakeTiles) add("lake", 1, 4, [`saud:كشتة على بحيرة السد البارحة، والله ما توقعت نشوف ماء بالرافعية كذا!`, `umsaad:العيال يحبون البحيرة، كل عصر نطلع لها.`]);
   if (a.costs.theft > 1) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة من محلات البلد. نبي شرطة تغطي الحارات.`]);
   if (a.costs.health > 2) add("pollution", -1, 6, [`drYousef:المستوصف مليان أمراض صدر من الدخان. علاجهم يكلف البلدية ${num(a.costs.health)} بالساعة. بعدوا المصانع عن البيوت.`]);
   if (a.congestion > 0.05) add("traffic", -1, 5, [`mishal:الزحمة ما تنطاق! الطرق الترابية ضيقة والناس صاروا ما يوصلون للسوق. سفلتوها.`]);
@@ -211,11 +213,12 @@ export function needs(s, a) {
 
 // ---------- memory: what people asked for, and what the mayor promised ----------
 
-const TOPIC_NAMES = { repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
+const TOPIC_NAMES = { aquifer: "الماء الجوفي", repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
 /** Is anyone still upset about this topic right now? */
 /** What the mayor has to do to keep each kind of promise. */
 export const FIX_HINT = {
   water: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء",
+  aquifer: "ابنِ سد على الوادي يجمع المطر، أو قلل الآبار، أو ابنِ تحلية",
   power: "ابنِ مولد أو ألواح شمسية قريب من البيوت",
   jobs: "افتح محلات أو مزارع أو ورش عشان الوظائف",
   mosque: "ابنِ مسجد قريب من البيوت",
@@ -383,7 +386,7 @@ export function moodOf(s, who, change = 0) {
   return s.trust;
 }
 
-const PROMISE_LINE = { repair: "أبشر، بنرمم المباني", traffic: "أبشر، بنسفلت ونوسع الطرق", strike: "أبشر، بنعطيهم حقهم",  mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
+const PROMISE_LINE = { aquifer: "أبشر، بنبني سد يرجّع الماء للآبار",  repair: "أبشر، بنرمم المباني", traffic: "أبشر، بنسفلت ونوسع الطرق", strike: "أبشر، بنعطيهم حقهم",  mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
   water: "أبشر، بنحفر بئر جديد", power: "أبشر، بنزيد الكهرباء", jobs: "أبشر، بنفتح محلات ومزارع للشباب", tax: "أبشر، بنخفف الضريبة", dust: "أبشر، بنسفلت الطرق", roads: "أبشر، بنوصل البيوت بطريق",
   housing: "أبشر، بنبني بيوت جديدة", money: "أبشر، بنرتب الميزانية", pollution: "أبشر، بنبعد الدخان عن البيوت" };
 const BUILDING_FOR = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" };

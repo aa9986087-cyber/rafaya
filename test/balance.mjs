@@ -89,6 +89,8 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
       if (s.era >= 1 && h - lastPower >= 24 && s.money > B[powerSrc].cost + 2500) {
         if ((dark.length && placeNear(powerSrc, dark)) || (a.grid && a.powerRatio < 1 && placeNear(powerSrc, homes))) lastPower = h;
       }
+      // a dam on the wadi once the groundwater drops (and research for it)
+      if (s.tech.dams && (s.aquifer ?? 100) < 75 && a.count.dam < 2 && s.money > B.dam.cost + 1500) place("dam");
       // upgrade homes that are ready, cheapest first, keeping money for running the town
       const ready = homes.filter((i) => !houseBlocker(s, a, i % N, Math.floor(i / N))).sort((p, q) => s.tiles[p].b.lvl - s.tiles[q].b.lvl);
       let ups = 0;

@@ -210,7 +210,7 @@ export class World {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : "#f1d49c");
+      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : t.t === "lake" ? ((s.lake || 0) > 10 ? "#6f9fae" : "#b9a57a") : "#f1d49c");
       c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
       if (!owns(s, x, y)) { c.offsetHSL(0, -0.12, -0.06); }
       const x0 = x - HALF, z0 = y - HALF;
@@ -258,6 +258,20 @@ export class World {
     this.flood = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: "#5aa6c4", roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }));
     this.flood.visible = false;
     this.scene.add(this.flood);
+    // The dam lake: still water over its tiles while it holds water.
+    if (this.lakeMesh) { this.scene.remove(this.lakeMesh); this.lakeMesh.geometry.dispose(); this.lakeMesh = null; }
+    const lp = [];
+    if ((s.lake || 0) > 10) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "lake") {
+      const x0 = x - HALF, z0 = y - HALF, x1 = x0 + 1, z1 = z0 + 1;
+      for (const [qx, qz] of [[x0, z0], [x0, z1], [x1, z1], [x0, z0], [x1, z1], [x1, z0]]) lp.push(qx, 0.03, qz);
+    }
+    if (lp.length) {
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute("position", new THREE.Float32BufferAttribute(lp, 3));
+      lg.computeVertexNormals();
+      this.lakeMesh = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: "#3f8fb5", roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.82, depthWrite: false }));
+      this.scene.add(this.lakeMesh);
+    }
   }
 
   /** Plants and pebbles on land nobody has built on yet. */
@@ -267,7 +281,7 @@ export class World {
     const spring = seasonOf(s.day).id === "spring";
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
-      if (t.b || t.t === "rock") continue;
+      if (t.b || t.t === "rock" || t.t === "lake") continue;
       const p = tileCenter(x, y), h = hash(x, y, 5), j = (k) => (hash(x, y, k) - 0.5) * 0.6;
       if (t.t === "fayda") {
         if (spring) for (let k = 0; k < 5; k++) lists.bloom.push(this.place(p.x + j(20 + k), p.z + j(30 + k), hash(x, y, 40 + k) * 6, 0.9 + hash(x, y, 50 + k) * 0.5));
@@ -359,6 +373,7 @@ export class World {
       let angle = 0;
       const dirs = [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]];
       for (const [dx, dy, a] of dirs) if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) { angle = a; break; }
+      if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
       // Building sites, and a colour variant per house so streets do not look copied.
@@ -417,6 +432,9 @@ export class World {
     const season = seasonOf(s.day).i;
     if (this.season !== undefined && this.season !== season) what = { ...what, tiles: true, buildings: true };
     this.season = season;
+    // the land itself changed (a lake filled or dried, wadi filled in): redraw the ground
+    const landKey = s.tiles.map((t) => t.t[0]).join("") + ((s.lake || 0) > 10 ? "w" : "d");
+    if (landKey !== this.landKey) { this.landKey = landKey; what = { ...what, tiles: true }; }
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
     if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); }

@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -96,7 +96,7 @@ canvas.addEventListener("pointerdown", (e) => {
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: world.view.zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
     drag = null; return;
   }
-  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade");
+  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill");
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
   if (painting) paintAt(e.clientX, e.clientY);
 });
@@ -126,7 +126,7 @@ canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (playing) world
 
 function hoverAt(t) {
   if (!tool || !inMap(t.x, t.y)) { world.setHover(null); world.setGhost(null); return; }
-  if (tool.id === "upgrade") { world.setHover(t, canDo(t.x, t.y)); return; }
+  if (tool.id === "upgrade" || tool.id === "fill") { world.setHover(t, canDo(t.x, t.y)); return; }
   if (tool.id === "move") return; // the move tool shows its own preview
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
@@ -141,13 +141,13 @@ function hoverAt(t) {
 // a preview shows it, and the ✓ button builds it.
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
-const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradeCost(S.tiles[idx(x, y)].b) : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill" || B[tool.id].cat === "road");
+const tileCost = (x, y) => (tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradeCost(S.tiles[idx(x, y)].b) : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
 const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
-const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
-const whyNot = (x, y) => (tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
+const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; if (tool.id === "fill") return owns(S, x, y) && t.t === "wadi" && !t.b; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
+const whyNot = (x, y) => (tool.id === "fill" ? (S.tiles[idx(x, y)].t !== "wadi" ? "الردم على أرض الوادي بس" : "شيل اللي عليها أول") : tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
 /** Buildings ready to move up a level right now (lit up while the upgrade tool is in hand). */
 function readyHouses() {
   const values = new Float32Array(N * N);
@@ -170,7 +170,11 @@ function showPending() {
   const ok = pending.filter((p) => canDo(p.x, p.y));
   const cost = ok.reduce((a, p) => a + tileCost(p.x, p.y), 0);
   $("toolOk").hidden = !pending.length;
-  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" ? "✓ طوّر" : "✓ ابنِ";
+  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" ? "✓ طوّر" : tool.id === "fill" ? "✓ اردم" : "✓ ابنِ";
+  if (tool.id === "fill") {
+    $("toolName").textContent = !pending.length ? `ردم الوادي: اسحب على أرض الوادي (${money(FILL_COST)} للمربع). ما يجيها سيل، بس تروح خصوبتها` : !ok.length ? whyNot(pending[0].x, pending[0].y) : `ردم ${ar(ok.length)} مربع · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+    return;
+  }
   $("toolOk").disabled = !ok.length || cost > S.money;
   if (tool.id === "upgrade") {
     const ready = readyHouses().reduce((n, v) => n + v, 0);
@@ -277,6 +281,12 @@ function apply(x, y, quiet) {
     refresh();
     return;
   }
+  if (tool.id === "fill") {
+    const why = fillWadi(S, x, y);
+    if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
+    sfx.road(); A = analyze(S); world.sync(S, { tiles: true, roads: false, buildings: true }); refresh();
+    return;
+  }
   if (tool.id === "bulldoze") {
     if (!tile.b && tile.t !== "rock") return;
     const wasRoad = ["road", "asphalt"].includes(tile.b?.id);
@@ -340,7 +350,7 @@ function renderCats() {
 }
 
 function lockReason(id) {
-  if (id === "upgrade") return "";
+  if (id === "upgrade" || id === "fill") return "";
   const d = B[id];
   if (d.unique && S.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (d.era > S.era) return `تنفتح لما تصير ${ERAS[d.era].name}`;
@@ -359,8 +369,9 @@ function renderCards() {
     shop: { key: modelKey("grocery", 2), name: "تطوير المحلات", from: upgradeCost({ id: "grocery", lvl: 0 }), path: "بقالة ← تموينات ← سوبرماركت" },
     farm: { key: modelKey("palms", 2), name: "تطوير المزارع والورش", from: upgradeCost({ id: "palms", lvl: 0 }), path: "مزرعة ← بالري ← كبرى" }
   };
+  UP_CARDS.util = { key: "dam", name: "ردم الوادي", from: FILL_COST, path: "يحمي من السيل · للمربع", tool: "fill" };
   const uc = UP_CARDS[openCat];
-  const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === "upgrade" && tool.cat === openCat ? "on" : ""}" data-build="upgrade" style="--i:0">
+  const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === (uc.tool || "upgrade") && (uc.tool || tool.cat === openCat) ? "on" : ""}" data-build="${uc.tool || "upgrade"}" style="--i:0">
       <img alt="" src="${thumbnail(uc.key)}"><b>${uc.name}</b><span class="price">من ${money(uc.from)} ريال</span><span class="hours">${uc.path}</span></button>` : "";
   box.innerHTML = upgradeCard + ids.map((id, i) => {
     const lock = lockReason(id);
@@ -788,8 +799,11 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-22",
+  v: "2026-11-23",
   items: [
+    ["🤝", "الوعود صارت واضحة", "إذا رجعوا يطالبون تشوف وش طلبوا ووش وعدتهم ومتى، وفي النشرة قائمة «وعودك»."],
+    ["🌊", "السدود والماء الجوفي", "السد يحجز السيل ويسوي بحيرة. الماء الجوفي ينقص مع كثرة الآبار ويرجع مع المطر."],
+    ["🌾", "المزرعة المحورية", "رشاش دوّار يسقي دايرة قمح: دخل عالي ويسحب من الماء الجوفي."],
     ["🕌", "أوقات الصلاة", "خمس صلوات باليوم. وقت الصلاة الرجال يمشون للمسجد، والمحلات تسكر شوي."],
     ["🐪", "الحلال والإبل", "حظيرة حلال ترعى في الفيضة بالربيع، وسوق الماشية، وميدان مزاين الإبل."],
     ["🏘️", "الحارات", "سمّ حارات ديرتك وتابع رضا كل حارة (من «المجلس»)."],
@@ -926,6 +940,9 @@ function utilSheet() {
     <h3>الماء</h3><div class="rows">
       ${row("المتوفر / المطلوب", `${money(A.waterSupply)} / ${money(A.waterUse)}`, A.waterRatio < 1 ? "minus" : "plus")}
       ${A.dryHomes ? `<div class="need">${ar(A.dryHomes)} بيت ما يوصلها ماء: ابنِ بئر قريب منها.</div>` : `<div class="need ok">الماء واصل لكل البيوت.</div>`}
+      ${row("الماء الجوفي", `${ar(Math.round(A.aquifer))}٪`, A.aquifer < GROUND.low ? "minus" : "plus")}<i class="prog"><i style="width:${Math.round(A.aquifer)}%" class="${A.aquifer < GROUND.low ? "low" : ""}"></i></i>
+      <p class="hint">الآبار والخزانات تسحب من الماء الجوفي، والمطر والسدود ترجّعه. إذا نزل تحت ${ar(GROUND.low)}٪ الآبار تعطي أقل${A.aquifer < GROUND.low ? ` (الحين ${ar(Math.round(A.groundFactor * 100))}٪ من ماها)` : ""}. التحلية ما تحتاجه.</p>
+      ${A.count.dam ? row("بحيرة السد", `${ar(Math.round(S.lake || 0))}٪`, (S.lake || 0) > 10 ? "plus" : "") : ""}
       <button class="btn block" id="showWater" type="button">💧 اعرض وين يوصل الماء</button>
     </div>
     <h3>الكهرباء</h3><div class="rows">
@@ -1035,6 +1052,10 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>السدود والماء الجوفي</summary>
+      <p>تحت الرافعية ماء جوفي: الآبار والخزانات والمزارع المحورية تسحب منه، والمطر يرجّعه. إذا نزل كثير الآبار تعطي أقل. تابعه من مربع الماء فوق.</p>
+      <p>«السد» (بعد بحث «سدود الأودية») ينبني على الوادي: يحجز السيل عن كل اللي بعده، ويجمع المطر في بحيرة وراه تفرّح الناس حولها وتغذي الماء الجوفي. و«ردم الوادي» يحوّل أرض الوادي لأرض عادية ما يجيها سيل.</p></details>
+
     <details><summary>الصلاة والحلال</summary>
       <p>خمس صلوات باليوم. وقت الصلاة يطلع لك تنبيه، والرجال يمشون للمسجد، والمحلات تسكر شوي ويقل بيعها. ابنِ مسجد قريب من البيوت.</p>
       <p>«حظيرة حلال» (من «زراعة وصناعة») تجيب دخل، وفي الربيع ترعى في الفيضة القريبة ويزيد دخلها النص. «سوق الماشية» يزيد دخله مع كل حظيرة، و«ميدان مزاين الإبل» مشروع كبير يجيب الزوار.</p></details>
@@ -1141,6 +1162,7 @@ function frame(now) {
       const { msgs } = step(S);
       for (const m of msgs) {
         if (m.kind === "decision") continue; // its own sheet opens
+        if (m.kind === "land") continue; // the ground is redrawn by the sync below
         if (m.kind === "ach") { toast(m.text, "ach"); sfx.goal(); continue; }
         if (m.kind === "flood") {
           // look at the wadi where the water comes down, then let it run

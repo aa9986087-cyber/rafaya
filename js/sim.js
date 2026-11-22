@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -129,6 +129,8 @@ export function cantBuild(s, x, y, id) {
     if (id === "asphalt" && t.b.id === "road") return s.money < def.cost ? "ما يكفي المال" : "";
     return "المكان مشغول";
   }
+  if (t.t === "lake") return "هذي بحيرة السد";
+  if (def.onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
   const cost = def.cost + (t.t === "rock" ? ROCK_CLEAR : 0);
   if (s.money < cost) return "ما يكفي المال";
   return "";
@@ -143,6 +145,50 @@ export function build(s, x, y, id) {
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
+}
+
+// ---------- dams, lakes and groundwater ----------
+/** Behind every finished dam (upstream, to the west) the empty wadi becomes a lake; without a dam it dries back. */
+export function updateLake(s) {
+  const want = new Set();
+  s.tiles.forEach((t, i) => {
+    if (t.b?.id !== "dam" || t.b.build > 0) return;
+    const x = i % N, y = Math.floor(i / N);
+    for (let xx = x - 4; xx < x; xx++) for (let yy = y - 2; yy <= y + 2; yy++) {
+      if (!inMap(xx, yy)) continue;
+      const u = s.tiles[idx(xx, yy)];
+      if ((u.t === "wadi" || u.t === "lake") && !u.b) want.add(idx(xx, yy));
+    }
+  });
+  let changed = false;
+  s.tiles.forEach((t, i) => {
+    if (want.has(i) && t.t !== "lake") { t.t = "lake"; changed = true; }
+    else if (!want.has(i) && t.t === "lake") { t.t = "wadi"; changed = true; }
+  });
+  return changed;
+}
+/** Fill a tile of wadi with earth: safe from floods, but no longer fertile. */
+export function fillWadi(s, x, y) {
+  if (!inMap(x, y) || !owns(s, x, y)) return "الأرض هذي مو لك";
+  const t = s.tiles[idx(x, y)];
+  if (t.t !== "wadi") return "الردم على أرض الوادي بس";
+  if (t.b) return "شيل اللي عليها أول";
+  if (s.money < FILL_COST) return "ما يكفي المال";
+  s.money -= FILL_COST; t.t = "sand";
+  return "";
+}
+/** One hour of groundwater: pumping by wells, tanks and pivots; rain, lakes and spring refill it. */
+function stepGround(s, a, raining, msgs) {
+  const before = s.aquifer ?? GROUND.start;
+  const share = a.waterSupply ? Math.min(1, a.groundSupply / a.waterSupply) : 0;
+  const pumped = Math.min(a.waterUse, a.waterSupply) * share;
+  const lakes = (s.lake || 0) > 10 ? a.count.dam : 0;
+  const delta = -pumped * GROUND.pump - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0);
+  s.aquifer = Math.max(0, Math.min(100, before + delta));
+  if (before >= GROUND.low && s.aquifer < GROUND.low) msgs.push({ kind: "event", title: "الماء الجوفي", text: `الآبار بدت تنشف: الماء الجوفي نزل لـ${Math.round(s.aquifer)}٪، والآبار تعطي أقل. ابنِ سد يجمع المطر أو خفف الضخ.` });
+  if (before >= 15 && s.aquifer < 15) msgs.push({ kind: "event", title: "الماء الجوفي", text: "الماء الجوفي قرب يخلص! الآبار والخزانات صارت تعطي ثلث ماها. تحتاج سدود أو تحلية." });
+  if (before < GROUND.low && s.aquifer >= GROUND.low + 5 && !s.aqBack) { s.aqBack = true; msgs.push({ kind: "goal", text: "الماء الجوفي رجع يرتفع، والآبار رجعت تعطي كامل." }); }
+  if (s.aquifer < GROUND.low) s.aqBack = false;
 }
 
 // ---------- prayers ----------
@@ -195,6 +241,8 @@ export function moveBlocker(s, fx, fy, tx, ty) {
   if (!owns(s, tx, ty)) return "الأرض هذي مو لك";
   const t = s.tiles[idx(tx, ty)];
   if (t.b) return "المكان مشغول";
+  if (t.t === "lake") return "هذي بحيرة السد";
+  if (B[from.id].onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
   if (s.money < moveCost(from) + (t.t === "rock" ? ROCK_CLEAR : 0)) return "ما يكفي المال";
   return "";
 }
@@ -300,6 +348,9 @@ export function analyze(s) {
       if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= def.reach) mark[idx(xx, yy)] = 1;
   }
   a.dryHomes = 0; a.darkHomes = 0;
+  a.aquifer = s.aquifer ?? GROUND.start;
+  a.groundFactor = a.aquifer >= GROUND.low ? 1 : 0.35 + 0.65 * (a.aquifer / GROUND.low);
+  a.groundSupply = 0;
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const t = s.tiles[idx(x, y)];
     if (!t.b) continue;
@@ -315,7 +366,9 @@ export function analyze(s) {
     t.b.works = works;
     const here = idx(x, y);
     // only places the pipes and wires reach draw water and power
-    if (def.water > 0) a.waterSupply += def.water * f; else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
+    const gw = t.b.id === "well" || t.b.id === "tank";
+    if (gw) a.groundSupply += def.water * f * a.groundFactor;
+    if (def.water > 0) a.waterSupply += def.water * f * (gw ? a.groundFactor : 1); else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
     if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
     a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += (def.upkeep || 0) * up.upkeep;
     if (t.b.id === "house") {
@@ -374,6 +427,18 @@ export function analyze(s) {
   // Local shops can only sell what the residents spend (about 0.6 riyal a person an hour, more in
   // Ramadan and Eid); more shops than that share the same customers. Visitors' places (hotel, the
   // grand projects) and industry sell outside the town, so they are not capped.
+  // A full dam lake: families go out to it (a kashta by the water).
+  a.lakeTiles = 0;
+  if ((s.lake || 0) > 10) {
+    const near = new Uint8Array(N * N);
+    s.tiles.forEach((t, i) => {
+      if (t.t !== "lake") return;
+      a.lakeTiles++;
+      const x = i % N, y = Math.floor(i / N);
+      for (let yy = y - 5; yy <= y + 5; yy++) for (let xx = x - 5; xx <= x + 5; xx++) if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= 5) near[idx(xx, yy)] = 1;
+    });
+    for (let i = 0; i < N * N; i++) if (near[i]) a.local[i] += 6;
+  }
   a.shopRaw = 0; a.visitorIncome = 0; a.industryIncome = 0;
   // Spring grazing: pens with green fayda within 4 tiles.
   a.grazing = new Set();
@@ -399,6 +464,7 @@ export function analyze(s) {
       if (t.b.id === "livestock") inc *= 1 + Math.min(1, a.count.pen * 0.1);
       if (t.b.id === "mazayen") inc *= 1 + Math.min(1, a.count.pen * 0.05);
       if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1.5;
+      if (t.b.id === "pivot") inc *= a.groundFactor;
       if (def.visitors) a.visitorIncome += inc * shopMult;
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
       else a.industryIncome += inc;
@@ -613,13 +679,31 @@ export function step(s, r = Math.random) {
 
   const msgs = done.map((name) => ({ kind: "goal", text: `اكتمل مشروع «${name}»! 🎉` }));
   for (const f of fell) msgs.push(f.warn ? { kind: "event", title: "مبنى خربان", tile: f.i, text: `«${f.name}» خرب ووقف عن الشغل. رمّمه خلال يومين وإلا بيطيح.` } : { kind: "collapse", tile: f.i, text: f.house ? "بيت انهار من الإهمال ورجع أصغر. رمّم بيوتك قبل لا تطيح." : `انهار «${f.name}» من الإهمال!${f.refund ? ` التأمين عوّضك ${f.refund} ريال.` : " ما كان عليه تأمين."}` });
-  // A flash flood down the wadi, now and then while it rains (much rarer with dams).
+  // Groundwater, and the water held behind the dams.
   const raining = s.events.some((e) => e.id === "rain");
-  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.008 : 0.03)) {
+  const aNow = a;
+  stepGround(s, aNow, raining, msgs);
+  if (updateLake(s)) msgs.push({ kind: "land" });
+  if (aNow.count.dam) {
+    const dry = seasonOf(s.day).id === "summer" ? 0.2 : 0.06;
+    s.lake = Math.max(0, Math.min(100, (s.lake || 0) + (raining ? 2.2 : -dry)));
+  } else s.lake = 0;
+  // A flash flood down the wadi, now and then while it rains. Water runs from west to east: a dam
+  // holds it while its lake has room, and nothing below (east of) a dam is touched.
+  const damXs = [];
+  s.tiles.forEach((t, i) => { if (t.b?.id === "dam" && !(t.b.build > 0)) damXs.push(i % N); });
+  const firstDam = damXs.length ? Math.min(...damXs) : N;
+  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.02 : 0.03)) {
+    if (damXs.length && (s.lake || 0) < 80) {
+      s.lastFlood = s.day; s.lake = Math.min(100, (s.lake || 0) + 30);
+      msgs.push({ kind: "event", title: "السد حجز السيل", text: "نزل سيل قوي والسد حجزه! البحيرة امتلت والماء الجوفي بيرتفع، وما تضرر شي." });
+    }
+  }
+  if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.02 : 0.03)) {
     const lost = [], damaged = [];
     let refund = 0;
     s.tiles.forEach((t, i) => {
-      if (t.t !== "wadi" || !t.b) return;
+      if (t.t !== "wadi" || !t.b || i % N > firstDam || t.b.id === "dam") return;
       const isRoad = t.b.id === "road" || t.b.id === "asphalt";
       if (r() < (isRoad ? 0.3 : 0.45)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
       else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
@@ -812,7 +896,7 @@ export function unpack(text) {
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond] = String(str).split(":");
-    const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : "sand";
+    const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
     const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);

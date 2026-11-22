@@ -74,6 +74,7 @@ export const B = {
 
   palms: { cat: "farm", name: "مزرعة نخل", cost: 150, upkeep: 2, era: 0, jobs: 5, income: 11, water: -5, text: "تمور ودخل. في الوادي تنتج أكثر." },
   veg: { cat: "farm", name: "مزرعة خضار", cost: 200, upkeep: 3, era: 0, jobs: 6, income: 14, water: -6, text: "خضار للسوق." },
+  pivot: { cat: "farm", name: "مزرعة محورية", cost: 1500, upkeep: 14, era: 1, jobs: 6, income: 70, water: -6, text: "رشاش دوّار يسقي دايرة قمح كبيرة ويبيعها للصوامع. دخله عالي، بس يسحب من الماء الجوفي كثير." },
   pen: { cat: "farm", name: "حظيرة حلال", cost: 150, upkeep: 3, era: 0, jobs: 3, income: 10, water: -1, text: "غنم وإبل. في الربيع ترعى في الفيضة القريبة (لين ٤ مربعات) ويزيد دخلها النص." },
   livestock: { cat: "farm", name: "سوق الماشية", cost: 900, upkeep: 12, era: 1, jobs: 10, income: 50, water: -2, radius: 3, happy: 4, text: "يبيع الحلال لبرا البلد. كل حظيرة عندك تزيد دخله ١٠٪ (لين الضعف)." },
   workshop: { cat: "farm", name: "ورشة", cost: 400, upkeep: 6, era: 1, jobs: 12, income: 45, power: -4, radius: 2, pollute: 8, text: "وظائف، بس صوتها يزعج الجيران." },
@@ -81,6 +82,7 @@ export const B = {
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
 
   // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
+  dam: { cat: "util", name: "سد", cost: 2500, upkeep: 15, era: 1, tech: "dams", onWadi: true, buildHours: 48, jobs: 4, text: "ينبني على الوادي. يحجز السيل عن اللي بعده، ويجمع ماء المطر في بحيرة وراه تفرّح الناس وتغذي الماء الجوفي." },
   well: { cat: "util", name: "بئر", cost: 100, upkeep: 2, era: 0, water: 30, reach: 5, text: "ماء ٣٠ وحدة، يوصل للبيوت اللي حوله لين ٥ مربعات." },
   tank: { cat: "util", name: "خزان ماء", cost: 900, upkeep: 12, era: 1, water: 140, reach: 9, power: -2, text: "ماء ١٤٠ وحدة، يوصل لين ٩ مربعات." },
   desal: { cat: "util", name: "محطة تحلية", cost: 4500, upkeep: 50, era: 2, tech: "desal", water: 700, reach: 15, power: -25, text: "ماء ٧٠٠ وحدة، يوصل لين ١٥ مربع." },
@@ -167,6 +169,12 @@ export const DISTRICT_NAMES = ["الحارة الشمالية الغربية", "
 // province; losing doubles next year's province fee (the province sends an inspector).
 export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
 
+// Groundwater under the town: wells and tanks pump it, rain and dam lakes refill it.
+// Below LOW the wells give less water, down to 35% when it is empty.
+export const GROUND = { start: 100, low: 40, pump: 0.0003, pivot: 0.06, base: 0.05, rain: 0.5, lake: 0.08, spring: 0.03 };
+/** Price of filling a tile of wadi ground with earth (no more floods there, no more fertile ground). */
+export const FILL_COST = 80;
+
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
 export const LOANS = [
   { id: "small", name: "قرض صغير", amount: 3000, days: 5, rate: 0.15 },
@@ -186,7 +194,7 @@ export const TECH = {
   desal: { name: "تحلية المياه", cost: 3000, days: 12, era: 2, text: "يفتح محطة التحلية." },
   smart: { name: "المدينة الذكية", cost: 6000, days: 16, era: 3, text: "الدخل كله أكثر بـ٢٠٪." },
   pest: { name: "مكافحة الآفات", cost: 400, days: 12, era: 0, text: "الجراد ما يضر المزارع إلا شوي." },
-  dams: { name: "سدود الأودية", cost: 1200, days: 24, era: 1, text: "سدود صغيرة على الوادي تخفف السيول: خطرها ينزل كثير." }
+  dams: { name: "سدود الأودية", cost: 1200, days: 24, era: 1, text: "يفتح بناء السدود على الوادي: تحجز السيل، وتجمع المطر في بحيرة، وتغذي الماء الجوفي." }
 };
 for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);
 

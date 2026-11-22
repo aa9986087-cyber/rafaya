@@ -275,3 +275,26 @@ test("elections at the end of the year; prayers through the day; pens graze in s
   s.districts = { [d.d]: "حارة الوادي" };
   assert.equal(districtName(s, d.d), "حارة الوادي");
 });
+
+test("a dam makes a lake behind it, holds floods, and groundwater falls with pumping", async () => {
+  const { updateLake, fillWadi } = await import("../js/sim.js");
+  const s = newGame(13);
+  s.money = 1e6;
+  // a dam on owned wadi with wadi to its west
+  let dam = null;
+  for (let x = 12; x < 34 && !dam; x++) for (let y = 6; y < 34 && !dam; y++) if (owns(s, x, y) && s.tiles[idx(x, y)].t === "wadi" && !s.tiles[idx(x, y)].b && s.tiles[idx(x - 1, y)].t === "wadi" && !s.tiles[idx(x - 1, y)].b) dam = { x, y };
+  assert.ok(dam);
+  s.tiles[idx(dam.x, dam.y)].b = { id: "dam", lvl: 0, res: 0, cond: 100 };
+  assert.ok(updateLake(s), "the lake appears");
+  assert.equal(s.tiles[idx(dam.x - 1, dam.y)].t, "lake");
+  assert.equal(cantBuild(s, dam.x - 1, dam.y, "house"), "هذي بحيرة السد");
+  s.tiles[idx(dam.x, dam.y)].b = null;
+  updateLake(s);
+  assert.equal(s.tiles[idx(dam.x - 1, dam.y)].t, "wadi", "no dam, no lake");
+  // filling wadi
+  assert.equal(fillWadi(s, dam.x, dam.y), "");
+  assert.equal(s.tiles[idx(dam.x, dam.y)].t, "sand");
+  // groundwater goes down in a thirsty town
+  const t = autoplay(1300, 2);
+  assert.ok(t.aquifer < 100);
+});
