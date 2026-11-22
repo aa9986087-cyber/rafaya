@@ -1,0 +1,12 @@
+// الرافعية on Cloudflare Workers (free plan): a static site in its own Worker named "rafaya",
+// separate from every other game. Cloudflare builds it from the repository root on every push to main
+// and serves it at https://rafaya.vamosx.workers.dev
+{
+  "name": "rafaya",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Copy just the game (index.html, icon, css, js, vendor/three.js) into dist/site before each deploy.
+  "build": { "command": "node scripts/copy-site.mjs" },
+  "assets": { "directory": "./dist/site" }
+}
