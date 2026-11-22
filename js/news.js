@@ -120,7 +120,7 @@ function topics(s, a, season, f) {
   if (f.roadsPaved >= 10 && Math.random() < 0.4) add("asphalt", 1, 2, [`mishal:الطريق المسفلت فرق كبير! وصلت المحل بنص الوقت.`]);
   // Season and weather
   if (season.id === "spring" && f.faydaGreen > 0) add("fayda", 1, 5, [`الفيضة اخضرّت ونوّرت الخزامى! الإبل شبعت والناس طلعوا يكشتون. لا تبنون عليها تكفون.`, `haya:الله على ريحة الخزامى بالفيضة العصر. هالربيع خير.`]);
-  if (season.id === "summer") add("season", -1, 3, [`الحر لاهب، والماء ينشف أسرع. انتبهوا للآبار.`, `abufahad:بالقايلة ما أحد يطلع. الشارع فاضي لين المغرب.`]);
+  if (season.id === "summer") add("season", -1, 3, [`الحر لاهب، والبيوت تبي ماء أكثر بالصيف. زيدوا الآبار قبل لا ينقص الماء.`, `abufahad:بالقايلة ما أحد يطلع والشارع فاضي لين المغرب، والبيع واقف. لو فيه مقهى أو مكان يجتمع فيه الناس بالليل، تتحرك البلد.`]);
   if (season.id === "winter" && f.tents >= 3) add("season", -1, 4, [`umsaad:البرد قارص والخيام ما تدفّي. متى نسكن بيوت طين؟`]);
   if (season.id === "autumn" && f.palms >= 1) add("dates", 1, 3, [`abukhalid:بدا الصرام! تمر هالسنة ممتاز، السكري والخلاص ما شاء الله.`]);
   for (const e of s.events) {
@@ -223,12 +223,17 @@ export function needs(s, a) {
 
 // ---------- memory: what people asked for, and what the mayor promised ----------
 
-const TOPIC_NAMES = { aquifer: "الماء الجوفي", repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
+const TOPIC_NAMES = { season: "أماكن للناس بالصيف", growth: "رضا الناس", farms: "مكافحة الجراد", flood: "الحماية من السيل", shops: "زباين للمحلات", aquifer: "الماء الجوفي", repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
 /** Is anyone still upset about this topic right now? */
 /** What the mayor has to do to keep each kind of promise. */
 export const FIX_HINT = {
   water: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء",
   aquifer: "ابنِ سد على الوادي يجمع المطر، أو قلل الآبار، أو ابنِ تحلية",
+  season: "الصيف: زد الآبار، وابنِ مقهى أو حديقة قريبة يجتمع فيها الناس بالليل",
+  growth: "ارفع رضا الناس: خدمات قريبة، وماء وكهرباء واصلة، وضريبة أخف",
+  farms: "ابحث «مكافحة الآفات» من المجلس عشان الجراد ما يضر المزارع",
+  flood: "ابنِ سد على الوادي، ولا تبني في قاع الوادي، وشغّل التأمين من «الأرقام»",
+  shops: "وقف بناء المحلات الحين، وكبّر البلد بالبيوت عشان يزيد الزباين",
   power: "ابنِ مولد أو ألواح شمسية قريب من البيوت",
   jobs: "افتح محلات أو مزارع أو ورش عشان الوظائف",
   mosque: "ابنِ مسجد قريب من البيوت",
@@ -396,7 +401,7 @@ export function moodOf(s, who, change = 0) {
   return s.trust;
 }
 
-const PROMISE_LINE = { aquifer: "أبشر، بنبني سد يرجّع الماء للآبار",  repair: "أبشر، بنرمم المباني", traffic: "أبشر، بنسفلت ونوسع الطرق", strike: "أبشر، بنعطيهم حقهم",  mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
+const PROMISE_LINE = { season: "أبشر، بنسوي أماكن يجتمع فيها الناس ونزيد الماء", growth: "أبشر، بنهتم بطلباتكم", farms: "أبشر، بنكافح الجراد", flood: "أبشر، بنحمي الوادي من السيول", shops: "أبشر، بنكبّر البلد عشان يزيد الزباين", aquifer: "أبشر، بنبني سد يرجّع الماء للآبار",  repair: "أبشر، بنرمم المباني", traffic: "أبشر، بنسفلت ونوسع الطرق", strike: "أبشر، بنعطيهم حقهم",  mosque: "أبشر، بنبني مسجد قريب منكم", school: "أبشر، المدرسة جاية", health: "أبشر، بنفتح مستوصف", safety: "أبشر، مركز الشرطة بالطريق", parks: "أبشر، بنسوي حديقة للعوايل",
   water: "أبشر، بنحفر بئر جديد", power: "أبشر، بنزيد الكهرباء", jobs: "أبشر، بنفتح محلات ومزارع للشباب", tax: "أبشر، بنخفف الضريبة", dust: "أبشر، بنسفلت الطرق", roads: "أبشر، بنوصل البيوت بطريق",
   housing: "أبشر، بنبني بيوت جديدة", money: "أبشر، بنرتب الميزانية", pollution: "أبشر، بنبعد الدخان عن البيوت" };
 const BUILDING_FOR = { mosque: "mosque", school: "school", health: "clinic", safety: "police", parks: "park", water: "well", power: "generator", jobs: "grocery", dust: "asphalt", roads: "road" };
