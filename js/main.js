@@ -1505,7 +1505,24 @@ function utilSheet() {
 }
 $("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
 
-for (const id of ["budgetBtn", "statMoney", "statPop", "statHappy"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
+for (const id of ["budgetBtn", "statMoney", "statPop"]) $(id).addEventListener("click", () => { sfx.tap(); budget(); });
+$("statHappy").addEventListener("click", () => { sfx.tap(); happySheet(); });
+/** Why people are as happy as they are: every part of it, the worst first, with what fixes it. */
+function happySheet() {
+  A = analyze(S);
+  const parts = A.happyParts.filter((p) => p.id === "base" || Math.abs(p.v) >= 0.5);
+  const plus = parts.filter((p) => p.v > 0 && p.id !== "base").sort((p, q) => q.v - p.v), minus = parts.filter((p) => p.v < 0).sort((p, q) => p.v - q.v);
+  const r = (p) => `<div class="row"><span>${p.label}</span><b class="${p.v >= 0 ? "plus" : "minus"}">${p.v >= 0 ? "+" : "−"}${ar(Math.round(Math.abs(p.v)))}</b></div>`;
+  const target = Math.round(A.happyTarget), now = Math.round(S.happy);
+  const quarters = districtStats(S, A).sort((p, q) => p.happy - q.happy);
+  sheet(`<h2>😊 رضا الناس</h2>
+    <div class="vote"><b class="${now >= 60 ? "plus" : now < 40 ? "minus" : ""}">${ar(now)}٪</b><span>${now === target ? "ثابت" : now < target ? `يرتفع شوي شوي لين ${ar(target)}٪` : `ينزل شوي شوي لين ${ar(target)}٪`}</span></div>
+    ${minus.length ? `<h3>👎 اللي يزعلهم</h3><div class="rows">${minus.map((p) => r(p) + (p.fix ? `<div class="pfix">🛠️ ${p.fix}</div>` : "")).join("")}</div>` : `<div class="need ok">ما فيه شي يزعلهم الحين 👏</div>`}
+    ${plus.length ? `<h3>👍 اللي يفرحهم</h3><div class="rows">${plus.map(r).join("")}</div>` : ""}
+    <div class="rows">${row("الأساس", ar(48))}${row("المجموع", `${ar(target)}٪`, target >= 60 ? "plus" : target < 40 ? "minus" : "")}</div>
+    ${quarters.length > 1 ? `<h3>🏘️ رضا الحارات</h3><div class="rows">${quarters.map((o) => row(o.name, `${ar(o.happy)}٪`, o.happy >= 60 ? "plus" : o.happy < 40 ? "minus" : "")).join("")}</div>` : ""}
+    <p class="hint">الرضا العالي يجيب ناس جدد ويخلي البيوت تتطور، والقليل يطفّش الناس. والرضا ما يتغير فجأة: يمشي شوي شوي نحو المجموع.</p>`, "happy");
+}
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
 $("worldBtn").addEventListener("click", () => { sfx.tap(); worldMapSheet(); });

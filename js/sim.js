@@ -669,6 +669,7 @@ export function analyze(s) {
 
   // How happy people are where they live.
   let sum = 0, weight = 0;
+  const part = { cheer: 0, smoke: 0, dry: 0, dark: 0 };
   for (let i = 0; i < N * N; i++) {
     const t = s.tiles[i];
     if (!t.b || t.b.id !== "house" || !t.b.works) continue;
@@ -676,6 +677,8 @@ export function analyze(s) {
     t.b.local = local;
     const w = Math.max(1, t.b.res || 1);
     sum += local * w; weight += w;
+    part.cheer += Math.min(40, a.local[i]) * w; part.smoke += Math.min(30, a.pollution[i]) * w;
+    part.dry += (a.watered[i] ? 0 : 10) * w; part.dark += (a.grid && t.b.lvl >= 3 && !a.powered[i] ? 6 : 0) * w;
   }
   const local = weight ? sum / weight : 0;
   // Seasons: a green faydah in spring lifts spirits; summer heat makes homes thirstier.
@@ -688,6 +691,23 @@ export function analyze(s) {
   a.councilMood = Math.max(-8, Math.min(8, ((s.trust ?? 60) - 60) * 0.3));
   a.happyTarget = clamp(
     48 + a.faydaHappy + a.councilMood + local * 0.9 - (1 - a.waterRatio) * 35 - (1 - a.powerRatio) * 22 - a.unemployment * 30 - (s.tax - 10) * 1.6 + eventHappy(s) - (s.money < 0 ? 12 : 0), 0, 100); // in debt: wages run late
+  // the same sum, item by item, for the happiness sheet
+  const k = weight ? 0.9 / weight : 0;
+  a.happyParts = [
+    { id: "base", label: "الأساس", v: 48 },
+    { id: "near", label: "الخدمات والأماكن الحلوة قرب البيوت", v: part.cheer * k, fix: "ابنِ مساجد ومدارس وحدائق ومستوصفات قريبة من البيوت، وطوّرها عشان توصل أبعد" },
+    { id: "smoke", label: "الدخان والإزعاج قرب البيوت", v: -part.smoke * k, fix: "انقل الورش والمصانع بعيد عن البيوت" },
+    { id: "dry", label: "بيوت ما يوصلها ماء", v: -part.dry * k, fix: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء" },
+    { id: "dark", label: "فلل وعماير بلا كهرباء", v: -part.dark * k, fix: "ابنِ مولد قريب منها" },
+    { id: "water", label: "الماء ما يكفي البلد", v: -(1 - a.waterRatio) * 35, fix: "زد الآبار والخزانات" },
+    { id: "power", label: "الكهرباء ما تكفي", v: -(1 - a.powerRatio) * 22, fix: "زد المولدات" },
+    { id: "jobs", label: "البطالة", v: -a.unemployment * 30, fix: "افتح محلات ومزارع وورش" },
+    { id: "tax", label: `الضريبة (${s.tax}٪)`, v: -(s.tax - 10) * 1.6, fix: "نزّل الضريبة من «الأرقام»" },
+    { id: "fayda", label: "الفيضة خضرا بالربيع", v: a.faydaHappy },
+    { id: "trust", label: "ثقتهم فيك (ردودك ووعودك)", v: a.councilMood, fix: "رد على النشرة ووفّ بوعودك" },
+    ...s.events.filter((e) => eventDef(e).happy).map((e) => ({ id: "ev", label: e.name || eventDef(e).name || "حدث", v: eventDef(e).happy })),
+    { id: "debt", label: "الميزانية بالسالب (رواتب متأخرة)", v: s.money < 0 ? -12 : 0, fix: "رجّع الميزانية فوق الصفر" }
+  ];
   a.unconnected = a.homes - a.connectedHomes;
   return a;
 }
