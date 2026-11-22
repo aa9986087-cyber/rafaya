@@ -8,5 +8,10 @@
   "preview_urls": false,
   // Copy just the game (index.html, icon, css, js, vendor/three.js) into dist/site before each deploy.
   "build": { "command": "node scripts/copy-site.mjs" },
-  "assets": { "directory": "./dist/site" }
+  // The game's files, served as they are; /api/* goes to the Worker below (leaderboard, visits).
+  "main": "src/worker.js",
+  "assets": { "directory": "./dist/site", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  // One Durable Object with SQLite storage keeps the published towns and their comments (free plan).
+  "durable_objects": { "bindings": [{ "name": "BOARD", "class_name": "Board" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Board"] }]
 }

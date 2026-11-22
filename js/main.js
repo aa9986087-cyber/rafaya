@@ -55,7 +55,9 @@ function clockAt(p, d) {
   return `${ar(((hh + 11) % 12) + 1)}:${ar(String(mm).padStart(2, "0"))} ${hh < 12 ? "ص" : "م"}`;
 }
 
+let visiting = null; // { code, town, comments } while looking at another player's town
 function save() {
+  if (visiting) return;
   S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
   S.savedAt = Date.now();
   store.set(townKey(S.site || "main"), pack(S));
@@ -413,6 +415,7 @@ function renderCards() {
 }
 
 function setTool(t) {
+  if (t && visiting) { toast("أنت تزور مدينة ثانية: ما تقدر تبني فيها", "bad"); return; }
   tool = t;
   pending = [];
   if (t) openCat = null;
@@ -821,6 +824,108 @@ function quartersSheet() {
   }));
 }
 
+// ---------- online: publish your town, the leaderboard, visiting friends ----------
+const API = "/api";
+const onlineOk = () => location.protocol.startsWith("http") && !location.hostname.endsWith("claudeusercontent.com");
+const myKey = () => `rafaya-online-${S.site || "main"}`;
+async function api(path, body) {
+  const r = await fetch(API + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+let boardBy = "pop";
+async function onlineSheet() {
+  if (visiting) { visitComments(); return; }
+  const mine = JSON.parse(store.get(myKey()) || "null");
+  const mayor = store.get("rafaya-mayor") || "";
+  sheet(`<h2>🌐 مدن الربع</h2>
+    <p>انشر مدينتك عشان ربعك يشوفونها ويعلقون عليها، وتدخل لوحة الصدارة. اسم العمدة يطلع للكل، فلا تكتب اسمك الكامل.</p>
+    <div class="rows"><label class="rg-name">اسم العمدة <input id="olMayor" type="text" maxlength="24" value="${mayor.replace(/"/g, "")}" placeholder="مثلاً: أبو فهد"></label>
+      <button class="btn go block" id="olPublish" type="button">${mine ? "حدّث مدينتي المنشورة" : "انشر مدينتي"}</button>
+      ${mine ? `<div class="row"><span>كود مدينتك</span><b class="ol-code">${mine.code}</b></div><button class="btn block" id="olCopy" type="button">انسخ الكود وأرسله لربعك</button>` : ""}</div>
+    <h3>زور مدينة</h3>
+    <div class="q-edit"><input id="olCode" type="text" maxlength="8" placeholder="اكتب كود المدينة" style="text-transform:uppercase"><button class="btn go" id="olVisit" type="button">زور</button></div>
+    <h3>🏆 لوحة الصدارة</h3>
+    <div class="ol-tabs">${[["pop", "أكبر مدينة"], ["happy", "أسعد أهالي"], ["money", "أغنى بلدية"]].map(([k, t]) => `<button class="btn ${boardBy === k ? "go" : ""}" type="button" data-by="${k}">${t}</button>`).join("")}</div>
+    <div class="rows" id="olBoard"><p class="hint">نحمّل…</p></div>`, "online");
+  $("olPublish").addEventListener("click", publishTown);
+  $("olCopy")?.addEventListener("click", () => { navigator.clipboard?.writeText(`زور مدينتي «${S.name}» في الرافعية: الكود ${mine.code}\n${location.origin}`).then(() => toast("نسخت الكود ✓", "goal"), () => toast(mine.code)); });
+  $("olVisit").addEventListener("click", () => visitTown($("olCode").value.trim().toUpperCase()));
+  $("sheetBody").querySelectorAll("[data-by]").forEach((b) => b.addEventListener("click", () => { boardBy = b.dataset.by; onlineSheet(); }));
+  if (!onlineOk()) { $("olBoard").innerHTML = `<div class="need">الأونلاين يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev</div>`; return; }
+  try {
+    const { towns } = await api(`/board?by=${boardBy}`);
+    if (sheetFor !== "online") return;
+    $("olBoard").innerHTML = towns.length ? towns.map((t, k) => `<div class="row ol-row ${mine?.code === t.code ? "now" : ""}"><b class="ol-rank">${ar(k + 1)}</b><span><b>${t.name}</b><small>العمدة ${t.mayor} · ${ERAS[t.era]?.name || ""} · ${money(t.pop)} ساكن · رضا ${ar(t.happy)}٪ · ${money(t.money)} ريال</small></span>${mine?.code === t.code ? "" : `<button class="btn" type="button" data-visit="${t.code}">زور</button>`}</div>`).join("") : `<p class="hint">للحين ما أحد نشر مدينته. كن أول واحد!</p>`;
+    $("olBoard").querySelectorAll("[data-visit]").forEach((b) => b.addEventListener("click", () => visitTown(b.dataset.visit)));
+  } catch { $("olBoard").innerHTML = `<div class="need">ما قدرت أوصل للسيرفر. جرب بعدين.</div>`; }
+}
+async function publishTown() {
+  if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
+  const mayor = $("olMayor").value.trim().slice(0, 24);
+  if (!mayor) { toast("اكتب اسم العمدة", "bad"); return; }
+  store.set("rafaya-mayor", mayor);
+  save();
+  const mine = JSON.parse(store.get(myKey()) || "null");
+  const snap = pack({ ...S, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} });
+  try {
+    const r = await api("/publish", { code: mine?.code, secret: mine?.secret, name: S.name || "الرافعية", mayor, pop: S.pop, happy: Math.round(S.happy), money: Math.round(S.money), era: S.era, snapshot: snap });
+    store.set(myKey(), JSON.stringify(r));
+    sfx.goal(); toast(`انتشرت مدينتك! الكود: ${r.code}`, "goal");
+    onlineSheet();
+  } catch { toast("ما قدرت أنشر الحين، جرب بعدين", "bad"); }
+}
+async function visitTown(code) {
+  if (!code) { toast("اكتب الكود", "bad"); return; }
+  if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
+  let data;
+  try { data = await api(`/town/${encodeURIComponent(code)}`); } catch { toast("ما لقيت مدينة بهالكود", "bad"); return; }
+  let town;
+  try { town = unpack(data.town.snapshot); } catch { toast("حفظ المدينة خربان", "bad"); return; }
+  save();
+  visiting = { code, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
+  S = town; A = analyze(S);
+  closeSheet(); setTool(null);
+  world.stopFollow?.(); $("followTag").hidden = true;
+  world.sync(S, { tiles: true, roads: true, buildings: true });
+  focusTown(); world.view.zoom = 0.9; world.updateCamera();
+  document.body.classList.add("visiting");
+  $("visitName").textContent = data.town.name; $("visitMayor").textContent = ` · العمدة ${data.town.mayor}`;
+  $("visitBar").hidden = false;
+  refresh();
+  toast(`أهلًا بك في ${data.town.name}`, "goal");
+}
+function leaveVisit() {
+  if (!visiting) return;
+  S = visiting.home; const cam = visiting.cam; visiting = null;
+  A = analyze(S);
+  document.body.classList.remove("visiting"); $("visitBar").hidden = true;
+  closeSheet();
+  world.sync(S, { tiles: true, roads: true, buildings: true });
+  world.view.x = cam.x; world.view.z = cam.z; world.view.zoom = cam.zoom; world.updateCamera();
+  refresh();
+}
+function visitComments() {
+  if (!visiting) return;
+  const v = visiting;
+  sheet(`<h2>💬 تعليقات على ${v.info.name}</h2>
+    <div class="rows">${v.comments.length ? v.comments.map((c) => `<div class="row ol-com"><span><b>${c.author}</b><small>${new Date(c.at).toLocaleDateString("ar-SA")}</small></span><p>${c.text}</p></div>`).join("") : `<p class="hint">ما أحد علّق للحين.</p>`}</div>
+    <h3>اكتب تعليقك</h3>
+    <textarea id="olText" maxlength="200" rows="3" placeholder="مدينتك حلوة! عجبني…"></textarea>
+    <div class="sheet-actions keep"><button class="btn go block" id="olSend" type="button">أرسل باسم ${store.get("rafaya-mayor") || "زائر"}</button></div>`, "online");
+  $("olSend").addEventListener("click", async () => {
+    const text = $("olText").value.trim();
+    if (!text) return;
+    try {
+      await api(`/town/${v.code}/comment`, { author: store.get("rafaya-mayor") || "زائر", text });
+      v.comments.unshift({ author: store.get("rafaya-mayor") || "زائر", text, at: Date.now() });
+      sfx.coin(); toast("وصل تعليقك ✓", "goal"); visitComments();
+    } catch { toast("ما وصل التعليق، جرب بعدين", "bad"); }
+  });
+}
+$("visitBack").addEventListener("click", () => { sfx.tap(); leaveVisit(); });
+$("visitComments").addEventListener("click", () => { sfx.tap(); visitComments(); });
+
 // ---------- the region ----------
 const linked = (a, b) => RG.roads.some(([p, q]) => (p === a && q === b) || (p === b && q === a));
 const siteOf = (id) => SITES.find((x) => x.id === id);
@@ -932,6 +1037,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-23",
   items: [
+    ["🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
     ["🗺️", "خريطة المنطقة", "أسس هجر جديدة على أراضي مختلفة، ووصّلها بطرق، وصر أمير المنطقة."],
     ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
     ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
@@ -1278,6 +1384,9 @@ function howTo(fromMenu) {
     <details><summary>الخسائر والصيانة</summary>
       <p>المباني تخرب مع الوقت: رمّمها من «الأرقام» أو بالضغط عليها، وإلا تخرب وتطيح. السيل ينزل الوادي وقت المطر ويجرف اللي فيه. التأمين (من «الأرقام») يعوضك ٧٠٪. وكل سنة فيه رسوم للمحافظة وعلاوة للموظفين.</p></details>
 
+    <details><summary>مدن الربع والصدارة</summary>
+      <p>من «القائمة ← مدن الربع» تنشر مدينتك وتاخذ كود ترسله لربعك، وهم يزورونها بالكود ويشوفونها بالـ3D ويعلقون عليها. وفيه لوحة صدارة: أكبر مدينة، وأسعد أهالي، وأغنى بلدية. الزيارة للفرجة بس، ما تقدر تبني في مدينة غيرك.</p></details>
+
     <details><summary>المنطقة والمدن الثانية</summary>
       <p>لما تصير الرافعية بلدة تنفتح «خريطة المنطقة» (اضغط مربع الوقت فوق، أو من القائمة). تأسس فيها هجر جديدة على أراضي مختلفة: جبلية فيها حجر كثير، ونفود واسعة، وروضة خضرا، وشعيب خصب بس سيوله قوية، وسهل ماه الجوفي كثير.</p>
       <p>وصّل المدن بطرق: ناسها يتسوقون عند بعض وتجارها يشترون من ورش بعض. وتقدر تحوّل فلوس من مدينة لثانية. المدن اللي ما أنت فيها توقف لين ترجع لها. وإذا صار عندك ٣ مدن صرت «أمير المنطقة».</p></details>
@@ -1327,6 +1436,7 @@ function pauseMenu() {
     <button class="row link" id="pmHow" type="button"><span>طريقة اللعب</span><b>←</b></button>
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
     <button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>
+    <button class="row link" id="pmOnline" type="button"><span>🌐 مدن الربع والصدارة</span><b>←</b></button>
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
@@ -1335,6 +1445,7 @@ function pauseMenu() {
   $("pmHow").addEventListener("click", () => howTo(false));
   $("pmNew").addEventListener("click", () => whatsNewSheet());
   $("pmRegion").addEventListener("click", () => regionSheet());
+  $("pmOnline").addEventListener("click", () => onlineSheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
   $("pmMain").addEventListener("click", () => { save(); closeSheet(); showMenu(); });
@@ -1400,7 +1511,7 @@ let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (playing && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor)) {
+  if (playing && !visiting && speed > 0 && !["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor)) {
     acc += dt * 1000 * speed;
     while (acc >= HOUR_MS) {
       acc -= HOUR_MS;

@@ -36,3 +36,11 @@
 Worker مستقل باسم `rafaya` على Cloudflare، إعداداته في `wrangler.jsonc`. ما يشارك أي لعبة ثانية في شي.
 
 Cloudflare يبنيه من جذر المستودع مع كل رفع على `main`: ينسخ الملفات اللازمة بس (`scripts/copy-site.mjs`)، وينشرها على https://rafaya.vamosx.workers.dev
+
+## Online (leaderboard and visits)
+
+`src/worker.js` is the Worker: it serves the game's files and answers `/api/*` (publish a town,
+the leaderboard, a town's snapshot and its comments). Everything is stored in one Durable Object
+with SQLite storage (`Board`), which runs on the Workers free plan and needs no setup in the
+dashboard: `wrangler.jsonc` declares the binding and its migration. To try it locally:
+`node scripts/copy-site.mjs && npx wrangler dev`.
