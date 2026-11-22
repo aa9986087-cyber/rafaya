@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, PLOTS, LOANS, SUBSIDY } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -294,7 +294,8 @@ function renderCards() {
     const afford = S.money >= B[id].cost;
     return `<button type="button" class="card ${tool?.id === id ? "on" : ""} ${lock ? "locked" : ""} ${!lock && !afford ? "poor" : ""}" data-build="${id}" style="--i:${i}">
       <img alt="" src="${thumbnail(modelKey(id, 0))}"><b>${B[id].name}</b>
-      ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${money(B[id].cost)} ريال</span>`}
+      ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${B[id].fullCost ? `<s>${money(B[id].fullCost)}</s> ` : ""}${money(B[id].cost)} ريال</span>`}
+      ${B[id].fullCost && !lock ? `<span class="hours">دعم الدولة −${ar(Math.round(SUBSIDY[B[id].cat] * 100))}٪</span>` : ""}
       ${B[id].buildHours && !lock ? `<span class="hours">يُبنى في ${ar(B[id].buildHours / 24)} أيام</span>` : ""}</button>`;
   }).join("");
   box.querySelectorAll("[data-build]").forEach((b) => b.addEventListener("click", () => {
@@ -456,8 +457,10 @@ function hourNews(msgs) {
   const season = seasonOf(S.day);
   const big = msgs.some((m) => ["event", "season"].includes(m.kind));
   const posts = followUps(S, A, season);
-  // The bigger the town, the more people speak up (1 post every 3 hours in a village, up to 3 in a city).
-  if (big || S.day % 3 === 0) posts.push(...writePosts(S, A, season, Math.min(3, 1 + Math.floor(S.pop / 800))));
+  // People speak up twice a day (morning and evening), a little more in a big city; big news brings one more.
+  const hour = hourOf(S.day);
+  if (hour === 9 || hour === 19) posts.push(...writePosts(S, A, season, Math.min(2, 1 + Math.floor(S.pop / 1500))));
+  else if (big) posts.push(...writePosts(S, A, season, 1));
   addPosts(posts);
 }
 
@@ -550,6 +553,7 @@ function plotSheet(id) {
 function inspect(x, y) {
   const t = S.tiles[idx(x, y)];
   if (!owns(S, x, y)) { sfx.tap(); plotSheet(plotAt(x, y)); return; }
+  if (t.b?.id === "bank" && !t.b.build) { sfx.tap(); bankSheet(); return; }
   if (!t.b) {
     if (t.t === "rock") sheet(`<h2>صخور</h2><p>تقدر تشيلها بـ${money(ROCK_CLEAR)} ريال، أو تبني فوقها مباشرة والإزالة تنحسب مع السعر.</p>`, "inspect");
     else if (t.t === "wadi") sheet(`<h2>أرض الوادي</h2><p>أرض خصبة: مزارع النخل والخضار هنا تنتج ٥٠٪ أكثر.</p>`, "inspect");
@@ -667,6 +671,9 @@ function budget() {
     </div>
     ${S.staffRaise ? `<p>رواتب البلدية زادت ${ar(Math.round(S.staffRaise * 100))}٪ من العلاوات السنوية. وكل سنة تدفع رسوم المحافظة.</p>` : ""}
     ${A.congestion > 0.02 ? `<div class="need">زحمة بالطرق الترابية: المحلات تخسر ${ar(Math.round(A.congestion * 100))}٪ من زباينها. سفلت الطرق أو زد عددها.</div>` : ""}
+    <h3>البنك</h3>
+    <div class="rows">${(S.loans || []).length ? row("قروض عليك", `${ar(S.loans.length)} · ${fine(S.loans.reduce((n, l) => n + l.per, 0))} بالساعة`, "minus") : row("القروض", "ما عليك قروض")}
+      <button class="btn block" id="openBank" type="button">🏦 افتح البنك</button></div>
     <h3>الصيانة</h3>
     <div class="rows">
       ${row("كلفة ترميم كل المباني", A.repairBill ? `${money(A.repairBill)} ريال` : "كلها سليمة", A.repairBill ? "minus" : "plus")}
@@ -688,9 +695,40 @@ function budget() {
     </div>
     <h3>السكان</h3>${spark(h.map((x) => x.p), "#2c8a7a")}
     <h3>الميزانية</h3>${spark(h.map((x) => x.m), "#c48a24")}`, "budget");
+  $("openBank").addEventListener("click", () => { sfx.tap(); bankSheet(); });
   $("repairAll")?.addEventListener("click", () => { const r = repairAll(S); if (!r.n) { toast("ما يكفي المال", "bad"); sfx.deny(); return; } sfx.build(); toast(`رممت ${ar(r.n)} مبنى بـ${money(r.spent)} ريال`, "goal"); refresh(); save(); budget(); });
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
+}
+/** The bank: loans to take, loans running, and paying them off early. */
+function bankSheet() {
+  A = analyze(S);
+  const has = A.count.bank > 0, limit = creditLimit(S, A), loans = S.loans || [];
+  const days = (h) => (h >= 24 ? `${ar(Math.ceil(h / 24))} يوم` : `${ar(h)} ساعة`);
+  sheet(`<h2>🏦 البنك</h2>
+    ${has ? `<p>تاخذ المبلغ الحين، وتسدده قسط كل ساعة مع فايدة. لو سددت بدري ما تدفع الفايدة الباقية.</p>
+    <div class="rows">${row("يقدر البنك يعطيك لين", `${money(limit)} ريال`, "plus")}</div>
+    <h3>القروض المتاحة</h3>
+    <div class="rows">${LOANS.map((o) => {
+      const why = loanBlocker(S, o.id, A), per = loanPer(o);
+      return `<div class="row"><span><b>${o.name}: ${money(o.amount)} ريال</b><small>فايدة ${ar(Math.round(o.rate * 100))}٪ · على ${ar(o.days)} أيام · ${money(per)} بالساعة · المجموع ${money(per * o.days * 24)}</small></span>
+        <button class="btn go" type="button" data-loan="${o.id}" ${why ? "disabled" : ""}>${why ? (/أكبر/.test(why) ? "فوق حدّك" : "—") : "خذه"}</button></div>`;
+    }).join("")}
+    ${(() => { const why = LOANS.map((o) => loanBlocker(S, o.id, A)).find((w) => w && !/أكبر/.test(w)); return why ? `<div class="need">${why}</div>` : ""; })()}</div>` : `<p>ما عندك بنك. ابنه من قسم «تجارة» وبعدها تقدر تاخذ قروض.</p>`}
+    <h3>قروضك</h3>
+    <div class="rows">${loans.length ? loans.map((l, i) => `<div class="row"><span><b>${l.name}</b><small>${money(l.per)} بالساعة · باقي ${days(l.left)}</small></span>
+      <button class="btn" type="button" data-pay="${i}" ${S.money < payoffCost(l) ? "disabled" : ""}>سدده بـ${money(payoffCost(l))}</button></div>`).join("") : row("ما عليك قروض", "✓", "plus")}</div>
+    <div class="need">انتبه: الأقساط تنخصم كل ساعة حتى لو الميزانية بالسالب، ولو زادت الديون تفلس البلدية.</div>`, "bank");
+  document.querySelectorAll("[data-loan]").forEach((b) => b.addEventListener("click", () => {
+    const why = takeLoan(S, b.dataset.loan, A);
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.build(); A = analyze(S); refresh(); save(); toast(`استلمت ${money(LOANS.find((o) => o.id === b.dataset.loan).amount)} ريال من البنك`, "goal"); bankSheet();
+  }));
+  document.querySelectorAll("[data-pay]").forEach((b) => b.addEventListener("click", () => {
+    const why = payLoan(S, Number(b.dataset.pay));
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.build(); A = analyze(S); refresh(); save(); toast("سددت القرض ✓", "goal"); bankSheet();
+  }));
 }
 /** Water and power: how much there is, who it does not reach, and a map of where it goes. */
 function utilSheet() {

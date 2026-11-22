@@ -66,6 +66,7 @@ export const B = {
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
+  bank: { cat: "shop", unique: true, name: "بنك", cost: 400, upkeep: 4, era: 0, jobs: 6, income: 0, water: -1, power: -1, text: "يعطيك قروض: تاخذ المبلغ الحين وتسدده أقساط بالساعة مع فايدة. واحد يكفي البلد." },
   souq: { cat: "shop", name: "سوق شعبي", cost: 600, upkeep: 10, era: 1, jobs: 14, income: 60, water: -2, power: -3, text: "سوق يرفع الدخل كثير." },
   mandi: { cat: "shop", name: "مطعم مندي", cost: 450, upkeep: 6, era: 1, jobs: 9, income: 42, water: -3, power: -3, radius: 4, happy: 8, text: "الكل يحبه: وظائف ورضا." },
   hotel: { cat: "shop", visitors: true, name: "فندق", cost: 2600, upkeep: 30, era: 2, tech: "tourism", jobs: 30, income: 150, water: -8, power: -8, text: "يجيب الزوار والدخل." },
@@ -117,11 +118,21 @@ export const B = {
 // A long game: building is dear next to what the town earns. Every price above is multiplied
 // here (roads less, so a player can still lay out streets).
 export const PRICE = { build: 3, road: 2, tech: 3, upkeep: 2, bigIncome: 0.6, shop: 2 };
+// State support for trade: shops and markets cost 30% less (the full price is kept to show the saving).
+export const SUBSIDY = { shop: 0.3 };
 for (const d of Object.values(B)) {
   d.cost = Math.round(d.cost * (d.cat === "road" || d.cat === "deco" ? PRICE.road : PRICE.build) * (d.cat === "shop" ? PRICE.shop : 1)); // shops cost double again
   d.upkeep = Math.round((d.upkeep || 0) * PRICE.upkeep);
   if (d.income && d.era >= 2) d.income = Math.round(d.income * PRICE.bigIncome); // big city earners pay less
+  if (SUBSIDY[d.cat]) { d.fullCost = d.cost; d.cost = Math.round(d.cost * (1 - SUBSIDY[d.cat])); }
 }
+
+// Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
+export const LOANS = [
+  { id: "small", name: "قرض صغير", amount: 3000, days: 5, rate: 0.15 },
+  { id: "mid", name: "قرض متوسط", amount: 10000, days: 10, rate: 0.2 },
+  { id: "big", name: "قرض كبير", amount: 30000, days: 20, rate: 0.25 }
+];
 
 /** The municipal council's research. Takes money and hours ("days" counts hours); each one stays forever. */
 export const TECH = {

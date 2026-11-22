@@ -371,7 +371,7 @@ export class World {
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
       if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
-      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
+      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk)) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
       if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
     }

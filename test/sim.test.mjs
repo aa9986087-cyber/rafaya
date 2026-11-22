@@ -195,3 +195,25 @@ test("a flash flood on the wadi takes buildings; insurance pays part back", () =
   assert.ok(flood && flood.lost.length, "the flood took something");
   assert.ok(s.money > money - 200, "insurance paid back part of what was lost");
 });
+
+test("bank: a loan pays out, costs every hour, and can be paid off early", async () => {
+  const { takeLoan, payLoan, payoffCost, loanBlocker } = await import("../js/sim.js");
+  const { B: Bd } = await import("../js/data.js");
+  const s = newGame(5);
+  assert.equal(loanBlocker(s, "small"), "تحتاج تبني بنك");
+  s.money = 100000;
+  let done = false;
+  for (let y = 10; y < 30 && !done; y++) for (let x = 10; x < 30 && !done; x++) if (!build(s, x, y, "bank")) done = true;
+  assert.ok(done, "bank built");
+  assert.ok(Bd.bank.fullCost > Bd.bank.cost, "trade gets the state discount");
+  const before = s.money;
+  assert.equal(takeLoan(s, "small"), "");
+  assert.equal(s.money, before + 3000);
+  assert.ok(analyze(s).costs.loan > 0);
+  const left = s.loans[0].left;
+  step(s, () => 0.99);
+  assert.equal(s.loans[0].left, left - 1);
+  assert.ok(payoffCost(s.loans[0]) < s.loans[0].per * s.loans[0].left, "paying early skips interest");
+  assert.equal(payLoan(s, 0), "");
+  assert.equal(s.loans.length, 0);
+});

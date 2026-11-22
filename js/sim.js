@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -281,7 +281,7 @@ export function analyze(s) {
   c.cleaning = s.pop * 0.05;
   c.waterNet = a.waterUse * 0.04;
   c.roads = a.count.road * 0.05 + a.count.asphalt * 0.15;
-  c.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0);
+  c.loan = s.events.reduce((n, e) => n + (e.repay || 0), 0) + (s.loans || []).reduce((n, l) => n + l.per, 0);
   c.insurance = s.insured ? a.value * UPKEEP_RULES.insure : 0;
   // Smoke and noise next to homes make people ill: the clinic's bill.
   for (let i = 0; i < N * N; i++) { const t = s.tiles[i]; if (t.b?.id === "house" && a.pollution[i] > 0) c.health += (t.b.res || 0) * Math.min(30, a.pollution[i]) * 0.004; }
@@ -405,6 +405,43 @@ export function upgradeHouse(s, x, y, a = analyze(s)) {
   return "";
 }
 
+/** What the bank will still lend: grows with what the town owns, less what is still owed. */
+export function creditLimit(s, a = analyze(s)) {
+  const owed = (s.loans || []).reduce((n, l) => n + l.per * l.left, 0);
+  return Math.max(0, Math.round(3000 + a.value * 0.3 + s.pop * 15 - owed));
+}
+/** Why the bank says no to this loan, or "". */
+export function loanBlocker(s, id, a = analyze(s)) {
+  const o = LOANS.find((l) => l.id === id);
+  if (!o) return "ما فيه قرض كذا";
+  if (!a.count.bank) return "تحتاج تبني بنك";
+  if (s.broke) return "البنك ما يقرض بلدية مفلسة";
+  if ((s.loans || []).length >= 3) return "عندك ٣ قروض، سدد واحد أول";
+  if (o.amount > creditLimit(s, a)) return "أكبر من اللي يقدر البنك يعطيك الحين";
+  return "";
+}
+export const loanPer = (o) => Math.ceil((o.amount * (1 + o.rate)) / (o.days * 24));
+export function takeLoan(s, id, a = analyze(s)) {
+  const why = loanBlocker(s, id, a);
+  if (why) return why;
+  const o = LOANS.find((l) => l.id === id);
+  s.loans ||= [];
+  s.loans.push({ id: o.id, name: o.name, amount: o.amount, rate: o.rate, per: loanPer(o), left: o.days * 24, total: o.days * 24 });
+  s.money += o.amount;
+  return "";
+}
+/** Paying a loan off early: what is left of the amount, without the interest still to come. */
+export const payoffCost = (l) => Math.ceil((l.amount * l.left) / l.total);
+export function payLoan(s, i) {
+  const l = s.loans?.[i];
+  if (!l) return "ما فيه قرض";
+  const cost = payoffCost(l);
+  if (s.money < cost) return "ما يكفي المال";
+  s.money -= cost;
+  s.loans.splice(i, 1);
+  return "";
+}
+
 export function step(s, r = Math.random) {
   const a = analyze(s);
   // People move in when there is room and life is good, and leave when it is not.
@@ -505,6 +542,8 @@ export function step(s, r = Math.random) {
     msgs.push({ kind: "tech", text: `انتهى بحث «${TECH[s.research.id].name}».` });
     s.research = null;
   }
+  // Bank loans: one instalment an hour (it is in the costs above) until paid.
+  if (s.loans?.length) s.loans = s.loans.filter((l) => { if (--l.left > 0) return true; msgs.push({ kind: "event", title: "البنك", text: `خلصت أقساط «${l.name}». الله يبارك لك.` }); return false; });
   // Events.
   s.events = s.events.filter((e) => --e.left > 0);
   if (!s.events.some((e) => e.id !== "boost") && s.day > 12 && r() < 0.025) {
@@ -517,8 +556,9 @@ export function step(s, r = Math.random) {
     if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); s.money += g; text += ` (+${g} ريال)`; }
     msgs.push({ kind: "event", title: ev.name, text });
   }
-  // Now and then a choice for the mayor.
-  if (!s.decision && s.day > 30 && r() < 0.02) {
+  // Now and then a choice for the mayor, with at least three days between them.
+  if (!s.decision && s.day > 30 && s.day - (s.lastDecisionAt || 0) >= 72 && r() < 0.015) {
+    s.lastDecisionAt = s.day;
     const pool = DECISIONS.filter((d) => d.when(s, a, season) && d.id !== s.lastDecision);
     let roll = r() * pool.reduce((n, d) => n + (d.weight || 1), 0);
     if (pool.length) { const d = pool.find((x) => (roll -= x.weight || 1) < 0) || pool[0]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }

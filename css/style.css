@@ -308,3 +308,6 @@ body:not(.at-menu) .menu .menu-title { transform: scale(1.08); }
   .sheet-box { max-height: 92vh; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.card .price s { color: var(--ink-2, #8a7a66); font-size: 11px; opacity: .75; }
+.row > span > small { display: block; font-size: 12px; opacity: .75; font-weight: 500; }
+.row > .btn { flex: none; padding: 8px 14px; }
