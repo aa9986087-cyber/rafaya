@@ -100,6 +100,7 @@ export class World {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = quality !== "low";
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false; // shadows are redrawn every third frame (see frame), not every frame: a big saving on phones
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog("#f3dcae", 40, 90);
 
@@ -137,7 +138,7 @@ export class World {
     for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v;
     this.loadSky();
     // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
-    if (quality !== "low") {
+    if (quality === "high") { // bloom costs several extra passes a frame: only on high (phones default to medium)
       // a multisampled target keeps edges smooth (the bloom pass would otherwise lose the antialiasing)
       this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(256, 256, { type: THREE.HalfFloatType, samples: quality === "high" ? 4 : 2 }));
       this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -629,6 +630,7 @@ export class World {
   }
 
   sync(s, what = { tiles: true, roads: true, buildings: true }) {
+    this.shadowDirty = true;
     // While a flood sweeps the wadi the old buildings must stay on screen to be carried away;
     // the town is redrawn once the water has passed.
     if (this.floodAnim) { this.pendingSync = { s, what: { tiles: true, roads: true, buildings: true } }; return; }
@@ -1260,7 +1262,7 @@ export class World {
 
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-    const dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.75 : 1.25, devicePixelRatio || 1);
+    const dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     if (this.composer) { this.composer.setPixelRatio(dpr); this.composer.setSize(w, h); }
@@ -1378,6 +1380,8 @@ export class World {
     this.fx?.step(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
+    this.shadowTick = ((this.shadowTick || 0) + 1) % (this.quality === "high" ? 2 : 3);
+    if (!this.shadowTick || this.shadowDirty) { this.renderer.shadowMap.needsUpdate = true; this.shadowDirty = false; }
     if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }
 }

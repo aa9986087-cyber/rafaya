@@ -2225,8 +2225,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-11", world: "2026-12-11" },
+  v: { solo: "2026-12-12", world: "2026-12-12" },
   items: [
+    ["both", "🔋", "أخف على الجوال", "اللعبة صارت ترسم ٣٠ مرة بالثانية وهي هادية بدل ١٢٠، والظلال تنحسب أقل، والتوهّج صار بالجودة «عالية» بس. الجوال ما عاد يسخن مثل قبل والبطارية تطوّل."],
     ["both", "🛣️", "الطرق بالترتيب صارت رسم", "بوضع الترتيب: زر «امسح طرق» واسحب إصبعك على الطرق وتنشال كلها للمخزن، بعدها اختر الطريق من المخزن وارسمه بإصبعك وين تبي، بدون فراغات حتى لو سحبت بسرعة."],
     ["both", "🏙️", "مباني أوقع (المرحلة الأولى)", "الجدران صار فيها ملمس لياسة حقيقي، والحواف ناعمة تلقط الضوء، والشبابيك والألواح الشمسية زجاج يعكس السماء، والرمل فيه حبيبات. وانشال «وقت العالم» و«وش الجديد» من شاشة اللعب (وش الجديد باقي بالقائمة الرئيسية)."],
     ["both", "🌍", "زر الجوف على الشاشة", "خريطة عالم الجوف صار لها زر «الجوف» على جنب الشاشة، حتى وأنت تلعب فردي، بدون ما تطلع للقائمة."],
@@ -2610,7 +2611,7 @@ $("goal").addEventListener("click", () => { sfx.tap(); goals(); });
 function settingsSheet(fromMenu) {
   const q = settings.quality;
   sheet(`<h2>الإعدادات</h2>
-    <h3>الرسوم</h3><p>لو الجوال يسخن أو يعلّق، اختر «خفيفة».</p>
+    <h3>الرسوم</h3><p>«عالية» فيها توهّج الانفجارات والأضواء وأعلى دقة. لو الجوال يسخن أو البطارية تخلص بسرعة، اختر «متوسطة» أو «خفيفة».</p>
     <div class="seg">${[["high", "عالية"], ["medium", "متوسطة"], ["low", "خفيفة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
     <div class="rows" style="margin-top:10px">
       <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
@@ -2864,7 +2865,17 @@ function runHour() {
   if (sheetFor === "council") council();
 }
 
+/**
+ * Phones get hot when a page draws at the screen's full rate (120 a second on newer iPhones) all the time.
+ * So the town draws 30 times a second when nothing moves fast, and faster only while a finger is on the
+ * screen, the camera turns, or a war scene or a building's rise is playing.
+ */
+let lastDraw = 0;
+const fpsBusy = { high: 60, medium: 45, low: 30 }[settings.quality] || 45, fpsIdle = settings.quality === "low" ? 24 : 30;
 function frame(now) {
+  const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
+  if (now - lastDraw < 1000 / (busy ? fpsBusy : fpsIdle) - 2) { requestAnimationFrame(frame); return; }
+  lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor);

@@ -153,6 +153,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 
 21. **Roads in the layout editor (owner: «اذا جيت بحط طريق معاناه»):** a «امسح طرق» button (`#arrErase`, `arrange.erase`) lifts every road the finger slides over into the tray (`arrErase`, one undo step per slide). A road taken from the tray is drawn by sliding (`arrPaint` → `arrLine` fills the tiles a fast finger skips; busy tiles are skipped), even when the slide starts on a busy tile.
 
+22. **iPhones heating (owner, 2026-11-23):**
+    - `frame()` caps drawing to 30 fps when idle, and to 45 (medium) or 60 (high) while busy (a finger down, the camera turning, scenes, rises, arrange).
+    - Shadows update every 3rd frame (2nd on high), or on any sync (`shadowMap.autoUpdate = false`, `shadowDirty`).
+    - Bloom only on «عالية». Medium pixel ratio is back to 1.5.
+    - Pushed to main with everything since step 18.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
