@@ -451,7 +451,58 @@ export class World {
 
   // ---------- roads ----------
 
+  /** Kerbs: a raised concrete edge wherever a road meets land that is not road (one draw for all). */
+  syncKerbs(s) {
+    if (this.kerbs) { this.scene.remove(this.kerbs); this.kerbs.dispose(); this.kerbs = null; }
+    const list = [], m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!roadAt(s.tiles[idx(x, y)])) continue;
+      const p = tileCenter(x, y);
+      for (const [dx, dy, a] of [[0, 1, 0], [0, -1, 0], [1, 0, Math.PI / 2], [-1, 0, Math.PI / 2]]) {
+        if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) continue;
+        m.compose(new THREE.Vector3(p.x + dx * 0.47, 0.012, p.z + dy * 0.47), q.setFromAxisAngle(up, a), one);
+        list.push(m.clone());
+      }
+    }
+    if (!list.length) return;
+    const g = new THREE.BoxGeometry(1, 0.024, 0.06);
+    this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: "#d6d0c2", roughness: 0.85, normalMap: this.mats.matte.normalMap, normalScale: new THREE.Vector2(0.3, 0.3) }), list.length);
+    list.forEach((mm, i) => this.kerbs.setMatrixAt(i, mm));
+    this.kerbs.receiveShadow = true; this.kerbs.frustumCulled = false;
+    this.scene.add(this.kerbs);
+  }
+
+  /** A soft dark patch under every building where it meets the ground (fake ambient occlusion: buildings sit, not float). */
+  syncContact(s) {
+    if (this.contact) { this.scene.remove(this.contact); this.contact.dispose(); this.contact = null; }
+    const list = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const b = s.tiles[idx(x, y)].b;
+      if (!b || roadAt(s.tiles[idx(x, y)]) || ["parking", "pole", "streetpalm", "flowers", "lantern"].includes(b.id)) continue;
+      list.push(tileCenter(x, y));
+    }
+    if (!list.length) return;
+    if (!this.contactTex) {
+      const c = document.createElement("canvas"); c.width = c.height = 64;
+      const g = c.getContext("2d"), img = g.createImageData(64, 64);
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+        const d = Math.max(Math.abs(x - 31.5), Math.abs(y - 31.5)) / 32; // a rounded square, darkest at the walls
+        const a = Math.max(0, Math.min(1, (1 - d) * 3.2)) * Math.max(0, 1 - Math.max(0, 0.55 - d) * 2.6);
+        img.data[(y * 64 + x) * 4 + 3] = Math.round(a * 120);
+      }
+      g.putImageData(img, 0, 0);
+      this.contactTex = new THREE.CanvasTexture(c);
+    }
+    const geo = new THREE.PlaneGeometry(1.12, 1.12); geo.rotateX(-Math.PI / 2);
+    this.contact = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: this.contactTex, color: "#2a1d10", transparent: true, depthWrite: false }), list.length);
+    const m = new THREE.Matrix4();
+    list.forEach((p, i) => this.contact.setMatrixAt(i, m.makeTranslation(p.x, 0.008, p.z)));
+    this.contact.renderOrder = 1; this.contact.frustumCulled = false;
+    this.scene.add(this.contact);
+  }
+
   syncRoads(s) {
+    this.syncKerbs(s);
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); }
     this.removeAll(this.lampMeshes);
     const lamps = [], medians = [], islands = [], lights = [];
@@ -626,6 +677,7 @@ export class World {
     this.buildingGlows = glows;
     this.where = where;
     this.homes = [...where.entries()].filter(([, w]) => w.k === "tent0" || w.k.startsWith("house")).map(([i]) => i);
+    this.syncContact(s);
     this.fx?.syncTown(s); // war: moving parts of military buildings, damage smoke and fire
   }
 

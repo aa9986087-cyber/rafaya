@@ -161,6 +161,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 
 23. **Realistic graphics, stage 2:** `palm()` has a ringed trunk, 11 arching fronds (3 parts each, rising then drooping: angle `e`) with leaflets, and date clusters. The pickup body is rounded (`rbox` in the matte set, painted per car); its trim has tyres, metal rims, glass, glowing lamps and mirrors. `carTrim` uses all `SETS`. **Next:** houses and shops in more detail, people, kerbs.
 
+24. **Realistic graphics, stage 3:**
+    - Kerbs: `syncKerbs` draws one instanced mesh of concrete edges wherever a road meets non-road.
+    - Contact shadows: `syncContact` draws one instanced soft dark patch under every building (fake AO).
+    - Smoother people (more segments).
+    - Houses and shops keep their models but gain the plaster texture, glass and rounded edges from stage 1.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
