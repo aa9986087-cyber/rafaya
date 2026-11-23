@@ -108,6 +108,55 @@ export function seasonOf(hour) {
   return { i, ...SEASONS[i], dayIn: inSeason + 1, left: SEASON_DAYS - inSeason, progress: (inSeason * HOURS + (h % HOURS)) / (SEASON_DAYS * HOURS), year: Math.floor(day / (SEASON_DAYS * 4)) + 1 };
 }
 
+// ---------- one weather and one calendar for the whole world of al-Jouf ----------
+/** Events every town shares in the world (the rest — the governor's visit, the town festival — stay each town's own). */
+export const SHARED_EVENTS = ["rain", "dust", "heat", "cold", "locust", "drought", "dates", "ramadan", "eid", "adha"];
+const WEATHER_IDS = ["rain", "dust", "heat", "cold", "locust", "drought", "dates"];
+const sharedCache = { upTo: -1, list: [], next: 13 };
+/**
+ * The world's shared events up to this world hour, the same on every phone and on the server:
+ * a seeded series of weather by season, and a fixed calendar for Ramadan, Eid al-Fitr and Eid al-Adha
+ * that moves through the seasons from year to year, like the Hijri calendar does.
+ */
+export function worldEventsAt(hour) {
+  // weather: one after another, with a seeded gap; the kind is drawn by the season it starts in
+  while (sharedCache.next <= hour + 400) {
+    const start = sharedCache.next, r = rng(start * 7919 + 17), sid = seasonOf(start).id;
+    const pool = EVENTS.filter((e) => WEATHER_IDS.includes(e.id) && (e.seasons?.[sid] || 0) > 0);
+    let roll = r() * pool.reduce((t, e) => t + e.seasons[sid], 0);
+    const ev = pool.find((e) => (roll -= e.seasons[sid]) < 0) || pool[0];
+    sharedCache.list.push({ id: ev.id, start, end: start + ev.days, name: ev.id === "rain" ? RAIN_NAMES[sid] || ev.name : ev.name });
+    sharedCache.next = start + ev.days + 20 + Math.floor(r() * 60);
+  }
+  const out = sharedCache.list.filter((e) => e.start <= hour && hour < e.end);
+  // the calendar: Ramadan starts 11 days (here 33 hours) earlier each year, Eid al-Fitr right after it,
+  // Eid al-Adha 70 days (here about 57 hours) after Eid al-Fitr
+  const Y = YEAR_HOURS, yr = Math.floor(hour / Y);
+  for (const y of [yr - 1, yr]) {
+    const r0 = y * Y + (((200 - y * 33) % Y) + Y) % Y;
+    for (const [id, a, b] of [["ramadan", r0, r0 + 72], ["eid", r0 + 72, r0 + 96], ["adha", r0 + 153, r0 + 177]]) {
+      const ev = EVENTS.find((e) => e.id === id);
+      if (a <= hour && hour < b) out.push({ id, start: a, end: b, name: ev.name });
+    }
+  }
+  return out;
+}
+/** In the world: the town's shared events become exactly the world's (they start and end for everyone at once). */
+function syncSharedEvents(s, msgs) {
+  const want = worldEventsAt(s.day);
+  const have = new Set(s.events.filter((e) => SHARED_EVENTS.includes(e.id)).map((e) => e.id));
+  s.events = s.events.filter((e) => !SHARED_EVENTS.includes(e.id) || want.some((w) => w.id === e.id));
+  for (const w of want) {
+    const e = s.events.find((x) => x.id === w.id);
+    if (e) { e.left = w.end - s.day; continue; }
+    s.events.push({ id: w.id, left: w.end - s.day, name: w.name, shared: true });
+    if (!have.has(w.id) && s.day - w.start < 2) {
+      const ev = EVENTS.find((x) => x.id === w.id);
+      msgs.push({ kind: "event", title: w.name, text: `${ev.text} (بكل الجوف)` });
+    }
+  }
+}
+
 /**
  * Faydah (فيضة): low ground where rainwater gathers. In spring it fills with annual plants and
  * flowers, and people go out to enjoy it. A few patches away from the old settlement.
@@ -1092,10 +1141,12 @@ export function step(s, r = Math.random) {
   // Eid al-Fitr comes the day Ramadan ends.
   const ramadanEnds = s.events.some((e) => e.id === "ramadan" && e.left === 1);
   s.events = s.events.filter((e) => --e.left > 0);
-  if (ramadanEnds) { const eid = EVENTS.find((e) => e.id === "eid"); s.events.push({ id: "eid", left: eid.days }); msgs.push({ kind: "event", title: eid.name, text: eid.text }); }
+  if (s.world) syncSharedEvents(s, msgs); // the world: one weather and one calendar for every town
+  else if (ramadanEnds) { const eid = EVENTS.find((e) => e.id === "eid"); s.events.push({ id: "eid", left: eid.days }); msgs.push({ kind: "event", title: eid.name, text: eid.text }); }
   const sid = seasonOf(s.day).id;
-  if (!s.events.some((e) => e.id !== "boost") && s.day > 12 && r() < 0.025) {
-    const pool = EVENTS.filter((e) => (!e.tech || s.tech[e.tech]) && (e.seasons?.[sid] || 0) > 0);
+  if (!s.events.some((e) => e.id !== "boost" && (!s.world || !SHARED_EVENTS.includes(e.id))) && s.day > 12 && r() < 0.025) {
+    const pool = EVENTS.filter((e) => (!e.tech || s.tech[e.tech]) && (e.seasons?.[sid] || 0) > 0 && (!s.world || !SHARED_EVENTS.includes(e.id)));
+    if (!pool.length) pool.push(...EVENTS.filter((e) => e.id === "visit"));
     let roll = r() * pool.reduce((t, e) => t + e.seasons[sid], 0);
     const ev = pool.find((e) => (roll -= e.seasons[sid]) < 0) || pool[0];
     const name = ev.id === "rain" ? RAIN_NAMES[sid] || ev.name : ev.name;

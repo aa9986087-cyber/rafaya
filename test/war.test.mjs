@@ -244,3 +244,23 @@ test("the same rules on SQLite storage (as in the Durable Object)", async () => 
   assert.ok(W.war.handle("op", { op: "s1" }, b).op.result.dmg > 0);
   assert.equal(W.war.publicDamage(30).length, 1);
 });
+
+test("the world: every town gets the same rain, dust, Ramadan and Eid at the same hour", async () => {
+  const { worldEventsAt, step, SHARED_EVENTS } = await import("../js/sim.js");
+  const a = newGame(101, { site: "world" }), b = newGame(202, { site: "world" });
+  for (const s of [a, b]) { s.world = { plot: 1 }; s.day = 5000; }
+  const seen = new Set();
+  for (let h = 0; h < 600; h++) {
+    step(a, Math.random); step(b, Math.random);
+    const ea = a.events.filter((e) => SHARED_EVENTS.includes(e.id)).map((e) => e.id).sort().join(), eb = b.events.filter((e) => SHARED_EVENTS.includes(e.id)).map((e) => e.id).sort().join();
+    assert.equal(ea, eb, `hour ${a.day}`);
+    const want = worldEventsAt(a.day).map((e) => e.id).sort().join();
+    assert.equal(ea, want);
+    for (const e of a.events) seen.add(e.id);
+  }
+  assert.ok(seen.has("ramadan") && seen.has("eid") && seen.has("adha"), [...seen].join());
+  assert.ok(["rain", "dust", "heat", "cold", "locust", "drought", "dates"].some((k) => seen.has(k)));
+  // no rain in summer, ever
+  for (let h = 0; h < 20000; h += 7) for (const e of worldEventsAt(h)) if (e.id === "rain") assert.notEqual(seasonOfTest(e.start), "summer");
+});
+function seasonOfTest(h) { const day = Math.floor(Math.max(0, h - 1) / 24); return ["spring", "summer", "autumn", "winter"][Math.floor(day / 3) % 4]; }

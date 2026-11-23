@@ -178,7 +178,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - It never shows who is online.
     - The trial copy has a chat too, with the bots saying a word now and then.
 
-**Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
+27. **One weather and one calendar for the whole world (owner: fairness, «عشان العدل»):**
+    - `worldEventsAt(hour)` (sim.js) is deterministic: a seeded series of weather (rain, dust, heat, cold, locust, drought, dates), drawn by season, plus a calendar. Ramadan starts 33 hours earlier each game year (like the Hijri year), Eid al-Fitr follows it, and Eid al-Adha comes 57 hours after Eid al-Fitr.
+    - In `step`, a world town (`s.world`) runs `syncSharedEvents`: its shared events become exactly the world's. Random events there are only the town's own (the governor's visit, the town festival).
+    - Time, seasons and prayers were already shared through the world clock. A test checks two towns stay identical for 600 hours.
+
+**Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
 - A staging copy of the site plus an admin page to moderate world reports.
