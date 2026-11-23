@@ -330,6 +330,8 @@ export class WarServer {
     };
     this.db.put("op", id, op, { k1: String(me.plot), k2: String(to), at: now });
     this.db.put("fly", id, { id, at: op.arriveAt }, { at: op.arriveAt });
+    // the defender's deputy fills the batteries when the attack is seen coming (within the owner's budget)
+    if (seen) { const da = this.acct(to); if (da.settings.refill) this.deputy(them, da, now, true); }
     if (seen) this.note(to, "incoming", `🚨 إنذار عسكري: تم رصد هجوم من «${mine.town}» متجه نحو مدينتك! يوصل بعد ${minutesText(flight)}.`, { op: id, from: me.plot });
     return { ok: true, op: this.opPublic(op, me), charge: ch, arsenal: a.arsenal, now };
   }
@@ -375,6 +377,7 @@ export class WarServer {
       res.hits.push(h);
     }
     res.dmg = dmg; res.after = Math.min(this.cfg.caps.building, before + dmg);
+    res.airdef = p ? p.airdefs.filter((x) => x.wd < 85).length : 0; // working batteries (to tell "no defence" from "no interceptors")
     res.intcValue = res.intcUsed * this.cfg.interceptor.price;
     if (dmg > 0) {
       this.db.put("dmg", key, { x: op.x, y: op.y, bid: op.bid, wd: res.after, by: op.from, at: now }, { k1: String(op.to), at: now });
@@ -401,7 +404,7 @@ export class WarServer {
     else this.saveAcct(op.to, da);
   }
 
-  deputy(info, a, now) {
+  deputy(info, a, now, refillOnly = false) {
     const day = Math.floor(now / (24 * 3600000));
     if (a.spent.day !== day) a.spent = { day, amt: 0 };
     const left = () => a.settings.budget - a.spent.amt;
@@ -414,7 +417,7 @@ export class WarServer {
         this.note(info.plot, "deputy", `🧑‍💼 النائب عبّى الدفاع الجوي بـ${nf(n)} صواريخ اعتراضية (${nf(n * this.cfg.interceptor.price)} ريال).`);
       }
     }
-    if (a.settings.repair) {
+    if (a.settings.repair && !refillOnly) {
       for (const r of [...this.damage(info.plot).values()].sort((p, q) => q.wd - p.wd)) {
         if (r.rep) continue;
         const cost = repairCostOf(r.bid, r.wd, this.cfg);

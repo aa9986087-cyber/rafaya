@@ -132,6 +132,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Damage shape: `warSquash`/`warTilt` (world3d.js) sink a building from 25% damage (down to half its height) and tilt it from 60%. `warfx.addDamage` adds seeded rubble, a blackened broken top and bent rebar (two instanced meshes, `buildRubble`), with smoke and fire from the top.
     - `WORLD_OPEN = true` again. The live world has the war.
 
+18. **Fixes after the owner tried the trial (2026-11-23):**
+    - The interceptor is now clearly visible: the camera frames the battery and the target, the launcher aims and lifts, the interceptor is bigger with a flame and a thick trail, and banners say «الدفاع الجوي أطلق صاروخ اعتراضي». When the batteries have no interceptors, a banner and a «💡» in the report say so (`result.airdef` from the server). The deputy also refills interceptors when an attack is detected at launch (`deputy(…, refillOnly)`).
+    - Arrange mode: only a building already selected (tapped) is dragged; any other drag pans. The touch tap threshold is 14 px.
+    - The power reach overlay is violet `#9b5cf6` (yellow got lost on the sand).
+    - Sheets: a sheet opened while the last one was closing was being hidden by the old close timer (`sheetHide`). Fixed.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

@@ -421,7 +421,12 @@ export class WarFX {
   async playIncoming(o) {
     this.skipping = false;
     const c = tileCenter(o.x, o.y), top = c.clone().setY(0.45);
-    await this.camTo({ x: c.x, z: c.z, zoom: 1.45, y: 0.3 }, 1.0);
+    // the nearest air defence battery: when it fires, the camera keeps it and the target in view
+    const adNear = (o.airdefs || []).map((a) => ({ ...a, p: tileCenter(a.x, a.y) })).sort((p, q) => p.p.distanceTo(c) - q.p.distanceTo(c))[0];
+    const defends = !!adNear && o.weapons.some((h) => h.tried);
+    if (defends) { const mid = c.clone().lerp(adNear.p, 0.5), d = adNear.p.distanceTo(c); await this.camTo({ x: mid.x, z: mid.z, zoom: Math.min(1.45, 9 / (d * 1.3 + 3)), y: 0.6 }, 1.0); }
+    else await this.camTo({ x: c.x, z: c.z, zoom: 1.45, y: 0.3 }, 1.0);
+    if (adNear && !defends && o.noAmmo) { o.banner?.("🛡️ الدفاع الجوي بلا صواريخ اعتراضية!", "bad"); await this.wait(1.2); }
     if (o.detected) {
       o.banner?.("⚠️ تم رصد هدف جوي", "warn");
       o.sfx?.alarm();
@@ -437,7 +442,7 @@ export class WarFX {
     const side = new THREE.Vector3(-dir.z, 0, dir.x);
     let hits = 0;
     const one = async (h, k) => {
-      const missile = h.kind === "missile", dur = missile ? 2.0 : 3.8;
+      const missile = h.kind === "missile", dur = (missile ? 2.0 : 3.8) * (h.tried ? 1.35 : 1);
       const lateral = (k - (o.weapons.length - 1) / 2) * 1.6;
       const from = c.clone().addScaledVector(dir, missile ? 13 : 10).addScaledVector(side, lateral).setY(missile ? 9 : 3.2);
       const fly = this.mesh({ missile: "wMissile", missile2: "wMissile2", drone: "wDrone", drone2: "wDrone2" }[h.w] || "wMissile");
@@ -450,8 +455,8 @@ export class WarFX {
         if (!missile) p.y += Math.sin(kk * Math.PI) * 0.6 + Math.sin(kk * 20) * 0.03;
         return p;
       };
-      const ad = (o.airdefs || []).map((a) => ({ ...a, p: tileCenter(a.x, a.y) })).sort((p, q) => p.p.distanceTo(c) - q.p.distanceTo(c))[0];
-      const meet = 0.7, fireAt = 0.32;
+      const ad = adNear;
+      const meet = 0.8, fireAt = 0.3;
       let inter = null, gone = false;
       o.sfx?.whoosh();
       await this.tween(dur, (kk) => {
@@ -464,21 +469,31 @@ export class WarFX {
         // the air defence: turn to it, fire, and meet it
         if (h.tried && ad) {
           const part = this.parts.get(idx(ad.x, ad.y));
-          if (part?.turret) { const want = Math.atan2(p.x - ad.p.x, p.z - ad.p.z) - part.group.rotation.y; part.turret.rotation.y += (want - part.turret.rotation.y) * 0.2; part.turret.rotation.x = -Math.min(0.7, kk * 2); }
+          // the launcher turns to the threat and lifts before it fires
+          if (part?.turret) { const want = Math.atan2(p.x - ad.p.x, p.z - ad.p.z) - part.group.rotation.y; part.turret.rotation.y += (want - part.turret.rotation.y) * 0.15; part.turret.rotation.x = -Math.min(0.75, kk * 2.5); }
           if (kk >= fireAt && !inter) {
-            const src = ad.p.clone().setY(0.4), aim = at(meet);
+            const src = ad.p.clone().setY(0.45), aim = at(meet);
             const miss = !h.intercepted ? side.clone().multiplyScalar(0.9).add(new THREE.Vector3(0, 0.5, 0)) : new THREE.Vector3();
-            inter = { m: this.mesh("wInterceptor"), src, aim: aim.add(miss), done: false };
+            inter = { m: this.mesh("wInterceptor"), src, aim: aim.add(miss), done: false, last: src.clone() };
+            inter.m.scale.setScalar(1.8);
             inter.m.position.copy(src); this.flyers.add(inter.m);
-            this.emit("flash", src, { size: 0.8, life: 0.2 }); for (let j = 0; j < 4; j++) this.emit("smoke", src, { color: "#d8d2c6", size: 0.4 });
+            // the launch at the battery: a flash, a burst of white smoke, dust on the ground
+            this.emit("flash", src, { size: 1.0, life: 0.25 });
+            for (let j = 0; j < 8; j++) this.emit("smoke", src.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, -0.2, (Math.random() - 0.5) * 0.3)), { color: "#ece7dc", size: 0.45, v: new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.4, (Math.random() - 0.5) * 1.4) });
+            this.light.position.copy(src); this.light.intensity = 3.5; this.lightT = 0.4;
+            o.banner?.("🚀 الدفاع الجوي أطلق صاروخ اعتراضي", "warn");
             o.sfx?.intercept();
           }
           if (inter && !inter.done) {
             const q = Math.min(1, (kk - fireAt) / (meet - fireAt));
-            const ip = inter.src.clone().lerp(inter.aim, fxEase(q)); ip.y += Math.sin(q * Math.PI) * 0.8;
-            inter.m.lookAt(ip.clone().add(ip.clone().sub(inter.m.position)));
+            const ip = inter.src.clone().lerp(inter.aim, fxEase(q)); ip.y += Math.sin(q * Math.PI) * 1.0;
+            inter.m.lookAt(ip.clone().add(ip.clone().sub(inter.last)));
             inter.m.position.copy(ip);
-            if (Math.random() < 0.9) this.emit("trail", ip, { size: 0.16, color: "#f1efe8" });
+            // a bright flame and a thick white trail, easy to follow
+            const back = ip.clone().add(inter.last.clone().sub(ip).normalize().multiplyScalar(0.3));
+            this.emit("flame", back, { size: 0.3 });
+            this.emit("trail", back, { size: 0.24, color: "#f4f1ea", alpha: 0.75, life: 1.8 });
+            inter.last.copy(ip);
             if (q >= 1) {
               inter.done = true; this.flyers.remove(inter.m);
               if (h.intercepted) {

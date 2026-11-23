@@ -160,7 +160,7 @@ canvas.addEventListener("pointermove", (e) => {
     return;
   }
   if (!drag) return;
-  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
+  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > (e.pointerType === "touch" ? 14 : 8)) drag.moved = true; // a finger shakes a little on a tap
   if (arrange && arrMove(e)) return;
   if (drag.painting) { paintAt(e.clientX, e.clientY); return; }
   if (drag.moved) { world.pan(e.clientX - drag.lx, e.clientY - drag.ly); drag.lx = e.clientX; drag.ly = e.clientY; }
@@ -374,7 +374,9 @@ function arrDrop(t) {
 function arrDown(e) {
   const t = world.pick(e.clientX, e.clientY);
   const i = inMap(t.x, t.y) ? idx(t.x, t.y) : -1;
-  drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && arrMovable(S.tiles[i].b) ? i : -1 };
+  // only the building already chosen (tapped) moves with the finger; any other drag moves the land,
+  // so panning over a crowded town never picks up a building by mistake
+  drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && i === arrange.sel && arrMovable(S.tiles[i].b) ? i : -1 };
   // a road from the tray: the finger lays road wherever it goes
   const h = arrange.held;
   if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0 && !S.tiles[i].b) { drag.paint = true; drag.grab = -1; arrPaint(t); }
@@ -419,7 +421,7 @@ function arrRender() {
   $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? (B[arrange.held.b.id].cat === "road" ? `اسحب إصبعك على الأرض وترصف «${B[arrange.held.b.id].name}» (باقي ${ar(1 + arrange.tray.filter((b) => b.id === arrange.held.b.id).length)})` : `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`)
     : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
     : sel != null ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه`
-    : "اسحب أي مبنى بإصبعك وحطه وين تبي. حطه على مبنى ثاني ويتبادلون مكانهم.";
+    : "اضغط على مبنى عشان تختاره، بعدها اسحبه بإصبعك لمكانه. حطه على مبنى ثاني ويتبادلون مكانهم.";
   $("arrRot").disabled = sel == null || !canTurn(S.tiles[sel]?.b?.id);
   $("arrUndo").disabled = !arrange.hist.length;
   $("arrTray").querySelectorAll("[data-k]").forEach((el) => el.addEventListener("click", () => {
@@ -549,7 +551,7 @@ function showReach(x, y, def) {
   const values = new Float32Array(N * N);
   for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++)
     if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) values[idx(xx, yy)] = 1;
-  world.setOverlay(values, def.reach ? (def.water > 0 ? "#3b8fd6" : "#e8b730") : def.pollute ? "#e0523f" : "#2cb59c");
+  world.setOverlay(values, def.reach ? (def.water > 0 ? "#3b8fd6" : "#9b5cf6") : def.pollute ? "#e0523f" : "#2cb59c");
 }
 
 // ---------- build dock ----------
@@ -708,7 +710,9 @@ function toast(text, kind = "") {
 }
 
 let sheetFor = null, sheetAt = 0;
+let sheetHide = 0;
 function sheet(html, kind) {
+  clearTimeout(sheetHide); // a sheet opened while the last one was closing must stay open
   sheetFor = kind; sheetAt = performance.now();
   $("sheetBody").innerHTML = html;
   $("sheet").hidden = false;
@@ -717,7 +721,7 @@ function sheet(html, kind) {
 function closeSheet() {
   if ($("sheet").hidden) return;
   $("sheet").classList.add("closing");
-  setTimeout(() => { $("sheet").hidden = true; $("sheet").classList.remove("closing"); }, 180);
+  sheetHide = setTimeout(() => { $("sheet").hidden = true; $("sheet").classList.remove("closing"); }, 180);
   const was = sheetFor; sheetFor = null;
   world.setOverlay(null);
   if (was === "settings-menu") showMenu();
@@ -1902,6 +1906,7 @@ function incomingOpts(op, prof) {
   return {
     x: op.x, y: op.y, dir: dirFrom(op.from, op.to), detected: op.detected,
     weapons: op.result.hits.map((h) => ({ ...h, kind: WEAPONS[h.w].kind })),
+    noAmmo: !op.result.blocked && op.result.airdef > 0 && !op.result.hits.some((h) => h.tried),
     airdefs: (prof?.airdefs || []).map((a) => ({ x: a.x, y: a.y })), radars: (prof?.radars || []).map((a) => ({ x: a.x, y: a.y })),
     banner, sfx: fxSfx(),
     onHit: (dmg) => {
@@ -1996,7 +2001,8 @@ function opReport(op, fresh) {
   sheet(`<h2>📋 تقرير العملية العسكرية</h2>
     <div class="rows">${row("المدينة المهاجمة", `«${op.fromTown}»`)}${row("المدينة المستهدفة", `«${op.toTown}»`)}${row("السلاح", weaponsText(op.load))}${row("الهدف", op.bname)}
       ${row("النتيجة", verdict, r ? (r.dmg ? (out ? "plus" : "minus") : out ? "minus" : "plus") : "")}
-      ${r && !r.blocked ? row("الاعتراض", r.hits.filter((h) => h.tried).length ? r.hits.map((h) => `${WEAPONS[h.w].icon} ${h.intercepted ? "✅ انعترض" : h.tried ? "❌ فشل الاعتراض" : "ما انعترض"}`).join(" · ") : "ما فيه دفاع جوي") : ""}
+      ${r && !r.blocked ? row("الاعتراض", r.hits.filter((h) => h.tried).length ? r.hits.map((h) => `${WEAPONS[h.w].icon} ${h.intercepted ? "✅ انعترض" : h.tried ? "❌ فشل الاعتراض" : "ما انعترض"}`).join(" · ") : r.airdef ? "الدفاع الجوي بلا صواريخ اعتراضية" : "ما فيه دفاع جوي") : ""}
+      ${!out && r && !r.blocked && r.airdef && !r.hits.some((h) => h.tried) ? `<div class="need">💡 بطاريتك ما ردّت لأن ما عندها صواريخ اعتراضية: اشترِ من «القيادة ← الدفاع»، أو خلّ النائب يعبيها.</div>` : ""}
       ${r?.dmg ? row("الضرر", `${ar(r.dmg)}٪ (صار ${ar(Math.round(r.after))}٪)`, out ? "plus" : "minus") : ""}
       ${r && !r.blocked ? row("الحالة", r.state) : ""}
       ${out ? row("تكلفة العملية", `${money(op.fee)} ريال تشغيل + ذخائر بقيمة ${money(op.value)}`) : r?.intcUsed ? row("ذخيرة الدفاع المستخدمة", `${ar(r.intcUsed)} صاروخ اعتراضي (${money(r.intcValue)} ريال)`) : ""}
@@ -2186,8 +2192,11 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-07", world: "2026-12-07" },
+  v: { solo: "2026-12-08", world: "2026-12-08" },
   items: [
+    ["world", "🛡️", "المضاد يبين وهو يصد", "وقت الهجوم تشوف البطارية تلف على الهدف وترتفع وتطلق صاروخ اعتراضي بلهب وخط دخان لين يفجّره بالجو. ولو ما فيها صواريخ اعتراضية تطلع لك رسالة واضحة، والنائب يعبيها أول ما ينرصد الهجوم."],
+    ["both", "🧩", "الترتيب صار أضبط", "اضغط المبنى عشان تختاره وبعدها اسحبه. أي سحب ثاني يحرك الخريطة بس، فما عاد ينشال مبنى بالغلط."],
+    ["both", "⚡", "مدى الكهرباء بلون واضح", "مدى الكهرباء صار بنفسجي بدل الأصفر اللي يضيع مع لون الأرض."],
     ["world", "🌍", "عالم الجوف رجع!", "خلصت الصيانة، والعالم مفتوح من جديد ومعه «صراع الجوف». أسس مدينتك من الصفر."],
     ["world", "💥", "الضربة تبين على المبنى", "المبنى المضروب يهبط ويميل على حسب الضرر، وحوله ركام وحديد بارز وآثار حريق، وتطلع منه نار ودخان لين تصلحه."],
     ["both", "✨", "أيقونات جديدة وصورة أنعم", "بدل الإيموجي صارت أيقونات مرتبة بكل اللعبة، والحواف صارت ناعمة بدون تسنين."],
@@ -2499,7 +2508,7 @@ function utilSheet() {
     </div>`, "util");
   const show = (arr, color) => { const v = new Float32Array(N * N); arr.forEach((x, i) => { v[i] = x; }); closeSheet(); setTimeout(() => world.setOverlay(v, color), 200); setTimeout(() => { if (!tool) world.setOverlay(null); }, 6000); };
   $("showWater").addEventListener("click", () => show(A.watered, "#3b8fd6"));
-  $("showPower")?.addEventListener("click", () => show(A.powered, "#e8b730"));
+  $("showPower")?.addEventListener("click", () => show(A.powered, "#9b5cf6"));
 }
 $("statUtil").addEventListener("click", () => { sfx.tap(); utilSheet(); });
 
