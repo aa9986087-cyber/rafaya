@@ -420,6 +420,9 @@ body.visiting .speeds, body.visiting #councilBtn, body.visiting #deputyBtn, body
 
 .wn-chip { justify-self: start; position: relative; border: 0; border-radius: 12px; padding: 5px 12px; background: #d4a53a; color: #2a221d; font-weight: 800; font-size: 13px; box-shadow: 0 6px 16px -10px rgba(60, 40, 20, .8); }
 .wn-chip .dot { position: absolute; top: -3px; left: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 2px var(--paper); animation: pulse 1.6s infinite; }
+.wn-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 12px; }
+.wn-tabs .btn { position: relative; }
+.wn-tabs .dot { position: absolute; top: -3px; left: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 2px var(--paper); }
 body.visiting .wn-chip { display: none; }
 .mbtn.news { background: linear-gradient(135deg, #f3cf7a, #d4a53a); color: #2a221d; border-color: #b88a2a; }
 .mbtn.news small { color: #4a3a20; }

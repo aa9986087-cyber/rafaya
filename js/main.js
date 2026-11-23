@@ -1377,12 +1377,11 @@ async function worldMapSheet(pick) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
         <div class="rows">${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
-        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button><button class="btn block" id="wmSwap" type="button">📦 انقل مدينة فردية مكانها</button>` : `<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
+        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>` : `<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
-          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>
-          ${soloTowns().length ? `<h3>📦 أو انقل مدينتك الفردية لهنا</h3><p class="hint">تعبت على مدينتك؟ انقلها بكل مبانيها وناسها وفلوسها، ومدينتك الفردية تبقى بعد.</p><div class="rows">${soloTowns().map(soloRow).join("")}</div>` : ""}` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
+          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
   sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
@@ -1396,20 +1395,6 @@ async function worldMapSheet(pick) {
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
-  $("wmSwap")?.addEventListener("click", () => worldSwapSheet());
-  $("sheetBody").querySelectorAll(".rg-card [data-from]").forEach((b) => b.addEventListener("click", async () => {
-    const solo = soloTowns().find((o) => o.site === b.dataset.from);
-    if (!solo) return;
-    const town = (solo.s.name || "الرافعية").slice(0, 20);
-    try {
-      await api("/world/claim", { name: id.name, secret: id.secret, plot: sel, town, terrain: solo.s.terrain || worldTerrain(sel) });
-      store.set(WORLD_ID, JSON.stringify({ ...id, plot: sel }));
-      store.set(WORLD_SAVE, pack(worldCopy(solo.s, sel, id.name)));
-      sfx.era(); toast(`انتقلت «${town}» لعالم الجوف 🎉`, "era");
-      await enterWorldTown();
-
-    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط النقل", "bad"); worldMapSheet(); }
-  }));
   $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
   $("wmReport")?.addEventListener("click", async () => {
     try { await api("/world/report", { name: id?.name, secret: id?.secret, plot: sel, reason: "اسم أو كلام مسيء" }); toast("وصل البلاغ، شكرًا", "goal"); } catch { toast("سجّل اسمك أول", "bad"); }
@@ -1428,51 +1413,6 @@ async function worldMapSheet(pick) {
     } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
   });
 }
-// ---------- bringing a solo town into the world ----------
-/** The towns played alone on this phone (الرافعية and the region's towns), newest first. */
-function soloTowns() {
-  if (!worldMode && playing) save(); // the town on screen, as it is now
-  const ids = [...new Set(["main", ...SITES.map((x) => x.id), ...Object.keys(RG?.towns || {})])];
-  const out = [];
-  for (const site of ids) {
-    const raw = store.get(townKey(site));
-    if (!raw) continue;
-    try { const s = unpack(raw); if (s.day > 3 || s.pop > 0) out.push({ site, s }); } catch { /* a broken save is skipped */ }
-  }
-  return out.sort((p, q) => (q.s.savedAt || 0) - (p.s.savedAt || 0));
-}
-/**
- * A copy of a solo town made ready for the world: it joins the world's clock (seasons and the year go
- * on from there), and what was waiting on the old clock (posts, promises, a pending decision) is cleared.
- * Buildings, people, money, loans, research and land all come along. The solo town stays as it is.
- */
-function worldCopy(solo, plot, owner) {
-  const s = unpack(pack(solo));
-  const now = worldHourNow();
-  Object.assign(s, { day: now, site: "world", world: { plot, owner, start: now, from: solo.site || "main" }, news: [], promises: [], comebacks: [], decision: null, cam: null, savedAt: Date.now(), newsUnread: 0 });
-  s.events = (s.events || []).filter((e) => !e.repay); // loans are kept in s.loans; one-off events end
-  return s;
-}
-const soloRow = (o) => `<button class="row link" type="button" data-from="${o.site}"><span><b>${o.s.name || "الرافعية"}</b><small>${ERAS[o.s.era || 0].name} · ${money(o.s.pop)} ساكن · ${money(Math.round(o.s.money))} ريال</small></span><b>←</b></button>`;
-/** Swap your world town for one of your solo towns (asked twice: the world town is replaced). */
-function worldSwapSheet(pick) {
-  const id = me(), list = soloTowns();
-  const chosen = pick && list.find((o) => o.site === pick);
-  sheet(`<h2>📦 انقل مدينتك الفردية للعالم</h2>
-    ${!list.length ? `<p class="hint">ما لقيت مدن فردية بهالجوال.</p>` : chosen ? `
-      <div class="need">مدينتك اللي بعالم الجوف الحين بتروح، وتنحط مكانها «${chosen.s.name || "الرافعية"}» بكل مبانيها وناسها وفلوسها. متأكد؟</div>
-      <div class="sheet-actions keep"><button class="btn go block" id="wsYes" type="button">إيه، انقلها</button><button class="btn block" id="wsNo" type="button">لا، رجعني</button></div>`
-      : `<p>اختر المدينة اللي تبي تنقلها. تنحط بأرضك بالعالم (مكان مدينتك الحالية)، ومدينتك الفردية تبقى مثل ما هي.</p><div class="rows">${list.map(soloRow).join("")}</div>`}`, "world");
-  $("sheetBody").querySelectorAll("[data-from]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); worldSwapSheet(b.dataset.from); }));
-  $("wsNo")?.addEventListener("click", () => worldSwapSheet());
-  $("wsYes")?.addEventListener("click", async () => {
-    const s = worldCopy(chosen.s, id.plot, id.name);
-    store.set(WORLD_SAVE, pack(s));
-    sfx.era(); toast(`انتقلت «${s.name || "الرافعية"}» لعالم الجوف 🎉`, "era");
-    await enterWorldTown();
-
-  });
-}
 /** Play your own town in the world: the deputy's report first if you were away. */
 async function enterWorldTown() {
   if (visiting) leaveVisit(); // back to your own state first, so the visited town is never kept
@@ -1485,7 +1425,7 @@ async function enterWorldTown() {
   let town;
   try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   if (!worldMode) { if (playing) save(); soloS = S; }
-  worldMode = true; document.body.classList.add("world");
+  worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
   S = town;
   const gap = worldHourNow() - S.day;
   const report = gap > 1 ? deputyCatchUp(S, gap) : null;
@@ -1533,7 +1473,7 @@ function leaveWorld() {
   if (!worldMode) return;
   if (visiting) leaveVisit(); // never save or send a visited town as yours
   save(); worldSync(true);
-  worldMode = false; document.body.classList.remove("world");
+  worldMode = false; document.body.classList.remove("world"); showWhatsNewDot();
   if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
 }
 
@@ -1647,73 +1587,81 @@ function electionSheet(m) {
 }
 
 // ---------- what is new in this version ----------
+// What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
+// Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: "2026-12-01",
+  v: { solo: "2026-12-02", world: "2026-12-02" },
   items: [
-    ["🛠️", "عالم الجوف تحت الصيانة", "قفلنا عالم الجوف فترة عشان نشتغل عليه ونضيف له أشياء جديدة. مدنكم فيه محفوظة، واللعب الفردي شغال عادي."],
-    ["📦", "انقل مدينتك لعالم الجوف", "تعبت على مدينتك بالفردي؟ بخريطة الجوف اضغط أرض فاضية واختر «انقل مدينتك الفردية لهنا»، وتنتقل بكل مبانيها وناسها وفلوسها. واللي عنده مدينة بالعالم يقدر يبدلها. ومدينتك الفردية تبقى مثل ما هي."],
-    ["🧪", "بحوث جديدة بالمجلس", "١٤ بحث جديد: الزراعة الحديثة، عصر الزيتون، تغذية الماء الجوفي، تصريف السيول، تدوير المياه، ترشيد الكهرباء، التسويق، الطب الوقائي، الكاميرات الأمنية، اللوجستية، الحكومة الإلكترونية، إحياء التراث، النقل العام، وطاقة الرياح."],
-    ["🛣️", "الطرق تنشال بالترتيب", "«شيل الكل» يشيل الطرق والزفلت بعد، وترصفها من جديد بسحب إصبعك على الأرض."],
-    ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
-    ["📍", "وين الحارة؟", "إذا أحد بالنشرة أو بالوعود ذكر حارة، تحتها زر «📍 وين؟» يوديك لها وتضوي أرضها."],
-    ["🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ٢٤ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، كل جهة نصين، وأسعارها تبدأ من ٣ آلاف."],
-    ["🌍", "عالم الجوف صار أكبر", "خريطة الجوف كبرت كثير وفيها أماكن جديدة: الحديثة، العيساوية، الشويحطية، صوير، ميقوع، أبو عجرم، زلوم. ومدن اللاعبين بقت بمكانها."],
-    ["🏙️", "مرحلة الحاضرة", "بعد المحافظة صارت فيه «حاضرة» (٩٠٠٠ ساكن)، وبرج سكني يسع ١٢٠، ومستوى رابع للمحلات والمزارع والمسجد والمستشفى."],
-    ["🫒", "زيتون الجوف", "مزرعة زيتون ومعصرة تعصر زيت الجوف وتصدّره، ونصب الزيتونة."],
-    ["🌬️", "مزرعة رياح", "توربينات مثل دومة الجندل: كهرباء كثيرة ونظيفة بلا دخان."],
-    ["🏰", "مشاريع كبرى جديدة", "قلعة مارد، مدينة ألعاب، محطة القطار، استاد الجوف، وأبراج الرافعية. ومكتبة عامة ونافورة راقصة."],
-    ["🔌", "عمدان الكهرب", "حط المولد بعيد عن البيوت عشان دخانه، ووصّل الكهرب بعمدان: كل عمود ياخذ من اللي قبله لين ٤ مربعات ويوصل للبيوت حوله."],
-    ["👀", "زيارة المدن للفرجة بس", "إذا دخلت مدينة غيرك تتفرج بس: ما تقدر تبني ولا تطوّر ولا تغيّر فيها شي."],
-    ["↻", "لفّ المباني", "قبل ما تبني اضغط ↻ وتشوف المبنى يلف قدامك، وبعد ما تبنيه اضغط عليه واختر «لفّ المبنى» ببلاش."],
-    ["🌦️", "الجو على حسب الفصل", "المطر بالخريف والشتاء والربيع بس، والصيف حر وغبار وقيلولة، والشتاء برد. ومطر الشتاء هو اللي يخضّر الربيع."],
-    ["💬", "ردود ذكية", "الأهالي يردون على حسب السالفة: تشكرهم على المطر بالدعاء، وعلى العيد بالتهنئة، وكل شكوى فيها «وش يبي» واضح."],
-    ["ℹ️", "كل مربع فوق يشرح نفسه", "اضغط الميزانية أو السكان أو الرضا أو الماء والكهرب أو الوقت والموسم، ويطلع لك وش وراه وش يصلحه."],
-    ["🏞️", "بحيرة السد صارت حقيقية", "ماء بشط ناعم ورمل مبلول حوله وموج يتحرك، والأرض صارت ألوانها تندمج بدل المربعات."],
-    ["🤏", "قرّب وبعّد خريطة الجوف", "بإصبعين تقرّب وتبعّد، وبإصبع تسحب، أو بأزرار ＋ و－."],
-    ["🌍", "عالم الجوف", "عالم أونلاين واحد لكل اللاعبين على خريطة الجوف: سمّ نفسك، أسس مدينتك، وادخل مدن غيرك. العالم يمشي دايم، ونائب العمدة يمسك مدينتك وأنت طالع."],
-    ["🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
-    ["🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
-    ["👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
-    ["🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
-    ["🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
-    ["🧱", "مواد البناء", "كسارة الحجر تطلّع مواد تحتاجها لتطوير البيوت والمحلات، وإلا تشتريها من برا."],
-    ["🤝", "الوعود صارت واضحة", "إذا رجعوا يطالبون تشوف وش طلبوا ووش وعدتهم ومتى، وفي النشرة قائمة «وعودك»."],
-    ["🌊", "السدود والماء الجوفي", "السد يحجز السيل ويسوي بحيرة. الماء الجوفي ينقص مع كثرة الآبار ويرجع مع المطر."],
-    ["🌾", "المزرعة المحورية", "رشاش دوّار يسقي دايرة قمح: دخل عالي ويسحب من الماء الجوفي."],
-    ["🕌", "أوقات الصلاة", "خمس صلوات باليوم. وقت الصلاة الرجال يمشون للمسجد، والمحلات تسكر شوي."],
-    ["🐪", "الحلال والإبل", "حظيرة حلال ترعى في الفيضة بالربيع، وسوق الماشية، وميدان مزاين الإبل."],
-    ["🏘️", "الحارات", "سمّ حارات ديرتك وتابع رضا كل حارة (من «المجلس»)."],
-    ["🗳️", "الانتخابات", "كل سنة يصوت الأهالي عليك: الفوز يجيب دعم، والخسارة تضاعف الرسوم."],
-    ["↔️", "نقل المباني", "رتب ديرتك: زر «نقل» تحت، تنقل أي مبنى بمستواه وأهله."],
-    ["⬆️", "تطوير المحلات والمزارع", "كل محل ومزرعة وورشة لها ٣ مستويات، دخلها يزيد مع كل مستوى."],
-    ["🏦", "البنك ودعم التجارة", "قروض تسددها بالساعة، والمحلات أرخص ٣٠٪ بدعم الدولة."],
-    ["❓", "الشرح", "من «القائمة ← الشرح»: كيف تكبر وتصير بلدة ومدينة."],
-    ["🎯", "مكافآت المهام", "صارت تغطي تكلفة اللي تطلبه المهمة."],
-    ["⏸️", "البلد تنتظرك", "اللعبة توقف وأنت طالع منها، وترجع تلقاها مثل ما تركتها."]
+    ["world", "📦", "ما عاد فيه نقل من الفردي", "المدن الفردية ما عادت تنتقل لعالم الجوف. بالعالم كل واحد يبدأ من الصفر، والفردي له حياته لحاله."],
+    ["both", "🆕", "«وش الجديد» صار قسمين", "تحديثات اللعب الفردي لحالها، وتحديثات عالم الجوف لحالها. اختر القسم من فوق."],
+    ["world", "🛠️", "عالم الجوف تحت الصيانة", "قفلنا عالم الجوف فترة عشان نشتغل عليه ونضيف له أشياء جديدة. مدنكم فيه محفوظة، واللعب الفردي شغال عادي."],
+    ["both", "🧪", "بحوث جديدة بالمجلس", "١٤ بحث جديد: الزراعة الحديثة، عصر الزيتون، تغذية الماء الجوفي، تصريف السيول، تدوير المياه، ترشيد الكهرباء، التسويق، الطب الوقائي، الكاميرات الأمنية، اللوجستية، الحكومة الإلكترونية، إحياء التراث، النقل العام، وطاقة الرياح."],
+    ["both", "🛣️", "الطرق تنشال بالترتيب", "«شيل الكل» يشيل الطرق والزفلت بعد، وترصفها من جديد بسحب إصبعك على الأرض."],
+    ["both", "🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
+    ["both", "📍", "وين الحارة؟", "إذا أحد بالنشرة أو بالوعود ذكر حارة، تحتها زر «📍 وين؟» يوديك لها وتضوي أرضها."],
+    ["both", "🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ٢٤ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، كل جهة نصين، وأسعارها تبدأ من ٣ آلاف."],
+    ["world", "🌍", "عالم الجوف صار أكبر", "خريطة الجوف كبرت كثير وفيها أماكن جديدة: الحديثة، العيساوية، الشويحطية، صوير، ميقوع، أبو عجرم، زلوم. ومدن اللاعبين بقت بمكانها."],
+    ["both", "🏙️", "مرحلة الحاضرة", "بعد المحافظة صارت فيه «حاضرة» (٩٠٠٠ ساكن)، وبرج سكني يسع ١٢٠، ومستوى رابع للمحلات والمزارع والمسجد والمستشفى."],
+    ["both", "🫒", "زيتون الجوف", "مزرعة زيتون ومعصرة تعصر زيت الجوف وتصدّره، ونصب الزيتونة."],
+    ["both", "🌬️", "مزرعة رياح", "توربينات مثل دومة الجندل: كهرباء كثيرة ونظيفة بلا دخان."],
+    ["both", "🏰", "مشاريع كبرى جديدة", "قلعة مارد، مدينة ألعاب، محطة القطار، استاد الجوف، وأبراج الرافعية. ومكتبة عامة ونافورة راقصة."],
+    ["both", "🔌", "عمدان الكهرب", "حط المولد بعيد عن البيوت عشان دخانه، ووصّل الكهرب بعمدان: كل عمود ياخذ من اللي قبله لين ٤ مربعات ويوصل للبيوت حوله."],
+    ["both", "👀", "زيارة المدن للفرجة بس", "إذا دخلت مدينة غيرك تتفرج بس: ما تقدر تبني ولا تطوّر ولا تغيّر فيها شي."],
+    ["both", "↻", "لفّ المباني", "قبل ما تبني اضغط ↻ وتشوف المبنى يلف قدامك، وبعد ما تبنيه اضغط عليه واختر «لفّ المبنى» ببلاش."],
+    ["both", "🌦️", "الجو على حسب الفصل", "المطر بالخريف والشتاء والربيع بس، والصيف حر وغبار وقيلولة، والشتاء برد. ومطر الشتاء هو اللي يخضّر الربيع."],
+    ["both", "💬", "ردود ذكية", "الأهالي يردون على حسب السالفة: تشكرهم على المطر بالدعاء، وعلى العيد بالتهنئة، وكل شكوى فيها «وش يبي» واضح."],
+    ["both", "ℹ️", "كل مربع فوق يشرح نفسه", "اضغط الميزانية أو السكان أو الرضا أو الماء والكهرب أو الوقت والموسم، ويطلع لك وش وراه وش يصلحه."],
+    ["both", "🏞️", "بحيرة السد صارت حقيقية", "ماء بشط ناعم ورمل مبلول حوله وموج يتحرك، والأرض صارت ألوانها تندمج بدل المربعات."],
+    ["world", "🤏", "قرّب وبعّد خريطة الجوف", "بإصبعين تقرّب وتبعّد، وبإصبع تسحب، أو بأزرار ＋ و－."],
+    ["world", "🌍", "عالم الجوف", "عالم أونلاين واحد لكل اللاعبين على خريطة الجوف: سمّ نفسك، أسس مدينتك، وادخل مدن غيرك. العالم يمشي دايم، ونائب العمدة يمسك مدينتك وأنت طالع."],
+    ["solo", "🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
+    ["solo", "🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
+    ["both", "👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
+    ["both", "🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
+    ["both", "🚚", "سلاسل الإنتاج", "شاحنات تنقل التمر والحلال والقمح والحجر من المزارع للمصانع على الطرق."],
+    ["both", "🧱", "مواد البناء", "كسارة الحجر تطلّع مواد تحتاجها لتطوير البيوت والمحلات، وإلا تشتريها من برا."],
+    ["both", "🤝", "الوعود صارت واضحة", "إذا رجعوا يطالبون تشوف وش طلبوا ووش وعدتهم ومتى، وفي النشرة قائمة «وعودك»."],
+    ["both", "🌊", "السدود والماء الجوفي", "السد يحجز السيل ويسوي بحيرة. الماء الجوفي ينقص مع كثرة الآبار ويرجع مع المطر."],
+    ["both", "🌾", "المزرعة المحورية", "رشاش دوّار يسقي دايرة قمح: دخل عالي ويسحب من الماء الجوفي."],
+    ["both", "🕌", "أوقات الصلاة", "خمس صلوات باليوم. وقت الصلاة الرجال يمشون للمسجد، والمحلات تسكر شوي."],
+    ["both", "🐪", "الحلال والإبل", "حظيرة حلال ترعى في الفيضة بالربيع، وسوق الماشية، وميدان مزاين الإبل."],
+    ["both", "🏘️", "الحارات", "سمّ حارات ديرتك وتابع رضا كل حارة (من «المجلس»)."],
+    ["both", "🗳️", "الانتخابات", "كل سنة يصوت الأهالي عليك: الفوز يجيب دعم، والخسارة تضاعف الرسوم."],
+    ["both", "↔️", "نقل المباني", "رتب ديرتك: زر «نقل» تحت، تنقل أي مبنى بمستواه وأهله."],
+    ["both", "⬆️", "تطوير المحلات والمزارع", "كل محل ومزرعة وورشة لها ٣ مستويات، دخلها يزيد مع كل مستوى."],
+    ["both", "🏦", "البنك ودعم التجارة", "قروض تسددها بالساعة، والمحلات أرخص ٣٠٪ بدعم الدولة."],
+    ["both", "❓", "الشرح", "من «القائمة ← الشرح»: كيف تكبر وتصير بلدة ومدينة."],
+    ["both", "🎯", "مكافآت المهام", "صارت تغطي تكلفة اللي تطلبه المهمة."],
+    ["solo", "⏸️", "البلد تنتظرك", "اللعبة توقف وأنت طالع منها، وترجع تلقاها مثل ما تركتها."]
   ]
 };
-function whatsNewSheet() {
-  try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
+const WN_MODES = { solo: "🏠 اللعب الفردي", world: "🌍 عالم الجوف" };
+const wnKey = (m) => `rafaya-news-seen-${m}`;
+const wnSeen = (m) => { try { return localStorage.getItem(wnKey(m)) === WHATS_NEW.v[m]; } catch { return true; } };
+const wnMark = (m) => { try { localStorage.setItem(wnKey(m), WHATS_NEW.v[m]); } catch { /* fine */ } };
+/** "What's new", in two tabs: solo and the world. Opens on the mode being played. */
+function whatsNewSheet(mode) {
+  mode = mode || (worldMode ? "world" : "solo");
+  wnMark(mode);
   showWhatsNewDot();
-  sheet(`<h2>وش الجديد في الرافعية؟</h2><p>تحديث جديد وصل! هذي أهم الإضافات:</p>
-    <div class="rows">${WHATS_NEW.items.map(([icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
+  const list = WHATS_NEW.items.filter(([m]) => m === mode || m === "both");
+  sheet(`<h2>وش الجديد في الرافعية؟</h2>
+    <div class="wn-tabs">${Object.entries(WN_MODES).map(([m, name]) => `<button type="button" class="btn${m === mode ? " go" : ""}" data-wn="${m}">${name}${m !== mode && !wnSeen(m) ? ' <i class="dot"></i>' : ""}</button>`).join("")}</div>
+    <div class="rows">${list.map(([, icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
     <div class="sheet-actions"><button class="btn go block" id="wnOk" type="button">يلا نلعب</button></div>`, "whatsnew");
+  $("sheetBody").querySelectorAll("[data-wn]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); whatsNewSheet(b.dataset.wn); }));
   $("wnOk").addEventListener("click", closeSheet);
 }
-/** The "what's new" button on the screen: a red dot until this update has been read. */
+/** The "what's new" button on the screen: a red dot until the current mode's update has been read. */
 function showWhatsNewDot() {
-  let seen = null;
-  try { seen = localStorage.getItem("rafaya-news-seen"); } catch { /* fine */ }
-  $("wnDot").hidden = seen === WHATS_NEW.v;
+  $("wnDot").hidden = wnSeen(worldMode ? "world" : "solo");
 }
 $("wnChip").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
 showWhatsNewDot();
 function maybeWhatsNew() {
-  let seen = null;
-  try { seen = localStorage.getItem("rafaya-news-seen"); } catch { /* fine */ }
-  if (seen !== WHATS_NEW.v) whatsNewSheet();
+  if (!wnSeen(worldMode ? "world" : "solo")) whatsNewSheet();
 }
 
 function spark(values, color) {
@@ -2205,7 +2153,7 @@ $("mNew").addEventListener("click", () => {
   for (const id of Object.keys(RG.towns)) if (id !== "main") { try { localStorage.removeItem(townKey(id)); } catch { /* fine */ } }
   RG = { towns: {}, roads: [], active: "main" };
   S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
-  try { localStorage.setItem("rafaya-news-seen", WHATS_NEW.v); } catch { /* fine */ }
+  wnMark("solo");
   sfx.goal(); startPlaying();
   sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
     <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>

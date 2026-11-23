@@ -72,7 +72,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
      | transit | road capacity ×1.3 |
      | wind | unlocks windfarm |
 
-9. **Solo town → world.** In the world map, an empty plot offers «انقل مدينتك الفردية لهنا». The town's owner card has «📦 انقل مدينة فردية مكانها», which asks twice before replacing the world town.
+9. **(REMOVED 2026-11-23 at the owner's request — see 12.) Solo town → world.** In the world map, an empty plot offers «انقل مدينتك الفردية لهنا». The town's owner card has «📦 انقل مدينة فردية مكانها», which asks twice before replacing the world town.
    - `soloTowns()` reads the solo saves: الرافعية and the region towns.
    - `worldCopy()` clones the town onto the world clock (day = world hour, `site` "world", `world.from`) and clears posts, promises and the pending decision. Buildings, people, money, loans, tech and land are kept.
    - The solo town stays (it is a copy).
@@ -89,6 +89,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The client shows `worldClosedSheet()` (main.js) on «🌍 عالم الجوف» and on the world map. Solo play and the old `/api/publish` board still work.
     - **To reopen:** set `WORLD_OPEN = true`, remove the «تحت الصيانة» line from `WHATS_NEW` (add a «رجع العالم» one), push to main.
     - Whole-site maintenance is a different switch (the `MAINTENANCE` file, see copy-site.mjs); it is NOT on.
+
+12. **Solo and world are now developed separately (owner's rule, 2026-11-23).**
+    - **Every new update belongs to one mode: «الفردي» (solo, offline), «عالم الجوف» (world, online), or both.** The owner will say which; **if they did not, ASK before building.** World-only code is gated with `worldMode` (main.js) / `S.world` (sim); solo-only with `!worldMode`.
+    - «وش الجديد» has two tabs. `WHATS_NEW.items` entries are `[mode, icon, title, text]` with mode `"solo"`, `"world"` or `"both"`; `WHATS_NEW.v` is `{ solo, world }` — bump only the one(s) the change touches. Seen keys: `rafaya-news-seen-solo` / `-world`. The red dot follows the mode being played.
+    - The residents' news feed («نشرة») is per town already, so solo and world feeds never mix.
+    - **Moving a solo town into the world is removed** (no `soloTowns`/`worldCopy`/`worldSwapSheet` any more). World towns that were already moved stay as they are.
 
 **Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
