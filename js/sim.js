@@ -148,7 +148,7 @@ export function cantBuild(s, x, y, id) {
   if (t.b) {
     // a better road can be laid over an old one
     if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
-    return "المكان مشغول";
+    return `المكان مشغول: فيه «${B[t.b.id]?.name || "مبنى"}»`;
   }
   if (t.t === "lake") return "هذي بحيرة السد";
   if (def.onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
@@ -1295,6 +1295,7 @@ export function unpack(text) {
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it
     if (b && Number(wd) > 0) b.wd = Math.min(100, Number(wd)); // war damage (world of al-Jouf), kept by the server
+    if (b && ground === "rock" && !B[id].onRock) return { t: "sand", b }; // a building never stands on loose rocks (only the quarry does)
     return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));

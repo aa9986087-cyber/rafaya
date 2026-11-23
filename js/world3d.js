@@ -592,7 +592,7 @@ export class World {
       let inst = this.instances.get(k);
       if (!inst || inst.capacity < list.length) {
         if (inst) for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); }
-        const geo = model(key, ground);
+        const geo = model(key, ground) || model("construction"); // a missing model must never stop the town from being drawn
         const capacity = Math.max(8, Math.ceil(list.length * 1.5));
         inst = { capacity };
         for (const set of SETS) {

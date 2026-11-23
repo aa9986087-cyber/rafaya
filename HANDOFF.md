@@ -138,6 +138,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The power reach overlay is violet `#9b5cf6` (yellow got lost on the sand).
     - Sheets: a sheet opened while the last one was closing was being hidden by the old close timer (`sheetHide`). Fixed.
 
+19. **Rocks and the al-Jouf button (owner's screenshot, 2026-11-23):** a friend got «المكان مشغول» on a tile drawn with rocks. It could not be reproduced: building on rocks works and the rocks disappear.
+    - The message now names what is there («…فيه «كسارة حجر»»): the quarry looks like rocks.
+    - `unpack` turns a rock tile under any building but the quarry back to sand.
+    - A missing model falls back to "construction", so a sync can never stop half-way and leave stale instances on screen.
+    - `#worldBtn` («الجوف») now shows in solo too and calls `openWorld()`.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

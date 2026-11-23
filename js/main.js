@@ -2192,8 +2192,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-08", world: "2026-12-08" },
+  v: { solo: "2026-12-09", world: "2026-12-09" },
   items: [
+    ["both", "🌍", "زر الجوف على الشاشة", "خريطة عالم الجوف صار لها زر «الجوف» على جنب الشاشة، حتى وأنت تلعب فردي، بدون ما تطلع للقائمة."],
+    ["both", "🧱", "«المكان مشغول» صار يوضح", "إذا ما قدرت تبني بمكان، تعرف وش اللي فيه (مثلاً «كسارة حجر»)، والصخور ما عاد تعلّق فوق المباني."],
     ["world", "🛡️", "المضاد يبين وهو يصد", "وقت الهجوم تشوف البطارية تلف على الهدف وترتفع وتطلق صاروخ اعتراضي بلهب وخط دخان لين يفجّره بالجو. ولو ما فيها صواريخ اعتراضية تطلع لك رسالة واضحة، والنائب يعبيها أول ما ينرصد الهجوم."],
     ["both", "🧩", "الترتيب صار أضبط", "اضغط المبنى عشان تختاره وبعدها اسحبه. أي سحب ثاني يحرك الخريطة بس، فما عاد ينشال مبنى بالغلط."],
     ["both", "⚡", "مدى الكهرباء بلون واضح", "مدى الكهرباء صار بنفسجي بدل الأصفر اللي يضيع مع لون الأرض."],
@@ -2557,7 +2559,7 @@ function happySheet() {
 }
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
-$("worldBtn").addEventListener("click", () => { sfx.tap(); worldMapSheet(); });
+$("worldBtn").addEventListener("click", () => { sfx.tap(); if (worldMode) worldMapSheet(); else openWorld(); }); // solo too: the way into al-Jouf, on the game screen
 $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 $("warBtn").addEventListener("click", async () => { sfx.tap(); sheet(`<h2>⚔️ القيادة العسكرية</h2><p class="hint">نحمّل…</p>`, "war"); await warPoll(true); warSheet(); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
