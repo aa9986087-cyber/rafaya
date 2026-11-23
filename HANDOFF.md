@@ -167,6 +167,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Smoother people (more segments).
     - Houses and shops keep their models but gain the plaster texture, glass and rounded edges from stage 1.
 
+25. **Villas, apartment blocks and towers rebuilt; heat on all phones:**
+    - `house3` (villa), `house4` (عمارة, shops below) and `house5` (glass tower with a lit crown) were rebuilt with the new helpers `frameWin`, `splitAC`, `roofTank` and `sedan`. `VARIANTS` for house3/house4 swap the new colours.
+    - Heat: `perfWatch` (main.js) averages how long `world.frame` takes. Slow (> 18 ms) for 4 s raises `world.degrade(level)`: 1 = pixel ratio 1.25, 2 = no shadows, 3 = pixel ratio 1. The level is stored per quality (`rafaya-perf-level`) and reset when the quality setting changes.
+    - Behind an open sheet or on the menu the town draws at 15 fps.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

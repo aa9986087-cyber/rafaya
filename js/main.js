@@ -2225,8 +2225,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-14", world: "2026-12-14" },
+  v: { solo: "2026-12-15", world: "2026-12-15" },
   items: [
+    ["both", "🏙️", "فلل وعماير وأبراج جديدة", "الفلل صار فيها حجر وأعمدة على المدخل وبلكونة زجاج وبوابة حديد ومظلة سيارات وسيارة وحديقة بنخلة، والعماير صار تحتها محلات بلوحات، وفيها بلكونات ومكيفات سبليت وخزانات على السطح، والأبراج السكنية زجاج بين أعمدة حجر وتاج منوّر."],
+    ["both", "🔋", "حماية من الحرارة لكل الجوالات", "إذا حسّت اللعبة إن جوالك يتعب، تخفف نفسها لحالها (دقة أقل، ثم بدون ظلال) وتتذكر هذا. ووقت ما تكون فاتح نافذة أو بالقائمة الرئيسية ترسم أقل بكثير."],
     ["both", "🏘️", "مدينة أوقع (المرحلة الثالثة)", "أرصفة على حواف الطرق، وظل ناعم تحت كل مبنى يخليه قاعد على الأرض، والناس بأشكال أنعم."],
     ["both", "🌴", "نخل وسيارات أوقع", "النخل صار بسعف مقوّس ينزل لتحت وخوص على الجنبين وجذع بحلقات وعذوق تمر، والجيوب صار شكلها مدوّر بزجاج وجنوط وأنوار."],
     ["both", "🔋", "أخف على الجوال", "اللعبة صارت ترسم ٣٠ مرة بالثانية وهي هادية بدل ١٢٠، والظلال تنحسب أقل، والتوهّج صار بالجودة «عالية» بس. الجوال ما عاد يسخن مثل قبل والبطارية تطوّل."],
@@ -2873,10 +2875,25 @@ function runHour() {
  * screen, the camera turns, or a war scene or a building's rise is playing.
  */
 let lastDraw = 0;
+// how long drawing takes on this phone: if it stays slow, the town lightens itself (world.degrade), and remembers
+const perf = { avg: 8, since: 0, level: Number(store.get("rafaya-perf-level") || 0) };
+if (store.get("rafaya-perf-quality") !== settings.quality) { perf.level = 0; store.set("rafaya-perf-quality", settings.quality); store.set("rafaya-perf-level", "0"); } // a new choice in the settings starts fresh
+if (perf.level) world.degrade(perf.level);
+function perfWatch(ms, now) {
+  perf.avg = perf.avg * 0.95 + ms * 0.05;
+  if (perf.avg < 18 || perf.level >= 3 || WARX.scene) { perf.since = 0; return; }
+  perf.since ||= now;
+  if (now - perf.since > 4000) { // slow for four seconds in a row
+    perf.level++; perf.since = 0; perf.avg = 10;
+    world.degrade(perf.level); store.set("rafaya-perf-level", String(perf.level));
+  }
+}
 const fpsBusy = { high: 60, medium: 45, low: 30 }[settings.quality] || 45, fpsIdle = settings.quality === "low" ? 24 : 30;
 function frame(now) {
   const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
-  if (now - lastDraw < 1000 / (busy ? fpsBusy : fpsIdle) - 2) { requestAnimationFrame(frame); return; }
+  // behind an open sheet, or on the main menu, the town barely needs to move
+  const quiet = !busy && (!playing || (!$("sheet").hidden && !WARX.scene));
+  if (now - lastDraw < 1000 / (busy ? fpsBusy : quiet ? 15 : fpsIdle) - 2) { requestAnimationFrame(frame); return; }
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -2901,7 +2918,9 @@ function frame(now) {
   if (playing && worldMode && !arrange) warPoll(); // «صراع الجوف»: at most every 25 seconds
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); if (playing) layoutSide(); }
+  const t0 = performance.now();
   world.frame(dt, tod);
+  perfWatch(performance.now() - t0, now);
   if (world.follow && world.followPos) {
     const q = world.project(world.followPos), tag = $("followTag");
     tag.style.transform = `translate(${Math.round(q.sx)}px, ${Math.round(q.sy - 70)}px) translate(-50%, -100%)`;

@@ -1314,7 +1314,8 @@ export class World {
 
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-    const dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
+    let dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
+    if (this.perfLevel >= 1) dpr = Math.max(1, Math.min(dpr, this.perfLevel >= 3 ? 1 : 1.25));
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     if (this.composer) { this.composer.setPixelRatio(dpr); this.composer.setSize(w, h); }
@@ -1413,6 +1414,21 @@ export class World {
   }
 
   // ---------- frame ----------
+
+  /**
+   * When the phone struggles (slow frames), the town lightens itself in steps, and stays so on this phone:
+   * 1: a lower resolution, 2: no shadows, 3: the lowest resolution. 0 is as chosen in the settings.
+   */
+  degrade(level) {
+    this.perfLevel = level;
+    const dpr = this.renderer.getPixelRatio();
+    if (level >= 1) this.renderer.setPixelRatio(Math.max(1, Math.min(dpr, level >= 3 ? 1 : 1.25)));
+    if (level >= 2 && this.renderer.shadowMap.enabled) {
+      this.renderer.shadowMap.enabled = false; this.sun.castShadow = false;
+      this.scene.traverse((o) => { for (const m of [].concat(o.material || [])) m.needsUpdate = true; });
+    }
+    this.resize();
+  }
 
   frame(dt, todT) {
     this.clock += dt;

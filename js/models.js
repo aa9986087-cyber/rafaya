@@ -215,6 +215,28 @@ function sadu(b, w, d, x, z) {
   for (let i = 0; i < 4; i++) b.box(w * 0.08, 0.012, d * 0.08, C.gold, { x: x - w * 0.3 + i * w * 0.2, z });
 }
 
+/** A window with a dark frame and glass (and a warm glow at night when lit). */
+function frameWin(b, x, y, z, w, h, lit = false, side = false) {
+  const o = side ? { x: z, y, z: x, ry: Math.PI / 2 } : { x, y, z };
+  b.box(w + 0.016, h + 0.016, 0.012, "#3a3733", { ...o, y: y - 0.008 });
+  b.box(w, h, 0.014, "#22303a", { ...o, y }, "glass");
+  if (lit) b.box(w * 0.92, h * 0.9, 0.016, C.light, { ...o, y: y + h * 0.05 }, "lights");
+}
+/** A split AC unit hung on a facade. */
+function splitAC(b, x, y, z) { b.box(0.07, 0.045, 0.025, "#ecebe6", { x, y, z }); b.box(0.05, 0.004, 0.026, "#9aa0a6", { x, y: y + 0.01, z: z + 0.001 }); }
+/** A rooftop water tank (the white or black plastic tanks on every Saudi roof). */
+function roofTank(b, x, y, z, r = 0.055, color = C.white) { b.cyl(r, r, r * 1.6, color, { x, y, z }, 14); b.cyl(r * 0.35, r * 0.35, 0.012, color, { x, y: y + r * 1.6, z }, 10); }
+/** A small modern car (sedan). */
+function sedan(b, x, z, ry, color) {
+  const g = new Builder();
+  g.rbox(0.22, 0.05, 0.1, 0.014, color, { y: 0.018 }, "matte");
+  g.rbox(0.12, 0.045, 0.092, 0.018, color, { x: -0.01, y: 0.06 }, "matte");
+  g.box(0.11, 0.035, 0.094, "#22303a", { x: -0.01, y: 0.066 }, "glass");
+  for (const [wx, wz] of [[0.07, 0.05], [0.07, -0.05], [-0.07, 0.05], [-0.07, -0.05]]) g.add(new THREE.CylinderGeometry(0.022, 0.022, 0.018, 12), "#1b1b1d", { x: wx, y: 0.022, z: wz, rx: Math.PI / 2 }, "matte");
+  const m = new THREE.Matrix4().compose(new THREE.Vector3(x, 0.004, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(1, 1, 1));
+  for (const set of SETS) for (const part of g.sets[set]) { part.applyMatrix4(m); b.sets[set].push(part); }
+}
+
 function car(b, x, z, ry, color) {
   b.box(0.2, 0.06, 0.1, color, { x, y: 0.03, z, ry });
   b.box(0.11, 0.05, 0.09, C.glass, { x: x - Math.cos(ry) * 0.01, y: 0.09, z: z + Math.sin(ry) * 0.01, ry }, "shiny");
@@ -313,43 +335,82 @@ const MAKERS = {
     b.box(0.9, 0.006, 0.9, "#d9cdb3");
   },
   // فيلا: white villa, sand-stone trim, palm in the yard, gate and a car.
+  // فيلا: a modern Saudi villa: stone base and cladding, framed windows, an entrance with columns, a glass
+  // balcony, a roof annex with water tanks, a decorative wall with a metal gate, a tensile car shade, a garden.
   house3(b) {
-    wallAround(b, 0.96, 0.17, C.cream);
-    b.box(0.6, 0.56, 0.48, C.white, { x: -0.04, z: -0.12 });
-    b.box(0.32, 0.36, 0.3, C.white, { x: 0.24, z: -0.02 });
-    b.box(0.62, 0.04, 0.5, C.stone, { x: -0.04, y: 0.56, z: -0.12 });
-    b.box(0.34, 0.04, 0.32, C.stone, { x: 0.24, y: 0.36, z: -0.02 });
-    crenels(b, 0.6, 0.48, 0.6, C.stone, 0.035);
-    windowsRow(b, 0.6, 0.18, 0.125, 2, 0.12);
-    windowsRow(b, 0.6, 0.42, 0.125, 3, 0.1);
-    nightWindows(b, 0.6, 0.42, 0.126, 3, 0.09);
-    b.box(0.12, 0.2, 0.02, C.wood, { x: 0.24, z: 0.135 });
-    palm(b, -0.36, 0.3, 0.75);
-    car(b, 0.22, 0.32, 0, "#e6e6e6");
-    b.box(0.94, 0.006, 0.94, "#ded4bf");
-    b.box(0.3, 0.008, 0.2, C.grass, { x: -0.25, z: 0.3 });
-    acUnit(b, -0.3, 0.6, -0.25); acUnit(b, -0.15, 0.6, -0.25); dish(b, 0.1, 0.6, -0.3);
-    for (const x of [-0.16, 0.16]) { b.box(0.04, 0.22, 0.04, C.stone, { x: x * 0.95 + 0.22 - 0.22, z: 0.48 }); b.box(0.03, 0.03, 0.03, C.light, { x: x * 0.95, y: 0.22, z: 0.48 }, "lights"); }
-    b.box(0.22, 0.012, 0.18, C.wood, { x: 0.24, y: 0.36, z: 0.1 });
+    b.box(0.94, 0.006, 0.94, "#ddd3bd");
+    b.box(0.36, 0.008, 0.26, "#7fae5a", { x: -0.24, z: 0.28 });
+    // the boundary wall with its stone cap, and the big metal gate
+    for (const [w, d, x, z] of [[0.96, 0.035, 0, -0.465], [0.035, 0.96, -0.465, 0], [0.035, 0.96, 0.465, 0], [0.42, 0.035, -0.27, 0.465], [0.2, 0.035, 0.37, 0.465]]) {
+      b.box(w, 0.17, d, "#ece3d1", { x, z }); b.box(w + 0.012, 0.016, d + 0.012, "#c8b38c", { x, y: 0.17, z });
+    }
+    b.box(0.3, 0.15, 0.02, "#4b4038", { x: 0.12, z: 0.47 }, "metal");
+    for (let i = 0; i < 6; i++) b.box(0.006, 0.13, 0.024, "#6b5b4b", { x: -0.01 + i * 0.05, y: 0.01, z: 0.47 }, "metal");
+    for (const x of [-0.05, 0.29]) { b.box(0.05, 0.22, 0.05, "#c8b38c", { x, z: 0.465 }); b.box(0.03, 0.03, 0.03, C.light, { x, y: 0.22, z: 0.465 }, "lights"); }
+    // the house: a stone base, two floors, a set-back upper block
+    b.box(0.62, 0.07, 0.48, "#cdb894", { x: -0.04, z: -0.12 });
+    b.box(0.6, 0.48, 0.46, "#f3eee4", { x: -0.04, y: 0.07, z: -0.12 });
+    b.box(0.64, 0.025, 0.5, "#cdb894", { x: -0.04, y: 0.3, z: -0.12 });
+    b.box(0.64, 0.03, 0.5, "#cdb894", { x: -0.04, y: 0.55, z: -0.12 });
+    for (const x of [-0.27, -0.13]) { frameWin(b, x, 0.14, 0.113, 0.08, 0.12, x === -0.27); frameWin(b, x, 0.38, 0.113, 0.08, 0.12, x === -0.13); }
+    frameWin(b, 0.13, 0.38, 0.113, 0.1, 0.12, true);
+    // the entrance: two columns, a canopy and a wooden door
+    for (const x of [0.06, 0.2]) b.cyl(0.018, 0.02, 0.27, "#e9dfcc", { x, z: 0.17 }, 12);
+    b.box(0.2, 0.025, 0.12, "#cdb894", { x: 0.13, y: 0.27, z: 0.13 });
+    b.box(0.09, 0.2, 0.014, "#6b4426", { x: 0.13, y: 0.07, z: 0.113 });
+    b.box(0.01, 0.01, 0.01, C.gold, { x: 0.16, y: 0.17, z: 0.122 }, "metal");
+    b.box(0.03, 0.03, 0.03, C.light, { x: 0.13, y: 0.24, z: 0.122 }, "lights");
+    // a glass balcony on the upper floor
+    b.box(0.18, 0.012, 0.08, "#cdb894", { x: 0.13, y: 0.31, z: 0.15 });
+    b.box(0.18, 0.06, 0.006, "#9ec3d6", { x: 0.13, y: 0.322, z: 0.188 }, "glass");
+    // on the roof: an annex, water tanks, AC units, a dish
+    b.box(0.2, 0.14, 0.16, "#f3eee4", { x: -0.22, y: 0.58, z: -0.22 });
+    b.box(0.22, 0.015, 0.18, "#cdb894", { x: -0.22, y: 0.72, z: -0.22 });
+    roofTank(b, 0.0, 0.58, -0.25); roofTank(b, 0.11, 0.58, -0.25, 0.05, "#2b2b2e");
+    acUnit(b, 0.12, 0.58, -0.06); acUnit(b, 0.0, 0.58, -0.06); dish(b, -0.3, 0.72, -0.15);
+    // the car shade (مظلة): steel posts and a tensile sail, with the family car under it
+    for (const [x, z] of [[0.27, 0.12], [0.43, 0.12], [0.27, 0.42], [0.43, 0.42]]) b.cyl(0.008, 0.008, 0.2, "#8f969c", { x, z }, 6, "metal");
+    b.add(new THREE.BoxGeometry(0.2, 0.006, 0.34), "#f2efe6", { x: 0.35, y: 0.2, z: 0.27, rx: 0.12 }, "paint");
+    sedan(b, 0.35, 0.27, Math.PI / 2, ["#f4f4f2", "#2a2c30", "#c9c3b5", "#7a1f1f"][0]);
+    // the garden: a palm, small trees and pots
+    palm(b, -0.36, 0.3, 0.7);
+    tree(b, -0.12, 0.36, 0.6);
+    pot(b, 0.04, 0.24, 0.7); pot(b, 0.22, 0.24, 0.7);
   },
   // عمارة: a tall block with glass bands and roof tanks.
+  // عمارة: an apartment block: shops on the ground floor, then floors of flats with balconies and split AC
+  // units on the facade, stone bands, and on the roof a stair room, water tanks and dishes.
   house4(b) {
-    const h = 1.6;
-    b.box(0.78, h, 0.7, C.cream);
-    for (let f = 0; f < 7; f++) {
-      const y = 0.12 + f * 0.21;
-      b.box(0.8, 0.02, 0.72, C.stone, { y: y - 0.04 });
-      windowsRow(b, 0.78, y + 0.03, 0.352, 4, 0.1);
-      b.box(0.022, 0.1, 0.5, C.glass, { x: 0.392, y: y + 0.03 }, "shiny");
-      if (f % 2) nightWindows(b, 0.78, y + 0.03, 0.354, 4, 0.08);
-    }
-    b.box(0.82, 0.04, 0.74, C.stone, { y: h });
-    for (const x of [-0.2, 0.1]) b.cyl(0.06, 0.06, 0.1, C.white, { x, y: h + 0.04, z: -0.15 }, 10);
-    b.box(0.2, 0.14, 0.03, C.glass, { y: 0, z: 0.355 }, "shiny");
-    for (let f = 1; f < 7; f++) for (const x of [-0.24, 0.24]) { b.box(0.22, 0.012, 0.08, C.stone, { x, y: 0.08 + f * 0.21, z: 0.39 }); b.box(0.22, 0.05, 0.008, "#d6d1c6", { x, y: 0.09 + f * 0.21, z: 0.43 }); }
-    b.box(0.36, 0.02, 0.16, C.stone, { y: 0.2, z: 0.43 });
-    dish(b, 0.25, h + 0.04, 0.2); acUnit(b, -0.3, h + 0.04, 0.2); acUnit(b, 0.3, h + 0.04, -0.25);
+    const h = 1.6, floors = 6;
     b.box(0.94, 0.006, 0.94, "#d6cfc0");
+    // ground floor: shopfronts under a sign band
+    b.box(0.8, 0.22, 0.72, "#d9cfbb");
+    b.box(0.82, 0.05, 0.74, "#bba882", { y: 0.22 });
+    for (const x of [-0.24, 0.0, 0.24]) {
+      b.box(0.2, 0.16, 0.014, "#22303a", { x, y: 0.02, z: 0.362 }, "glass");
+      b.box(0.19, 0.12, 0.016, C.light, { x, y: 0.04, z: 0.364 }, "lights");
+      b.box(0.2, 0.04, 0.02, ["#1f6f5c", "#b3261e", "#2f5f9e"][Math.round(x / 0.24) + 1], { x, y: 0.225, z: 0.372 });
+      b.box(0.14, 0.016, 0.022, "#fff6d8", { x, y: 0.237, z: 0.374 }, "glow");
+    }
+    // the flats
+    b.box(0.76, h - 0.27, 0.68, "#ece4d3", { y: 0.27 });
+    for (let f = 0; f < floors; f++) {
+      const y = 0.32 + f * 0.21;
+      b.box(0.78, 0.018, 0.7, "#c9b896", { y: y - 0.05 });
+      for (const x of [-0.27, -0.09, 0.09, 0.27]) frameWin(b, x, y + 0.02, 0.343, 0.09, 0.12, (f + Math.round(x * 10)) % 3 === 0);
+      for (const z of [-0.18, 0.12]) frameWin(b, z, y + 0.02, 0.383, 0.1, 0.11, false, true);
+      for (const x of [-0.18, 0.18]) {
+        b.box(0.2, 0.012, 0.09, "#c9b896", { x, y: y - 0.04, z: 0.39 });
+        b.box(0.2, 0.05, 0.006, "#d6d1c6", { x, y: y - 0.03, z: 0.432 });
+        splitAC(b, x + 0.12, y + 0.08, 0.35);
+      }
+    }
+    // the roof: parapet, stair room, tanks, dishes
+    b.box(0.8, 0.05, 0.72, "#c9b896", { y: h });
+    b.box(0.2, 0.18, 0.18, "#ece4d3", { x: 0.22, y: h + 0.05, z: -0.18 });
+    b.box(0.22, 0.015, 0.2, "#c9b896", { x: 0.22, y: h + 0.23, z: -0.18 });
+    for (const [x, z, c] of [[-0.25, -0.2, C.white], [-0.12, -0.2, C.white], [-0.25, 0.0, "#2b2b2e"], [-0.12, 0.0, C.white]]) roofTank(b, x, h + 0.05, z, 0.05, c);
+    dish(b, 0.25, h + 0.05, 0.18); dish(b, 0.1, h + 0.05, 0.2);
   },
 
   grocery(b) {
@@ -946,23 +1007,32 @@ const MAKERS = {
     b.box(0.02, 0.02, 0.02, "#ff3b30", { x: -0.22, y: 3.1, z: -0.2 }, "lights");
     b.box(0.9, 0.06, 0.12, "#e9e4d8", { z: 0.45 });
   },
+  // برج سكني: a residential tower: a stone podium with an entrance canopy, a glass facade between stone
+  // fins, balconies on the corners, and a lit crown on top.
   house5(b) {
-    const h = 2.4;
-    b.box(0.74, 0.18, 0.74, C.stone);
-    b.box(0.66, h, 0.62, "#e8e2d4", { y: 0.18 });
-    for (let f = 0; f < 14; f++) {
-      const y = 0.26 + f * 0.165;
-      windowsRow(b, 0.66, y, 0.312, 4, 0.09);
-      if (f % 3) nightWindows(b, 0.66, y, 0.314, 4, 0.07);
-      for (const x of [-0.2, 0.2]) b.box(0.2, 0.01, 0.07, C.stone, { x, y: y - 0.02, z: 0.345 });
-    }
-    b.box(0.022, h - 0.1, 0.5, C.glass, { x: 0.332, y: 0.22 }, "shiny");
-    b.box(0.7, 0.06, 0.66, "#cfc6b4", { y: 0.18 + h });
-    b.cyl(0.08, 0.08, 0.16, C.white, { x: -0.18, y: 0.24 + h, z: -0.12 }, 10);
-    b.box(0.22, 0.1, 0.18, "#cfc6b4", { x: 0.16, y: 0.24 + h, z: 0.1 });
-    b.box(0.3, 0.16, 0.03, C.glass, { y: 0, z: 0.375 }, "shiny");
+    const h = 2.4, floors = 13;
     b.box(0.94, 0.006, 0.94, "#d6cfc0");
-    b.box(0.03, 0.03, 0.03, "#ff3b30", { y: 0.3 + h, z: 0.2 }, "lights");
+    b.box(0.76, 0.26, 0.76, "#cdbf9f");
+    b.box(0.36, 0.18, 0.014, "#22303a", { y: 0.02, z: 0.382 }, "glass");
+    b.box(0.34, 0.14, 0.016, C.light, { y: 0.04, z: 0.384 }, "lights");
+    b.box(0.44, 0.02, 0.16, "#8f969c", { y: 0.24, z: 0.44 }, "metal");
+    for (const x of [-0.2, 0.2]) b.cyl(0.012, 0.012, 0.24, "#8f969c", { x, z: 0.5 }, 8, "metal");
+    // the tower: glass, with stone fins and floor slabs
+    b.box(0.64, h, 0.6, "#46677a", { y: 0.26 }, "glass");
+    for (const x of [-0.32, -0.16, 0, 0.16, 0.32]) b.box(0.03, h, 0.04, "#e8e2d4", { x, y: 0.26, z: 0.3 });
+    for (const z of [-0.3, -0.1, 0.1, 0.3]) b.box(0.04, h, 0.03, "#e8e2d4", { x: 0.32, y: 0.26, z });
+    for (let f = 0; f < floors; f++) {
+      const y = 0.3 + f * 0.17;
+      b.box(0.66, 0.016, 0.62, "#e8e2d4", { y });
+      if (f % 2 === 0) for (const x of [-0.24, 0.24]) { b.box(0.14, 0.012, 0.08, "#e8e2d4", { x, y, z: 0.34 }); b.box(0.14, 0.04, 0.005, "#9ec3d6", { x, y: y + 0.012, z: 0.378 }, "glass"); }
+      if ((f * 7) % 5 < 2) b.box(0.12, 0.1, 0.004, C.light, { x: ((f * 37) % 3 - 1) * 0.16, y: y + 0.04, z: 0.303 }, "lights");
+    }
+    // the crown: a set-back top with a light band, and the plant on the roof
+    b.box(0.56, 0.16, 0.52, "#e8e2d4", { y: 0.26 + h });
+    b.box(0.58, 0.02, 0.54, "#fff3d6", { y: 0.33 + h }, "glow");
+    roofTank(b, -0.15, 0.42 + h, -0.1, 0.05); roofTank(b, 0.0, 0.42 + h, -0.1, 0.05);
+    b.box(0.03, 0.03, 0.03, "#ff3b30", { y: 0.55 + h, x: 0.2, z: 0.15 }, "glow");
+    b.cyl(0.006, 0.006, 0.13, "#8f969c", { x: 0.2, y: 0.42 + h, z: 0.15 }, 6, "metal");
   },
   // A building site: fence, sand piles, a frame going up and a crane.
   construction(b) {
@@ -1110,8 +1180,8 @@ const cache = new Map();
 export const VARIANTS = {
   house1: [{ [C.mud]: "#b8834e", [C.mudLight]: "#c99a62" }, { [C.mud]: "#d4a46a", [C.mudDark]: "#b38250" }],
   house2: [{ [C.plaster]: "#ecdcbc", [C.teal]: "#7a3b1f" }, { [C.plaster]: "#f2e2d4", [C.teal]: "#2f5f9e", [C.stone]: "#cdb48e" }],
-  house3: [{ [C.white]: "#efe4cc", [C.stone]: "#b89b72", [C.cream]: "#e6d6b6" }, { [C.white]: "#f3efe9", [C.stone]: "#8e959a" }],
-  house4: [{ [C.cream]: "#e2d6c4", [C.stone]: "#b9a888" }, { [C.cream]: "#d9ccb2", [C.stone]: "#9aa1a6" }]
+  house3: [{ "#f3eee4": "#efe4cc", "#cdb894": "#b89b72", "#ece3d1": "#e6d6b6" }, { "#f3eee4": "#f6f3ee", "#cdb894": "#8e959a", "#ece3d1": "#e2e0db" }],
+  house4: [{ "#ece4d3": "#e2d6c4", "#c9b896": "#b9a888" }, { "#ece4d3": "#d9ccb2", "#c9b896": "#9aa1a6" }]
 };
 
 function recolor(geo, swaps) {
