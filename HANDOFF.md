@@ -183,6 +183,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - In `step`, a world town (`s.world`) runs `syncSharedEvents`: its shared events become exactly the world's. Random events there are only the town's own (the governor's visit, the town festival).
     - Time, seasons and prayers were already shared through the world clock. A test checks two towns stay identical for 600 hours.
 
+28. **Know the money before buying (owner, 2026-11-23):**
+    - Build cards show the building's usual income and upkeep per hour.
+    - With a spot chosen, `buildPreview(id, spots)` puts the building into `S` for a moment, runs `analyze`, and puts the town back. The tool chip then shows income, upkeep and net per hour for that exact spot (homes: the tax when full), plus a hint when there are too few people to staff it.
+
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

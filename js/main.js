@@ -210,6 +210,25 @@ function readyHouses() {
   return values;
 }
 
+/**
+ * What a building would do to the town's money, BEFORE it is bought: the town is worked out as if it
+ * already stood on these spots (staff, power, water, the market), then put back as it was.
+ * Returns { income, upkeep, net } per hour, or null. Homes: the tax when full (people come over time).
+ */
+function buildPreview(id, spots) {
+  const d = B[id];
+  if (!d || !spots.length || d.cat === "road") return null;
+  const before = A, saved = spots.map((p) => { const t = S.tiles[idx(p.x, p.y)]; return [t, t.b, t.t]; });
+  for (const [t] of saved) t.b = { id, lvl: 0, res: 0, cond: 100 };
+  let after;
+  try { after = analyze(S); } finally { for (const [t, b, g] of saved) { t.b = b; t.t = g; } A = analyze(S); }
+  const inc = (x) => (x.income || 0) + (x.farmIncome || 0) + (x.tax || 0);
+  let income = inc(after) - inc(before), upkeep = after.upkeep - before.upkeep;
+  if (id === "house") { const perHead = (S.tax / 100) * (3 - Math.min(1.2, S.pop / 2500)); income += d.levels[0].cap * spots.length * perHead; }
+  return { income, upkeep, net: income - upkeep, jobs: (d.jobs || 0) * spots.length };
+}
+const signed = (v) => `${v >= 0 ? "+" : "−"}${fine(Math.abs(v))}`;
+
 function showPending() {
   if (!tool) return;
   if (tool.id === "move") { showMove(); return; }
@@ -242,7 +261,13 @@ function showPending() {
   if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(d.cost)} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
   else if (tool.id === "bulldoze") $("toolName").textContent = `إزالة ${ar(ok.length)} ${ok.length === 1 ? "شي" : "أشياء"}؟`;
   else if (!ok.length) $("toolName").textContent = cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا";
-  else $("toolName").textContent = `${isMulti() ? `${ar(ok.length)} مربع` : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+  else {
+    const pv = buildPreview(tool.id, ok);
+    const shortStaff = pv && pv.jobs && pv.net < 0 && A.workers - A.employed < pv.jobs;
+    $("toolName").innerHTML = `${isMulti() ? `${ar(ok.length)} مربع` : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`
+      + (pv && (pv.income || pv.upkeep) ? `<span class="tool-money">بالساعة: <b class="plus">دخل ${signed(pv.income)}</b> <b class="minus">مصروف −${fine(Math.max(0, pv.upkeep))}</b> <b class="${pv.net >= 0 ? "plus" : "minus"}">صافي ${signed(pv.net)}</b>${d.buildHours ? " (بعد ما يخلص)" : ""}</span>`
+        + (shortStaff ? `<span class="tool-hint">💡 الناس قليل: الدخل يزيد لا كبرت البلد</span>` : "") : "");
+  }
 }
 
 function paintAt(sx, sy) {
@@ -651,7 +676,8 @@ function renderCards() {
       <img alt="" src="${thumbnail(modelKey(id, 0))}"><b>${B[id].name}</b>
       ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${B[id].fullCost ? `<s>${money(B[id].fullCost)}</s> ` : ""}${money(B[id].cost)} ريال</span>`}
       ${B[id].fullCost && !lock ? `<span class="hours">دعم الدولة −${ar(Math.round(SUBSIDY[B[id].cat] * 100))}٪</span>` : ""}
-      ${B[id].buildHours && !lock ? `<span class="hours">يُبنى في ${ar(B[id].buildHours / 24)} أيام</span>` : ""}</button>`;
+      ${B[id].buildHours && !lock ? `<span class="hours">يُبنى في ${ar(B[id].buildHours / 24)} أيام</span>` : ""}
+      ${!lock && (B[id].income || B[id].upkeep) ? `<span class="money-line">${B[id].income ? `<i class="plus">+${money(B[id].income)}</i>` : ""}${B[id].upkeep ? `<i class="minus">−${money(B[id].upkeep)}</i>` : ""}<small>بالساعة</small></span>` : ""}</button>`;
   }).join("");
   box.querySelectorAll("[data-build]").forEach((b) => b.addEventListener("click", () => {
     const id = b.dataset.build, lock = lockReason(id);
@@ -2285,8 +2311,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-15", world: "2026-12-17" },
+  v: { solo: "2026-12-16", world: "2026-12-18" },
   items: [
+    ["both", "💰", "تعرف الدخل قبل لا تشتري", "كل بطاقة بناء فيها دخلها ومصروفها بالساعة. ولا اخترت المكان، قبل «ابنِ» يحسب لك اللعبة مدينتك كأن المبنى موجود ويقولك بالضبط: دخل كذا، مصروف كذا، وصافيك يزيد أو ينقص كم. وإذا الدخل قليل لأن الناس قليلين يقولك."],
     ["world", "🌦️", "جو واحد لكل الجوف", "بعالم الجوف المطر والغبار والحر والبرد والجراد والجفاف وموسم الصرام صارت تجي لكل المدن بنفس الساعة وتخلص سوا، ورمضان والعيدين على تقويم واحد للكل يتنقل بين الفصول من سنة لسنة. والوقت والفصول والصلاة أصلاً واحدة. كذا الكل على نفس الظروف."],
     ["world", "💬", "شات الجوف", "شات عام لكل لاعبين الجوف من زر «الشات» على الجنب، ويطلع لك عدد الرسائل الجديدة. اضغط اسم المدينة تروح لها بالخريطة، وتقدر تبلّغ عن أي رسالة مسيئة. رسالة كل ٦ ثواني، والكلام البذيء ينمنع."],
     ["both", "🏙️", "فلل وعماير وأبراج جديدة", "الفلل صار فيها حجر وأعمدة على المدخل وبلكونة زجاج وبوابة حديد ومظلة سيارات وسيارة وحديقة بنخلة، والعماير صار تحتها محلات بلوحات، وفيها بلكونات ومكيفات سبليت وخزانات على السطح، والأبراج السكنية زجاج بين أعمدة حجر وتاج منوّر."],

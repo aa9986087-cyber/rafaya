@@ -537,3 +537,16 @@ body.world .speeds { display: none !important; }
 .chat-rep { border: 0; background: none; padding: 0 2px; margin-inline-start: auto; opacity: .55; font-size: 13px; }
 .chat-send { display: flex; gap: 8px; margin-top: 8px; }
 .chat-send input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid #d9c9a8; background: #fffaf0; }
+
+/* a building card: what it usually brings in and costs an hour */
+.card .money-line { display: flex; gap: 6px; justify-content: center; align-items: baseline; font-size: 11px; font-weight: 800; }
+.card .money-line i { font-style: normal; }
+.card .money-line .plus { color: #2f9e44; } .card .money-line .minus { color: #c92a2a; }
+.card .money-line small { font-weight: 600; opacity: .6; font-size: 10px; }
+.tool-chip .tool-money { display: block; font-size: 12px; margin-top: 2px; }
+.tool-chip .tool-money b { font-weight: 800; margin-inline-start: 4px; white-space: nowrap; display: inline-block; }
+.tool-chip .tool-money .plus { color: #8ce99a; } .tool-chip .tool-money .minus { color: #ffa8a8; }
+.tool-chip .tool-hint { display: block; font-size: 11px; opacity: .85; margin-top: 2px; }
+.tool-chip:has(.tool-money) { max-width: calc(100vw - 24px); }
+.tool-chip:has(.tool-money) #toolName { min-width: 0; flex: 1; }
+.tool-chip:has(.tool-money) { border-radius: 22px; width: calc(100vw - 24px); }
