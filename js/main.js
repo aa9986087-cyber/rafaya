@@ -725,23 +725,56 @@ function showReach(x, y, def) {
 }
 
 /** The homes no mosque reaches. */
-function mosqueGaps() {
+/** Buildings that serve the same need cover for each other (a mosque and a big mosque, a clinic and a hospital…). */
+const SERVICE_GROUP = { mosque: "المساجد", school: "المدارس", health: "المستوصفات والمستشفيات", safety: "الشرطة والدفاع المدني" };
+const sameNeed = (a, b) => (B[a].service ? B[a].service === B[b]?.service : a === b);
+const needName = (id) => SERVICE_GROUP[B[id].service] || { park: "الحدائق", stadium: "الملاعب" }[id] || B[id].name;
+/** Every tile some working building of this need reaches (with its upgrades). */
+function needCover(id) {
+  const on = new Uint8Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const b = S.tiles[idx(x, y)].b;
+    if (!b || !b.works || !sameNeed(id, b.id)) continue;
+    const r = upgradeEffect(S, b)?.radiusNow || B[b.id].radius || 0;
+    for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) on[idx(xx, yy)] = 1;
+  }
+  return on;
+}
+/** The homes no building of this need reaches. */
+function needGaps(id, cover = needCover(id)) {
   let n = 0;
-  for (let i = 0; i < N * N; i++) if (S.tiles[i].b?.id === "house" && !A.services[i]?.has("mosque")) n++;
+  for (let i = 0; i < N * N; i++) if (S.tiles[i].b?.id === "house" && !cover[i]) n++;
   return n;
 }
-/** Like the water and power maps: where every mosque reaches in green, the homes outside it in red. */
-function mosqueMap() {
-  const v = new Float32Array(N * N);
-  for (let i = 0; i < N * N; i++) {
-    if (A.services[i]?.has("mosque")) v[i] = 0.01;
-    else if (S.tiles[i].b?.id === "house") v[i] = 1;
-  }
+const mosqueGaps = () => needGaps("mosque");
+/** Like the water and power maps: where this need is met in green, the homes outside it in red. */
+function needMap(id) {
+  const cover = needCover(id), v = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) { if (cover[i]) v[i] = 0.01; else if (S.tiles[i].b?.id === "house") v[i] = 1; }
   closeSheet();
   setTimeout(() => world.setOverlay(v, "heat"), 200);
-  clearTimeout(mosqueMap.t); mosqueMap.t = setTimeout(() => { if (!tool) world.setOverlay(null); }, 7000);
-  const u = mosqueGaps();
-  toast(u ? `🕌 الأخضر يوصله المسجد، والأحمر ${ar(u)} بيت برا المدى` : "🕌 الأخضر يوصله المسجد: كل البيوت داخل المدى ✓");
+  clearTimeout(needMap.t); needMap.t = setTimeout(() => { if (!tool) world.setOverlay(null); }, 7000);
+  const u = needGaps(id, cover), has = cover.some((c) => c);
+  toast(!has ? `ما عندك ${needName(id)} للحين: كل البيوت بالأحمر` : u ? `الأخضر يوصله ${needName(id)}، والأحمر ${ar(u)} بيت برا المدى` : `الأخضر يوصله ${needName(id)}: كل البيوت داخل المدى ✓`);
+}
+const mosqueMap = () => needMap("mosque");
+/** A service's card in the build dock: what it does, what it costs and how far it reaches, then build it or see its reach. */
+function serviceInfo(id) {
+  const d = B[id], lock = lockReason(id), cover = needCover(id), gaps = needGaps(id, cover), mine = S.tiles.filter((t) => t.b && sameNeed(id, t.b.id)).length;
+  sheet(`<div class="ins-head"><img alt="" src="${thumbnail(modelKey(id, 0), "sand")}"><div><h2>${d.name}</h2><p>${d.text}</p></div></div>
+    <div class="rows">
+      ${row("السعر", `${money(d.cost)} ريال`)}
+      ${d.upkeep ? row("المصروف بالساعة", `${money(d.upkeep)} ريال`, "minus") : ""}
+      ${d.happy ? row("يفرّح الناس حوله", `+${ar(d.happy)}`, "plus") : ""}
+      ${d.radius ? row("المدى", `${ar(d.radius)} مربعات حوله`) : ""}
+      ${d.jobs ? row("الوظائف", ar(d.jobs)) : ""}
+      ${row(`عندك من ${needName(id)}`, ar(mine))}
+      ${mine ? (gaps ? `<div class="need">${ar(gaps)} ${gaps >= 3 && gaps <= 10 ? "بيوت" : "بيت"} برا مدى ${needName(id)}: ابنِ واحد قريب منها.</div>` : `<div class="need ok">كل البيوت داخل مدى ${needName(id)} ✓</div>`) : ""}
+      ${lock ? `<div class="need">${lock}</div>` : ""}
+    </div>
+    <div class="sheet-actions two"><button class="btn" id="svMap" type="button">🗺️ اعرض مداه</button><button class="btn go" id="svBuild" type="button" ${lock ? "disabled" : ""}>🔨 ابنِ</button></div>`, "svc");
+  $("svMap").addEventListener("click", () => { sfx.tap(); needMap(id); });
+  $("svBuild").addEventListener("click", () => { if (lock) return; sfx.tap(); closeSheet(); setTool({ id }); });
 }
 
 // ---------- build dock ----------
@@ -813,6 +846,7 @@ function renderCards() {
   }).join("");
   box.querySelectorAll("[data-build]").forEach((b) => b.addEventListener("click", () => {
     const id = b.dataset.build, lock = lockReason(id);
+    if (B[id]?.cat === "serv" && tool?.id !== id) { sfx.tap(); serviceInfo(id); return; } // services: their card first (what they do, their reach), then build
     if (lock) { toast(lock, "bad"); sfx.deny(); return; }
     sfx.tap();
     const cat = id === "upgrade" ? openCat : undefined;
@@ -2545,8 +2579,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-27", world: "2026-12-27" },
+  v: { solo: "2026-12-28", world: "2026-12-28" },
   items: [
+    ["both", "🏫", "تفاصيل الخدمات ومداها", "اضغط أي خدمة بقائمة البناء (مسجد، مدرسة، مستوصف، شرطة، حديقة…) وتطلع لك تفاصيلها: السعر والمصروف وكم تفرّح الناس ومداها وكم عندك منها وكم بيت برا مداها. وفيها زر «اعرض مداه» يلوّن الخريطة: الأخضر يوصله والأحمر البيوت اللي برا، وزر «ابنِ»."],
     ["both", "↩️", "ترجع وانت ماسك", "وانت ترسم طريق وإصبعك ماسك: لو لف معك غلط يمين أو يسار، ارجع بإصبعك على نفس الطريق للزاوية وينمسح الغلط، وكمّل بدون ما ترفع إصبعك. وكل ما رجعت على الطريق يقصر معك. ونفس الشي بالترتيب."],
     ["both", "🔔", "تنبيه رسوم المحافظة", "قبل رسوم المحافظة السنوية بـ٣ أيام وبيوم يوصلك تنبيه بالمبلغ تقريبًا، وبالأرقام تشوف كم باقي لها وكم بتدفع."],
     ["both", "🌬️", "مراوح الرياح تدور", "مراوح مزرعة الرياح صارت تدور، وإذا تضررت المزرعة تبطّي، وإذا انهدمت توقف."],

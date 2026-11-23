@@ -240,6 +240,9 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - In `roadAim`, a finger back on a tile of the committed segments cuts the path back to that tile, taking that segment's axis.
     - Going back to a wrong turn's corner undoes the turn, and going back along the road shortens it.
     - Arrange (`arrPaint`) keeps `drag.placed`. Roads no longer on the path go back to the store or the hand.
+38. **Service cards and reach maps (owner, 2026-11-23, both modes):**
+    - Tapping a `serv` card in the dock opens `serviceInfo(id)`: cost, upkeep, happiness, radius, how many you have, and the homes outside reach, with «اعرض مداه» and «ابنِ» buttons. Tapping it again while it is the tool deselects it as before.
+    - `needCover`/`needGaps`/`needMap` generalise the mosque map. Buildings with the same `service` cover for each other; park and stadium go by their own id. Upgraded radii are counted.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
