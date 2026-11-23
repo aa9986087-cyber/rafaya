@@ -8,14 +8,15 @@ export const MAP_SIZE = 72;
  */
 export const OWN_START = 18;
 export const RINGS = [12, 6, 0];
-const SIDES = [["n", "الشمال"], ["e", "الشرق"], ["s", "الجنوب"], ["w", "الغرب"]];
-export const PLOTS = [
-  ...SIDES.map(([id, n]) => ({ id, name: `أرض ${n} القريبة` })),
-  ...SIDES.map(([id, n]) => ({ id: `${id}2`, name: `أرض ${n} البعيدة`, needs: id })),
-  ...SIDES.map(([id, n]) => ({ id: `${id}3`, name: `أطراف ${n}`, needs: `${id}2` }))
-];
+// Each side of each ring is split in two halves (a: the west or north half, b: the east or south half),
+// so a plot id is side + ring + half: "na" (near north, west half), "e2b" (far east, south half)…
+const SIDES = [["n", ["الشمال الغربي", "الشمال الشرقي"]], ["e", ["الشرق الشمالي", "الشرق الجنوبي"]], ["s", ["الجنوب الغربي", "الجنوب الشرقي"]], ["w", ["الغرب الشمالي", "الغرب الجنوبي"]]];
+const RING_NAMES = [(n) => `أرض ${n} القريبة`, (n) => `أرض ${n} البعيدة`, (n) => `أطراف ${n}`];
+export const PLOTS = RING_NAMES.flatMap((name, k) => SIDES.flatMap(([side, halves]) => ["a", "b"].map((h, j) => ({
+  id: `${side}${k ? k + 1 : ""}${h}`, name: name(halves[j]), ...(k ? { needs: `${side}${k > 1 ? k : ""}${h}` } : {})
+}))));
 /** Each plot costs more than the last one bought. */
-export const PLOT_PRICES = [5000, 8000, 12000, 16000, 22000, 30000, 40000, 52000, 70000, 90000, 120000, 160000];
+export const PLOT_PRICES = [3000, 4500, 6000, 7500, 9000, 11000, 13000, 15000, 18000, 21000, 24000, 28000, 32000, 36000, 41000, 46000, 52000, 58000, 65000, 72000, 80000, 90000, 100000, 115000];
 
 /** Town stages: reaching the population opens the stage and its buildings. */
 export const ERAS = [
@@ -352,7 +353,7 @@ export const GOALS = [
   { text: "ابنِ مزرعة رياح", test: (s) => s.count.windfarm >= 1, reward: 21000 },
   { text: "ابنِ قلعة مارد", test: (s) => s.count.marid >= 1, reward: 45000 },
   { text: "أول برج سكني", test: (s) => s.levels[5] >= 1, reward: 48000 },
-  { text: "اشترِ أرض بعيدة", test: (s) => ["n2", "e2", "s2", "w2"].some((p) => s.owned?.[p]), reward: 22000 },
+  { text: "اشترِ أرض بعيدة", test: (s) => Object.keys(s.owned || {}).some((p) => s.owned[p] && /2/.test(p)), reward: 18000 },
   { text: "ابنِ محطة القطار", test: (s) => s.count.station >= 1, reward: 165000 },
   { text: "صارت الرافعية حاضرة (٩٠٠٠ ساكن)", test: (s) => s.pop >= 9000, reward: 100000 },
   { text: "ابنِ أبراج الرافعية", test: (s) => s.count.skyline >= 1, reward: 200000 }
@@ -562,8 +563,8 @@ export const ACHIEVEMENTS = [
   { id: "happy", name: "بلد سعيد", text: "رضا ٩٠٪", test: (s) => s.happy >= 90 },
   { id: "rich", name: "خزنة مليانة", text: "٥٠٬٠٠٠ ريال بالميزانية", test: (s) => s.money >= 50000 },
   { id: "province", name: "محافظة الرافعية", text: "وصل الرافعية لمحافظة", test: (s) => s.era >= 3 },
-  { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي القريبة", test: (s) => ["n", "e", "s", "w"].every((p) => s.owned?.[p]) },
-  { id: "alledges", name: "الرافعية من الطرف للطرف", text: "اشترِ كل الأراضي لين الأطراف", test: (s) => ["n3", "e3", "s3", "w3"].every((p) => s.owned?.[p]) },
+  { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي القريبة", test: (s) => PLOTS.slice(0, 8).every((p) => s.owned?.[p.id]) },
+  { id: "alledges", name: "الرافعية من الطرف للطرف", text: "اشترِ كل الأراضي لين الأطراف", test: (s) => PLOTS.every((p) => s.owned?.[p.id]) },
   { id: "hadira", name: "حاضرة الجوف", text: "وصل الرافعية لحاضرة", test: (s) => s.era >= 4 },
   { id: "skytower", name: "فوق الغيم", text: "أول برج سكني", test: (s, a) => a.levels[5] > 0 },
   { id: "allprojects", name: "الرافعية الكبرى", text: "كمّل كل المشاريع الكبرى", test: (s) => PROJECTS.every((id) => finished(s, id)) },

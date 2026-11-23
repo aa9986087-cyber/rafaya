@@ -23,7 +23,10 @@ export function plotAt(x, y) {
   let inner = O;
   for (let k = 0; k < RINGS.length; k++) {
     const lo = RINGS[k], hi = N - lo;
-    if (x >= lo && x < hi && y >= lo && y < hi) return sideOf(x, y, inner, N - inner) + (k ? k + 1 : "");
+    if (x >= lo && x < hi && y >= lo && y < hi) {
+      const side = sideOf(x, y, inner, N - inner), half = (side === "n" || side === "s" ? x : y) < N / 2 ? "a" : "b";
+      return side + (k ? k + 1 : "") + half;
+    }
     inner = lo;
   }
   return "";
@@ -409,7 +412,9 @@ export function prayerNow(s) {
 
 // ---------- the town's quarters ----------
 /** Which quarter (0–8) a tile is in. */
-export const districtOf = (i) => Math.min(2, Math.floor((Math.floor(i / N)) / (N / 3))) * 3 + Math.min(2, Math.floor((i % N) / (N / 3)));
+// (the thirds of the town's own land in the middle; land bought further out belongs to the quarter beside it)
+const third = (v) => clamp(Math.floor((v - O) / ((E - O) / 3)), 0, 2);
+export const districtOf = (i) => third(Math.floor(i / N)) * 3 + third(i % N);
 export const districtName = (s, d) => s.districts?.[d] || DISTRICT_NAMES[d];
 /** Each lived-in quarter: homes, people, happiness and what is missing there. */
 export function districtStats(s, a = analyze(s)) {
@@ -1268,6 +1273,8 @@ export function unpack(text) {
     return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));
+  // Plots bought before they were split in halves: both halves are yours.
+  for (const k of Object.keys(o.owned)) if (o.owned[k] && /^[nesw]\d?$/.test(k)) { o.owned[`${k}a`] = o.owned[`${k}b`] = true; delete o.owned[k]; }
   // The land the town already used is its own, even outside the middle.
   o.tiles.forEach((t, i) => { if (t.b) { const p = plotAt(i % N, Math.floor(i / N)); if (p) o.owned[p] = true; } });
   return o;

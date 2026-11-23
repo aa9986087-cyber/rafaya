@@ -77,22 +77,28 @@ test("saving keeps the whole town, and the town carries on while away (up to six
 test("land around the town is bought plot by plot, each dearer than the last", () => {
   const s = newGame(9);
   const nx = 30, ny = 15; // a tile on the near northern ring
-  assert.equal(plotAt(nx, ny), "n");
-  assert.equal(plotAt(0, 0), "n3", "the far corner is the edges");
-  assert.equal(plotAt(30, 8), "n2");
+  assert.equal(plotAt(nx, ny), "na");
+  assert.equal(plotAt(50, ny), "nb", "the other half of the north");
+  assert.equal(plotAt(0, 0), "n3a", "the far corner is the edges");
+  assert.equal(plotAt(30, 8), "n2a");
   assert.match(cantBuild(s, nx, ny, "house"), /مو لك/);
   s.money = 100000;
-  assert.equal(buyPlot(s, "n"), "");
-  assert.equal(s.money, 100000 - 5000);
+  assert.equal(buyPlot(s, "na"), "");
+  assert.equal(s.money, 100000 - 3000);
   assert.ok(owns(s, nx, ny));
-  assert.equal(buyPlot(s, "e"), "");
-  assert.equal(s.money, 100000 - 5000 - 8000);
-  assert.match(buyPlot(s, "n"), /من قبل/);
-  assert.match(buyPlot(s, "s2"), /أول/, "the far south needs the near south first");
-  assert.equal(buyPlot(s, "n2"), "");
-  assert.match(buyPlot(s, "e3"), /أول/);
-  s.money = 1e6; assert.equal(buyPlot(s, "n3"), "");
+  assert.ok(!owns(s, 50, ny), "the other half is still for sale");
+  assert.equal(buyPlot(s, "eb"), "");
+  assert.equal(s.money, 100000 - 3000 - 4500);
+  assert.match(buyPlot(s, "na"), /من قبل/);
+  assert.match(buyPlot(s, "s2a"), /أول/, "the far south needs the near south first");
+  assert.equal(buyPlot(s, "n2a"), "");
+  assert.match(buyPlot(s, "e3b"), /أول/);
+  s.money = 1e6; assert.equal(buyPlot(s, "n3a"), "");
   assert.ok(owns(s, 0, 0));
+  // a save with a whole old plot owns both halves
+  const old = JSON.parse(pack(newGame(9))); old.owned = { n: true };
+  const back = unpack(JSON.stringify(old));
+  assert.ok(back.owned.na && back.owned.nb && !back.owned.n);
 });
 
 test("a save from the old 30×30 map opens with the town in the middle", () => {

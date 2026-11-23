@@ -44,6 +44,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
    - The growth test moved from seed 42 to seed 2: on 72 × 72, seed 42's bot stalls at بلدة with 25 % unemployment, while the other seeds reach مدينة.
    - Also: «شيل الكل» no longer lifts roads/parking (`arrMovable` checks `cat !== "road"`).
 
+7. **24 plots and «📍 وين الحارة؟».**
+   - Each side of each ring is split in halves, giving plot ids like `na`, `nb`, `e2a`, `w3b` (side + ring + half). An old whole plot (`n`, `e2`…) becomes both halves in `unpack`. Prices start at 3000.
+   - The 9 quarters (`districtOf`) are now thirds of the town's own 36 × 36 land, not of the whole map.
+   - Any news post or promise naming a quarter shows «📍 وين …؟». It calls `showDistrict(d)`: the camera moves there and the quarter's land lights up orange for 8 s. The quarters sheet's «وريني» uses it too.
+
 **Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

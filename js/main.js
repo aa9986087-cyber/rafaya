@@ -744,6 +744,40 @@ function hourNews(msgs) {
 const moodTag = (m) => (m < 0 ? `<i class="mood bad">زعلان</i>` : m > 0 ? `<i class="mood good">مبسوط</i>` : `<i class="mood ask">يطالب</i>`);
 /** Who wrote a post (old saves only have the kind of person). */
 const personOf = (p) => p.person || { name: "واحد من الأهالي", role: "", area: "" };
+/**
+ * «📍 وين؟» buttons for the quarters a text names (the longest names first, so «الحارة الشمالية
+ * الغربية» is not also read as «الحارة الشمالية»).
+ */
+function districtLinks(...texts) {
+  let text = texts.filter(Boolean).join(" ");
+  const names = Array.from({ length: 9 }, (_, d) => ({ d, name: districtName(S, d) })).sort((p, q) => q.name.length - p.name.length);
+  const found = [];
+  for (const { d, name } of names) if (text.includes(name)) { found.push({ d, name }); text = text.split(name).join(" "); }
+  return found.map(({ d, name }) => `<button class="home-btn" type="button" data-district="${d}">📍 وين ${name}؟</button>`).join("");
+}
+/** Show a quarter on the map: the camera goes there and its land lights up for a few seconds. */
+function showDistrict(d) {
+  closeSheet();
+  const values = new Float32Array(N * N);
+  let sx = 0, sy = 0, n = 0, hx = 0, hy = 0, homes = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (districtOf(i) !== d || !owns(S, i % N, Math.floor(i / N))) continue;
+    values[i] = 1; sx += i % N; sy += Math.floor(i / N); n++;
+    if (S.tiles[i].b?.id === "house") { hx += i % N; hy += Math.floor(i / N); homes++; }
+  }
+  if (!n) return;
+  const cx = Math.round(homes ? hx / homes : sx / n), cy = Math.round(homes ? hy / homes : sy / n);
+  world.setOverlay(values, "#ff8a00", 0.55);
+  world.focus(cx, cy); world.view.zoom = Math.min(world.view.zoom, 0.8); world.updateCamera();
+  setTimeout(() => floatAt(cx, cy, `📍 ${districtName(S, d)}`, "up"), 300);
+  toast(`📍 هذي ${districtName(S, d)}: المربعات المضيئة`, "");
+  clearTimeout(showDistrict.t);
+  showDistrict.t = setTimeout(() => { if (!tool && !arrange) world.setOverlay(null); }, 8000);
+}
+$("sheetBody").addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-district]");
+  if (b) { sfx.tap(); showDistrict(Number(b.dataset.district)); }
+});
 function postHtml(p) {
   const r = personOf(p);
   const when = `اليوم ${ar(dayOf(p.day))} · ${ar(hourOf(p.day))}:٠٠`;
@@ -752,7 +786,7 @@ function postHtml(p) {
     <p>${p.text}</p>
     ${p.ref ? refHtml(p) : p.mood < 0 && FIX_HINT[p.topic] && !p.answered ? `<div class="pfix">💡 وش يبي: ${FIX_HINT[p.topic]}</div>` : ""}
     ${(p.replies || []).map((m) => `<div class="reply ${m.from}"><b>${m.from === "mayor" ? "العمدة" : m.person ? m.person.name : r.name}</b>${m.person?.role ? `<small> (${m.person.role})</small>` : ""} ${m.text}</div>`).join("")}
-    ${p.person?.home != null && S.tiles[p.person.home]?.b?.id === "house" ? `<button class="home-btn" type="button" data-home="${p.person.home}">📍 بيته</button>` : ""}
+    ${p.person?.home != null && S.tiles[p.person.home]?.b?.id === "house" ? `<button class="home-btn" type="button" data-home="${p.person.home}">📍 بيته</button>` : ""}${districtLinks(p.text, p.ref?.asked)}
     <div class="post-foot"><span>👥 ${ar(p.likes || 1)} ${(p.likes || 1) > 10 ? "من الأهالي" : ""} يوافقونه</span>${p.answered ? `<span class="answered ${p.change > 0 ? "up" : p.change < 0 ? "down" : ""}">${p.change > 0 ? "الناس ارتاحوا" : p.change < 0 ? "الناس زعلوا" : "بيرجع لك بكرة"}</span>` : ""}</div>
     ${p.answered || p.id.startsWith("d-") ? "" : `<div class="answers">${replyOptions(p).map((o) => `<button type="button" class="ans ${o.tone || o.kind}" data-post="${p.id}" data-kind="${o.kind}">${o.label}</button>`).join("")}</div>`}
   </article>`;
@@ -773,7 +807,7 @@ function promisesHtml() {
     const left = 48 - (S.day - p.day), name = p.person?.name || "واحد من الأهالي";
     return `<div class="prom ${left <= 0 ? "late" : ""}"><div class="prom-top"><b>${topicName(p.topic)}</b><small>${left > 0 ? `باقي ${ar(left)} ساعة قبل لا يذكّرونك` : "تأخرت عليهم!"}</small></div>
       <small>وعدت ${name}${p.person?.area ? ` ${p.person.area}` : ""}: «${p.said}»</small>
-      ${FIX_HINT[p.topic] ? `<div class="pfix">🛠️ ${FIX_HINT[p.topic]}</div>` : ""}</div>`;
+      ${FIX_HINT[p.topic] ? `<div class="pfix">🛠️ ${FIX_HINT[p.topic]}</div>` : ""}${districtLinks(p.asked, p.text, p.person?.area)}</div>`;
   });
   const waiting = (S.comebacks || []).map((c) => `<div class="prom calm"><div class="prom-top"><b>${topicName(c.topic)}</b><small>بيرجعون لك بعد ${ar(Math.max(1, c.at - S.day))} ساعة</small></div><small>قلت لـ${c.person?.name || "واحد من الأهالي"}: «إن شاء الله، نشوف»</small></div>`);
   if (!open.length && !waiting.length) return "";
@@ -1013,16 +1047,7 @@ function quartersSheet() {
     if (!v || v === DISTRICT_NAMES[d]) delete S.districts[d]; else S.districts[d] = v;
     sfx.coin(); save(); toast(`صار اسمها «${districtName(S, d)}»`, "goal"); quartersSheet();
   }));
-  $("sheetBody").querySelectorAll("[data-qshow]").forEach((b) => b.addEventListener("click", () => {
-    const d = Number(b.dataset.qshow), values = new Float32Array(N * N);
-    for (let i = 0; i < N * N; i++) if (districtOf(i) === d) values[i] = 1;
-    let cx = 0, cy = 0, n = 0;
-    S.tiles.forEach((t, i) => { if (t.b?.id === "house" && districtOf(i) === d) { cx += i % N; cy += Math.floor(i / N); n++; } });
-    closeSheet();
-    if (n) { world.focus(Math.round(cx / n), Math.round(cy / n)); world.updateCamera(); }
-    setTimeout(() => world.setOverlay(values, "#7b5cc4"), 220);
-    setTimeout(() => { if (!tool) world.setOverlay(null); }, 5000);
-  }));
+  $("sheetBody").querySelectorAll("[data-qshow]").forEach((b) => b.addEventListener("click", () => showDistrict(Number(b.dataset.qshow))));
 }
 
 // ---------- online: publish your town, the leaderboard, visiting friends ----------
@@ -1104,7 +1129,7 @@ async function visitTown(code, inWorld) {
  * (build, upgrade, repair, remove, turn, tax, loans, decisions, replies, names) is stopped here,
  * before its own handler runs. Reading, following a family, the world map and comments still work.
  */
-const VISIT_OK = ".keep, [data-follow], [data-day], [data-plot], .wm-zoom, #olText, #wmTown, .ol-com";
+const VISIT_OK = ".keep, [data-follow], [data-day], [data-plot], [data-district], .wm-zoom, #olText, #wmTown, .ol-com";
 const VISIT_SHEETS = new Set(["online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew"]);
 for (const type of ["click", "input", "change"]) $("sheetBody").addEventListener(type, (e) => {
   if (!visiting || VISIT_SHEETS.has(sheetFor)) return;
@@ -1513,10 +1538,11 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-27",
+  v: "2026-11-28",
   items: [
     ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
-    ["🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ١٢ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، وأسعارها أرخص من قبل."],
+    ["📍", "وين الحارة؟", "إذا أحد بالنشرة أو بالوعود ذكر حارة، تحتها زر «📍 وين؟» يوديك لها وتضوي أرضها."],
+    ["🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ٢٤ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، كل جهة نصين، وأسعارها تبدأ من ٣ آلاف."],
     ["🌍", "عالم الجوف صار أكبر", "خريطة الجوف كبرت كثير وفيها أماكن جديدة: الحديثة، العيساوية، الشويحطية، صوير، ميقوع، أبو عجرم، زلوم. ومدن اللاعبين بقت بمكانها."],
     ["🏙️", "مرحلة الحاضرة", "بعد المحافظة صارت فيه «حاضرة» (٩٠٠٠ ساكن)، وبرج سكني يسع ١٢٠، ومستوى رابع للمحلات والمزارع والمسجد والمستشفى."],
     ["🫒", "زيتون الجوف", "مزرعة زيتون ومعصرة تعصر زيت الجوف وتصدّره، ونصب الزيتونة."],

@@ -1274,14 +1274,14 @@ export class World {
   }
 
   /** Tint tiles (a service's reach). values: Float32Array(N*N) of strengths, colour: css colour. */
-  setOverlay(values, color) {
+  setOverlay(values, color, opacity = 0.3) {
     if (this.overlay) { this.scene.remove(this.overlay); this.overlay.dispose(); this.overlay = null; }
     if (!values) return;
     const cells = [];
     for (let i = 0; i < N * N; i++) if (values[i] > 0) cells.push(i);
     const g = new THREE.PlaneGeometry(0.96, 0.96); g.rotateX(-Math.PI / 2);
     const heat = color === "heat";
-    this.overlay = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: heat ? "#ffffff" : color, transparent: true, opacity: heat ? 0.55 : 0.3, depthWrite: false }), Math.max(1, cells.length));
+    this.overlay = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: heat ? "#ffffff" : color, transparent: true, opacity: heat ? 0.55 : opacity, depthWrite: false }), Math.max(1, cells.length));
     const m = new THREE.Matrix4(), hc = new THREE.Color();
     cells.forEach((i, k) => {
       const p = tileCenter(i % N, Math.floor(i / N)); m.makeTranslation(p.x, 0.015, p.z); this.overlay.setMatrixAt(k, m);
