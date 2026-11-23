@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience } from "./sound.js";
@@ -55,10 +55,11 @@ function clockAt(p, d) {
   return `${ar(((hh + 11) % 12) + 1)}:${ar(String(mm).padStart(2, "0"))} ${hh < 12 ? "ص" : "م"}`;
 }
 
+let arrange = null; // the layout editor's state while it is open (see enterArrange)
 let visiting = null; // { code, town, comments } while looking at another player's town
 let worldMode = false; // playing a town in the shared world of al-Jouf
 function save() {
-  if (visiting) return;
+  if (visiting || arrange) return; // mid-layout the town is saved as it was before (see enterArrange)
   S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
   S.savedAt = Date.now();
   if (worldMode) { store.set(WORLD_SAVE, pack(S)); worldSync(); return; }
@@ -119,8 +120,10 @@ canvas.addEventListener("pointerdown", (e) => {
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: world.view.zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    if (arrange?.held && arrange.dragging) arrDrop(null);
     drag = null; return;
   }
+  if (arrange) { arrDown(e); return; }
   const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill");
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
   if (painting) paintAt(e.clientX, e.clientY);
@@ -137,12 +140,14 @@ canvas.addEventListener("pointermove", (e) => {
   }
   if (!drag) return;
   if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
+  if (arrange && arrMove(e)) return;
   if (drag.painting) { paintAt(e.clientX, e.clientY); return; }
   if (drag.moved) { world.pan(e.clientX - drag.lx, e.clientY - drag.ly); drag.lx = e.clientX; drag.ly = e.clientY; }
 });
 canvas.addEventListener("pointerup", (e) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
+  if (arrange && drag && pointers.size === 0) { arrUp(e); drag = null; return; }
   if (drag && !drag.moved && !drag.painting && pointers.size === 0) tap(e.clientX, e.clientY);
   if (pointers.size === 0) drag = null;
 });
@@ -258,6 +263,153 @@ function confirmPending() {
   showPending();
 }
 
+// ---------- the layout editor (like a base editor): drag buildings around for free ----------
+// Touch a building and drag it; drop it on an empty tile, or on another building to swap them.
+// A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom; a tap
+// on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
+// ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
+const arrMovable = (b) => !!b && !ROAD_IDS.includes(b.id) && !(b.build > 0);
+function arrSnapshot() {
+  const at = [];
+  S.tiles.forEach((t, i) => { if (arrMovable(t.b)) at.push([i, t.b, t.b.rot || 0]); });
+  return { at, tray: arrange ? [...arrange.tray] : [] };
+}
+function arrRestore(snap) {
+  S.tiles.forEach((t) => { if (arrMovable(t.b)) t.b = null; });
+  for (const [i, b, rot] of snap.at) { S.tiles[i].b = b; b.rot = rot || undefined; if (!b.rot) delete b.rot; }
+  arrange.tray = [...snap.tray];
+}
+function enterArrange() {
+  if (visiting) { toast("هذي مدينة غيرك: تتفرج بس", "bad"); return; }
+  save();
+  closeSheet();
+  arrange = { tray: [], held: null, sel: null, hist: [] };
+  arrange.start = arrSnapshot();
+  document.body.classList.add("arranging");
+  $("arrange").hidden = false;
+  sfx.tap(); arrRender();
+}
+function leaveArrange(keep) {
+  if (!arrange) return;
+  if (!keep) arrRestore(arrange.start);
+  arrange = null;
+  document.body.classList.remove("arranging");
+  $("arrange").hidden = true;
+  world.setGhost(null); world.setHover(null); world.setOverlay(null);
+  A = analyze(S); sync(false); refresh();
+  if (keep) { save(); toast("انحفظ ترتيب البلد ✓", "goal"); sfx.build(); }
+}
+const arrPush = () => { arrange.hist.push(arrSnapshot()); if (arrange.hist.length > 40) arrange.hist.shift(); };
+/** Lift a building: off its tile (or out of the tray), into the hand. */
+function arrLift(i) {
+  const b = S.tiles[i].b;
+  arrPush();
+  S.tiles[i].b = null;
+  arrange.held = { b, from: i };
+  arrange.sel = null;
+  sync(false);
+}
+/** Put what is in the hand down on tile t (or back where it came from); a building there swaps. */
+function arrDrop(t) {
+  const h = arrange.held;
+  if (!h) return;
+  arrange.held = null; arrange.dragging = false;
+  const back = () => { if (h.from >= 0) S.tiles[h.from].b = h.b; else arrange.tray.push(h.b); };
+  if (!t || !inMap(t.x, t.y)) { back(); sync(false); arrRender(); return; }
+  const i = idx(t.x, t.y), there = S.tiles[i].b;
+  if (there && arrMovable(there) && h.from >= 0) {
+    // swap: each goes to the other's place, if both fit there
+    S.tiles[i].b = null;
+    const ok1 = !layoutBlocker(S, t.x, t.y, h.b), ok2 = !layoutBlocker(S, h.from % N, Math.floor(h.from / N), there);
+    if (ok1 && ok2) { S.tiles[i].b = h.b; S.tiles[h.from].b = there; sfx.build(); arrange.sel = i; }
+    else { S.tiles[i].b = there; back(); toast("ما يصير يتبادلون: واحد منهم ما يناسب المكان الثاني", "bad"); sfx.deny(); }
+  } else {
+    const why = layoutBlocker(S, t.x, t.y, h.b);
+    if (why) { back(); toast(why, "bad"); sfx.deny(); }
+    else { S.tiles[i].b = h.b; arrange.sel = i; sfx.build(); }
+  }
+  sync(false); arrRender();
+}
+function arrDown(e) {
+  const t = world.pick(e.clientX, e.clientY);
+  const i = inMap(t.x, t.y) ? idx(t.x, t.y) : -1;
+  drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && arrMovable(S.tiles[i].b) ? i : -1 };
+}
+/** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
+function arrMove(e) {
+  if (!drag.moved) return true;
+  if (drag.grab >= 0 && !arrange.held) { arrLift(drag.grab); arrange.dragging = true; }
+  if (arrange.held && arrange.dragging) {
+    const t = world.pick(e.clientX, e.clientY);
+    if (inMap(t.x, t.y)) {
+      const there = S.tiles[idx(t.x, t.y)].b;
+      const ok = there ? arrMovable(there) : !layoutBlocker(S, t.x, t.y, arrange.held.b);
+      world.setHover(t, ok); world.setGhost(t, modelKey(arrange.held.b.id, arrange.held.b.lvl), ok, S.tiles[idx(t.x, t.y)].t, canTurn(arrange.held.b.id) ? world.faceAngle(S, t.x, t.y) + (arrange.held.b.rot || 0) * Math.PI / 2 : 0);
+    }
+    return true;
+  }
+  return false; // let the land pan
+}
+function arrUp(e) {
+  const t = world.pick(e.clientX, e.clientY);
+  if (arrange.held && arrange.dragging) { arrDrop(t); return; }
+  if (drag.moved) return;
+  if (arrange.held) { arrDrop(t); return; } // something from the tray: tap where it goes
+  const i = inMap(t.x, t.y) ? idx(t.x, t.y) : -1;
+  arrange.sel = i >= 0 && arrMovable(S.tiles[i].b) ? (arrange.sel === i ? null : i) : null;
+  sfx.tap(); arrRender();
+}
+function arrRender() {
+  if (!arrange) return;
+  const sel = arrange.sel, values = new Float32Array(N * N);
+  if (sel != null) values[sel] = 1;
+  world.setOverlay(sel != null ? values : null, "#e0a44a");
+  if (!arrange.held) { world.setGhost(null); world.setHover(null); }
+  // the tray, grouped by kind and level
+  const groups = new Map();
+  arrange.tray.forEach((b, k) => { const key = modelKey(b.id, b.lvl); if (!groups.has(key)) groups.set(key, { b, list: [] }); groups.get(key).list.push(k); });
+  $("arrTray").innerHTML = [...groups.entries()].map(([key, g]) => `<button type="button" class="arr-item ${arrange.held && arrange.held.from < 0 && modelKey(arrange.held.b.id, arrange.held.b.lvl) === key ? "on" : ""}" data-k="${g.list[0]}"><img alt="" src="${thumbnail(key)}"><b>${levelName(g.b)}</b><i>${ar(g.list.length)}</i></button>`).join("");
+  $("arrTray").hidden = !arrange.tray.length && !(arrange.held && arrange.held.from < 0);
+  $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`
+    : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
+    : sel != null ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه`
+    : "اسحب أي مبنى بإصبعك وحطه وين تبي. حطه على مبنى ثاني ويتبادلون مكانهم.";
+  $("arrRot").disabled = sel == null || !canTurn(S.tiles[sel]?.b?.id);
+  $("arrUndo").disabled = !arrange.hist.length;
+  $("arrTray").querySelectorAll("[data-k]").forEach((el) => el.addEventListener("click", () => {
+    if (arrange.held && arrange.held.from < 0) arrange.tray.push(arrange.held.b);
+    const k = Number(el.dataset.k), b = arrange.tray[k];
+    arrPush();
+    arrange.tray.splice(k, 1);
+    arrange.held = { b, from: -1 }; arrange.dragging = false; arrange.sel = null;
+    sfx.tap(); arrRender();
+  }));
+}
+$("arrRot").addEventListener("click", () => {
+  const sel = arrange?.sel, b = sel != null && S.tiles[sel].b;
+  if (!b || !canTurn(b.id)) return;
+  arrPush(); b.rot = ((b.rot || 0) + 1) % 4; sfx.tap(); sync(false); arrRender();
+});
+$("arrAll").addEventListener("click", () => {
+  if (!arrange) return;
+  if (arrange.held) arrDrop(null);
+  arrPush();
+  S.tiles.forEach((t) => { if (arrMovable(t.b)) { arrange.tray.push(t.b); t.b = null; } });
+  arrange.sel = null; sfx.remove(); sync(false); arrRender();
+});
+$("arrUndo").addEventListener("click", () => {
+  if (!arrange?.hist.length) return;
+  arrange.held = null; arrRestore(arrange.hist.pop()); arrange.sel = null;
+  sfx.tap(); sync(false); arrRender();
+});
+$("arrCancel").addEventListener("click", () => { sfx.tap(); leaveArrange(false); });
+$("arrSave").addEventListener("click", () => {
+  if (!arrange) return;
+  const left = arrange.tray.length + (arrange.held ? 1 : 0);
+  if (left) { toast(`حط كل المباني أول: باقي ${ar(left)} بالمخزن`, "bad"); sfx.deny(); return; }
+  leaveArrange(true);
+});
+
 // ---------- moving buildings (tap one, tap where it goes, then ✓) ----------
 function moveTap(t) {
   const b = S.tiles[idx(t.x, t.y)].b;
@@ -368,14 +520,14 @@ const ICONS = {
   road: `<path ${F} d="M8 3h8l4 18H4z"/><path d="M8 3 4 21M16 3l4 18M12 4v3M12 10v3M12 16v3"/>`,
   bulldoze: `<path ${F} d="M3 13h9v4H3zM5 9h5v4H5z"/><path d="M3 13h9v4H3zM5 9h5v4H5zM12 14l4-3 2 1-1 5h-5M18 12l3 5M4 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M9 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0"/>`
 };
-const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name })), { id: "move", name: "نقل" }, { id: "bulldoze", name: "إزالة" }];
+const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name })), { id: "move", name: "ترتيب" }, { id: "bulldoze", name: "إزالة" }];
 function renderCats() {
   $("cats").innerHTML = toolsBar.map((c) => `<button type="button" class="cat ${c.id === "bulldoze" ? "danger" : ""} ${(openCat === c.id || tool?.id === c.id) ? "on" : ""}" data-cat="${c.id}"><svg viewBox="0 0 24 24">${ICONS[c.id]}</svg><span>${c.name}</span></button>`).join("");
   $("cats").querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => {
     sfx.tap();
     const id = b.dataset.cat;
     if (id === "bulldoze") { openCat = null; setTool(tool?.id === "bulldoze" ? null : { id: "bulldoze" }); return; }
-    if (id === "move") { openCat = null; setTool(tool?.id === "move" ? null : { id: "move", from: null }); return; }
+    if (id === "move") { openCat = null; setTool(null); enterArrange(); return; }
     openCat = openCat === id ? null : id;
     renderCats(); renderCards();
   }));
@@ -1009,6 +1161,7 @@ function worldSync(force) {
   if (!worldMode || !id?.plot && id?.plot !== 0 || !onlineOk()) return;
   if (!force && Date.now() - lastSync < 5 * 60000) return;
   lastSync = Date.now();
+  if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!mine?.world) return;
   const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era,
@@ -1356,8 +1509,14 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-25",
+  v: "2026-11-26",
   items: [
+    ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
+    ["🗺️", "الأرض كبرت", "الخريطة صارت أكبر بكثير: ٤ أراضي قريبة و٤ أطراف بعيدة تشتريها."],
+    ["🏙️", "مرحلة الحاضرة", "بعد المحافظة صارت فيه «حاضرة» (٩٠٠٠ ساكن)، وبرج سكني يسع ١٢٠، ومستوى رابع للمحلات والمزارع والمسجد والمستشفى."],
+    ["🫒", "زيتون الجوف", "مزرعة زيتون ومعصرة تعصر زيت الجوف وتصدّره، ونصب الزيتونة."],
+    ["🌬️", "مزرعة رياح", "توربينات مثل دومة الجندل: كهرباء كثيرة ونظيفة بلا دخان."],
+    ["🏰", "مشاريع كبرى جديدة", "قلعة مارد، مدينة ألعاب، محطة القطار، استاد الجوف، وأبراج الرافعية. ومكتبة عامة ونافورة راقصة."],
     ["🔌", "عمدان الكهرب", "حط المولد بعيد عن البيوت عشان دخانه، ووصّل الكهرب بعمدان: كل عمود ياخذ من اللي قبله لين ٤ مربعات ويوصل للبيوت حوله."],
     ["👀", "زيارة المدن للفرجة بس", "إذا دخلت مدينة غيرك تتفرج بس: ما تقدر تبني ولا تطوّر ولا تغيّر فيها شي."],
     ["↻", "لفّ المباني", "قبل ما تبني اضغط ↻ وتشوف المبنى يلف قدامك، وبعد ما تبنيه اضغط عليه واختر «لفّ المبنى» ببلاش."],
@@ -1965,7 +2124,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor);
-  if (playing && !visiting && worldMode) {
+  if (arrange) { /* the town waits while the mayor rearranges it */ } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
     if (!paused && S.day < wh) runHour();

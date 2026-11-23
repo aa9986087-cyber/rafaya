@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, OUTER, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -14,20 +14,22 @@ export function rng(seed) {
 
 // ---------- land ----------
 
-const O = OWN_START, E = N - OWN_START;
-/** Which plot a tile belongs to ("" for the land the town starts with). The corners go clockwise. */
+const O = OWN_START, E = N - OWN_START, O2 = OUTER, E2 = N - OUTER;
+/** The side of a ring a tile is on (lo … hi is the inside of that ring). The corners go clockwise. */
+const sideOf = (x, y, lo, hi) => (y < lo && x < hi ? "n" : x >= hi && y < hi ? "e" : y >= hi && x >= lo ? "s" : "w");
+/** Which plot a tile belongs to ("" for the land the town starts with): near ring n/e/s/w, far edges n2/e2/s2/w2. */
 export function plotAt(x, y) {
   if (x >= O && x < E && y >= O && y < E) return "";
-  if (y < O && x < E) return "n";
-  if (x >= E && y < E) return "e";
-  if (y >= E && x >= O) return "s";
-  return "w";
+  if (x >= O2 && x < E2 && y >= O2 && y < E2) return sideOf(x, y, O, E);
+  return `${sideOf(x, y, O2, E2)}2`;
 }
 export const owns = (s, x, y) => { const p = plotAt(x, y); return !p || !!s.owned?.[p]; };
 export const plotPrice = (s) => PLOT_PRICES[Math.min(PLOT_PRICES.length - 1, PLOTS.filter((p) => s.owned?.[p.id]).length)];
 export function buyPlot(s, id) {
   if (!PLOTS.some((p) => p.id === id)) return "ما فيه أرض كذا";
   if (s.owned[id]) return "الأرض لك من قبل";
+  const need = PLOTS.find((p) => p.id === id).needs;
+  if (need && !s.owned[need]) return `اشترِ «${PLOTS.find((p) => p.id === need).name}» أول`;
   const price = plotPrice(s);
   if (s.money < price) return "ما يكفي المال";
   s.money -= price;
@@ -53,7 +55,7 @@ function makeLand(r, terrain = "wadi") {
     const x = Math.floor(r() * N), yy = Math.floor(r() * N), t = tiles[idx(x, yy)];
     if (t.t === "sand") t.t = "rock";
   }
-  addFayda(tiles, r, faydas);
+  addFayda(tiles, r, Math.round((faydas * N * N) / 1600)); // as many for each bit of land as on the old map
   return tiles;
 }
 
@@ -450,6 +452,21 @@ export function moveBlocker(s, fx, fy, tx, ty) {
   return "";
 }
 /** Move a building to an empty tile you own. Returns why not, or "". */
+/**
+ * Can this building stand on (x, y) in the layout editor? The same ground rules as building, but
+ * moving costs nothing there (and rocks must be cleared first).
+ */
+export function layoutBlocker(s, x, y, b) {
+  if (!inMap(x, y)) return "خارج الأرض";
+  if (!owns(s, x, y)) return "الأرض هذي مو لك";
+  const t = s.tiles[idx(x, y)];
+  if (t.b) return "المكان مشغول";
+  if (t.t === "lake") return "هذي بحيرة السد";
+  if (B[b.id].onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
+  if (B[b.id].onRock && t.t !== "rock") return "الكسارة تنبني على الصخور";
+  if (t.t === "rock" && !B[b.id].onRock) return "فيه صخر: أزله أول";
+  return "";
+}
 export function moveBuilding(s, fx, fy, tx, ty) {
   const why = moveBlocker(s, fx, fy, tx, ty);
   if (why) return why;
@@ -1216,8 +1233,14 @@ export function unpack(text) {
   if (old * old !== o.tiles.length || old > N) throw new Error("bad save");
   if (old < N) {
     const off = (N - old) / 2, land = makeLand(rng((o.seed || 1) + 7));
-    const fresh = land.map((t) => (t.t === "sand" ? "" : t.t[0]));
+    const fresh = land.map((t) => (t.t === "sand" || t.t === "wadi" ? "" : t.t[0]));
     o.tiles.forEach((str, i) => { fresh[idx((i % old) + off, Math.floor(i / old) + off)] = str; });
+    // the town's own wadi runs on into the new land, west and east (lakes count as wadi here)
+    const wet = (str) => /^[wl]/.test(String(str));
+    for (let y = 0; y < old; y++) {
+      if (wet(o.tiles[y * old])) for (let x = 0; x < off; x++) fresh[idx(x, y + off)] = "w";
+      if (wet(o.tiles[y * old + old - 1])) for (let x = off + old; x < N; x++) fresh[idx(x, y + off)] = "w";
+    }
     o.tiles = fresh;
     if (o.cam) { o.cam = null; }
   }

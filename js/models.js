@@ -94,6 +94,14 @@ function nightWindows(b, w, y, z, n, h = 0.07) {
   for (let i = 0; i < n; i++) b.box(w / n * 0.4, h, 0.022, C.light, { x: -w / 2 + (i + 0.5) * w / n, y, z }, "lights");
 }
 
+/** An olive tree: a gnarled grey trunk and a round silvery-green crown. */
+export function oliveTree(b, x, z, s = 1) {
+  b.cyl(0.018 * s, 0.03 * s, 0.14 * s, "#7d6a55", { x, z }, 6);
+  b.add(new THREE.CylinderGeometry(0.012 * s, 0.02 * s, 0.1 * s, 5), "#7d6a55", { x: x + 0.02 * s, y: 0.17 * s, z, rz: -0.5 });
+  b.add(new THREE.IcosahedronGeometry(0.1 * s, 0), "#7f9a5c", { x, y: 0.22 * s, z, sy: 0.75 });
+  b.add(new THREE.IcosahedronGeometry(0.07 * s, 0), "#94ab6e", { x: x + 0.06 * s, y: 0.2 * s, z: z + 0.03 * s, sy: 0.8 });
+  b.add(new THREE.IcosahedronGeometry(0.065 * s, 0), "#6e8a4e", { x: x - 0.05 * s, y: 0.19 * s, z: z - 0.04 * s, sy: 0.8 });
+}
 export function palm(b, x, z, s = 1, lean = 0) {
   const segs = 6, h = 0.62 * s;
   for (let i = 0; i < segs; i++) {
@@ -773,6 +781,145 @@ const MAKERS = {
     b.box(0.05, 0.07, 0.008, "#2c8a7a", { x: -0.11, y: 0.05, z: 0.22 });
     b.box(0.04, 0.006, 0.12, "#f6f6f6", { x: -0.11, y: 0.08, z: 0.22 }, "shiny");
   },
+  // ---------- the big expansion: al-Jouf's olives, wind, heritage, and a skyline ----------
+  olive(b) {
+    b.box(0.94, 0.015, 0.94, "#b59a6a");
+    for (const [w, d, x, z] of [[0.94, 0.03, 0, -0.46], [0.94, 0.03, 0, 0.46], [0.03, 0.94, -0.46, 0], [0.03, 0.94, 0.46, 0]]) b.box(w, 0.05, d, "#c9b48a", { x, z });
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) oliveTree(b, -0.28 + c * 0.28, -0.28 + r * 0.28, 0.8 + ((r + c) % 3) * 0.08);
+    b.box(0.8, 0.008, 0.012, "#3b3f44", { y: 0.016, z: 0.14 }); b.box(0.8, 0.008, 0.012, "#3b3f44", { y: 0.016, z: -0.14 });
+  },
+  oilpress(b) {
+    b.box(0.94, 0.012, 0.94, "#cfc3a6");
+    b.box(0.62, 0.34, 0.44, "#e6dcc4", { x: -0.12, z: -0.16 });
+    b.box(0.66, 0.04, 0.48, "#7c8a3a", { x: -0.12, y: 0.34, z: -0.16 });
+    windowsRow(b, 0.62, 0.16, 0.061, 4);
+    for (const x of [0.26, 0.4]) { b.cyl(0.07, 0.07, 0.46, "#b9bfc4", { x, z: -0.22 }, 12, "shiny"); b.dome(0.07, "#b9bfc4", { x, y: 0.46, z: -0.22 }, "shiny"); }
+    for (let i = 0; i < 4; i++) b.cyl(0.035, 0.035, 0.09, i % 2 ? "#6b7a2a" : "#4d5a1c", { x: -0.3 + i * 0.09, z: 0.3 }, 8, "shiny");
+    b.box(0.3, 0.14, 0.03, "#5a6b22", { x: -0.12, y: 0.22, z: 0.065 }); b.cyl(0.04, 0.04, 0.01, C.gold, { x: -0.12, y: 0.28, z: 0.08, rx: Math.PI / 2 }, 10);
+    oliveTree(b, 0.32, 0.3, 0.7);
+  },
+  windfarm(b) {
+    b.box(0.96, 0.012, 0.96, "#d9c9a2");
+    for (const [x, z, s] of [[-0.24, -0.22, 1], [0.26, 0.2, 0.9]]) {
+      b.cyl(0.018 * s, 0.032 * s, 1.5 * s, "#f2f2f0", { x, z }, 10, "shiny");
+      b.box(0.06 * s, 0.06 * s, 0.14 * s, "#f2f2f0", { x, y: 1.5 * s, z }, "shiny");
+      for (let k = 0; k < 3; k++) {
+        const a = k * (Math.PI * 2 / 3) + 0.3;
+        b.add(new THREE.BoxGeometry(0.035 * s, 0.62 * s, 0.012), "#fbfbfa", { x: x + Math.sin(a) * 0.3 * s, y: 1.5 * s + Math.cos(a) * 0.3 * s + 0.03, z: z + 0.08 * s, rz: -a }, "shiny");
+      }
+      b.add(new THREE.SphereGeometry(0.03 * s, 8, 6), "#e8e8e6", { x, y: 1.53 * s, z: z + 0.08 * s }, "shiny");
+      b.box(0.02, 0.02, 0.02, "#ff3b30", { x, y: 1.6 * s, z }, "lights");
+    }
+    b.box(0.16, 0.12, 0.12, "#c7c3ba", { x: 0.3, z: -0.32 });
+  },
+  library(b) {
+    b.box(0.86, 0.36, 0.62, "#e9dfcb", { z: -0.08 });
+    b.box(0.9, 0.04, 0.66, C.stone, { y: 0.36, z: -0.08 });
+    for (let i = 0; i < 5; i++) b.box(0.1, 0.26, 0.012, i % 2 ? "#4f7f99" : "#3d6b84", { x: -0.32 + i * 0.16, y: 0.06, z: 0.235 }, "shiny");
+    b.box(0.5, 0.06, 0.16, C.stone, { y: 0.26, z: 0.3 });
+    for (const x of [-0.22, 0, 0.22]) b.cyl(0.018, 0.018, 0.26, C.white, { x, z: 0.36 }, 8);
+    // an open book on the roof sign
+    b.add(new THREE.BoxGeometry(0.16, 0.012, 0.11), "#f8f4ea", { x: -0.09, y: 0.42, z: -0.08, rz: 0.25 });
+    b.add(new THREE.BoxGeometry(0.16, 0.012, 0.11), "#f8f4ea", { x: 0.09, y: 0.42, z: -0.08, rz: -0.25 });
+    nightWindows(b, 0.86, 0.12, 0.237, 5, 0.18);
+  },
+  olivetree(b) {
+    b.cyl(0.4, 0.42, 0.06, C.stone, {}, 18);
+    b.cyl(0.36, 0.36, 0.02, "#7db35a", { y: 0.06 }, 18);
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; b.add(new THREE.SphereGeometry(0.025, 5, 4), i % 2 ? "#f4d03f" : "#ffffff", { x: Math.cos(a) * 0.3, y: 0.09, z: Math.sin(a) * 0.3 }); }
+    oliveTree(b, 0, 0, 2.2);
+  },
+  bigfountain(b) {
+    b.box(0.96, 0.012, 0.96, "#e3d4ae");
+    b.cyl(0.44, 0.46, 0.08, C.stone, {}, 24);
+    b.cyl(0.41, 0.41, 0.02, C.water, { y: 0.07 }, 24, "shiny");
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; b.cone(0.025, 0.22 + (i % 2) * 0.1, "#cfeef7", { x: Math.cos(a) * 0.28, y: 0.08, z: Math.sin(a) * 0.28 }, 8, "shiny"); b.cyl(0.02, 0.02, 0.01, i % 2 ? "#7ad0ff" : "#ffd27a", { x: Math.cos(a) * 0.34, y: 0.08, z: Math.sin(a) * 0.34 }, 6, "lights"); }
+    b.cyl(0.08, 0.1, 0.3, C.stone, { y: 0.08 }, 12);
+    b.cyl(0.18, 0.12, 0.05, C.stone, { y: 0.38 }, 16);
+    b.cone(0.04, 0.32, "#cfeef7", { y: 0.42 }, 10, "shiny");
+  },
+  marid(b) {
+    b.box(0.98, 0.02, 0.98, "#cdb58a");
+    // a rocky mound, then a stone castle with leaning walls and round towers
+    b.add(new THREE.CylinderGeometry(0.4, 0.48, 0.16, 9), "#b99a6c", { y: 0.08 });
+    b.add(new THREE.CylinderGeometry(0.26, 0.34, 0.34, 4), "#a98a5e", { y: 0.33, ry: Math.PI / 4 });
+    for (const [x, z] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22]]) {
+      b.cyl(0.07, 0.09, 0.5, "#9f8158", { x, y: 0.16, z }, 10);
+      b.cyl(0.075, 0.075, 0.03, "#8d7049", { x, y: 0.66, z }, 10);
+    }
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; b.box(0.04, 0.04, 0.04, "#9f8158", { x: Math.cos(a) * 0.2, y: 0.5, z: Math.sin(a) * 0.2 }); }
+    b.box(0.08, 0.12, 0.02, "#4a3523", { y: 0.17, z: 0.335 });
+    b.cyl(0.01, 0.01, 0.22, C.dark, { x: 0.22, y: 0.69, z: 0.22 }, 4);
+    b.box(0.1, 0.06, 0.005, "#2f7d5b", { x: 0.27, y: 0.86, z: 0.22 });
+    for (const x of [-0.3, 0.3]) b.box(0.04, 0.03, 0.04, C.light, { x, y: 0.17, z: 0.38 }, "lights");
+  },
+  themepark(b) {
+    b.box(0.98, 0.012, 0.98, "#d8cdb2");
+    // a ferris wheel
+    const cx = -0.18, cy = 0.62, r = 0.42;
+    for (const z of [-0.06, 0.06]) { b.add(new THREE.TorusGeometry(r, 0.012, 6, 28), "#d9534f", { x: cx, y: cy, z }, "shiny"); for (const s of [-1, 1]) b.add(new THREE.BoxGeometry(0.02, 0.66, 0.02), "#9aa0a6", { x: cx + s * 0.16, y: 0.3, z, rz: s * 0.25 }); }
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; b.add(new THREE.BoxGeometry(0.012, r, 0.012), "#e6e6e6", { x: cx + Math.cos(a) * r / 2, y: cy + Math.sin(a) * r / 2, z: 0, rz: a - Math.PI / 2 }); b.box(0.06, 0.05, 0.08, ["#f4d03f", "#2c8a7a", "#2f5f9e", "#d9822b"][i % 4], { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r - 0.06, z: 0 }); b.box(0.015, 0.015, 0.015, C.light, { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, z: 0.07 }, "lights"); }
+    // a carousel and a little coaster
+    b.cyl(0.16, 0.16, 0.03, "#f3e6c4", { x: 0.28, z: 0.26 }, 16); b.cone(0.18, 0.12, "#d9534f", { x: 0.28, y: 0.18, z: 0.26 }, 12);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; b.cyl(0.006, 0.006, 0.15, C.gold, { x: 0.28 + Math.cos(a) * 0.12, y: 0.03, z: 0.26 + Math.sin(a) * 0.12 }, 4, "shiny"); }
+    for (let i = 0; i < 9; i++) { const x = 0.1 + i * 0.045, y = 0.1 + Math.sin(i / 8 * Math.PI) * 0.3; b.box(0.05, 0.015, 0.06, "#2f5f9e", { x, y, z: -0.3 }); b.box(0.01, y, 0.01, "#9aa0a6", { x, z: -0.3 }); }
+    b.box(0.3, 0.08, 0.02, "#2c8a7a", { x: 0.2, y: 0.02, z: 0.47 });
+  },
+  station(b) {
+    b.box(0.98, 0.012, 0.98, "#cbbf9f");
+    b.box(0.98, 0.012, 0.2, "#6b5a48", { z: 0.3 });
+    for (const z of [0.25, 0.35]) b.box(0.98, 0.012, 0.015, "#8e959a", { y: 0.012, z }, "shiny");
+    for (let i = 0; i < 10; i++) b.box(0.03, 0.006, 0.18, "#4a3b2c", { x: -0.45 + i * 0.1, y: 0.012, z: 0.3 });
+    b.box(0.86, 0.06, 0.18, "#e7e2d6", { z: 0.08 });
+    b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.86, 16, 1, true, 0, Math.PI), "#e9e4d8", { y: 0.06, z: -0.18, rz: Math.PI / 2, sz: 0.55 }, "shiny");
+    b.box(0.86, 0.22, 0.3, "#ece6d8", { y: 0.06, z: -0.2 });
+    windowsRow(b, 0.8, 0.12, -0.049, 7, 0.08);
+    // a train at the platform
+    b.box(0.82, 0.12, 0.12, "#f4f4f2", { y: 0.02, z: 0.3 }, "shiny");
+    b.box(0.82, 0.04, 0.124, "#2c8a7a", { y: 0.07, z: 0.3 });
+    b.box(0.8, 0.03, 0.126, C.glass, { y: 0.1, z: 0.3 }, "shiny");
+    b.add(new THREE.SphereGeometry(0.07, 10, 6, 0, Math.PI), "#f4f4f2", { x: 0.41, y: 0.08, z: 0.3, ry: Math.PI / 2, sx: 1.4 }, "shiny");
+    b.cyl(0.015, 0.015, 0.5, C.dark, { x: -0.4, z: -0.42 }, 6); b.box(0.12, 0.1, 0.02, C.dark, { x: -0.4, y: 0.5, z: -0.42 }); b.box(0.1, 0.07, 0.022, C.light, { x: -0.4, y: 0.515, z: -0.42 }, "lights");
+  },
+  bigstadium(b) {
+    b.box(0.98, 0.012, 0.98, "#c9c0ad");
+    b.add(new THREE.CylinderGeometry(0.47, 0.44, 0.26, 28, 1, true), "#e9e4d8", { y: 0.13, sz: 0.8 });
+    b.add(new THREE.CylinderGeometry(0.44, 0.3, 0.2, 28, 1, true), "#c94f45", { y: 0.14, sz: 0.8 });
+    b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 28), "#4fa64a", { y: 0.02, sz: 0.8 });
+    b.box(0.3, 0.025, 0.003, C.white, { y: 0.03 }); b.cyl(0.05, 0.05, 0.025, "#5bb655", { y: 0.025 }, 14);
+    b.add(new THREE.TorusGeometry(0.46, 0.03, 6, 32), "#f2f2f0", { y: 0.28, rx: Math.PI / 2, sy: 0.8 }, "shiny");
+    for (const [x, z] of [[-0.42, -0.3], [0.42, -0.3], [-0.42, 0.3], [0.42, 0.3]]) { b.cyl(0.012, 0.012, 0.6, C.grey, { x, z }, 4); b.box(0.1, 0.05, 0.03, C.light, { x, y: 0.6, z }, "lights"); }
+  },
+  skyline(b) {
+    b.box(0.98, 0.015, 0.98, "#d6cfc0");
+    const towers = [[-0.22, -0.2, 0.26, 2.6, "#5d88a3"], [0.22, -0.18, 0.22, 2.0, "#6f9cb5"], [0.0, 0.24, 0.24, 1.5, "#4f7f99"], [-0.3, 0.28, 0.14, 0.9, "#87a9bd"], [0.32, 0.3, 0.14, 1.1, "#5d88a3"]];
+    for (const [x, z, w, h, c] of towers) {
+      b.box(w, h, w, c, { x, z }, "shiny");
+      for (let f = 1; f < h / 0.12; f++) b.box(w + 0.004, 0.008, w + 0.004, "#dfe7ec", { x, y: f * 0.12, z });
+      for (let f = 1; f < h / 0.24; f += 2) b.box(w * 0.7, 0.03, w + 0.006, C.light, { x, y: f * 0.24 + 0.05, z }, "lights");
+    }
+    b.cone(0.05, 0.5, "#dfe7ec", { x: -0.22, y: 2.6, z: -0.2 }, 6, "shiny");
+    b.box(0.02, 0.02, 0.02, "#ff3b30", { x: -0.22, y: 3.1, z: -0.2 }, "lights");
+    b.box(0.9, 0.06, 0.12, "#e9e4d8", { z: 0.45 });
+  },
+  house5(b) {
+    const h = 2.4;
+    b.box(0.74, 0.18, 0.74, C.stone);
+    b.box(0.66, h, 0.62, "#e8e2d4", { y: 0.18 });
+    for (let f = 0; f < 14; f++) {
+      const y = 0.26 + f * 0.165;
+      windowsRow(b, 0.66, y, 0.312, 4, 0.09);
+      if (f % 3) nightWindows(b, 0.66, y, 0.314, 4, 0.07);
+      for (const x of [-0.2, 0.2]) b.box(0.2, 0.01, 0.07, C.stone, { x, y: y - 0.02, z: 0.345 });
+    }
+    b.box(0.022, h - 0.1, 0.5, C.glass, { x: 0.332, y: 0.22 }, "shiny");
+    b.box(0.7, 0.06, 0.66, "#cfc6b4", { y: 0.18 + h });
+    b.cyl(0.08, 0.08, 0.16, C.white, { x: -0.18, y: 0.24 + h, z: -0.12 }, 10);
+    b.box(0.22, 0.1, 0.18, "#cfc6b4", { x: 0.16, y: 0.24 + h, z: 0.1 });
+    b.box(0.3, 0.16, 0.03, C.glass, { y: 0, z: 0.375 }, "shiny");
+    b.box(0.94, 0.006, 0.94, "#d6cfc0");
+    b.box(0.03, 0.03, 0.03, "#ff3b30", { y: 0.3 + h, z: 0.2 }, "lights");
+  },
   // A building site: fence, sand piles, a frame going up and a crane.
   construction(b) {
     b.box(0.94, 0.008, 0.94, "#cdb68a");
@@ -956,8 +1103,19 @@ export function compose(fn) { const b = new Builder(); fn(b, MAKERS); return b.d
 export function makerSeeded(key, seed) { const b = new Builder(); MAKERS[key](b, "sand", seed); return b.done(); }
 
 // Upgraded farms, shops and workshops: the same building with more added on at each level.
-const BIZ = ["palms", "veg", "grocery", "cafe", "souq", "mandi", "workshop", "pen", "mosque", "hospital"];
+const BIZ = ["palms", "veg", "olive", "grocery", "cafe", "souq", "mandi", "workshop", "pen", "mosque", "hospital", "oilpress"];
 function bizExtras(b, id, lvl) {
+  if (lvl >= 3) bigTime(b, id); // the fourth level: a company sign, solar roof and lights
+  if (id === "olive") {
+    b.box(0.12, 0.12, 0.12, C.plaster, { x: 0.38, z: 0.38 }); b.box(0.13, 0.02, 0.13, "#7c8a3a", { x: 0.38, y: 0.12, z: 0.38 });
+    if (lvl >= 2) { for (const z of [-0.42, 0.42]) for (let i = 0; i < 4; i++) oliveTree(b, -0.36 + i * 0.24, z, 0.55); }
+    return;
+  }
+  if (id === "oilpress") {
+    b.cyl(0.07, 0.07, 0.46, "#b9bfc4", { x: 0.12, z: -0.22 }, 12, "shiny");
+    if (lvl >= 2) { b.box(0.34, 0.2, 0.2, "#e6dcc4", { x: 0.28, z: 0.24 }); b.box(0.36, 0.02, 0.22, "#7c8a3a", { x: 0.28, y: 0.2, z: 0.24 }); }
+    return;
+  }
   if (id === "palms") {
     for (const z of [-0.2, 0.2]) b.box(0.8, 0.012, 0.014, "#3b3f44", { y: 0.018, z }); // drip lines
     b.box(0.12, 0.12, 0.12, C.plaster, { x: 0.38, z: 0.3 }); b.box(0.13, 0.02, 0.13, C.stone, { x: 0.38, y: 0.12, z: 0.3 });
@@ -1006,7 +1164,15 @@ function bizExtras(b, id, lvl) {
     else b.add(new THREE.BoxGeometry(0.92, 0.015, 0.92), "#e6d3a8", { y: 0.36 });
   }
 }
-for (const id of BIZ) for (const lvl of [1, 2]) MAKERS[`${id}${lvl}`] = (b, ground, seed) => { MAKERS[id](b, ground, seed); bizExtras(b, id, lvl); };
+/** Every building at its fourth level gets a lit company sign and solar panels. */
+function bigTime(b, id) {
+  b.cyl(0.012, 0.012, 0.7, C.dark, { x: -0.42, z: 0.42 }, 5);
+  b.box(0.26, 0.12, 0.03, "#1d3b55", { x: -0.42, y: 0.7, z: 0.42 });
+  b.box(0.22, 0.06, 0.032, C.light, { x: -0.42, y: 0.73, z: 0.43 }, "lights");
+  for (let i = 0; i < 3; i++) b.box(0.035, 0.035, 0.034, C.gold, { x: -0.48 + i * 0.06, y: 0.79, z: 0.42 }, "shiny");
+  if (!["palms", "veg", "olive", "pen"].includes(id)) for (const x of [-0.15, 0.15]) b.add(new THREE.BoxGeometry(0.22, 0.012, 0.14), "#26415e", { x, y: 0.03, z: -0.44, rx: -0.4 }, "shiny");
+}
+for (const id of BIZ) for (const lvl of [1, 2, 3]) MAKERS[`${id}${lvl}`] = (b, ground, seed) => { MAKERS[id](b, ground, seed); bizExtras(b, id, lvl); };
 
 export function modelKey(id, lvl) {
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;

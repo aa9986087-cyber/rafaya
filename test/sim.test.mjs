@@ -74,15 +74,20 @@ test("saving keeps the whole town, and the town carries on while away (up to six
 
 test("land around the town is bought plot by plot, each dearer than the last", () => {
   const s = newGame(9);
-  assert.equal(plotAt(0, 0), "n");
-  assert.match(cantBuild(s, 0, 0, "house"), /مو لك/);
+  const nx = 20, ny = 10; // a tile on the near northern ring
+  assert.equal(plotAt(nx, ny), "n");
+  assert.equal(plotAt(0, 0), "n2", "the far corner is the far edges");
+  assert.match(cantBuild(s, nx, ny, "house"), /مو لك/);
   s.money = 100000;
   assert.equal(buyPlot(s, "n"), "");
   assert.equal(s.money, 100000 - 6000);
-  assert.ok(owns(s, 0, 0));
+  assert.ok(owns(s, nx, ny));
   assert.equal(buyPlot(s, "e"), "");
   assert.equal(s.money, 100000 - 6000 - 12000);
   assert.match(buyPlot(s, "n"), /من قبل/);
+  assert.match(buyPlot(s, "s2"), /أول/, "the far south needs the near south first");
+  assert.equal(buyPlot(s, "n2"), "");
+  assert.ok(owns(s, 0, 0));
 });
 
 test("a save from the old 30×30 map opens with the town in the middle", () => {
@@ -91,7 +96,8 @@ test("a save from the old 30×30 map opens with the town in the middle", () => {
   small.tiles = Array.from({ length: 900 }, (_, i) => (i === 465 ? ":house:1:3" : ""));
   const back = unpack(JSON.stringify(small));
   assert.equal(back.tiles.length, N * N);
-  assert.equal(back.tiles[idx((465 % 30) + 5, Math.floor(465 / 30) + 5)].b.id, "house");
+  const off = (N - 30) / 2;
+  assert.equal(back.tiles[idx((465 % 30) + off, Math.floor(465 / 30) + off)].b.id, "house");
 });
 
 test("decisions about the village: they show up for a reason and do what they say", async () => {
@@ -282,7 +288,7 @@ test("a dam makes a lake behind it, holds floods, and groundwater falls with pum
   s.money = 1e6;
   // a dam on owned wadi with wadi to its west
   let dam = null;
-  for (let x = 12; x < 34 && !dam; x++) for (let y = 6; y < 34 && !dam; y++) if (owns(s, x, y) && s.tiles[idx(x, y)].t === "wadi" && !s.tiles[idx(x, y)].b && s.tiles[idx(x - 1, y)].t === "wadi" && !s.tiles[idx(x - 1, y)].b) dam = { x, y };
+  for (let x = 12; x < N - 6 && !dam; x++) for (let y = 6; y < N - 6 && !dam; y++) if (owns(s, x, y) && owns(s, x - 1, y) && s.tiles[idx(x, y)].t === "wadi" && !s.tiles[idx(x, y)].b && s.tiles[idx(x - 1, y)].t === "wadi" && !s.tiles[idx(x - 1, y)].b) dam = { x, y };
   assert.ok(dam);
   s.tiles[idx(dam.x, dam.y)].b = { id: "dam", lvl: 0, res: 0, cond: 100 };
   assert.ok(updateLake(s), "the lake appears");
@@ -336,7 +342,7 @@ test("people: each house has the same families every time, and fathers work wher
   const { familiesAt, jobOf } = await import("../js/people.js");
   const s = autoplay(900, 3);
   const a = analyze(s);
-  const home = s.tiles.findIndex((t) => t.b?.id === "house" && t.b.res >= 6 && a.workOf[s.tiles.indexOf(t)] >= 0);
+  const home = s.tiles.findIndex((t) => t.b?.id === "house" && t.b.res >= 3 && a.workOf[s.tiles.indexOf(t)] >= 0);
   assert.ok(home >= 0);
   const f1 = familiesAt(s, home), f2 = familiesAt(s, home);
   assert.deepEqual(f1, f2, "families are stable");
@@ -409,16 +415,16 @@ test("power poles carry power away from a smoky generator, and only when linked"
   const { powerNet } = await import("../js/sim.js");
   const s = newGame(5);
   s.era = 1;
-  const free = (x, y) => { const t = s.tiles[y * 40 + x]; t.t = "sand"; t.b = null; };
-  for (let x = 2; x <= 16; x++) free(x, 2);
-  s.tiles[2 * 40 + 2].b = { id: "generator", lvl: 0, res: 0, cond: 100 };
-  s.tiles[2 * 40 + 6].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
-  s.tiles[2 * 40 + 10].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
-  s.tiles[2 * 40 + 16].b = { id: "pole", lvl: 0, res: 0, cond: 100 }; // too far from the last one
+  const free = (x, y) => { const t = s.tiles[y * N + x]; t.t = "sand"; t.b = null; };
+  for (let x = 15; x <= 29; x++) free(x, 20);
+  s.tiles[20 * N + 15].b = { id: "generator", lvl: 0, res: 0, cond: 100 };
+  s.tiles[20 * N + 19].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
+  s.tiles[20 * N + 23].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
+  s.tiles[20 * N + 29].b = { id: "pole", lvl: 0, res: 0, cond: 100 }; // too far from the last one
   const net = powerNet(s);
-  assert.ok(net.live.has(2 * 40 + 6) && net.live.has(2 * 40 + 10));
-  assert.ok(!net.live.has(2 * 40 + 16));
+  assert.ok(net.live.has(20 * N + 19) && net.live.has(20 * N + 23));
+  assert.ok(!net.live.has(20 * N + 29));
   const a = analyze(s);
-  assert.equal(a.powered[2 * 40 + 13], 1, "a pole lights three tiles round it, past the generator's own reach");
-  assert.equal(a.powered[2 * 40 + 15], 0);
+  assert.equal(a.powered[20 * N + 26], 1, "a pole lights three tiles round it, past the generator's own reach");
+  assert.equal(a.powered[20 * N + 28], 0);
 });

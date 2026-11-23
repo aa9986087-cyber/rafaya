@@ -21,6 +21,21 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 
 4. `01a0b04`: **power poles** (`pole` in data.js, `powerNet()` in sim.js; a pole within 4 tiles of a source or a live pole is live and powers 3 tiles round it; wires drawn in `syncWires`). The owner asked for this because players put the generator next to houses and got smoke complaints. Also **visits are look-only**: the owner's friends could change a visited town. A capture listener on `#sheetBody` blocks changes while `visiting` (allow-list `VISIT_OK` / `VISIT_SHEETS` in main.js), and `worldSync` always sends your own town (`visiting.home`), never the visited one.
 
+5. **Layout editor and the big expansion.**
+   - The «ترتيب» tool opens a free, Clash-of-Clans-style layout mode:
+     - drag to move; drop on another building to swap;
+     - «شيل الكل» puts everything in a tray; there is undo, cancel and save;
+     - the town and saving pause while it is open;
+     - code: `arrange` / `arr*` functions in main.js and `layoutBlocker` in sim.js.
+   - The map grew from 40 to 56 (`MAP_SIZE`):
+     - the core is the same 30×30 (`OWN_START` 13);
+     - near ring plots n/e/s/w, plus far edges n2/e2/s2/w2 (`OUTER` 8), each needing its near plot;
+     - old saves are centred and their wadi continues outward.
+   - New era «حاضرة» (pop 9000). House level 5 «برج سكني».
+   - A 4th business level (`BIZ_UP[3]`, era 3).
+   - New buildings: olive, oilpress (olive chain), windfarm, library, olivetree, bigfountain, and the projects marid, themepark, station, bigstadium, skyline. New goals and achievements.
+   - Bots: `placeNear` targets one cluster at a time. Careful bots grow fine to hour 1800. Late-game collapses after ~2500 h are a known bot pathology: they spam tanks and solar.
+
 **Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

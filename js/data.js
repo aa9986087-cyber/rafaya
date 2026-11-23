@@ -1,23 +1,33 @@
 // Everything the town can build, research and become. Numbers are per in-game day.
 
-export const MAP_SIZE = 40;
-/** The town owns the middle (OWN_START … MAP_SIZE − OWN_START); the land around it is bought in plots. */
-export const OWN_START = 5;
+export const MAP_SIZE = 56;
+/**
+ * The town owns the middle (OWN_START … MAP_SIZE − OWN_START); around it two rings of land are
+ * bought in plots: the near ring (5 tiles wide) and the far edges (OUTER tiles wide), each in four sides.
+ * A far plot needs the near plot on its side first.
+ */
+export const OWN_START = 13;
+export const OUTER = 8;
 export const PLOTS = [
   { id: "n", name: "الأرض الشمالية" },
   { id: "e", name: "الأرض الشرقية" },
   { id: "s", name: "الأرض الجنوبية" },
-  { id: "w", name: "الأرض الغربية" }
+  { id: "w", name: "الأرض الغربية" },
+  { id: "n2", name: "أطراف الشمال", needs: "n" },
+  { id: "e2", name: "أطراف الشرق", needs: "e" },
+  { id: "s2", name: "أطراف الجنوب", needs: "s" },
+  { id: "w2", name: "أطراف الغرب", needs: "w" }
 ];
 /** Each plot costs more than the last one bought. */
-export const PLOT_PRICES = [6000, 12000, 20000, 32000];
+export const PLOT_PRICES = [6000, 12000, 20000, 32000, 50000, 75000, 110000, 160000];
 
 /** Town stages: reaching the population opens the stage and its buildings. */
 export const ERAS = [
   { id: 0, name: "قرية", pop: 0 },
   { id: 1, name: "بلدة", pop: 250 },
   { id: 2, name: "مدينة", pop: 1200 },
-  { id: 3, name: "محافظة", pop: 4000 }
+  { id: 3, name: "محافظة", pop: 4000 },
+  { id: 4, name: "حاضرة", pop: 9000 }
 ];
 
 /**
@@ -60,7 +70,8 @@ export const B = {
       { name: "بيت طين", cap: 6, cost: 200, needs: { road: 1, water: 1 } },
       { name: "بيت شعبي", cap: 10, cost: 700, needs: { road: 1, water: 1, happy: 45 } },
       { name: "فيلا", cap: 16, cost: 2000, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
-      { name: "عمارة", cap: 48, cost: 6000, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 }
+      { name: "عمارة", cap: 48, cost: 6000, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 },
+      { name: "برج سكني", cap: 120, cost: 16000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 5 }, era: 3 }
     ],
     text: "تنصبها خيمة، وأنت اللي تطورها: بيت طين، ثم شعبي، ثم فيلا، ثم عمارة. كل مستوى له سعر، ويحتاج طريق وماء واصل، والأعلى يحتاج كهرباء وخدمات قريبة."
   },
@@ -83,6 +94,8 @@ export const B = {
   blockfactory: { cat: "farm", name: "مصنع بلوك", cost: 1600, upkeep: 18, era: 1, jobs: 15, power: -6, radius: 2, pollute: 5, text: "يحوّل حجر الكسارات لبلوك: ٨ مواد بناء بالساعة إذا وصلته كسارتين بطريق." },
   dairy: { cat: "farm", name: "مصنع ألبان ومسلخ", cost: 2200, upkeep: 25, era: 1, jobs: 20, income: 90, water: -4, power: -6, radius: 2, pollute: 3, text: "حليب ولحم من حلال الرافعية. يحتاج ٤ حظائر موصولة به بطريق." },
   mill: { cat: "farm", name: "صوامع ومطحنة", cost: 2400, upkeep: 25, era: 1, jobs: 15, income: 100, power: -8, radius: 2, pollute: 3, text: "تطحن قمح المزارع المحورية. تحتاج ٣ مزارع محورية موصولة بها بطريق." },
+  olive: { cat: "farm", name: "مزرعة زيتون", cost: 260, upkeep: 3, era: 1, jobs: 6, income: 20, water: -4, text: "الجوف أرض الزيتون: صفوف زيتون تعطي دخل زين، وإذا وصلتها بمعصرة يصير دخلها أكثر." },
+  oilpress: { cat: "farm", name: "معصرة زيتون", cost: 2600, upkeep: 26, era: 1, jobs: 18, income: 130, water: -3, power: -6, radius: 2, pollute: 2, text: "تعصر زيت الجوف وتصدّره. تحتاج ٥ مزارع زيتون موصولة بها بطريق." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
 
   // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
@@ -93,6 +106,7 @@ export const B = {
   generator: { cat: "util", name: "مولد كهرباء", cost: 700, upkeep: 14, era: 1, power: 70, reach: 7, radius: 3, pollute: 10, text: "كهرباء ٧٠ وحدة لين ٧ مربعات، بس دخانه يزعج اللي حوله ٣ مربعات. حطه بعيد عن البيوت ووصّل الكهرب بعمدان." },
   pole: { cat: "util", name: "عمود كهرباء", cost: 25, upkeep: 0.3, era: 1, pole: true, reach: 3, text: "ينقل الكهرب بسلك: حطه قريب من المولد أو المحطة أو من عمود ثاني (لين ٤ مربعات)، ويوصل الكهرب للي حوله لين ٣ مربعات. كذا تبعد المولد ودخانه عن البيوت." },
   solar: { cat: "util", name: "ألواح شمسية", cost: 1600, upkeep: 6, era: 1, tech: "solar", power: 90, reach: 6, text: "كهرباء ٩٠ وحدة نظيفة، توصل لين ٦ مربعات." },
+  windfarm: { cat: "util", name: "مزرعة رياح", cost: 7000, upkeep: 30, era: 2, power: 450, reach: 13, text: "توربينات رياح مثل اللي بدومة الجندل: كهرباء ٤٥٠ وحدة نظيفة بلا دخان، توصل لين ١٣ مربع." },
   powerplant: { cat: "util", name: "محطة كهرباء", cost: 5000, upkeep: 60, era: 2, power: 600, reach: 14, radius: 5, pollute: 12, text: "كهرباء ٦٠٠ وحدة توصل لين ١٤ مربع." },
 
   mosque: { cat: "serv", name: "مسجد", cost: 350, upkeep: 4, era: 0, water: -1, power: -1, radius: 5, happy: 14, service: "mosque", text: "يفرّح الحارة اللي حوله." },
@@ -104,6 +118,7 @@ export const B = {
   stadium: { cat: "serv", name: "ملعب", cost: 1400, upkeep: 16, era: 1, water: -4, power: -4, radius: 6, happy: 14, text: "مباريات الحواري." },
   bigmosque: { cat: "serv", name: "جامع كبير", cost: 2400, upkeep: 18, era: 2, water: -3, power: -4, radius: 9, happy: 20, service: "mosque", text: "جامع للمدينة كلها." },
   hospital: { cat: "serv", name: "مستشفى", cost: 4200, upkeep: 50, era: 2, water: -6, power: -8, radius: 11, happy: 18, service: "health", text: "علاج ومواعيد قريبة." },
+  library: { cat: "serv", name: "مكتبة عامة", cost: 2200, upkeep: 20, era: 2, water: -2, power: -4, radius: 9, happy: 12, service: "school", jobs: 10, text: "كتب وقاعات للشباب. تعليم ورضا." },
   university: { cat: "serv", name: "جامعة", cost: 6000, upkeep: 70, era: 3, water: -6, power: -10, radius: 12, happy: 18, service: "school", jobs: 30, text: "جامعة الرافعية. فخر المحافظة." },
 
   // Decorations: cheap, no road needed, they cheer up the streets around them.
@@ -112,6 +127,8 @@ export const B = {
   lantern: { cat: "deco", name: "فانوس زينة", cost: 50, upkeep: 1, era: 0, radius: 2, happy: 3, text: "فانوس ينوّر بالليل." },
   fountain: { cat: "deco", name: "نافورة", cost: 260, upkeep: 2, era: 1, radius: 3, happy: 5, text: "ماء وبرودة وسط الحارة." },
   dallah: { cat: "deco", name: "دوّار الدلة", cost: 420, upkeep: 2, era: 1, radius: 4, happy: 6, text: "دوار بوسطه دلة كبيرة، رمز الكرم." },
+  olivetree: { cat: "deco", name: "نصب الزيتونة", cost: 600, upkeep: 2, era: 1, radius: 4, happy: 7, text: "زيتونة معمّرة وسط دوار: رمز الجوف." },
+  bigfountain: { cat: "deco", name: "نافورة راقصة", cost: 2000, upkeep: 8, era: 2, radius: 6, happy: 11, text: "نافورة كبيرة تنوّر بالليل." },
   incense: { cat: "deco", name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
 
   // Grand projects: one of each, very dear, and they take days to build.
@@ -119,6 +136,11 @@ export const B = {
   gate: { cat: "proj", visitors: true, name: "بوابة الرافعية", cost: 5000, upkeep: 20, era: 1, unique: true, buildHours: 48, radius: 9, happy: 12, income: 60, text: "بوابة نجدية كبيرة على مدخل البلد. يفرح فيها الأهالي ويجيب زوار." },
   heritage: { cat: "proj", visitors: true, name: "السوق التراثي", cost: 9000, upkeep: 40, era: 1, unique: true, buildHours: 72, jobs: 40, radius: 7, happy: 10, income: 220, water: -4, power: -4, text: "سوق قديم مرمّم بالطين والخشب، فيه حرف ومطاعم ودلال." },
   tower: { cat: "proj", visitors: true, name: "برج الرافعية", cost: 22000, upkeep: 90, era: 2, unique: true, buildHours: 120, jobs: 60, radius: 14, happy: 15, income: 420, water: -8, power: -16, text: "برج يشوفه الكل من بعيد، فيه مطعم دوّار ومكاتب." },
+  marid: { cat: "proj", visitors: true, name: "قلعة مارد", cost: 15000, upkeep: 50, era: 2, unique: true, buildHours: 96, jobs: 25, radius: 10, happy: 14, income: 140, text: "قلعة تراثية مثل قلعة مارد بدومة الجندل: تجيب السياح والفخر." },
+  themepark: { cat: "proj", visitors: true, name: "مدينة ألعاب", cost: 30000, upkeep: 110, era: 2, unique: true, buildHours: 120, jobs: 80, radius: 12, happy: 18, income: 300, water: -10, power: -20, text: "دولاب هوا وألعاب: العوايل تجي من كل الجوف." },
+  station: { cat: "proj", visitors: true, name: "محطة القطار", cost: 55000, upkeep: 170, era: 3, unique: true, buildHours: 144, jobs: 110, radius: 10, happy: 10, income: 520, power: -20, text: "قطار الشمال يوقف بالرافعية: زوار وتجارة كثيرة." },
+  bigstadium: { cat: "proj", visitors: true, name: "استاد الجوف", cost: 70000, upkeep: 200, era: 3, unique: true, buildHours: 168, jobs: 120, radius: 14, happy: 22, income: 560, water: -12, power: -24, text: "استاد كبير للدوري: مباريات وجماهير ورضا." },
+  skyline: { cat: "proj", visitors: true, name: "أبراج الرافعية", cost: 140000, upkeep: 380, era: 4, unique: true, buildHours: 240, jobs: 400, radius: 16, happy: 20, income: 1300, water: -20, power: -40, text: "مركز مال وأعمال بأبراج زجاج: تاج الحاضرة." },
   airport: { cat: "proj", visitors: true, name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
 
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },
@@ -145,25 +167,28 @@ for (const d of Object.values(B)) {
 // earns more (with more staff and running costs). The last step needs a town (بلدة) and, for shops and
 // workshops, electricity reaching the building; for farms, water reaching it.
 export const BIZ_LEVELS = {
-  palms: ["مزرعة نخل", "نخل بالري الحديث", "نخيل كبرى"],
-  veg: ["مزرعة خضار", "بيوت محمية", "مزرعة حديثة"],
-  grocery: ["بقالة", "تموينات", "سوبرماركت"],
-  cafe: ["مقهى", "مقهى كبير", "كوفي حديث"],
-  souq: ["سوق شعبي", "سوق مسقوف", "سوق كبير"],
-  mandi: ["مطعم مندي", "مطعم مندي كبير", "مطاعم ومطابخ"],
-  workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش"],
-  dairy: ["مصنع ألبان ومسلخ", "مصنع ألبان كبير", "مجمع أغذية"],
-  mill: ["صوامع ومطحنة", "صوامع كبيرة", "مجمع حبوب"],
-  pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة"],
+  palms: ["مزرعة نخل", "نخل بالري الحديث", "نخيل كبرى", "شركة تمور"],
+  veg: ["مزرعة خضار", "بيوت محمية", "مزرعة حديثة", "مزرعة ذكية"],
+  olive: ["مزرعة زيتون", "زيتون بالري الحديث", "بستان زيتون كبير", "شركة زيتون"],
+  grocery: ["بقالة", "تموينات", "سوبرماركت", "هايبر ماركت"],
+  cafe: ["مقهى", "مقهى كبير", "كوفي حديث", "سلسلة مقاهي"],
+  souq: ["سوق شعبي", "سوق مسقوف", "سوق كبير", "سوق مركزي"],
+  mandi: ["مطعم مندي", "مطعم مندي كبير", "مطاعم ومطابخ", "مجمع مطاعم"],
+  workshop: ["ورشة", "ورشة كبيرة", "مجمع ورش", "مدينة صناعية"],
+  dairy: ["مصنع ألبان ومسلخ", "مصنع ألبان كبير", "مجمع أغذية", "شركة أغذية"],
+  mill: ["صوامع ومطحنة", "صوامع كبيرة", "مجمع حبوب", "شركة مطاحن"],
+  oilpress: ["معصرة زيتون", "معصرة حديثة", "مصنع زيت كبير", "شركة زيت الجوف"],
+  pen: ["حظيرة حلال", "حظيرة كبيرة", "عزبة", "مشروع حلال"],
   // services grow too: they cheer more people, further away
-  mosque: ["مسجد", "مسجد بمنارتين", "جامع الحي"],
-  hospital: ["مستشفى", "مستشفى تخصصي", "مدينة طبية"]
+  mosque: ["مسجد", "مسجد بمنارتين", "جامع الحي", "جامع كبير بساحات"],
+  hospital: ["مستشفى", "مستشفى تخصصي", "مدينة طبية", "مدينة طبية جامعية"]
 };
 /** What each step does: its price (× the building's price) and how income, staff and running costs grow. */
 export const BIZ_UP = [
   { cost: 0, income: 1, jobs: 1, upkeep: 1, happy: 1, radius: 0 },
   { cost: 0.7, income: 1.6, jobs: 1.4, upkeep: 1.5, happy: 1.35, radius: 1 },
-  { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, happy: 1.7, radius: 2, era: 1 }
+  { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, happy: 1.7, radius: 2, era: 1 },
+  { cost: 2.6, income: 3.3, jobs: 2.3, upkeep: 2.7, happy: 2.1, radius: 3, era: 3 }
 ];
 export const bizLevel = (b) => BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0] || BIZ_UP[0];
 
@@ -196,11 +221,12 @@ export const CHAINS = [
   { id: "meat", name: "الحلال", from: "pen", to: "dairy", need: 4, cargo: "#f1ece0" },
   { id: "market", name: "سوق الماشية", from: "pen", to: "livestock", need: 4, cargo: "#c49a63" },
   { id: "wheat", name: "القمح", from: "pivot", to: "mill", need: 3, cargo: "#d9b54a" },
-  { id: "stone", name: "الحجر", from: "quarry", to: "blockfactory", need: 2, cargo: "#a9a196" }
+  { id: "stone", name: "الحجر", from: "quarry", to: "blockfactory", need: 2, cargo: "#a9a196" },
+  { id: "olive", name: "الزيتون", from: "olive", to: "oilpress", need: 5, cargo: "#6b7a2a" }
 ];
 // Building materials: quarries and block factories make them; upgrades use them. What is missing is
 // bought from outside at MAT_PRICE a unit; the store holds MAT_CAP, and the rest is sold at MAT_SELL.
-export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80], biz: [0, 0, 12] };
+export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80, 260], biz: [0, 0, 12, 45] };
 
 // Everything a car can drive on.
 export const ROAD_IDS = ["road", "asphalt", "avenue", "roundabout", "signal"];
@@ -301,7 +327,15 @@ export const GOALS = [
   { text: "ابنِ مستشفى", test: (s) => s.count.hospital >= 1, reward: 12600 },
   { text: "أول عمارة", test: (s) => s.levels[4] >= 1, reward: 6500 },
   { text: "صارت الرافعية محافظة (٤٠٠٠ ساكن)", test: (s) => s.pop >= 4000, reward: 10000 },
-  { text: "ابنِ جامعة الرافعية", test: (s) => s.count.university >= 1, reward: 18000 }
+  { text: "ابنِ جامعة الرافعية", test: (s) => s.count.university >= 1, reward: 18000 },
+  { text: "ابنِ معصرة زيتون ووصّل لها ٥ مزارع زيتون", test: (s) => s.count.oilpress >= 1 && s.count.olive >= 5, reward: 12000 },
+  { text: "ابنِ مزرعة رياح", test: (s) => s.count.windfarm >= 1, reward: 21000 },
+  { text: "ابنِ قلعة مارد", test: (s) => s.count.marid >= 1, reward: 45000 },
+  { text: "أول برج سكني", test: (s) => s.levels[5] >= 1, reward: 48000 },
+  { text: "اشترِ أرض من الأطراف البعيدة", test: (s) => ["n2", "e2", "s2", "w2"].some((p) => s.owned?.[p]), reward: 50000 },
+  { text: "ابنِ محطة القطار", test: (s) => s.count.station >= 1, reward: 165000 },
+  { text: "صارت الرافعية حاضرة (٩٠٠٠ ساكن)", test: (s) => s.pop >= 9000, reward: 100000 },
+  { text: "ابنِ أبراج الرافعية", test: (s) => s.count.skyline >= 1, reward: 200000 }
 ];
 
 /** Things that happen. weight: how often; effect lasts `days`. */
@@ -490,7 +524,7 @@ export const PROVINCE_FEES = [0, 1500, 6000, 20000];
 export const YEAR_HOURS = 24 * 12;
 
 /** Achievements: test(s, a) with the town state and its analysis. */
-const PROJECTS = ["gate", "heritage", "tower", "airport"];
+const PROJECTS = ["gate", "heritage", "tower", "airport", "marid", "themepark", "station", "bigstadium", "skyline"];
 const finished = (s, id) => s.tiles.some((t) => t.b?.id === id && !t.b.build);
 export const ACHIEVEMENTS = [
   { id: "tents", name: "أهل البيوت", text: "انصب ١٠ خيام", test: (s, a) => a.count.house >= 10 },
@@ -508,7 +542,10 @@ export const ACHIEVEMENTS = [
   { id: "happy", name: "بلد سعيد", text: "رضا ٩٠٪", test: (s) => s.happy >= 90 },
   { id: "rich", name: "خزنة مليانة", text: "٥٠٬٠٠٠ ريال بالميزانية", test: (s) => s.money >= 50000 },
   { id: "province", name: "محافظة الرافعية", text: "وصل الرافعية لمحافظة", test: (s) => s.era >= 3 },
-  { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي", test: (s) => ["n", "e", "s", "w"].every((p) => s.owned?.[p]) },
+  { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي القريبة", test: (s) => ["n", "e", "s", "w"].every((p) => s.owned?.[p]) },
+  { id: "alledges", name: "الرافعية من الطرف للطرف", text: "اشترِ كل الأطراف البعيدة", test: (s) => ["n2", "e2", "s2", "w2"].every((p) => s.owned?.[p]) },
+  { id: "hadira", name: "حاضرة الجوف", text: "وصل الرافعية لحاضرة", test: (s) => s.era >= 4 },
+  { id: "skytower", name: "فوق الغيم", text: "أول برج سكني", test: (s, a) => a.levels[5] > 0 },
   { id: "allprojects", name: "الرافعية الكبرى", text: "كمّل كل المشاريع الكبرى", test: (s) => PROJECTS.every((id) => finished(s, id)) },
   { id: "pop5000", name: "خمسة آلاف", text: "٥٠٠٠ ساكن", test: (s) => s.pop >= 5000 }
 ];

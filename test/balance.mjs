@@ -36,7 +36,9 @@ export function autoplay(hours = 250, seed = 42, log = false, style = "careful")
   // Water and power reach only so far: put a source next to the homes it should serve.
   const placeNear = (id, targets, needRoad = false) => {
     if (!targets.length || s.money < B[id].cost) return false;
-    const cx = targets.reduce((n, i) => n + (i % N), 0) / targets.length, cy = targets.reduce((n, i) => n + Math.floor(i / N), 0) / targets.length;
+    // one group at a time: the targets near the first one (a centre between far groups serves none)
+    const t0 = targets[0], group = targets.filter((i) => Math.hypot((i % N) - (t0 % N), Math.floor(i / N) - Math.floor(t0 / N)) <= 6);
+    const cx = group.reduce((n, i) => n + (i % N), 0) / group.length, cy = group.reduce((n, i) => n + Math.floor(i / N), 0) / group.length;
     const spots = [];
     for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
       const t = s.tiles[idx(x, y)];
