@@ -195,6 +195,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The hourly net genuinely changes: shops ×0.6 at prayer (not fajr), and rush-hour jams cut staffing and add congestion.
     - The budget's per-day line used to be this hour × 24, so it jumped. `step` now keeps `s.netLog` (the last 24 hourly nets), and `dayNet(s, a)` sums it (scaling up a short log; old saves without a log fall back to ×24).
     - The budget sheet shows a 💡 line explaining why the hour changes, and says when it is prayer or a jam right now.
+31. **Mosque reach as a map (owner, 2026-11-23):**
+    - The owner wanted the mosque's reach shown like water and power, not as a count of homes.
+    - `reachLine` for `service: "mosque"` now says «مداه N مربعات حوله».
+    - `mosqueMap()`/`mosqueGaps()` (main.js) colour every tile any mosque reaches in green and the homes outside it in red (heat overlay), with a toast giving the count. There is a button in the happiness sheet and in every mosque's sheet.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

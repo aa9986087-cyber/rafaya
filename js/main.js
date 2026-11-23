@@ -246,6 +246,7 @@ function reachLine(id, spots, lvlUp = 0) {
   if (!d?.radius || (!d.happy && !d.pollute)) return "";
   const r = reachHomes(spots, d.radius + lvlUp), who = `${ar(r.homes)} ${r.homes >= 3 && r.homes <= 10 ? "بيوت" : "بيت"}${r.people ? ` (${ar(r.people)} ساكن)` : ""}`;
   if (d.pollute) return r.homes ? `⚠️ دخانه وإزعاجه بيزعّل ${who}` : "ما حوله بيوت: ما يزعج أحد ✓";
+  if (d.service === "mosque") return `مداه ${ar(d.radius + lvlUp)} مربعات حوله (الأخضر)`;
   return r.homes ? `يخدم ${who}` : "ما حوله بيوت للحين";
 }
 
@@ -631,6 +632,26 @@ function showReach(x, y, def) {
   for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++)
     if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) values[idx(xx, yy)] = 1;
   world.setOverlay(values, def.reach ? (def.water > 0 ? "#3b8fd6" : "#9b5cf6") : def.pollute ? "#e0523f" : "#2cb59c");
+}
+
+/** The homes no mosque reaches. */
+function mosqueGaps() {
+  let n = 0;
+  for (let i = 0; i < N * N; i++) if (S.tiles[i].b?.id === "house" && !A.services[i]?.has("mosque")) n++;
+  return n;
+}
+/** Like the water and power maps: where every mosque reaches in green, the homes outside it in red. */
+function mosqueMap() {
+  const v = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    if (A.services[i]?.has("mosque")) v[i] = 0.01;
+    else if (S.tiles[i].b?.id === "house") v[i] = 1;
+  }
+  closeSheet();
+  setTimeout(() => world.setOverlay(v, "heat"), 200);
+  clearTimeout(mosqueMap.t); mosqueMap.t = setTimeout(() => { if (!tool) world.setOverlay(null); }, 7000);
+  const u = mosqueGaps();
+  toast(u ? `🕌 الأخضر يوصله المسجد، والأحمر ${ar(u)} بيت برا المدى` : "🕌 الأخضر يوصله المسجد: كل البيوت داخل المدى ✓");
 }
 
 // ---------- build dock ----------
@@ -1105,9 +1126,11 @@ function inspect(x, y) {
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
   if (d.radius && (d.happy || d.pollute)) { const line = reachLine(t.b.id, [{ x, y }], up.radius || 0); if (line) html += d.pollute && line.startsWith("⚠️") ? `<div class="need">${line}. الحل: أبعده عن البيوت، أو حط حديقة أو شجر بينهم.</div>` : row(d.pollute ? "الإزعاج" : "يخدم", line.replace(/^يخدم /, "")); }
+  if (d.service === "mosque") { const u = mosqueGaps(); html += u ? `<div class="need">${ar(u)} ${u >= 3 && u <= 10 ? "بيوت" : "بيت"} برا مدى المساجد: ابنِ مسجد قريب منها.</div>` : `<div class="need ok">كل البيوت داخل مدى المساجد ✓</div>`; html += `<button class="btn block" id="showMosques" type="button">🕌 اعرض وين توصل المساجد كلها</button>`; }
   html += `</div><div class="sheet-actions">${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
+  $("showMosques")?.addEventListener("click", () => { sfx.tap(); mosqueMap(); });
   $("sheetBody").querySelectorAll("[data-follow]").forEach((btn) => btn.addEventListener("click", () => followFamily(idx(x, y), Number(btn.dataset.follow))));
   $("sheetBody").querySelectorAll("[data-day]").forEach((btn) => btn.addEventListener("click", () => familySheet(idx(x, y), Number(btn.dataset.day))));
   $("upgradeOne")?.addEventListener("click", () => {
@@ -2333,8 +2356,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-20", world: "2026-12-20" },
+  v: { solo: "2026-12-21", world: "2026-12-21" },
   items: [
+    ["both", "🕌", "مدى المساجد على الخريطة", "مثل الماء والكهرباء: من «الرضا» أو من أي مسجد اضغط «اعرض وين توصل المساجد» وتشوف وين يوصل المسجد بالأخضر، والبيوت اللي برا المدى بالأحمر مع عددها. ولا جيت تبني مسجد يقولك مداه كم مربع."],
     ["both", "📊", "صافي اليوم صار حقيقي", "بالأرقام «اللي دخل آخر ٢٤ ساعة» صار مجموع اللي دخل فعلاً، مو ساعة وحدة × ٢٤ عشان كذا كان يتقلب. والصافي بالساعة طبيعي يتغير: وقت الصلاة المحلات تسكر، ووقت الذروة الزحمة تأخر الموظفين، وتشوف تحته ليش."],
     ["both", "🕌", "كم يخدم وكم يزعج", "قبل لا تبني وبعده: المسجد والمدرسة والمستوصف والبقالة والحديقة يقولون لك «يخدم ١٢ بيت (٨٠ ساكن)»، والمصانع والورش والمولدات تحذرك «⚠️ بيزعّل ٧ بيوت» وتشوف منطقة الدخان بالأحمر. والبقالة صارت تريّح البيوت اللي حولها."],
     ["both", "💰", "تعرف الدخل قبل لا تشتري", "كل بطاقة بناء فيها دخلها ومصروفها بالساعة. ولا اخترت المكان، قبل «ابنِ» يحسب لك اللعبة مدينتك كأن المبنى موجود ويقولك بالضبط: دخل كذا، مصروف كذا، وصافيك يزيد أو ينقص كم. وإذا الدخل قليل لأن الناس قليلين يقولك."],
@@ -2708,7 +2732,9 @@ function happySheet() {
     ${plus.length ? `<h3>👍 اللي يفرحهم</h3><div class="rows">${plus.map(r).join("")}</div>` : ""}
     <div class="rows">${row("الأساس", ar(48))}${row("المجموع", `${ar(target)}٪`, target >= 60 ? "plus" : target < 40 ? "minus" : "")}</div>
     ${quarters.length > 1 ? `<h3>🏘️ رضا الحارات</h3><div class="rows">${quarters.map((o) => row(o.name, `${ar(o.happy)}٪`, o.happy >= 60 ? "plus" : o.happy < 40 ? "minus" : "")).join("")}</div>` : ""}
+    ${A.count.mosque || A.count.bigmosque ? `<button class="btn block" id="showMosques" type="button">🕌 اعرض وين توصل المساجد${mosqueGaps() ? ` (${ar(mosqueGaps())} بيت برا المدى)` : ""}</button>` : ""}
     <p class="hint">الرضا العالي يجيب ناس جدد ويخلي البيوت تتطور، والقليل يطفّش الناس. والرضا ما يتغير فجأة: يمشي شوي شوي نحو المجموع.</p>`, "happy");
+  $("showMosques")?.addEventListener("click", () => { sfx.tap(); mosqueMap(); });
 }
 
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
