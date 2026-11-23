@@ -101,7 +101,7 @@ function layoutSide() {
   const side = document.querySelector(".side"), speeds = document.querySelector(".speeds"), dock = document.querySelector(".dock");
   if (!side || !speeds || !dock) return;
   // the rail sits between whatever is lowest on the left at the top and the build bar at the bottom
-  const tops = [speeds, ...document.querySelectorAll(".world-time")].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
+  const tops = [speeds, document.querySelector(".hud .stats")].filter(Boolean).map((e) => e.getBoundingClientRect()).filter((r) => r.height); // in the world the speeds are hidden: start under the numbers
   const top = Math.max(...tops.map((r) => r.bottom), 0) + 10, bottom = dock.getBoundingClientRect().top - 10;
   const shown = [...side.children].filter((c) => getComputedStyle(c).display !== "none");
   const n = shown.length, gap = 6, avail = Math.max(0, bottom - top);
@@ -2192,8 +2192,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-09", world: "2026-12-09" },
+  v: { solo: "2026-12-10", world: "2026-12-10" },
   items: [
+    ["both", "🏙️", "مباني أوقع (المرحلة الأولى)", "الجدران صار فيها ملمس لياسة حقيقي، والحواف ناعمة تلقط الضوء، والشبابيك والألواح الشمسية زجاج يعكس السماء، والرمل فيه حبيبات. وانشال «وقت العالم» و«وش الجديد» من شاشة اللعب (وش الجديد باقي بالقائمة الرئيسية)."],
     ["both", "🌍", "زر الجوف على الشاشة", "خريطة عالم الجوف صار لها زر «الجوف» على جنب الشاشة، حتى وأنت تلعب فردي، بدون ما تطلع للقائمة."],
     ["both", "🧱", "«المكان مشغول» صار يوضح", "إذا ما قدرت تبني بمكان، تعرف وش اللي فيه (مثلاً «كسارة حجر»)، والصخور ما عاد تعلّق فوق المباني."],
     ["world", "🛡️", "المضاد يبين وهو يصد", "وقت الهجوم تشوف البطارية تلف على الهدف وترتفع وتطلق صاروخ اعتراضي بلهب وخط دخان لين يفجّره بالجو. ولو ما فيها صواريخ اعتراضية تطلع لك رسالة واضحة، والنائب يعبيها أول ما ينرصد الهجوم."],
@@ -2267,9 +2268,8 @@ function whatsNewSheet(mode) {
 }
 /** The "what's new" button on the screen: a red dot until the current mode's update has been read. */
 function showWhatsNewDot() {
-  $("wnDot").hidden = wnSeen(worldMode ? "world" : "solo");
+  const dot = $("wnDot"); if (dot) dot.hidden = wnSeen(worldMode ? "world" : "solo"); // (the chip left the game screen; «وش الجديد» is on the main menu)
 }
-$("wnChip").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
 showWhatsNewDot();

@@ -120,7 +120,8 @@ export class World {
     this.scene.add(this.sun, this.sun.target);
 
     this.mats = {
-      matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }),
+      // the town's walls: a fine plaster grain (CC0 normal map) so they read as real surfaces
+      matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, normalMap: normalTex("tex/concrete-normal.webp", 1), normalScale: new THREE.Vector2(0.22, 0.22) }),
       shiny: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.28, metalness: 0.35 }),
       lights: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 }),
       ghost: new THREE.MeshStandardMaterial({ color: "#7ee0b8", transparent: true, opacity: 0.55, roughness: 0.6 }),
@@ -132,7 +133,7 @@ export class World {
       ghostBad: new THREE.MeshStandardMaterial({ color: "#ff7a6a", transparent: true, opacity: 0.55, roughness: 0.6 })
     };
 
-    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.2 };
+    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.2, shiny: 0.45 };
     for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v;
     this.loadSky();
     // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
@@ -169,7 +170,7 @@ export class World {
       const pm = new THREE.PMREMGenerator(this.renderer);
       // only the realistic materials reflect it; the rest of the town keeps its own warm light
       const env = pm.fromEquirectangular(dt).texture;
-      for (const k of ["paint", "metal", "glass"]) { this.mats[k].envMap = env; this.mats[k].needsUpdate = true; }
+      for (const k of ["paint", "metal", "glass", "shiny"]) { this.mats[k].envMap = env; this.mats[k].needsUpdate = true; }
       pm.dispose(); dt.dispose();
     } catch (e) { console.warn("sky", e); }
   }
@@ -190,7 +191,7 @@ export class World {
     const uv = outer.attributes.uv;
     for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.3, p.getZ(i) * 0.3);
     this.sand = sandTexture();
-    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#f1d49c", map: this.sand, roughness: 1 }));
+    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#f1d49c", map: this.sand, roughness: 1, normalMap: normalTex("tex/grain-normal.webp", 1), normalScale: new THREE.Vector2(0.5, 0.5) }));
     desert.receiveShadow = true;
     this.scene.add(desert);
     this.ground = null;
@@ -293,7 +294,8 @@ export class World {
     g.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
     g.setIndex(index);
     g.computeVertexNormals();
-    this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1 }));
+    this.groundNormal ||= normalTex("tex/grain-normal.webp", 1);
+    this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.45, 0.45) }));
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
     // A fence along the edge of the land the town owns, and a "for sale" sign on each plot.

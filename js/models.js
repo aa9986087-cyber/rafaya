@@ -13,6 +13,8 @@ const C = {
 };
 
 const tmp = new THREE.Object3D();
+/** The window and panel colours of the older models: drawn as real glass. */
+const GLASS = new Set(["#4f7f99", "#2d3a46", "#26415e", "#1d3b55", "#1f3f6b", "#2a3a46", "#22303a"]);
 /**
  * The material sets a model is split into (one draw each): matte and shiny as before, lights that glow at
  * night, and for the newer, more realistic models: paint (semi-gloss painted metal with a fine normal map),
@@ -24,6 +26,7 @@ export const SETS = ["matte", "shiny", "lights", "paint", "metal", "glass", "glo
 class Builder {
   constructor() { this.sets = Object.fromEntries(SETS.map((k) => [k, []])); }
   add(geo, color, o = {}, set = "matte") {
+    if ((set === "matte" || set === "shiny") && GLASS.has(String(color).toLowerCase())) set = "glass"; // windows and solar panels reflect the sky
     tmp.position.set(o.x || 0, o.y || 0, o.z || 0);
     tmp.rotation.set(o.rx || 0, o.ry || 0, o.rz || 0);
     tmp.scale.set(o.sx ?? 1, o.sy ?? 1, o.sz ?? 1);
@@ -38,7 +41,12 @@ class Builder {
     this.sets[set].push(g);
     return this;
   }
-  box(w, h, d, color, o = {}, set) { return this.add(new THREE.BoxGeometry(w, h, d), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
+  box(w, h, d, color, o = {}, set) {
+    // walls and big blocks get softly rounded edges that catch the light (small parts stay plain boxes: cheaper)
+    const lo = Math.min(w, h, d), hi = Math.max(w, h, d);
+    const geo = lo >= 0.1 && hi >= 0.22 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.016, lo / 6)) : new THREE.BoxGeometry(w, h, d);
+    return this.add(geo, color, { ...o, y: (o.y || 0) + h / 2 }, set);
+  }
   cyl(rt, rb, h, color, o = {}, seg = 10, set) { return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
   dome(r, color, o = {}, set) { return this.add(new THREE.SphereGeometry(r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), color, o, set); }
   cone(r, h, color, o = {}, seg = 4, set) { return this.add(new THREE.ConeGeometry(r, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }

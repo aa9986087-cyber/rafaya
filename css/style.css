@@ -521,3 +521,6 @@ svg.ic * { fill: none !important; }
 .wm-rel { pointer-events: none; }
 .wm-rel-bg { fill: #6f6d43; stroke: #fff; stroke-width: .25; pointer-events: none; }
 .wm-rel-bg.war { fill: #c92a2a; } .wm-rel-bg.warning { fill: #e67700; } .wm-rel-bg.truce { fill: #868e96; } .wm-rel-bg.tension { fill: #d9480f; }
+
+/* the world runs on everyone's clock: no speed buttons, so the whole group goes */
+body.world .speeds { display: none !important; }

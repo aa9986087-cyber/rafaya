@@ -144,6 +144,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - A missing model falls back to "construction", so a sync can never stop half-way and leave stale instances on screen.
     - `#worldBtn` («الجوف») now shows in solo too and calls `openWorld()`.
 
+20. **Realistic graphics, stage 1 for the whole game (both modes), owner 2026-11-23:**
+    - The «وقت العالم» chip and the «وش الجديد» chip left the game screen (`#wnChip`/`#wnDot` are gone; the main menu button stays). In the world the speeds group is hidden and `layoutSide` starts under `.hud .stats`.
+    - `Builder.box` rounds the edges of big boxes (min ≥ 0.1, max ≥ 0.22) with `RoundedBoxGeometry`.
+    - Window and panel colours (the `GLASS` set) are drawn in the glass set.
+    - `mats.matte` has the CC0 plaster normal map. The ground and the desert have the grain normal map. `shiny` reflects the sky too.
+    - **Next stages:** detailed houses and shops, cars, palms and trees, people, roads with kerbs.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
