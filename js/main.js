@@ -46,6 +46,7 @@ let openCat = null;
 // The town moves forward one step every hour. Days start at sunrise; how much of the day is
 // light depends on the season (spring and autumn 10 min + 10 min, summer 12 + 8, winter 8 + 12).
 const HOUR_MS = 75000;
+const evBanner = { key: null, at: 0, t: 0 }; // the event banner's 30 seconds
 const OLD_HOUR_MS = 50000; // the world's hours before the switch (see worldHours)
 /** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
 const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
@@ -856,7 +857,10 @@ function refresh() {
   // The banner shows the main event, or else the strongest boost from a decision.
   const main = S.events.find((e) => e.id !== "boost"), boost = S.events.find((e) => e.id === "boost");
   const ev = main ? { ...EVENTS.find((e) => e.id === main.id), ...(main.name ? { name: main.name } : {}) } : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
-  $("event").hidden = !ev;
+  // the banner shows for 30 seconds when an event starts, then gets out of the way (the time chip still lists it)
+  const evKey = ev ? `${ev.name}|${ev.text}`.replace(/[٠-٩\d]+/g, "") : "";
+  if (evKey !== evBanner.key) { evBanner.key = evKey; evBanner.at = Date.now(); clearTimeout(evBanner.t); if (ev) evBanner.t = setTimeout(() => { $("event").hidden = true; }, 30000); }
+  $("event").hidden = !ev || Date.now() - evBanner.at > 30000;
   if (ev) $("event").innerHTML = here(`<b>${ev.name}</b> ${ev.text}`);
   $("councilDot").hidden = !!S.research || !Object.entries(TECH).some(([id, t]) => !S.tech[id] && t.era <= S.era && S.money >= t.cost);
   document.querySelectorAll("[data-speed]").forEach((b) => b.classList.toggle("on", Number(b.dataset.speed) === speed));
@@ -2520,8 +2524,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-24", world: "2026-12-24" },
+  v: { solo: "2026-12-25", world: "2026-12-25" },
   items: [
+    ["both", "⚖️", "موازنة الفلوس", "التجار يشترون من محاصيل مزارعك على قد حجم بلدك: المزارع الأولى تبيع كامل، واللي يزيد عن الطلب ينباع بـ٤٠٪ (تشوفه بالأرقام). مكافآت المهام اللي ما تطلب بناء (عدد السكان، الرضا، المرحلة) صارت أقل، ومهام البناء باقية تغطي سعرها. ورسوم المحافظة صارت على قد الوقت اللي قضيته بكل مرحلة، فما تنضرب برسوم مدينة كاملة لو صرت مدينة آخر السنة."],
+    ["both", "🔔", "شريط الأحداث يختفي", "شريط الحدث (موجة حر، رمضان، مطر…) يطلع ٣٠ ثانية أول ما يبدأ وبعدين يختفي، وتلقاه بمربع الوقت فوق."],
     ["both", "🛣️", "رسم الطرق صار مستقيم", "اسحب إصبعك والطريق يمشي معك خط مستقيم، حتى لو يدك مايلة شوي، وما يفوّت ولا مربع. تبي تلف؟ حرّك إصبعك للجنب بوضوح ويسوي لك زاوية قايمة من مكانك. ونفس الشي بالترتيب."],
     ["both", "🕰️", "اليوم صار نص ساعة", "يوم اللعبة صار ٣٠ دقيقة بدال ٢٠ (كل ساعة باللعبة دقيقة وربع)، فتلحق تبني وتشوف مدينتك بالنهار أكثر."],
     ["world", "✏️", "اسم مدينتك بالجوف", "كل مدينة بالجوف لها اسم ما يتكرر: إذا الاسم مأخوذ يقولك اختر غيره. وتقدر تغيّر اسم مدينتك مرة وحدة بس من خريطة الجوف ← مدينتك ← «غيّر اسم مدينتك»، ويطلع الخبر بنشرة الجوف."],
@@ -2651,6 +2657,7 @@ function budget() {
       ${A.industryIncome ? row("الورش والمصانع", `+${fine(A.industryIncome)}`, "plus") : ""}
       ${A.industryRaw > A.exportDemand * 1.02 ? `<div class="need">التجار يشترون من الورش والمصانع بقيمة ${fine(A.exportDemand)} بالساعة بس. الإنتاج الزايد (${fine(A.industryRaw - A.exportDemand)}) ينباع بثلث السعر. يزيد الطلب كل ما كثر سكان البلد.</div>` : ""}
       ${row("المزارع", `+${fine(A.farmIncome)}`, "plus")}
+      ${A.farmRaw > A.farmDemand * 1.02 ? `<div class="need">التجار يشترون من محاصيل المزارع بقيمة ${fine(A.farmDemand)} بالساعة بس. المحصول الزايد (${fine(A.farmRaw - A.farmDemand)}) ينباع بـ٤٠٪ من سعره. يزيد الطلب لما يزيد الناس أو توصّل مدن جارة بطريق.</div>` : ""}
     </div>
     <h3>المصاريف بالساعة</h3>
     <div class="rows">

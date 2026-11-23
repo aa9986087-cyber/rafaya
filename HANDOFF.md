@@ -225,6 +225,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
       - Claim refuses a taken name with 422. The client also checks the map first.
       - `POST /api/world/rename` works once (column `plots.renamed`, added with ALTER TABLE). It writes a bulletin line.
       - /sync now returns the town's name, so a rename reaches the other phone. The UI is a button on your own town's card in the al-Jouf map.
+35. **Money balance (owner, 2026-11-23, both modes):**
+    - The owner asked for fun that is neither easy nor tiresome. I tested first: farms carried village income (66 of 97/h at 56 people), and goals that need no building gave free money.
+    - The province fee hit 14,000 at once when a town became a city just before the year ended.
+    - Farm market: `a.farmDemand = 45 + pop·0.6 + neighbours·0.3`; above it crops sell at 40% (`a.farmRaw` is the raw value). The budget sheet explains it.
+    - Goal rewards with no building were roughly halved: pop 40 → 200, بلدة → 800, happy 70 → 800, net 500 → 1200, مدينة → 2500, محافظة → 6000, حاضرة → 50,000. Building goals still cover their cost.
+    - The province fee is prorated by `s.feeHours` (hours at each era this year). Old saves count the untracked part at the current era.
+    - The event banner (`#event`) hides 30 s after an event starts (`evBanner`). Its key ignores digits, so the hourly «باقي N ساعة» doesn't reset it.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

@@ -794,6 +794,11 @@ export function analyze(s) {
   a.industryRaw = a.industryIncome;
   a.exportDemand = 300 + s.pop * 0.9 + a.neighbourPop * 0.4;
   if (a.industryRaw > a.exportDemand) a.industryIncome = a.exportDemand + (a.industryRaw - a.exportDemand) * 0.35;
+  // Dates, vegetables and olives: the traders who buy a town's crops take only so much (more with more
+  // people and road-linked neighbours); past that a farm's crop sells at 40%. A few farms never feel it.
+  a.farmRaw = a.farmIncome;
+  a.farmDemand = 45 + s.pop * 0.6 + a.neighbourPop * 0.3;
+  if (a.farmRaw > a.farmDemand) a.farmIncome = a.farmDemand + (a.farmRaw - a.farmDemand) * 0.4;
   a.income = a.shopIncome + a.visitorIncome + a.industryIncome;
   // Thefts: in a big town, shops in quarters no police reaches lose part of their takings.
   if (s.pop >= 300) {
@@ -1113,9 +1118,14 @@ export function step(s, r = Math.random) {
   const limit = 1500 + a.upkeep * 12;
   if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
   else if (s.broke && s.money >= 0) { s.broke = false; msgs.push({ kind: "goal", text: "سددت الديون! الخدمات رجعت تشتغل." }); }
+  s.feeHours ||= {}; s.feeHours[s.era] = (s.feeHours[s.era] || 0) + 1; // hours at each stage this year (the yearly fee)
   // A new year: the province's fee, and the council's staff ask for a raise.
   if (Math.floor((s.day - 1) / YEAR_HOURS) > yearBefore) {
-    const fee = PROVINCE_FEES[s.era] * (s.feeX || 1);
+    // the fee by the time the town spent at each stage this year (a town that became a city last week pays a week's city fee)
+    const fh = s.feeHours || {}, counted = Object.values(fh).reduce((n, v) => n + v, 0);
+    const base = Object.entries(fh).reduce((n, [e, h]) => n + PROVINCE_FEES[e] * h / YEAR_HOURS, 0) + PROVINCE_FEES[s.era] * Math.max(0, YEAR_HOURS - counted) / YEAR_HOURS;
+    const fee = Math.round(base * (s.feeX || 1));
+    s.feeHours = {};
     if (fee) { s.money -= fee; msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
     if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }
     if (s.pop >= 30) {
