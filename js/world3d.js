@@ -2,7 +2,23 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, powerNet } from "./sim.js";
-import { model, modelKey, baseKey, makerSeeded, VARIANTS } from "./models.js";
+import { model, modelKey, baseKey, makerSeeded, VARIANTS, SETS } from "./models.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
+
+/**
+ * Open assets (see vendor/ASSETS-LICENSE.txt): a Poly Haven sky (CC0) for reflections, and two CC0 normal
+ * maps for painted and bare metal. The trial copy carries them inline (globalThis.RAFAYA_ASSETS).
+ */
+const assetUrl = (name) => globalThis.RAFAYA_ASSETS?.[name] || `./vendor/${name}`;
+function normalTex(name, repeat) {
+  const t = new THREE.TextureLoader().load(assetUrl(name));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat);
+  return t;
+}
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
@@ -104,9 +120,25 @@ export class World {
       shiny: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.28, metalness: 0.35 }),
       lights: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 }),
       ghost: new THREE.MeshStandardMaterial({ color: "#7ee0b8", transparent: true, opacity: 0.55, roughness: 0.6 }),
+      // the realistic sets (military first): painted steel, bare steel, tinted glass, lamps that bloom
+      paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.18, normalMap: normalTex("tex/concrete-normal.webp", 1), normalScale: new THREE.Vector2(0.35, 0.35) }),
+      metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.75, normalMap: normalTex("tex/grain-normal.webp", 2), normalScale: new THREE.Vector2(0.25, 0.25) }),
+      glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.9 }),
+      glow: new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(7, 7, 7), toneMapped: false }),
       ghostBad: new THREE.MeshStandardMaterial({ color: "#ff7a6a", transparent: true, opacity: 0.55, roughness: 0.6 })
     };
 
+    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.2 };
+    for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v;
+    this.loadSky();
+    // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
+    if (quality !== "low") {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), quality === "high" ? 0.55 : 0.45, 0.35, 3.2); // threshold above sunlit sand: only lamps, fire and flashes
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new OutputPass());
+    }
     this.buildGround();
     this.instances = new Map(); // key -> { matte, shiny, lights }
     this.roadMesh = null;
@@ -120,6 +152,21 @@ export class World {
     this.dayCycle = true;
     this.clock = 0;
     this.resize();
+  }
+
+  /** The Poly Haven sky as an environment: metal and glass reflect a real sky (loaded in the background). */
+  async loadSky() {
+    try {
+      const url = assetUrl("hdri/sky.exr");
+      const buf = url.startsWith("data:") ? Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (ch) => ch.charCodeAt(0)).buffer : await (await fetch(url)).arrayBuffer();
+      const tex = new EXRLoader().parse(buf), dt = new THREE.DataTexture(tex.data, tex.width, tex.height, tex.format, tex.type);
+      dt.mapping = THREE.EquirectangularReflectionMapping; dt.colorSpace = THREE.LinearSRGBColorSpace; dt.minFilter = dt.magFilter = THREE.LinearFilter; dt.generateMipmaps = false; dt.needsUpdate = true;
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      // only the realistic materials reflect it; the rest of the town keeps its own warm light
+      const env = pm.fromEquirectangular(dt).texture;
+      for (const k of ["paint", "metal", "glass"]) { this.mats[k].envMap = env; this.mats[k].needsUpdate = true; }
+      pm.dispose(); dt.dispose();
+    } catch (e) { console.warn("sky", e); }
   }
 
   // ---------- ground ----------
@@ -187,7 +234,7 @@ export class World {
   addInstances(geo, list, shadow = false) {
     const meshes = [];
     if (!geo || !list.length) return meshes;
-    for (const set of ["matte", "shiny", "lights"]) {
+    for (const set of SETS) {
       if (!geo[set]) continue;
       const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], list.length);
       list.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -541,7 +588,7 @@ export class World {
         const geo = model(key, ground);
         const capacity = Math.max(8, Math.ceil(list.length * 1.5));
         inst = { capacity };
-        for (const set of ["matte", "shiny", "lights"]) {
+        for (const set of SETS) {
           if (!geo[set]) continue;
           const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], capacity);
           mesh.castShadow = set !== "lights" && this.quality !== "low";
@@ -552,13 +599,13 @@ export class World {
         }
         this.instances.set(k, inst);
       }
-      for (const set of ["matte", "shiny", "lights"]) {
+      for (const set of SETS) {
         const mesh = inst[set];
         if (!mesh) continue;
         list.forEach((m, i) => mesh.setMatrixAt(i, m));
         mesh.count = list.length;
         mesh.instanceMatrix.needsUpdate = true;
-        if (set !== "lights" && (mesh.instanceColor || tints.some((v) => v < 1))) {
+        if (set !== "lights" && set !== "glow" && (mesh.instanceColor || tints.some((v) => v < 1))) {
           tints.forEach((v, i) => mesh.setColorAt(i, tc.setRGB(v, v * 0.96, v * 0.92)));
           mesh.instanceColor.needsUpdate = true;
         }
@@ -891,7 +938,7 @@ export class World {
       const down = new THREE.Matrix4().makeTranslation(0.25 * g, -0.6 * g, 0);
       const shrink = new THREE.Matrix4().makeScale(1 - 0.5 * g, 1 - 0.7 * g, 1 - 0.5 * g);
       m.copy(w.m).multiply(down).multiply(tilt).multiply(shrink);
-      for (const set of ["matte", "shiny", "lights"]) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
+      for (const set of SETS) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
     }
     // once the water has passed, redraw the town (the lost buildings are gone)
     if (f.t > 5 && !f.synced) {
@@ -1162,7 +1209,7 @@ export class World {
         const e = easeBack(t);
         sc.makeScale(0.85 + 0.15 * t, Math.max(0.02, e), 0.85 + 0.15 * t);
         m.multiplyMatrices(w.m, sc);
-        for (const set of ["matte", "shiny", "lights"]) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
+        for (const set of SETS) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
         if (t >= 1) this.anims.delete(tile);
       }
     }
@@ -1196,6 +1243,7 @@ export class World {
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? "#fff4dd" : "#8fa0d8");
     this.mats.lights.opacity = Math.min(1, this.night * 1.4);
+    if (this.envNight !== Math.round(this.night * 20)) { this.envNight = Math.round(this.night * 20); for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v * (1 - this.night * 0.8); }
     if (this.glowMesh) this.glowMesh.material.opacity = Math.max(0, this.night * 0.95 - 0.15);
   }
 
@@ -1206,6 +1254,7 @@ export class World {
     const dpr = Math.min(this.quality === "high" ? 2 : 1.25, devicePixelRatio || 1);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
+    if (this.composer) { this.composer.setPixelRatio(Math.min(dpr, 1.5)); this.composer.setSize(w, h); }
     this.aspect = w / h;
     this.w = w; this.h = h;
     this.updateCamera();
@@ -1320,7 +1369,7 @@ export class World {
     this.fx?.step(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }
 }
 
@@ -1338,6 +1387,7 @@ function mergeTwo(a, b) {
 /** A small rendered picture of a model, for the build cards. Uses its own tiny renderer. */
 let thumbRenderer = null;
 const thumbCache = new Map();
+let thumbMats = null;
 export function thumbnail(key, ground = "sand") {
   if (thumbCache.has(key)) return thumbCache.get(key);
   if (!thumbRenderer) {
@@ -1353,7 +1403,12 @@ export function thumbnail(key, ground = "sand") {
   base.position.y = -0.02; scene.add(base);
   const geo = model(key, ground);
   let top = 0.5;
-  if (geo) for (const [set, mat] of [["matte", new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })], ["shiny", new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.3 })]]) {
+  thumbMats ||= {
+    matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), shiny: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.3 }),
+    paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 }), metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.6 }),
+    glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.5 }), glow: new THREE.MeshBasicMaterial({ vertexColors: true })
+  };
+  if (geo) for (const [set, mat] of Object.entries(thumbMats)) {
     if (!geo[set]) continue;
     scene.add(new THREE.Mesh(geo[set], mat));
     geo[set].computeBoundingBox();

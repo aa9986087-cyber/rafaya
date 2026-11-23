@@ -1,0 +1,8 @@
+Open assets used by the game (all free to use):
+
+- three.js add-ons in vendor/jsm/ (EffectComposer, UnrealBloomPass, OutputPass, EXRLoader, RoundedBoxGeometry, fflate)
+  from the three.js package r160, MIT license (see THREE-LICENSE.txt).
+- vendor/hdri/sky.exr: a sky HDRI from Poly Haven (polyhaven.com), CC0 (public domain),
+  as packed by @pmndrs/assets 1.7.0 (CC0-1.0).
+- vendor/tex/concrete-normal.webp and vendor/tex/grain-normal.webp: normal maps from @pmndrs/assets 1.7.0
+  (normals 0006 and 0021), CC0-1.0.

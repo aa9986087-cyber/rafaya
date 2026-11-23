@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { MAP_SIZE } from "./data.js";
 import { idx } from "./sim.js";
-import { model } from "./models.js";
+import { model, SETS, MIL_LAYOUT } from "./models.js";
 import { tileCenter } from "./world3d.js";
 
 const FX_N = MAP_SIZE;
@@ -28,6 +28,32 @@ function fxTexture(kind) {
     gr.addColorStop(0, "rgba(20,16,12,0.85)"); gr.addColorStop(0.55, "rgba(35,28,20,0.5)"); gr.addColorStop(1, "rgba(40,30,20,0)");
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 14; i++) { g.fillStyle = "rgba(15,12,10,0.35)"; g.beginPath(); g.arc(64 + (Math.random() - 0.5) * 80, 64 + (Math.random() - 0.5) * 80, 4 + Math.random() * 9, 0, Math.PI * 2); g.fill(); }
+  } else if (kind === "smoke" || kind === "fire") {
+    // a soft puff with a cloudy edge: a few layers of value noise, cut by a round falloff
+    const img = g.createImageData(128, 128), d = img.data;
+    const rnd = (x, y, s) => { const n = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return n - Math.floor(n); };
+    const noise = (x, y, s) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      return fxLerp(fxLerp(rnd(xi, yi, s), rnd(xi + 1, yi, s), u), fxLerp(rnd(xi, yi + 1, s), rnd(xi + 1, yi + 1, s), u), v); };
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+      let f = 0, amp = 0.55, fr = 4 / 128;
+      for (let o = 0; o < 4; o++) { f += noise(x * fr, y * fr, o) * amp; amp *= 0.5; fr *= 2; }
+      const r = Math.hypot(x - 64, y - 64) / 64, fall = Math.max(0, 1 - r * r * (1.1 + (f - 0.5) * 0.9));
+      const a = Math.max(0, Math.min(1, fall * (0.55 + f * 0.8)));
+      const i = (y * 128 + x) * 4, shade = kind === "fire" ? 255 : Math.round(170 + f * 85);
+      d[i] = shade; d[i + 1] = shade; d[i + 2] = shade; d[i + 3] = Math.round(a * 255);
+    }
+    g.putImageData(img, 0, 0);
+  } else if (kind === "flare") {
+    // the flash of a blast: a bright core and a few long rays
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.15, "rgba(255,255,255,0.9)"); gr.addColorStop(0.45, "rgba(255,255,255,0.25)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    g.globalCompositeOperation = "lighter";
+    for (let k = 0; k < 6; k++) { g.save(); g.translate(64, 64); g.rotate(k * Math.PI / 6 + 0.3); const lg = g.createLinearGradient(-64, 0, 64, 0); lg.addColorStop(0, "rgba(255,255,255,0)"); lg.addColorStop(0.5, "rgba(255,255,255,0.55)"); lg.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = lg; g.fillRect(-64, -1.5, 128, 3); g.restore(); }
+  } else if (kind === "shock") {
+    const gr = g.createRadialGradient(64, 64, 40, 64, 64, 64);
+    gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.7, "rgba(255,255,255,0.8)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
   } else if (kind === "wrench" || kind === "warn") {
     g.font = "92px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(kind === "wrench" ? "🔧" : "⚠️", 64, 70);
   } else {
@@ -57,6 +83,14 @@ export class WarFX {
     this.reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.maxParts = world.quality === "low" ? 50 : world.quality === "medium" ? 110 : 180;
     this.repairs = new Map(); // "x:y" → { start, end } (from the server)
+    // one light for blasts and rocket flames (always in the scene, so nothing recompiles when it shines)
+    this.light = new THREE.PointLight("#ffa04a", 0, 7, 1.6); this.light.position.set(0, -50, 0); world.scene.add(this.light);
+    this.lightT = 0;
+    // debris thrown by a hit, and the blast's ring on the ground
+    this.debris = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.035, 0.04), new THREE.MeshStandardMaterial({ color: "#3b352e", roughness: 0.9 }), 60);
+    this.debris.count = 0; this.debris.frustumCulled = false; this.debris.castShadow = world.quality !== "low"; world.scene.add(this.debris);
+    this.chunks = [];
+    this.rings = [];
     this.clockOffset = 0;     // server time − this device's time
   }
 
@@ -64,10 +98,10 @@ export class WarFX {
   mesh(key) {
     const geo = model(key), g = new THREE.Group();
     if (!geo) return g;
-    for (const set of ["matte", "shiny", "lights"]) {
+    for (const set of SETS) {
       if (!geo[set]) continue;
       const m = new THREE.Mesh(geo[set], set === "lights" ? new THREE.MeshBasicMaterial({ vertexColors: true }) : this.w.mats[set]);
-      m.castShadow = set !== "lights" && this.w.quality !== "low";
+      m.castShadow = set !== "lights" && set !== "glow" && this.w.quality !== "low";
       g.add(m);
     }
     return g;
@@ -91,32 +125,33 @@ export class WarFX {
         g.rotation.y = this.w.faceAngle(s, x, y) + (b.rot || 0) * Math.PI / 2;
         const lvl = Math.min(2, b.lvl || 0), sfx = lvl ? String(lvl) : "", part = { kind: b.id, group: g, x, y, wd: b.wd || 0, lvl };
         if (b.id === "radar") {
-          const h = [0.45, 0.7, 0.9][lvl], dish = this.mesh(`radarDish${sfx}`);
-          dish.position.set(-0.04, h + 0.03, -0.04); dish.rotation.y = Math.random() * 6;
+          const L = MIL_LAYOUT.radar, dish = this.mesh(`radarDish${sfx}`);
+          dish.position.set(L.x, L.h[lvl] + 0.02, L.z); dish.rotation.y = Math.random() * 6;
           g.add(dish); part.dish = dish;
         } else if (b.id === "airdef") {
           const turret = this.mesh(`airdefTurret${sfx}`);
-          turret.position.set(0, 0.03, -0.02); turret.rotation.y = Math.random() * 6;
+          turret.position.set(MIL_LAYOUT.airdef.x, MIL_LAYOUT.airdef.y, MIL_LAYOUT.airdef.z); turret.rotation.y = Math.random() * 0.6 - 0.3;
           g.add(turret); part.turret = turret;
         } else if (b.id === "missilepad") {
-          const pivot = new THREE.Group(), arm = this.mesh(`padArm${sfx}`);
-          pivot.position.set(0, 0.17, -0.33); arm.position.set(0, 0, 0.31);
+          // the erector: sealed canisters (a coloured cap when loaded); the missile waits inside, unseen
+          const P = MIL_LAYOUT.pad, n = P.n[lvl], show = this.missileStock == null ? n : Math.min(n, this.missileStock);
+          const pivot = new THREE.Group(), arm = this.mesh(`padArm${show ? "L" : ""}${sfx}`);
+          pivot.position.set(...P.pivot); arm.position.set(0, 0, P.arm);
           pivot.add(arm); g.add(pivot);
-          const n = [1, 2, 3][lvl], show = this.missileStock == null ? n : Math.min(n, this.missileStock);
           part.missiles = [];
           for (let i = 0; i < n; i++) {
-            const m = this.mesh("wMissile");
-            m.position.set((i - (n - 1) / 2) * 0.1, 0.075, 0.33);
-            m.visible = i < show;
+            const m = this.mesh("wMissile"), [sx, sy] = P.slot(lvl, i);
+            m.position.set(sx, sy - 0.04, P.arm - 0.02);
+            m.visible = false; m.userData.loaded = i < show;
             pivot.add(m); part.missiles.push(m);
           }
           part.pivot = pivot;
         } else if (b.id === "dronebase") {
-          const spots = [[-0.15, 0.3], [0.14, 0.3]].slice(0, Math.min(2, lvl + 1));
+          const spots = MIL_LAYOUT.drones.slice(0, Math.min(2, lvl + 1));
           const show = this.droneStock == null ? spots.length : Math.min(spots.length, this.droneStock);
           part.drones = spots.slice(0, show).map(([dx, dz]) => {
             const d = new THREE.Group(), body = this.mesh("wDrone"), rotor = this.mesh("wRotor");
-            d.add(body, rotor); d.position.set(dx, 0.07, dz); d.scale.setScalar(0.7); g.add(d);
+            d.add(body, rotor); d.position.set(dx, 0.1, dz); d.scale.setScalar(0.8); g.add(d);
             return { g: d, rotor, spin: 0 };
           });
         }
@@ -167,7 +202,14 @@ export class WarFX {
   sprite(kind, color, blending = THREE.NormalBlending) {
     let sp = this.pool.pop();
     if (!sp) { sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTexture("soft"), transparent: true, depthWrite: false })); sp.renderOrder = 5; }
-    sp.material.color.set(color); sp.material.blending = blending; sp.material.opacity = 1; sp.visible = true;
+    const tex = { smoke: "smoke", dust: "smoke", trail: "smoke", fire: "fire", flame: "fire", flash: "flare" }[kind] || "soft";
+    sp.material.map = fxTexture(tex);
+    const hot = blending === THREE.AdditiveBlending && kind !== "fire"; // fire stays orange (tone mapped); flames, flashes and sparks bloom
+    sp.material.toneMapped = !hot;
+    sp.material.color.set(color);
+    if (hot) sp.material.color.multiplyScalar(kind === "flash" ? 3.4 : kind === "flame" ? 3.6 : kind === "spark" ? 3.4 : 1); // bright enough to bloom
+    sp.material.rotation = Math.random() * Math.PI * 2;
+    sp.material.blending = blending; sp.material.opacity = 1; sp.visible = true;
     this.flyers.add(sp);
     return sp;
   }
@@ -182,12 +224,25 @@ export class WarFX {
     this.parts3.push({
       sp, kind, life: 0, max: o.life ?? { smoke: 2.6, dust: 1.4, fire: 0.6, flash: 0.35, spark: 0.9, flame: 0.12, trail: 1.4 }[kind],
       v: o.v || new THREE.Vector3((Math.random() - 0.5) * 0.3, kind === "smoke" ? 0.5 : kind === "spark" ? 2 : 0.2, (Math.random() - 0.5) * 0.3),
-      grow: o.grow ?? { smoke: 1.6, dust: 1.2, fire: 0.6, flash: 0.8, spark: 0, flame: -0.5, trail: 1.4 }[kind], size, alpha: o.alpha ?? (kind === "smoke" ? 0.75 : kind === "trail" ? 0.55 : 1), gravity: kind === "spark" ? -4 : 0
+      grow: o.grow ?? { smoke: 1.6, dust: 1.2, fire: 0.6, flash: 0.8, spark: 0, flame: -0.5, trail: 1.4 }[kind], size, alpha: o.alpha ?? (kind === "smoke" ? 0.85 : kind === "trail" ? 0.6 : 1), gravity: kind === "spark" ? -4 : 0,
+      spin: (Math.random() - 0.5) * (kind === "smoke" || kind === "trail" ? 0.8 : 2), hot: kind === "fire"
     });
   }
   explode(p, big = 1, air = false) {
     const n = this.w.quality === "low" ? 0.5 : 1;
-    this.emit("flash", p, { size: 1.1 * big, life: 0.28 });
+    // light on everything around, the ring on the ground, the debris
+    this.light.position.copy(p).setY(Math.max(0.5, p.y + 0.3)); this.light.intensity = 4 * big; this.lightT = 0.5;
+    if (!air) {
+      const ring = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: fxTexture("shock"), color: new THREE.Color(1.6, 1.25, 0.9), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, 0.06, p.z); ring.renderOrder = 4;
+      this.flyers.add(ring); this.rings.push({ m: ring, t: 0, size: 3.2 * big });
+      for (let i = 0; i < Math.round(22 * big * n) && this.chunks.length < 60; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 0.8 + Math.random() * 2.2;
+        this.chunks.push({ p: p.clone().setY(Math.max(0.2, p.y)), v: new THREE.Vector3(Math.cos(a) * sp, 2 + Math.random() * 3, Math.sin(a) * sp), r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0), w: (Math.random() - 0.5) * 12, s: 0.5 + Math.random() * 1.1, life: 0 });
+      }
+    }
+    for (let i = 0; i < Math.round(5 * big * n); i++) this.emit("fire", p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.1 + Math.random() * 0.25, (Math.random() - 0.5) * 0.25)), { size: (0.5 + Math.random() * 0.4) * big, life: 0.9 + Math.random() * 0.5, grow: 1.2, v: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.9 + Math.random() * 0.6, (Math.random() - 0.5) * 0.5) });
+    this.emit("flash", p, { size: 0.9 * big, life: 0.22, alpha: 0.85 });
     for (let i = 0; i < Math.round(6 * big * n); i++) this.emit("fire", p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.3, (Math.random() - 0.5) * 0.4)), { size: (0.4 + Math.random() * 0.5) * big, life: 0.5 + Math.random() * 0.4, v: new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.6 + Math.random(), (Math.random() - 0.5) * 1.2) });
     for (let i = 0; i < Math.round(18 * big * n); i++) { const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 2.5; this.emit("spark", p, { v: new THREE.Vector3(Math.cos(a) * sp, 1 + Math.random() * 3, Math.sin(a) * sp) }); }
     for (let i = 0; i < Math.round(8 * big * n); i++) this.emit("smoke", p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.1, (Math.random() - 0.5) * 0.6)), { size: 0.35 + Math.random() * 0.3, life: 2.2 + Math.random() * 1.2, color: air ? "#8a8580" : "#3f3a35", v: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.4 + Math.random() * 0.5, (Math.random() - 0.5) * 0.5) });
@@ -237,14 +292,21 @@ export class WarFX {
       await this.tween(1.8, (k) => { if (pivot) pivot.rotation.x = -1.2 * fxEase(k); lamp.material.opacity = 0.4 + 0.6 * (Math.sin(k * 30) > 0 ? 1 : 0); });
       this.flyers.remove(lamp); this.pool.push(lamp);
       await this.wait(0.35);
-      const missiles = (part?.missiles || []).filter((m) => m.visible).slice(0, Math.max(1, o.n || 1));
+      const missiles = (part?.missiles || []).filter((m) => m.userData.loaded).slice(0, Math.max(1, o.n || 1));
       const flying = [];
       if (!missiles.length) missiles.push(null);
+      // the canister caps blow off and the missiles slide out of their tubes
+      const live = missiles.filter(Boolean);
+      if (live.length) {
+        for (const m of live) { m.visible = true; m.userData.z0 = m.position.z; const w = new THREE.Vector3(); m.getWorldPosition(w); for (let j = 0; j < 3; j++) this.emit("smoke", w.clone().add(new THREE.Vector3(0, 0.05, 0)), { color: "#e3ddd1", size: 0.35 }); }
+        this.emit("flash", (() => { const w = new THREE.Vector3(); live[0].getWorldPosition(w); return w; })(), { size: 0.7, life: 0.2 });
+        await this.tween(0.45, (k) => { for (const m of live) m.position.z = m.userData.z0 + fxEaseIn(k) * 0.32; });
+      }
       for (const [i, m] of missiles.entries()) {
         // the missile leaves its rail: from the arm to the world
         const fly = this.mesh(o.wid === "missile2" ? "wMissile2" : "wMissile");
         const start = new THREE.Vector3(), q = new THREE.Quaternion();
-        if (m) { m.getWorldPosition(start); m.getWorldQuaternion(q); m.visible = false; } else { start.set(c.x, 0.4, c.z); q.setFromEuler(new THREE.Euler(-1.2, 0, 0)); }
+        if (m) { m.getWorldPosition(start); m.getWorldQuaternion(q); m.visible = false; m.position.z = m.userData.z0 ?? m.position.z; m.userData.loaded = false; } else { start.set(c.x, 0.4, c.z); q.setFromEuler(new THREE.Euler(-1.2, 0, 0)); }
         fly.position.copy(start); fly.quaternion.copy(q);
         this.flyers.add(fly);
         flying.push({ fly, start, delay: i * 0.45, dirUp: new THREE.Vector3(0, 0, 1).applyQuaternion(q) });
@@ -262,7 +324,9 @@ export class WarFX {
           f.fly.position.copy(f.start).addScaledVector(dir, d);
           f.fly.lookAt(f.fly.position.clone().add(dir));
           const back = f.fly.position.clone().addScaledVector(dir, -0.32);
-          this.emit("flame", back, { v: dir.clone().multiplyScalar(-1.5), size: 0.32 });
+          this.emit("flame", back, { v: dir.clone().multiplyScalar(-1.5), size: 0.34 });
+          this.emit("flame", back.clone().addScaledVector(dir, -0.08), { v: dir.clone().multiplyScalar(-2.5), size: 0.22, life: 0.1 });
+          if (f === flying[0]) { this.light.position.copy(back); this.light.intensity = 4; this.lightT = 0.15; }
           if (Math.random() < 0.8) this.emit("trail", back, { v: new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.05, (Math.random() - 0.5) * 0.15) });
           if (tt < 0.25) for (let j = 0; j < 2; j++) this.emit("smoke", new THREE.Vector3(c.x + (Math.random() - 0.5) * 0.6, 0.1, c.z + (Math.random() - 0.5) * 0.6), { color: "#d8d2c6", v: new THREE.Vector3((Math.random() - 0.5) * 1.6, 0.3, (Math.random() - 0.5) * 1.6), size: 0.6 });
         }
@@ -345,7 +409,7 @@ export class WarFX {
         const p = at(kk), next = at(Math.min(1, kk + 0.01));
         fly.position.copy(p);
         if (missile) fly.lookAt(next); else { fly.lookAt(new THREE.Vector3(next.x, p.y, next.z)); rotor.rotation.y += 0.9; }
-        if (missile) { this.emit("flame", p.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.3)), { size: 0.3 }); if (Math.random() < 0.7) this.emit("trail", p, {}); }
+        if (missile) { const tail = p.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.3)); this.emit("flame", tail, { size: 0.32 }); if (Math.random() < 0.8) this.emit("trail", tail, { size: 0.26 }); this.light.position.copy(tail); this.light.intensity = 3; this.lightT = 0.12; }
         else if (Math.random() < 0.25) this.emit("trail", p, { size: 0.12, alpha: 0.3 });
         // the air defence: turn to it, fire, and meet it
         if (h.tried && ad) {
@@ -425,6 +489,22 @@ export class WarFX {
       if (m.userData.spin) m.rotation.z += dt * m.userData.spin;
       if (m.isSprite && m.userData.bob !== undefined) { m.userData.bob += dt * 3; m.position.y = (m.userData.target ? 1.25 : 1.1) + Math.sin(m.userData.bob) * 0.08; }
     }
+    // the blast light fades; rings spread; debris falls and bounces
+    if (this.lightT > 0) { this.lightT -= dt; if (this.lightT <= 0) this.light.intensity = 0; else this.light.intensity *= Math.pow(0.02, dt); }
+    if (this.rings.length) this.rings = this.rings.filter((r) => { r.t += dt; const k = r.t / 0.55; if (k >= 1) { this.flyers.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); return false; } const sc = 0.3 + r.size * Math.pow(k, 0.6); r.m.scale.set(sc, sc, 1); r.m.material.opacity = 1 - k; return true; });
+    if (this.chunks.length) {
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+      this.chunks = this.chunks.filter((c) => (c.life += dt) < 3.5);
+      this.chunks.forEach((c, i) => {
+        c.v.y -= 9 * dt; c.p.addScaledVector(c.v, dt);
+        if (c.p.y < 0.03) { c.p.y = 0.03; c.v.y *= -0.3; c.v.x *= 0.6; c.v.z *= 0.6; c.w *= 0.6; }
+        c.r.x += c.w * dt; c.r.y += c.w * 0.7 * dt;
+        const fade = c.life > 2.8 ? 1 - (c.life - 2.8) / 0.7 : 1;
+        this.debris.setMatrixAt(i, m4.compose(c.p, q.setFromEuler(c.r), sc.setScalar(c.s * fade)));
+        if (c.life < 0.6 && Math.random() < 0.3) this.emit("trail", c.p.clone(), { size: 0.1, color: "#4a443d", life: 0.8, alpha: 0.5 });
+      });
+      this.debris.count = this.chunks.length; this.debris.instanceMatrix.needsUpdate = true;
+    } else if (this.debris.count) this.debris.count = 0;
     // particles
     if (this.parts3.length) {
       const keep = [];
@@ -438,7 +518,8 @@ export class WarFX {
         const s = Math.max(0.01, q.size * (1 + q.grow * k));
         q.sp.scale.set(s, s, 1);
         q.sp.material.opacity = q.alpha * (q.kind === "flash" ? 1 - k : k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85);
-        if (q.kind === "fire") q.sp.material.color.setHSL(0.08 - k * 0.06, 1, 0.55 - k * 0.25);
+        q.sp.material.rotation += q.spin * dt;
+        if (q.kind === "fire") { q.sp.material.color.setHSL(0.09 - k * 0.07, 1, 0.6 - k * 0.35).multiplyScalar(1.1 * (1 - k) + 0.25); }
         keep.push(q);
       }
       this.parts3 = keep;

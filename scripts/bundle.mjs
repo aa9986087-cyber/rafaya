@@ -6,13 +6,20 @@ const read = (f) => readFile(new URL("../" + f, import.meta.url), "utf8");
 const html = await read("index.html");
 const css = await read("css/style.css");
 const icon = Buffer.from(await read("icon.svg")).toString("base64");
+// the open assets (vendor/ASSETS-LICENSE.txt) go inline, so the page needs nothing but the CDN
+const bin = (f) => readFile(new URL("../vendor/" + f, import.meta.url));
+const assets = {
+  "hdri/sky.exr": `data:application/octet-stream;base64,${(await bin("hdri/sky.exr")).toString("base64")}`,
+  "tex/concrete-normal.webp": `data:image/webp;base64,${(await bin("tex/concrete-normal.webp")).toString("base64")}`,
+  "tex/grain-normal.webp": `data:image/webp;base64,${(await bin("tex/grain-normal.webp")).toString("base64")}`
+};
 // --preview: the TRIAL copy with a practice world of al-Jouf inside the page (js/preview.js), written to dist/rafaya-trial.html
 const preview = process.argv.includes("--preview");
 const mods = ["data", "sim", "people", "models", "world3d", "warfx", "war", "sound", "news", ...(preview ? ["warserver", "preview"] : []), "main"];
 // One module: drop the local imports and exports; three.js is imported once from jsDelivr.
 const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
   .map((src) => src
-    .replace(/^import [^;]+;\s*$/gm, "")
+    .replace(/^import (?![^;]*three\/addons)[^;]+;\s*$/gm, "") // three.js add-ons stay: the import map below sends them to the CDN
     .replace(/^export \{[^}]*\};?\s*$/gm, "")
     .replace(/^export (const|function|let|class|async function) /gm, "$1 "))
   .join("\n");
@@ -41,8 +48,10 @@ ${body}
   addEventListener("error", (e) => fail(e.message || "تعذّر التحميل"));
   addEventListener("unhandledrejection", (e) => fail(String(e.reason)));
 </script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<script>globalThis.RAFAYA_ASSETS = ${JSON.stringify(assets)};</script>
 <script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js";
+import * as THREE from "three";
 ${code}
 </script>
 `;

@@ -119,6 +119,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - **Local test with the real Worker:** `node scripts/copy-site.mjs && npx wrangler@4 dev --local --var WAR_TEST:1`. `WAR_TEST` opens the world locally and uses `fastWar(30)`. **Never set it on the live site.**
     - **Status:** built and tested locally (unit tests, two accounts on wrangler dev, the trial copy). **NOT pushed to main yet: the owner asked to try the trial file first.** The world is still closed (`WORLD_OPEN = false`).
 
+16. **Realistic graphics, step 1: the war (owner: «واقعي أكثر», war first, then the rest of the game; both modes).**
+    - Open assets in `vendor/` (see `vendor/ASSETS-LICENSE.txt`): three.js add-ons r160 in `vendor/jsm/` (MIT: EffectComposer, UnrealBloomPass, OutputPass, EXRLoader, RoundedBoxGeometry), a Poly Haven sky HDRI `vendor/hdri/sky.exr` (CC0), and two CC0 normal maps in `vendor/tex/`. `index.html` maps `three/addons/` to `./vendor/jsm/`. The single-file bundle maps it to jsDelivr and carries the HDRI and textures inline (`globalThis.RAFAYA_ASSETS`).
+    - `models.js`: `SETS` = matte, shiny, lights, **paint, metal, glass, glow**. The Builder keeps UVs and has `rbox`/`lathe`/`plate`. The military models are rebuilt (TEL truck with canisters, Patriot-style battery, slatted radar reflector, corrugated hangars, T-walls, helipads). `MIL_LAYOUT` holds where the moving parts sit.
+    - `world3d.js`: the sky reflects only on paint/metal/glass (the rest of the town keeps its warm light). Bloom threshold is 3.2, so only `glow`, flames, flashes and sparks bloom (sunlit sand must not). There is no bloom on "low" quality.
+    - `warfx.js`: noise smoke and fire sprites, a flare, one PointLight for blasts and rocket flames (always in the scene, so there is no shader recompile), a ground shockwave, and instanced debris with bounces. Missiles slide out of their canisters.
+    - **Next:** the same realistic treatment for the rest of the game (houses, shops, roads, ground, people, cars). Ask the owner before starting.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

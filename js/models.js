@@ -2,6 +2,7 @@
 // goat-hair tents, Najdi mud houses with crenellations, water towers, a Najdi mosque, palms.
 // Each model is merged into at most three geometries (matte, shiny, night lights) for fast drawing.
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 const C = {
   sand: "#e8cf9a", mud: "#c9935a", mudDark: "#a9744a", mudLight: "#d8a96e", plaster: "#efe3cc", white: "#f5f2ea",
@@ -12,10 +13,16 @@ const C = {
 };
 
 const tmp = new THREE.Object3D();
+/**
+ * The material sets a model is split into (one draw each): matte and shiny as before, lights that glow at
+ * night, and for the newer, more realistic models: paint (semi-gloss painted metal with a fine normal map),
+ * metal (bare steel), glass (dark tinted) and glow (lamps and screens bright enough to bloom).
+ */
+export const SETS = ["matte", "shiny", "lights", "paint", "metal", "glass", "glow"];
 
 /** Collects coloured parts and merges them into one geometry per material. */
 class Builder {
-  constructor() { this.sets = { matte: [], shiny: [], lights: [] }; }
+  constructor() { this.sets = Object.fromEntries(SETS.map((k) => [k, []])); }
   add(geo, color, o = {}, set = "matte") {
     tmp.position.set(o.x || 0, o.y || 0, o.z || 0);
     tmp.rotation.set(o.rx || 0, o.ry || 0, o.rz || 0);
@@ -27,7 +34,7 @@ class Builder {
     const n = g.attributes.position.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    for (const k of Object.keys(g.attributes)) if (!["position", "normal", "color"].includes(k)) g.deleteAttribute(k);
+    for (const k of Object.keys(g.attributes)) if (!["position", "normal", "color", "uv"].includes(k)) g.deleteAttribute(k);
     this.sets[set].push(g);
     return this;
   }
@@ -35,6 +42,17 @@ class Builder {
   cyl(rt, rb, h, color, o = {}, seg = 10, set) { return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
   dome(r, color, o = {}, set) { return this.add(new THREE.SphereGeometry(r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), color, o, set); }
   cone(r, h, color, o = {}, seg = 4, set) { return this.add(new THREE.ConeGeometry(r, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
+  /** A box with rounded edges (catches the light like real panels). */
+  rbox(w, h, d, r, color, o = {}, set = "paint") { return this.add(new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2)), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
+  /** A turned shape from a profile [[radius, y], ...] (noses, nozzles, domes). */
+  lathe(points, color, o = {}, seg = 16, set = "paint") { return this.add(new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), seg), color, o, set); }
+  /** A flat shape extruded thin (fins, wings, blades). pts: [[x, y], ...] in the shape's plane. */
+  plate(pts, depth, color, o = {}, set = "paint") {
+    const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
+    g.translate(0, 0, -depth / 2);
+    return this.add(g, color, o, set);
+  }
   done() {
     const out = {};
     for (const [k, list] of Object.entries(this.sets)) out[k] = list.length ? merge(list) : null;
@@ -46,11 +64,13 @@ function merge(list) {
   let n = 0;
   for (const g of list) n += g.attributes.position.count;
   const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const withUv = list.every((g) => g.attributes.uv), uv = withUv ? new Float32Array(n * 2) : null;
   let o = 0;
   for (const g of list) {
     pos.set(g.attributes.position.array, o * 3);
     nor.set(g.attributes.normal.array, o * 3);
     col.set(g.attributes.color.array, o * 3);
+    if (uv) uv.set(g.attributes.uv.array, o * 2);
     o += g.attributes.position.count;
     g.dispose();
   }
@@ -58,6 +78,7 @@ function merge(list) {
   m.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   m.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
   m.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  if (uv) m.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   m.computeBoundingSphere();
   return m;
 }
@@ -1086,7 +1107,7 @@ export function model(key, ground = "sand") {
     if (v !== undefined) {
       const src = model(base, ground), swaps = VARIANTS[base]?.[Number(v)];
       if (!src || !swaps) return src;
-      cache.set(k, { matte: recolor(src.matte, swaps), shiny: recolor(src.shiny, swaps), lights: src.lights });
+      cache.set(k, { ...src, matte: recolor(src.matte, swaps), shiny: recolor(src.shiny, swaps) });
       return cache.get(k);
     }
     const b = new Builder();
@@ -1175,204 +1196,323 @@ function bigTime(b, id) {
 for (const id of BIZ) for (const lvl of [1, 2, 3]) MAKERS[`${id}${lvl}`] = (b, ground, seed) => { MAKERS[id](b, ground, seed); bizExtras(b, id, lvl); };
 
 // ---------- «صراع الجوف»: military buildings (world of al-Jouf only) and what flies ----------
-// Each building has a level 0/1/2 model ("radar", "radar1", "radar2"). The parts that move (the radar
-// dish, the air defence launcher, the missile erector, the drones) are separate small models that
-// js/warfx.js places and moves on top of the "…_b" base, so only one copy of them shows in the town.
-const MC = { sand: "#c9b48a", sandDark: "#a8936a", olive: "#6f6d43", oliveDark: "#55532f", concrete: "#bdb6a6", slab: "#a9a293", steel: "#7f868c", white: "#eceae4", flag: "#1f7a46" };
-function sandbags(b, r, n, y = 0, ox = 0, oz = 0) {
-  for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; b.add(new THREE.SphereGeometry(0.05, 6, 4), MC.sandDark, { x: ox + Math.cos(a) * r, y: y + 0.03, z: oz + Math.sin(a) * r, sy: 0.6, sx: 1.4, ry: -a }); }
+// Realistic, still light for phones: painted steel with a fine normal map, bare metal, tinted glass and
+// lamps that glow (they bloom). Each building has a level 0/1/2 model ("radar", "radar1", "radar2").
+// The parts that move (the radar's reflector, the air defence launcher, the missile erector, the
+// drones) are separate small models that js/warfx.js places and moves on top of the "…_b" base, at the
+// spots given by MIL_LAYOUT, so only one copy of them shows in the town.
+const MC = {
+  tan: "#b9a47b", tanDark: "#9a875f", tanLight: "#cdbb93", olive: "#5d6045", oliveDark: "#474a34", concrete: "#bdb7aa", concreteDark: "#a19c90",
+  asphalt: "#4a4c4f", steel: "#9aa1a6", steelDark: "#6b7278", rubber: "#232326", white: "#e9e8e2", glass: "#2a3a46", yellow: "#e0b23a",
+  red: "#b3261e", black: "#1f2022", flag: "#1f7a46", earth: "#b49c71"
+};
+/** Where the moving parts sit on each building (shared with js/warfx.js). */
+export const MIL_LAYOUT = {
+  radar: { x: -0.06, z: -0.06, h: [0.5, 0.72, 0.92] },
+  airdef: { x: 0.02, y: 0.12, z: -0.04 },
+  pad: { pivot: [0, 0.2, -0.3], arm: 0.3, n: [1, 2, 3], slot: (lvl, i) => [(i - ([1, 2, 3][lvl] - 1) / 2) * 0.095, 0.075, 0.0] },
+  drones: [[-0.16, 0.3], [0.15, 0.3]]
+};
+/** Place everything another builder drew into this one (moved, turned and scaled). */
+function graft(b, draw, { x = 0, y = 0, z = 0, ry = 0, s = 1 } = {}) {
+  const g = new Builder(); draw(g);
+  const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(s, s, s));
+  for (const set of SETS) for (const part of g.sets[set]) { part.applyMatrix4(m); b.sets[set].push(part); }
+}
+function pad(b, w = 0.96, d = 0.96, marks = true) {
+  b.rbox(w, 0.03, d, 0.008, MC.concrete, {}, "paint");
+  for (const t of [-1 / 3, 1 / 3]) { b.box(w - 0.02, 0.002, 0.006, MC.concreteDark, { y: 0.03, z: t * d }); b.box(0.006, 0.002, d - 0.02, MC.concreteDark, { y: 0.03, x: t * w }); }
+  if (marks) b.box(w - 0.08, 0.002, 0.014, MC.yellow, { y: 0.031, z: d / 2 - 0.05 });
+}
+function tWalls(b, x, z, ry, n) {
+  graft(b, (g) => { for (let i = 0; i < n; i++) { g.rbox(0.1, 0.22, 0.035, 0.006, MC.concrete, { x: (i - (n - 1) / 2) * 0.105 }); g.rbox(0.1, 0.025, 0.08, 0.006, MC.concreteDark, { x: (i - (n - 1) / 2) * 0.105 }); } }, { x, z, ry });
+}
+function sandbags(b, r, n, y = 0, ox = 0, oz = 0, arc = Math.PI * 2, a0 = 0) {
+  for (let i = 0; i < n; i++) { const a = a0 + (i / n) * arc; for (const k of [0, 1]) b.add(new THREE.SphereGeometry(0.042, 8, 5), k ? "#a89366" : "#b59f72", { x: ox + Math.cos(a + k * 0.12) * r, y: y + 0.025 + k * 0.04, z: oz + Math.sin(a + k * 0.12) * r, sy: 0.55, sx: 1.5, ry: -a }); }
 }
 function flag(b, x, z, h = 0.7) {
-  b.cyl(0.012, 0.012, h, C.grey, { x, z }, 5);
-  b.box(0.2, 0.12, 0.01, MC.flag, { x: x + 0.1, y: h - 0.14, z });
-  b.box(0.08, 0.02, 0.012, "#ffffff", { x: x + 0.1, y: h - 0.09, z });
+  b.cyl(0.008, 0.01, h, MC.steel, { x, z }, 8, "metal");
+  b.add(new THREE.SphereGeometry(0.014, 8, 6), MC.yellow, { x, y: h + 0.01, z }, "metal");
+  b.box(0.2, 0.12, 0.006, MC.flag, { x: x + 0.105, y: h - 0.14, z });
+  b.box(0.1, 0.018, 0.008, "#ffffff", { x: x + 0.1, y: h - 0.085, z });
 }
-function slabBase(b, w = 0.94, d = 0.94) { b.box(w, 0.025, d, MC.concrete); b.box(w - 0.06, 0.006, 0.02, "#e7dcc2", { y: 0.025, z: d / 2 - 0.06 }); }
-function radarDishParts(b, s = 1, y = 0) {
-  // a turning mast with a big dish looking out sideways and slightly up, and its feed arm
-  b.cyl(0.035 * s, 0.045 * s, 0.12 * s, MC.steel, { y }, 8);
-  b.box(0.08 * s, 0.05 * s, 0.08 * s, MC.slab, { y: y + 0.12 * s });
-  b.add(new THREE.CylinderGeometry(0.3 * s, 0.1 * s, 0.07 * s, 20), MC.white, { y: y + 0.32 * s, z: -0.05 * s, rx: Math.PI / 2 - 0.35 }, "shiny");
-  b.add(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 0.02 * s, 14), "#d8dcde", { y: y + 0.31 * s, z: -0.02 * s, rx: Math.PI / 2 - 0.35 }, "shiny");
-  b.box(0.025 * s, 0.025 * s, 0.26 * s, MC.steel, { y: y + 0.34 * s, z: 0.1 * s, rx: -0.35 });
-  b.box(0.05 * s, 0.05 * s, 0.05 * s, MC.steel, { y: y + 0.38 * s, z: 0.22 * s });
-  b.box(0.035 * s, 0.035 * s, 0.035 * s, "#ff3b30", { y: y + 0.62 * s, z: -0.12 * s }, "lights");
+function mast(b, x, z, h, beacon = true) {
+  b.cyl(0.006, 0.012, h, MC.steel, { x, z }, 6, "metal");
+  for (let y = 0.15; y < h - 0.05; y += 0.18) b.box(0.08, 0.006, 0.006, MC.steelDark, { x, y, z }, "metal");
+  if (beacon) b.add(new THREE.SphereGeometry(0.014, 8, 6), "#ff3b30", { x, y: h + 0.01, z }, "glow");
+}
+function satDish(b, x, y, z, r = 0.07, ry = 0) {
+  graft(b, (g) => {
+    g.cyl(0.01, 0.012, 0.05, MC.steelDark, {}, 8, "metal");
+    g.lathe([[0, 0], [r * 0.4, 0.004], [r * 0.8, 0.015], [r, 0.03], [r * 0.98, 0.034], [0, 0.012]], MC.white, { y: 0.06, rx: -1.0 }, 18, "paint");
+    g.box(0.006, 0.006, r * 1.1, MC.steelDark, { y: 0.09, z: r * 0.35, rx: -0.6 }, "metal");
+  }, { x, y, z, ry });
+}
+function milAc(b, x, y, z) { b.rbox(0.08, 0.06, 0.05, 0.006, "#d9d6cd", { x, y, z }, "paint"); b.cyl(0.018, 0.018, 0.004, MC.steelDark, { x, y: y + 0.03, z: z + 0.026, rx: Math.PI / 2 }, 12, "metal"); }
+function windows(b, x0, y, z, n, w, h, gap) { for (let i = 0; i < n; i++) b.box(w, h, 0.006, MC.glass, { x: x0 + i * gap, y, z }, "glass"); }
+function wheel(b, x, y, z, r = 0.05, w = 0.04) {
+  b.add(new THREE.CylinderGeometry(r, r, w, 16), MC.rubber, { x, y, z, rz: Math.PI / 2 }, "matte");
+  b.add(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.004, 12), MC.steelDark, { x, y, z, rz: Math.PI / 2 }, "metal");
+}
+function windsock(b, x, z) { b.cyl(0.006, 0.006, 0.3, MC.steel, { x, z }, 6, "metal"); b.add(new THREE.ConeGeometry(0.025, 0.1, 10, 1, true), "#ff7a1a", { x: x + 0.05, y: 0.29, z, rz: Math.PI / 2 }, "paint"); }
+
+// ---------- the moving parts ----------
+function radarDishParts(b, s = 1) {
+  // a turning pedestal and a curved slatted reflector (air surveillance style), with its feed horn
+  b.cyl(0.04 * s, 0.05 * s, 0.06 * s, MC.steelDark, {}, 14, "metal");
+  b.rbox(0.1 * s, 0.06 * s, 0.08 * s, 0.01, MC.tanLight, { y: 0.06 * s }, "paint");
+  const slats = 9, arc = 1.25, R = 0.42 * s;
+  for (let i = 0; i < slats; i++) {
+    const a = -arc / 2 + (i / (slats - 1)) * arc;
+    b.box(0.052 * s, 0.22 * s, 0.012 * s, MC.white, { x: Math.sin(a) * R, y: 0.21 * s, z: -0.1 * s + (R - Math.cos(a) * R) - 0.0, ry: -a, rx: 0.12 }, "paint");
+  }
+  b.box(0.36 * s, 0.012 * s, 0.012 * s, MC.steel, { y: 0.11 * s, z: -0.07 * s }, "metal");
+  b.box(0.36 * s, 0.012 * s, 0.012 * s, MC.steel, { y: 0.3 * s, z: -0.08 * s }, "metal");
+  for (const x of [-0.12, 0, 0.12]) b.box(0.01 * s, 0.2 * s, 0.01 * s, MC.steel, { x: x * s, y: 0.11 * s, z: -0.06 * s }, "metal");
+  b.box(0.012 * s, 0.012 * s, 0.24 * s, MC.steel, { y: 0.14 * s, z: 0.05 * s, rx: -0.15 }, "metal");
+  b.rbox(0.05 * s, 0.04 * s, 0.05 * s, 0.006, MC.steelDark, { y: 0.15 * s, z: 0.17 * s }, "metal");
+  b.add(new THREE.SphereGeometry(0.014, 8, 6), "#ff3b30", { y: 0.35 * s, z: -0.08 * s }, "glow");
 }
 function airdefTurretParts(b, lvl) {
-  const tubes = [4, 6, 8][lvl];
-  b.cyl(0.11, 0.13, 0.06, MC.olive, {}, 12);
-  b.box(0.06, 0.12, 0.06, MC.oliveDark, { x: -0.12, y: 0.04 });
-  b.box(0.06, 0.12, 0.06, MC.oliveDark, { x: 0.12, y: 0.04 });
-  // the launcher box (it tilts up when it fires: the turret's own pivot is at y 0.12)
-  const cols = tubes / 2;
-  b.box(0.2 + cols * 0.02, 0.13, 0.36, MC.olive, { y: 0.1, z: 0.02 });
-  for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) b.cyl(0.022, 0.022, 0.012, MC.oliveDark, { x: -0.06 * (cols - 1) / 2 + c * 0.06, y: 0.135 + r * 0.055, z: 0.2, rx: Math.PI / 2 }, 8);
-  if (lvl >= 1) b.box(0.08, 0.08, 0.05, MC.steel, { x: 0, y: 0.24, z: -0.08 }, "shiny");
-  if (lvl >= 2) b.add(new THREE.BoxGeometry(0.14, 0.1, 0.01), "#2d3a46", { y: 0.3, z: -0.1 }, "shiny");
+  // a turntable and a launcher box of sealed canisters (2 × 2, 2 × 3, 2 × 4) that tilts up to fire
+  const cols = [2, 3, 4][lvl];
+  b.cyl(0.13, 0.14, 0.03, MC.steelDark, {}, 20, "metal");
+  b.rbox(0.18, 0.06, 0.16, 0.01, MC.olive, { y: 0.03 }, "paint");
+  for (const x of [-0.11, 0.11]) b.rbox(0.03, 0.12, 0.08, 0.006, MC.oliveDark, { x, y: 0.03 }, "paint");
+  const w = cols * 0.07 + 0.02;
+  b.rbox(w, 0.16, 0.42, 0.012, MC.olive, { y: 0.1, z: 0.02 }, "paint");
+  for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) {
+    const x = (c - (cols - 1) / 2) * 0.07, y = 0.145 + (r - 0.5) * 0.07;
+    b.box(0.058, 0.058, 0.006, MC.oliveDark, { x, y: y - 0.029, z: 0.233 }, "paint");
+    b.cyl(0.02, 0.02, 0.004, "#c9a43a", { x, y, z: 0.237, rx: Math.PI / 2 }, 12, "paint");
+  }
+  b.box(w + 0.004, 0.01, 0.43, MC.oliveDark, { y: 0.26, z: 0.02 }, "paint");
+  if (lvl >= 1) b.rbox(0.06, 0.05, 0.06, 0.008, MC.steelDark, { x: w / 2 + 0.03, y: 0.12, z: -0.08 }, "metal");
+  if (lvl >= 2) b.box(0.012, 0.012, 0.012, "#38d26b", { x: -w / 2 - 0.005, y: 0.2, z: 0.2 }, "glow");
 }
-function padArmParts(b, lvl, withMissiles = true) {
-  const n = [1, 2, 3][lvl];
-  // the erector: rails and the missiles on them, pointing along +z, pivot at the back (z = -0.3)
-  b.box(0.06 * n + 0.1, 0.04, 0.62, MC.oliveDark, { z: 0.0 });
+function padArmParts(b, lvl, loaded = true) {
+  // the erector: a steel frame along +z (its pivot at the back) carrying sealed missile canisters
+  const n = [1, 2, 3][lvl], L = MIL_LAYOUT.pad;
+  b.box(n * 0.095 + 0.04, 0.025, 0.62, MC.steelDark, { y: 0.0, z: 0 }, "metal");
+  for (const x of [-1, 1]) b.box(0.012, 0.05, 0.6, MC.steel, { x: x * (n * 0.095 / 2 + 0.02), y: 0.0, z: 0 }, "metal");
   for (let i = 0; i < n; i++) {
-    const x = (i - (n - 1) / 2) * 0.1;
-    if (withMissiles) {
-      b.add(new THREE.CylinderGeometry(0.035, 0.035, 0.52, 10), MC.white, { x, y: 0.07, z: 0.02, rx: Math.PI / 2 }, "shiny");
-      b.add(new THREE.ConeGeometry(0.035, 0.1, 10), "#9aa1a6", { x, y: 0.07, z: 0.33, rx: Math.PI / 2 }, "shiny");
-    }
-    b.box(0.09, 0.03, 0.5, MC.steel, { x, y: 0.02, z: 0.0 });
+    const [x, y] = L.slot(lvl, i);
+    b.rbox(0.085, 0.085, 0.58, 0.01, MC.olive, { x, y: y - 0.0425, z: 0 }, "paint");
+    for (const z of [-0.2, 0, 0.2]) b.box(0.088, 0.01, 0.012, MC.oliveDark, { x, y: y + 0.04, z }, "paint");
+    b.box(0.07, 0.07, 0.006, loaded ? "#c9542a" : MC.black, { x, y: y - 0.035, z: 0.292 }, "paint");
+    if (loaded) b.box(0.03, 0.03, 0.004, MC.white, { x, y: y - 0.015, z: 0.297 }, "paint");
   }
 }
 function missileParts(b, adv) {
-  // along +z (the nose), centred on its middle
-  const L = adv ? 0.62 : 0.5, R = adv ? 0.045 : 0.038;
-  b.add(new THREE.CylinderGeometry(R, R, L, 12), adv ? "#e9e6df" : "#f2f0ea", { rx: Math.PI / 2 }, "shiny");
-  b.add(new THREE.ConeGeometry(R, 0.12, 12), adv ? "#3b3f44" : "#9aa1a6", { z: L / 2 + 0.06, rx: Math.PI / 2 }, "shiny");
-  b.add(new THREE.CylinderGeometry(R * 1.02, R * 1.02, 0.05, 12), adv ? "#b3261e" : MC.flag, { z: L / 2 - 0.08, rx: Math.PI / 2 });
-  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.box(0.008, 0.08, 0.1, MC.steel, { x: Math.cos(a) * R * 1.6, y: Math.sin(a) * R * 1.6 - 0.04, z: -L / 2 + 0.06, rz: a }); }
+  // along +z (the nose), centred on its middle: a turned body with an ogive nose, a nozzle and fins
+  const L = adv ? 0.62 : 0.5, R = adv ? 0.042 : 0.034, h = L / 2;
+  const body = adv ? "#d9d8d2" : MC.white;
+  b.lathe([[0, -h], [R * 0.75, -h], [R, -h + 0.02], [R, h - 0.13], [R * 0.93, h - 0.09], [R * 0.72, h - 0.05], [R * 0.4, h - 0.015], [0, h]], body, { rx: Math.PI / 2 }, 18, "paint");
+  b.lathe([[0, h - 0.06], [R * 0.85, h - 0.06], [R * 0.6, h - 0.025], [R * 0.3, h - 0.008], [0, h + 0.002]], adv ? MC.black : "#8e959a", { rx: Math.PI / 2 }, 16, adv ? "paint" : "metal");
+  b.add(new THREE.CylinderGeometry(R * 1.01, R * 1.01, 0.03, 18), adv ? MC.red : MC.flag, { z: h - 0.15, rx: Math.PI / 2 }, "paint");
+  b.add(new THREE.CylinderGeometry(R * 0.7, R * 0.85, 0.035, 16, 1, true), MC.steelDark, { z: -h - 0.012, rx: Math.PI / 2 }, "metal");
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2 + Math.PI / 4;
+    b.plate([[0, 0], [0.07, 0], [0.07, 0.035], [0.02, 0.06]], 0.006, MC.steelDark, { x: Math.cos(a) * R, y: Math.sin(a) * R, z: -h + 0.01, rz: a, ry: -Math.PI / 2 }, "metal");
+    if (adv) b.plate([[0, 0], [0.18, 0], [0.16, 0.012], [0.02, 0.012]], 0.004, "#b8b7b0", { x: Math.cos(a) * R, y: Math.sin(a) * R, z: -0.05, rz: a, ry: -Math.PI / 2 }, "paint");
+  }
+}
+function interceptorParts(b) {
+  const L = 0.34, R = 0.02, h = L / 2;
+  b.lathe([[0, -h], [R, -h], [R, h - 0.07], [R * 0.6, h - 0.025], [0, h]], MC.white, { rx: Math.PI / 2 }, 12, "paint");
+  b.lathe([[0, h - 0.05], [R * 0.82, h - 0.05], [R * 0.45, h - 0.018], [0, h + 0.002]], MC.black, { rx: Math.PI / 2 }, 12, "paint");
+  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.plate([[0, 0], [0.05, 0], [0.05, 0.022], [0.015, 0.04]], 0.004, MC.steelDark, { x: Math.cos(a) * R, y: Math.sin(a) * R, z: -h + 0.005, rz: a, ry: -Math.PI / 2 }, "metal"); }
 }
 function droneParts(b, adv) {
   if (adv) {
-    // a fixed-wing drone with a pusher propeller (the propeller is its own part)
-    b.add(new THREE.CylinderGeometry(0.03, 0.025, 0.42, 10), "#9a9a8a", { rx: Math.PI / 2 }, "shiny");
-    b.add(new THREE.SphereGeometry(0.032, 10, 8), "#9a9a8a", { z: 0.21 }, "shiny");
-    b.box(0.62, 0.012, 0.09, "#8c8c7c", { y: -0.006, z: 0.02 });
-    b.box(0.2, 0.01, 0.06, "#8c8c7c", { y: -0.005, z: -0.18 });
-    b.box(0.01, 0.08, 0.06, "#8c8c7c", { y: 0.03, z: -0.18 });
-    b.box(0.04, 0.02, 0.05, "#2d3a46", { y: -0.03, z: 0.12 }, "shiny");
+    // a long-endurance drone: slim fuselage, long straight wings, V-tail, a sensor ball under the nose
+    b.lathe([[0, -0.24], [0.022, -0.22], [0.032, -0.12], [0.036, 0.08], [0.03, 0.17], [0.016, 0.22], [0, 0.235]], "#c9cbc6", { rx: Math.PI / 2 }, 14, "paint");
+    b.plate([[-0.34, 0], [0.34, 0], [0.32, 0.05], [-0.32, 0.05]], 0.008, "#bfc1bc", { y: 0.012, z: 0.01, rx: Math.PI / 2 }, "paint");
+    for (const s of [-1, 1]) b.plate([[0, 0], [0.12, 0], [0.11, 0.045], [0.02, 0.045]], 0.005, "#bfc1bc", { x: s * 0.012, y: 0.02, z: -0.19, rz: s * 0.7, ry: -Math.PI / 2 }, "paint");
+    b.add(new THREE.SphereGeometry(0.022, 12, 8), MC.steelDark, { y: -0.032, z: 0.13 }, "metal");
+    b.add(new THREE.SphereGeometry(0.012, 10, 8), MC.glass, { y: -0.036, z: 0.148 }, "glass");
+    b.cyl(0.012, 0.016, 0.03, MC.steelDark, { z: -0.245, rx: Math.PI / 2 }, 10, "metal");
+    for (const s of [-1, 1]) b.add(new THREE.SphereGeometry(0.006, 6, 5), s > 0 ? "#38d26b" : "#ff3b30", { x: s * 0.34, y: 0.012, z: 0.03 }, "glow");
   } else {
-    // a four-rotor drone (the rotors are their own part)
-    b.box(0.14, 0.05, 0.14, "#4a4f45", { y: -0.025 });
-    for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { b.box(0.16, 0.014, 0.02, "#3a3e36", { x: x * 0.08, z: z * 0.08, ry: x * z > 0 ? Math.PI / 4 : -Math.PI / 4 }); b.cyl(0.012, 0.012, 0.03, "#2a2a26", { x: x * 0.14, y: -0.01, z: z * 0.14 }, 6); }
-    b.box(0.05, 0.03, 0.04, "#2d3a46", { y: -0.06, z: 0.05 }, "shiny");
-    b.box(0.02, 0.02, 0.02, "#ff3b30", { y: 0.005, z: 0.07 }, "lights");
+    // a four-rotor drone: carbon body, a sand-coloured shell, arms, motors and a camera gimbal
+    b.rbox(0.12, 0.04, 0.16, 0.012, "#2b2e30", { y: -0.03 }, "paint");
+    b.rbox(0.09, 0.022, 0.12, 0.01, MC.tanLight, { y: 0.008 }, "paint");
+    for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      b.box(0.17, 0.012, 0.018, "#2b2e30", { x: x * 0.075, y: -0.012, z: z * 0.075, ry: x * z > 0 ? -Math.PI / 4 : Math.PI / 4 }, "paint");
+      b.cyl(0.018, 0.02, 0.03, MC.steelDark, { x: x * 0.14, y: -0.02, z: z * 0.14 }, 12, "metal");
+      b.cyl(0.006, 0.006, 0.05, MC.black, { x: x * 0.1, y: -0.07, z: z * 0.11 }, 6, "matte");
+    }
+    b.add(new THREE.SphereGeometry(0.022, 12, 8), MC.steelDark, { y: -0.06, z: 0.07 }, "metal");
+    b.add(new THREE.SphereGeometry(0.012, 10, 8), MC.glass, { y: -0.064, z: 0.088 }, "glass");
+    b.box(0.012, 0.012, 0.012, "#ff3b30", { x: -0.05, y: 0.0, z: 0.08 }, "glow");
+    b.box(0.012, 0.012, 0.012, "#38d26b", { x: 0.05, y: 0.0, z: 0.08 }, "glow");
   }
 }
 function rotorParts(b, adv) {
-  if (adv) { b.box(0.2, 0.012, 0.02, "#2a2a26", {}); return; }
-  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) b.box(0.15, 0.004, 0.016, "#d9d9d0", { x: x * 0.14, y: 0.025, z: z * 0.14, ry: (x + z) * 0.6 });
+  if (adv) { b.cyl(0.01, 0.01, 0.02, MC.steelDark, { rx: Math.PI / 2 }, 8, "metal"); for (const a of [0, Math.PI]) b.box(0.16, 0.004, 0.02, "#2b2e30", { x: Math.cos(a) * 0.04, y: Math.sin(a) * 0.04, rz: a, rx: 0.2 }, "paint"); return; }
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) for (const a of [0, Math.PI / 2]) b.box(0.15, 0.003, 0.014, "#d4d4cc", { x: x * 0.14, y: 0.0, z: z * 0.14, ry: a + (x + z) * 0.4, rz: 0.06 }, "paint");
 }
-function hangar(b, x, z, w, d, color = MC.sand) {
-  // an arched hangar along z, its open door facing +z
+function hangar(b, x, z, w, d, color = MC.tan) {
+  // a corrugated steel arch, its door facing +z, half open
   const r = w / 2;
-  b.add(new THREE.CylinderGeometry(r, r, d, 16, 1, false, Math.PI / 2, Math.PI), color, { x, z, rx: Math.PI / 2 }, "matte");
-  for (let k = 1; k < 4; k++) b.add(new THREE.CylinderGeometry(r * 1.01, r * 1.01, 0.012, 16, 1, false, Math.PI / 2, Math.PI), MC.sandDark, { x, z: z - d / 2 + (d * k) / 4, rx: Math.PI / 2 });
-  b.add(new THREE.CylinderGeometry(r * 0.72, r * 0.72, 0.012, 14, 1, false, Math.PI / 2, Math.PI), "#2e2a22", { x, z: z + d / 2 + 0.004, rx: Math.PI / 2 });
+  b.add(new THREE.CylinderGeometry(r, r, d, 24, 1, false, Math.PI / 2, Math.PI), color, { x, z, rx: Math.PI / 2 }, "paint");
+  const ribs = Math.round(d / 0.035);
+  for (let k = 0; k <= ribs; k++) b.add(new THREE.CylinderGeometry(r * 1.012, r * 1.012, 0.008, 24, 1, false, Math.PI / 2, Math.PI), MC.tanDark, { x, z: z - d / 2 + (d * k) / ribs, rx: Math.PI / 2 }, "paint");
+  b.add(new THREE.CylinderGeometry(r * 0.9, r * 0.9, 0.006, 18, 1, false, Math.PI / 2, Math.PI), "#141414", { x, z: z + d / 2 + 0.003, rx: Math.PI / 2 }, "matte");
+  b.box(r * 0.95, r * 0.86, 0.012, MC.steel, { x: x - r * 0.42, z: z + d / 2 + 0.01 }, "metal");
+  b.box(r * 1.9, 0.012, 0.016, MC.yellow, { x, z: z + d / 2 + 0.03, y: 0.002 }, "paint");
+}
+function truck(b, lvl) {
+  // an 8 × 8 launcher truck along z: cab at the front (+z), chassis, wheels, equipment boxes
+  b.box(0.24, 0.05, 0.78, MC.steelDark, { y: 0.075 }, "metal");
+  for (const z of [-0.3, -0.16, 0.1, 0.24]) for (const s of [-1, 1]) wheel(b, s * 0.13, 0.055, z, 0.055, 0.045);
+  b.rbox(0.26, 0.1, 0.18, 0.02, MC.olive, { y: 0.1, z: 0.3 }, "paint");
+  b.rbox(0.24, 0.06, 0.1, 0.015, MC.olive, { y: 0.2, z: 0.31 }, "paint");
+  b.box(0.2, 0.045, 0.006, MC.glass, { y: 0.225, z: 0.362 }, "glass");
+  for (const s of [-1, 1]) { b.box(0.006, 0.04, 0.06, MC.glass, { x: s * 0.121, y: 0.225, z: 0.31 }, "glass"); b.box(0.012, 0.03, 0.01, MC.black, { x: s * 0.145, y: 0.22, z: 0.37 }, "matte"); }
+  for (const s of [-1, 1]) b.box(0.03, 0.012, 0.012, "#fff3d6", { x: s * 0.09, y: 0.13, z: 0.392 }, "glow");
+  for (const s of [-1, 1]) b.rbox(0.04, 0.06, 0.2, 0.008, MC.oliveDark, { x: s * 0.13, y: 0.1, z: -0.05 }, "paint");
+  for (const s of [-1, 1]) b.box(0.05, 0.12, 0.012, MC.steel, { x: s * 0.13, y: 0.06, z: -0.39 }, "metal");
 }
 
 Object.assign(MAKERS, {
   milhq_any(b, lvl = 0) {
-    slabBase(b);
+    pad(b);
     if (lvl === 0) {
-      b.box(0.5, 0.26, 0.38, MC.sand, { x: -0.08, z: -0.08 });
-      b.box(0.52, 0.03, 0.4, MC.sandDark, { x: -0.08, y: 0.26, z: -0.08 });
-      for (let i = 0; i < 4; i++) b.box(0.06, 0.05, 0.01, "#2d3a46", { x: -0.26 + i * 0.12, y: 0.15, z: 0.115 }, "shiny");
-      b.box(0.09, 0.14, 0.012, C.door, { x: 0.08, z: 0.115 });
-      sandbags(b, 0.11, 8, 0, 0.3, 0.3);
-      flag(b, 0.3, 0.3, 0.6);
-      b.cyl(0.008, 0.008, 0.36, C.grey, { x: -0.25, y: 0.29, z: -0.2 }, 4);
+      b.rbox(0.5, 0.24, 0.36, 0.015, MC.tan, { x: -0.1, z: -0.12 }, "paint");
+      b.box(0.52, 0.03, 0.38, MC.tanDark, { x: -0.1, y: 0.24, z: -0.12 }, "paint");
+      windows(b, -0.3, 0.14, 0.063, 4, 0.07, 0.05, 0.12);
+      b.box(0.09, 0.15, 0.008, MC.steelDark, { x: 0.08, z: 0.063 }, "metal");
+      b.box(0.012, 0.012, 0.012, "#fff3d6", { x: 0.08, y: 0.17, z: 0.07 }, "glow");
+      satDish(b, -0.25, 0.27, -0.2, 0.06, 0.6); milAc(b, 0.05, 0.27, -0.2);
+      mast(b, -0.02, -0.25, 0.75);
+      sandbags(b, 0.1, 8, 0, 0.3, 0.3);
+      flag(b, 0.3, 0.3, 0.55);
+      tWalls(b, -0.25, 0.36, 0, 3);
     } else if (lvl === 1) {
-      b.box(0.62, 0.42, 0.42, MC.sand, { x: -0.06, z: -0.1 });
-      b.box(0.64, 0.03, 0.44, MC.sandDark, { x: -0.06, y: 0.42, z: -0.1 });
-      for (let r = 0; r < 2; r++) for (let i = 0; i < 5; i++) b.box(0.07, 0.07, 0.01, "#2d3a46", { x: -0.3 + i * 0.12, y: 0.1 + r * 0.17, z: 0.115 }, "shiny");
-      b.cyl(0.015, 0.02, 0.5, MC.steel, { x: 0.12, y: 0.45, z: -0.2 }, 6);
-      b.add(new THREE.SphereGeometry(0.07, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.5), MC.white, { x: -0.25, y: 0.45, z: -0.2, rx: 0.5 }, "shiny");
-      b.cyl(0.16, 0.16, 0.012, "#5b5f62", { x: 0.28, z: 0.26 }, 18);
-      b.box(0.12, 0.004, 0.02, "#f2f0e8", { x: 0.28, y: 0.013, z: 0.26 }); b.box(0.02, 0.004, 0.1, "#f2f0e8", { x: 0.24, y: 0.013, z: 0.26 }); b.box(0.02, 0.004, 0.1, "#f2f0e8", { x: 0.32, y: 0.013, z: 0.26 });
-      flag(b, -0.38, 0.32, 0.75);
-      b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.12, y: 0.96, z: -0.2 }, "lights");
+      b.rbox(0.62, 0.42, 0.42, 0.02, MC.tan, { x: -0.06, z: -0.12 }, "paint");
+      b.box(0.64, 0.03, 0.44, MC.tanDark, { x: -0.06, y: 0.42, z: -0.12 }, "paint");
+      for (const y of [0.1, 0.27]) b.box(0.56, 0.06, 0.006, MC.glass, { x: -0.06, y, z: 0.093 }, "glass");
+      b.box(0.18, 0.012, 0.08, MC.tanDark, { x: 0.12, y: 0.19, z: 0.13 }, "paint");
+      b.box(0.1, 0.16, 0.008, MC.glass, { x: 0.12, z: 0.093 }, "glass");
+      satDish(b, -0.28, 0.45, -0.22, 0.08, 0.5); satDish(b, -0.12, 0.45, -0.24, 0.06, 1.1); milAc(b, 0.1, 0.45, -0.2);
+      mast(b, 0.18, -0.26, 1.0);
+      b.cyl(0.15, 0.15, 0.006, "#6d6f70", { x: 0.28, y: 0.03, z: 0.27 }, 24, "paint");
+      b.box(0.12, 0.004, 0.022, MC.white, { x: 0.28, y: 0.036, z: 0.27 }, "paint"); for (const s of [-1, 1]) b.box(0.022, 0.004, 0.11, MC.white, { x: 0.28 + s * 0.05, y: 0.036, z: 0.27 }, "paint");
+      flag(b, -0.38, 0.3, 0.75);
+      tWalls(b, -0.2, 0.38, 0, 3);
     } else {
-      for (const [w, d, x, z] of [[0.94, 0.04, 0, 0.45], [0.94, 0.04, 0, -0.45], [0.04, 0.94, 0.45, 0], [0.04, 0.94, -0.45, 0]]) b.box(w, 0.1, d, MC.sandDark, { x, z });
-      b.box(0.56, 0.5, 0.4, MC.sand, { x: -0.12, z: -0.12 });
-      b.box(0.58, 0.03, 0.42, MC.sandDark, { x: -0.12, y: 0.5, z: -0.12 });
-      b.box(0.26, 0.82, 0.22, "#c0ab80", { x: 0.22, z: -0.2 });
-      b.box(0.28, 0.06, 0.24, "#2d3a46", { x: 0.22, y: 0.74, z: -0.2 }, "shiny");
-      for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) b.box(0.07, 0.07, 0.01, "#2d3a46", { x: -0.32 + i * 0.12, y: 0.08 + r * 0.14, z: 0.085 }, "shiny");
-      b.cyl(0.012, 0.018, 0.5, MC.steel, { x: 0.22, y: 0.82, z: -0.2 }, 6);
-      b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.22, y: 1.33, z: -0.2 }, "lights");
-      b.add(new THREE.SphereGeometry(0.09, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.5), MC.white, { x: -0.3, y: 0.53, z: -0.2, rx: 0.5 }, "shiny");
-      b.cyl(0.13, 0.13, 0.012, "#5b5f62", { x: 0.22, z: 0.24 }, 18);
-      flag(b, -0.38, 0.3, 0.85); flag(b, 0.0, 0.3, 0.85);
+      for (const [x, z, ry, n] of [[0, 0.44, 0, 8], [0, -0.44, 0, 8], [0.44, 0, Math.PI / 2, 6], [-0.44, 0, Math.PI / 2, 6]]) tWalls(b, x, z, ry, n);
+      b.rbox(0.56, 0.5, 0.36, 0.02, MC.tan, { x: -0.12, z: -0.12 }, "paint");
+      b.box(0.58, 0.03, 0.38, MC.tanDark, { x: -0.12, y: 0.5, z: -0.12 }, "paint");
+      for (const y of [0.08, 0.22, 0.36]) b.box(0.5, 0.06, 0.006, MC.glass, { x: -0.12, y, z: 0.063 }, "glass");
+      b.rbox(0.22, 0.82, 0.2, 0.02, MC.tanLight, { x: 0.22, z: -0.2 }, "paint");
+      b.box(0.24, 0.1, 0.22, MC.glass, { x: 0.22, y: 0.7, z: -0.2 }, "glass");
+      b.box(0.24, 0.02, 0.22, MC.tanDark, { x: 0.22, y: 0.82, z: -0.2 }, "paint");
+      mast(b, 0.22, -0.2, 1.3);
+      b.add(new THREE.SphereGeometry(0.09, 18, 12, 0, Math.PI * 2, 0, Math.PI / 1.8), MC.white, { x: -0.3, y: 0.53, z: -0.2 }, "paint");
+      satDish(b, -0.08, 0.53, -0.22, 0.08, 0.4);
+      b.cyl(0.13, 0.13, 0.006, "#6d6f70", { x: 0.22, y: 0.03, z: 0.24 }, 24, "paint");
+      b.box(0.1, 0.004, 0.02, MC.white, { x: 0.22, y: 0.036, z: 0.24 }, "paint"); for (const s of [-1, 1]) b.box(0.02, 0.004, 0.09, MC.white, { x: 0.22 + s * 0.04, y: 0.036, z: 0.24 }, "paint");
+      flag(b, -0.36, 0.3, 0.85); flag(b, -0.2, 0.3, 0.85);
     }
   },
   milhq(b) { MAKERS.milhq_any(b, 0); }, milhq1(b) { MAKERS.milhq_any(b, 1); }, milhq2(b) { MAKERS.milhq_any(b, 2); },
 
   dronebase_any(b, lvl = 0, withDrones = true) {
-    slabBase(b);
-    b.box(0.86, 0.008, 0.03, "#e9e2cf", { x: 0, y: 0.025, z: 0.44 });
-    hangar(b, -0.18, -0.14, 0.42, 0.46);
-    if (lvl >= 1) hangar(b, 0.24, -0.2, 0.32, 0.36, "#c2ae84");
-    if (lvl >= 2) { b.box(0.12, 0.5, 0.12, MC.sand, { x: 0.36, z: 0.3 }); b.box(0.18, 0.08, 0.18, "#2d3a46", { x: 0.36, y: 0.5, z: 0.3 }, "shiny"); b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.36, y: 0.62, z: 0.3 }, "lights"); }
-    for (const [x, z] of [[-0.15, 0.3], [0.14, 0.3]]) { b.cyl(0.12, 0.12, 0.006, "#8e8a7e", { x, y: 0.025, z }, 16); b.box(0.1, 0.004, 0.014, "#f5e27a", { x, y: 0.032, z }); b.box(0.014, 0.004, 0.1, "#f5e27a", { x, y: 0.032, z }); }
-    if (withDrones) for (const [x, z] of [[-0.15, 0.3], [0.14, 0.3]].slice(0, lvl + 1)) { const g = new Builder(); droneParts(g, false); rotorParts(g, false); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.scale(0.7, 0.7, 0.7); part.translate(x, 0.07, z); b.sets[set].push(part); } }
+    pad(b, 0.96, 0.96, false);
+    b.box(0.86, 0.003, 0.014, MC.yellow, { y: 0.031, z: 0.12 });
+    hangar(b, -0.18, -0.15, 0.42, 0.46);
+    if (lvl >= 1) hangar(b, 0.25, -0.2, 0.32, 0.36, "#c4b089");
+    for (const [x, z] of MIL_LAYOUT.drones) {
+      b.cyl(0.12, 0.12, 0.004, "#7d7a72", { x, y: 0.03, z }, 24, "paint");
+      b.box(0.1, 0.002, 0.014, MC.white, { x, y: 0.035, z }, "paint"); for (const s of [-1, 1]) b.box(0.014, 0.002, 0.08, MC.white, { x: x + s * 0.04, y: 0.035, z }, "paint");
+    }
+    b.rbox(0.18, 0.1, 0.09, 0.008, "#d8d3c6", { x: 0.32, z: 0.08 }, "paint"); windows(b, 0.27, 0.06, 0.126, 2, 0.04, 0.035, 0.07); milAc(b, 0.32, 0.1, 0.06);
+    windsock(b, 0.42, 0.42);
+    if (lvl >= 2) { b.rbox(0.1, 0.48, 0.1, 0.01, MC.tanLight, { x: -0.38, z: 0.36 }, "paint"); b.box(0.14, 0.08, 0.14, MC.glass, { x: -0.38, y: 0.48, z: 0.36 }, "glass"); b.box(0.15, 0.015, 0.15, MC.tanDark, { x: -0.38, y: 0.56, z: 0.36 }, "paint"); mast(b, -0.38, 0.36, 0.75); }
+    if (withDrones) for (const [x, z] of MIL_LAYOUT.drones.slice(0, Math.min(2, lvl + 1))) graft(b, (g) => { droneParts(g, false); rotorParts(g, false); }, { x, y: 0.1, z, s: 0.8 });
   },
   dronebase(b) { MAKERS.dronebase_any(b, 0); }, dronebase1(b) { MAKERS.dronebase_any(b, 1); }, dronebase2(b) { MAKERS.dronebase_any(b, 2); },
   dronebase_b(b) { MAKERS.dronebase_any(b, 0, false); }, dronebase1_b(b) { MAKERS.dronebase_any(b, 1, false); }, dronebase2_b(b) { MAKERS.dronebase_any(b, 2, false); },
 
   missilepad_any(b, lvl = 0, withArm = true) {
-    slabBase(b);
-    b.box(0.86, 0.22, 0.06, MC.slab, { z: -0.42 }); // blast wall
-    b.box(0.86, 0.02, 0.1, "#8f897b", { y: 0.22, z: -0.42 });
-    b.box(0.22, 0.16, 0.16, MC.sand, { x: 0.34, z: 0.3 });
-    b.box(0.08, 0.04, 0.01, "#2d3a46", { x: 0.34, y: 0.1, z: 0.381 }, "shiny");
-    b.box(0.02, 0.02, 0.02, "#ffd27a", { x: 0.28, y: 0.17, z: 0.31 }, "lights");
-    // the launcher vehicle
-    b.box(0.3, 0.1, 0.72, MC.olive, { y: 0.04, z: 0.0 });
-    for (const z of [-0.26, -0.08, 0.1, 0.28]) for (const x of [-0.16, 0.16]) b.add(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 10), "#26231f", { x, y: 0.05, z, rz: Math.PI / 2 });
-    b.box(0.3, 0.12, 0.14, MC.oliveDark, { y: 0.14, z: 0.32 });
-    b.box(0.22, 0.05, 0.01, "#2d3a46", { y: 0.2, z: 0.391 }, "shiny");
-    if (lvl >= 2) { b.box(0.18, 0.3, 0.18, MC.sand, { x: -0.34, z: 0.3 }); b.cyl(0.05, 0.05, 0.08, MC.white, { x: -0.34, y: 0.3, z: 0.3 }, 10); }
-    if (withArm) { const g = new Builder(); padArmParts(g, lvl); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(0, 0.16, -0.02); b.sets[set].push(part); } }
+    pad(b);
+    // the blast deflector behind the launcher
+    b.rbox(0.9, 0.24, 0.07, 0.01, MC.concrete, { z: -0.44 }, "paint");
+    b.box(0.9, 0.012, 0.11, MC.concreteDark, { y: 0.24, z: -0.43 }, "paint");
+    for (let k = 0; k < 6; k++) b.box(0.01, 0.2, 0.004, "#2e2b26", { x: -0.35 + k * 0.14, y: 0.02, z: -0.403 }, "matte");
+    graft(b, (g) => truck(g, lvl), { x: 0, z: 0.03 });
+    b.rbox(0.16, 0.12, 0.12, 0.01, MC.tanLight, { x: -0.38, z: 0.36 }, "paint"); windows(b, -0.42, 0.07, 0.421, 2, 0.04, 0.03, 0.07);
+    b.box(0.012, 0.012, 0.012, "#38d26b", { x: -0.32, y: 0.11, z: 0.42 }, "glow");
+    if (lvl >= 1) mast(b, 0.42, 0.4, 0.5);
+    if (lvl >= 2) graft(b, (g) => { g.box(0.16, 0.012, 0.16, MC.steelDark, { y: 0.0 }, "metal"); for (const x of [-0.07, 0.07]) for (const z of [-0.07, 0.07]) g.cyl(0.006, 0.006, 0.3, MC.steel, { x, z }, 6, "metal"); g.box(0.2, 0.004, 0.2, "#6b6a45", { y: 0.3 }, "paint"); }, { x: 0.36, z: -0.28 });
+    if (withArm) graft(b, (g) => padArmParts(g, lvl, true), { x: MIL_LAYOUT.pad.pivot[0], y: MIL_LAYOUT.pad.pivot[1], z: MIL_LAYOUT.pad.pivot[2] + MIL_LAYOUT.pad.arm });
   },
   missilepad(b) { MAKERS.missilepad_any(b, 0); }, missilepad1(b) { MAKERS.missilepad_any(b, 1); }, missilepad2(b) { MAKERS.missilepad_any(b, 2); },
   missilepad_b(b) { MAKERS.missilepad_any(b, 0, false); }, missilepad1_b(b) { MAKERS.missilepad_any(b, 1, false); }, missilepad2_b(b) { MAKERS.missilepad_any(b, 2, false); },
 
   radar_any(b, lvl = 0, withDish = true) {
-    slabBase(b);
-    const h = [0.45, 0.7, 0.9][lvl];
-    b.box(0.32, 0.22, 0.26, MC.sand, { x: 0.24, z: 0.24 });
-    b.box(0.34, 0.02, 0.28, MC.sandDark, { x: 0.24, y: 0.22, z: 0.24 });
-    b.box(0.1, 0.06, 0.01, "#2d3a46", { x: 0.24, y: 0.13, z: 0.371 }, "shiny");
-    // the lattice tower
-    for (const [x, z] of [[-0.12, -0.12], [0.04, -0.12], [-0.12, 0.04], [0.04, 0.04]]) b.box(0.025, h, 0.025, MC.steel, { x: x - 0.0, z: z - 0.0 });
-    for (let y = 0.1; y < h; y += 0.14) { b.box(0.17, 0.012, 0.012, MC.steel, { x: -0.04, y, z: -0.12 }); b.box(0.17, 0.012, 0.012, MC.steel, { x: -0.04, y, z: 0.04 }); b.box(0.012, 0.012, 0.17, MC.steel, { x: -0.12, y, z: -0.04 }); b.box(0.012, 0.012, 0.17, MC.steel, { x: 0.04, y, z: -0.04 }); }
-    b.box(0.2, 0.03, 0.2, MC.slab, { x: -0.04, y: h, z: -0.04 });
-    if (lvl >= 2) b.add(new THREE.SphereGeometry(0.11, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), MC.white, { x: 0.3, y: 0.24, z: -0.26 }, "shiny");
-    if (withDish) { const g = new Builder(); radarDishParts(g, 0.75 + lvl * 0.15); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(-0.04, h + 0.03, -0.04); b.sets[set].push(part); } }
+    pad(b);
+    const { x: rx, z: rz, h: hs } = MIL_LAYOUT.radar, h = hs[lvl];
+    b.rbox(0.3, 0.2, 0.22, 0.012, MC.tanLight, { x: 0.25, z: 0.26 }, "paint");
+    b.box(0.06, 0.12, 0.006, MC.steelDark, { x: 0.18, z: 0.372 }, "metal"); milAc(b, 0.32, 0.12, 0.38);
+    b.box(0.012, 0.012, 0.012, "#38d26b", { x: 0.3, y: 0.17, z: 0.372 }, "glow");
+    // the lattice tower with its braces and a railed platform
+    const s = 0.08;
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(0.016, h, 0.016, MC.steel, { x: rx + dx * s, z: rz + dz * s }, "metal");
+    for (let y = 0.08; y < h - 0.04; y += 0.12) for (const [ax, az, ry] of [[0, -s, 0], [0, s, 0], [-s, 0, Math.PI / 2], [s, 0, Math.PI / 2]]) {
+      b.box(s * 2, 0.008, 0.008, MC.steelDark, { x: rx + ax, y, z: rz + az, ry }, "metal");
+      b.box(s * 2.6, 0.006, 0.006, MC.steelDark, { x: rx + ax, y: y + 0.06, z: rz + az, ry, rz: ry ? 0 : 0.42, rx: ry ? 0.42 : 0 }, "metal");
+    }
+    b.rbox(0.24, 0.02, 0.24, 0.004, MC.steelDark, { x: rx, y: h, z: rz }, "metal");
+    for (const [ax, az, ry] of [[0, -0.12, 0], [0, 0.12, 0], [-0.12, 0, Math.PI / 2], [0.12, 0, Math.PI / 2]]) b.box(0.24, 0.006, 0.006, MC.yellow, { x: rx + ax, y: h + 0.06, z: rz + az, ry }, "paint");
+    if (lvl >= 2) { b.add(new THREE.SphereGeometry(0.12, 20, 14, 0, Math.PI * 2, 0, Math.PI / 1.7), MC.white, { x: -0.3, y: 0.18, z: 0.3 }, "paint"); b.cyl(0.12, 0.12, 0.18, MC.tanLight, { x: -0.3, z: 0.3 }, 20, "paint"); }
+    if (withDish) graft(b, (g) => radarDishParts(g, 0.8 + lvl * 0.12), { x: rx, y: h + 0.02, z: rz });
   },
   radar(b) { MAKERS.radar_any(b, 0); }, radar1(b) { MAKERS.radar_any(b, 1); }, radar2(b) { MAKERS.radar_any(b, 2); },
   radar_b(b) { MAKERS.radar_any(b, 0, false); }, radar1_b(b) { MAKERS.radar_any(b, 1, false); }, radar2_b(b) { MAKERS.radar_any(b, 2, false); },
 
   airdef_any(b, lvl = 0, withTurret = true) {
-    slabBase(b);
-    sandbags(b, 0.36, 14);
-    b.box(0.26, 0.14, 0.14, MC.olive, { x: 0.28, z: 0.3 });
-    b.box(0.1, 0.1, 0.14, MC.oliveDark, { x: 0.38, y: 0.06, z: 0.3 });
-    if (lvl >= 1) { b.cyl(0.02, 0.02, 0.32, MC.steel, { x: -0.32, z: -0.3 }, 6); b.box(0.12, 0.08, 0.02, MC.white, { x: -0.32, y: 0.34, z: -0.3 }, "shiny"); }
-    if (lvl >= 2) { b.box(0.2, 0.12, 0.12, MC.olive, { x: -0.3, z: 0.32 }); b.box(0.12, 0.012, 0.1, "#1f3f6b", { x: -0.3, y: 0.13, z: 0.32, rx: -0.3 }, "shiny"); }
-    if (withTurret) { const g = new Builder(); airdefTurretParts(g, lvl); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(0, 0.03, -0.02); b.sets[set].push(part); } }
+    pad(b);
+    sandbags(b, 0.4, 16, 0, 0, 0, Math.PI * 1.4, Math.PI * 0.8);
+    const L = MIL_LAYOUT.airdef;
+    // the trailer under the launcher: frame, wheels and outrigger feet
+    b.box(0.3, 0.04, 0.44, MC.steelDark, { x: L.x, y: 0.06, z: L.z }, "metal");
+    for (const z of [-0.12, 0.0]) for (const s of [-1, 1]) wheel(b, L.x + s * 0.17, 0.05, L.z + z, 0.05, 0.04);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { b.box(0.012, 0.012, 0.12, MC.steel, { x: L.x + dx * 0.2, y: 0.07, z: L.z + dz * 0.2, ry: dx * dz * 0.8 }, "metal"); b.cyl(0.025, 0.025, 0.012, MC.steelDark, { x: L.x + dx * 0.25, y: 0.03, z: L.z + dz * 0.25 }, 10, "metal"); }
+    b.cyl(0.03, 0.03, 0.06, MC.steelDark, { x: L.x, y: 0.06, z: L.z }, 12, "metal");
+    // the fire control radar: a flat panel on a small truck (from the second level), a mast radar before that
+    if (lvl >= 1) graft(b, (g) => { g.box(0.14, 0.04, 0.26, MC.steelDark, { y: 0.05 }, "metal"); for (const z of [-0.08, 0.08]) for (const s of [-1, 1]) wheel(g, s * 0.075, 0.04, z, 0.04, 0.03); g.rbox(0.14, 0.08, 0.1, 0.01, MC.olive, { y: 0.08, z: 0.08 }, "paint"); g.box(0.1, 0.03, 0.005, MC.glass, { y: 0.14, z: 0.131 }, "glass"); g.rbox(0.16, 0.16, 0.03, 0.01, MC.olive, { y: 0.1, z: -0.06, rx: -0.35 }, "paint"); g.box(0.13, 0.13, 0.004, "#3d4430", { y: 0.12, z: -0.04, rx: -0.35 }, "paint"); }, { x: -0.32, z: 0.3, ry: 0.5 });
+    else { mast(b, -0.34, 0.32, 0.4, false); satDish(b, -0.34, 0.4, 0.32, 0.06, 0.8); }
+    b.rbox(0.16, 0.1, 0.12, 0.01, MC.olive, { x: 0.32, z: 0.32 }, "paint"); b.box(0.012, 0.012, 0.012, "#38d26b", { x: 0.32, y: 0.1, z: 0.381 }, "glow");
+    if (withTurret) graft(b, (g) => airdefTurretParts(g, lvl), { x: L.x, y: L.y, z: L.z });
   },
   airdef(b) { MAKERS.airdef_any(b, 0); }, airdef1(b) { MAKERS.airdef_any(b, 1); }, airdef2(b) { MAKERS.airdef_any(b, 2); },
   airdef_b(b) { MAKERS.airdef_any(b, 0, false); }, airdef1_b(b) { MAKERS.airdef_any(b, 1, false); }, airdef2_b(b) { MAKERS.airdef_any(b, 2, false); },
 
   armory(b) {
-    slabBase(b);
-    b.add(new THREE.SphereGeometry(0.42, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), "#b9a479", { sy: 0.42, z: -0.06 });
-    b.box(0.3, 0.2, 0.06, MC.concrete, { z: 0.3 });
-    b.box(0.2, 0.15, 0.012, "#5e6458", { z: 0.335 });
-    b.box(0.02, 0.02, 0.02, "#ffd27a", { y: 0.22, z: 0.335 }, "lights");
-    for (let i = 0; i < 3; i++) b.box(0.12, 0.08, 0.08, MC.olive, { x: 0.3, y: i * 0.08, z: 0.36 - (i % 2) * 0.02 });
+    pad(b);
+    b.add(new THREE.SphereGeometry(0.44, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), MC.earth, { sy: 0.45, z: -0.08 }, "matte");
+    b.rbox(0.42, 0.26, 0.08, 0.012, MC.concrete, { z: 0.27 }, "paint");
+    b.box(0.26, 0.18, 0.012, MC.steel, { z: 0.315 }, "metal");
+    b.box(0.004, 0.18, 0.014, MC.steelDark, { z: 0.317 }, "metal");
+    for (let k = 0; k < 7; k++) b.box(0.035, 0.018, 0.006, k % 2 ? MC.black : MC.yellow, { x: -0.105 + k * 0.035, y: 0.2, z: 0.32 }, "paint");
+    b.box(0.014, 0.014, 0.014, "#fff3d6", { y: 0.235, z: 0.32 }, "glow");
+    for (const x of [-0.18, 0.18]) { b.cyl(0.018, 0.018, 0.08, MC.steel, { x, y: 0.18, z: -0.1 }, 10, "metal"); b.cone(0.03, 0.03, MC.steelDark, { x, y: 0.26, z: -0.1 }, 10, "metal"); }
+    for (let i = 0; i < 3; i++) b.rbox(0.1, 0.07, 0.07, 0.008, MC.olive, { x: 0.33, y: i * 0.07, z: 0.36 - (i % 2) * 0.02 }, "paint");
     flag(b, -0.36, 0.34, 0.55);
   },
 
   // the moving parts and what flies (placed and moved by js/warfx.js)
-  radarDish(b) { radarDishParts(b, 0.75); }, radarDish1(b) { radarDishParts(b, 0.9); }, radarDish2(b) { radarDishParts(b, 1.05); },
+  radarDish(b) { radarDishParts(b, 0.8); }, radarDish1(b) { radarDishParts(b, 0.92); }, radarDish2(b) { radarDishParts(b, 1.04); },
   airdefTurret(b) { airdefTurretParts(b, 0); }, airdefTurret1(b) { airdefTurretParts(b, 1); }, airdefTurret2(b) { airdefTurretParts(b, 2); },
   padArm(b) { padArmParts(b, 0, false); }, padArm1(b) { padArmParts(b, 1, false); }, padArm2(b) { padArmParts(b, 2, false); },
+  padArmL(b) { padArmParts(b, 0, true); }, padArmL1(b) { padArmParts(b, 1, true); }, padArmL2(b) { padArmParts(b, 2, true); },
   wMissile(b) { missileParts(b, false); }, wMissile2(b) { missileParts(b, true); },
   wDrone(b) { droneParts(b, false); }, wDrone2(b) { droneParts(b, true); },
   wRotor(b) { rotorParts(b, false); }, wRotor2(b) { rotorParts(b, true); },
-  wInterceptor(b) { b.add(new THREE.CylinderGeometry(0.022, 0.022, 0.32, 8), "#f4f4f0", { rx: Math.PI / 2 }, "shiny"); b.add(new THREE.ConeGeometry(0.022, 0.07, 8), "#d0d0c8", { z: 0.195, rx: Math.PI / 2 }, "shiny"); for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.box(0.005, 0.05, 0.06, "#9aa1a6", { x: Math.cos(a) * 0.035, y: Math.sin(a) * 0.035 - 0.025, z: -0.13, rz: a }); } }
+  wInterceptor(b) { interceptorParts(b); }
 });
 const MIL_MODELS = ["milhq", "dronebase", "missilepad", "radar", "airdef"];
 /** The base of a military building without its moving parts, when it has them (else the full model). */
