@@ -19,7 +19,9 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
    - Saved as `t.b.rot` (0–3 quarter turns), the 7th field of a packed tile.
    - Dams, pivots and roads do not turn.
 
-**Nothing is half-done.** All tests pass (27/27). Everything is pushed and auto-deployed.
+4. `01a0b04`: **power poles** (`pole` in data.js, `powerNet()` in sim.js; a pole within 4 tiles of a source or a live pole is live and powers 3 tiles round it; wires drawn in `syncWires`). The owner asked for this because players put the generator next to houses and got smoke complaints. Also **visits are look-only**: the owner's friends could change a visited town. A capture listener on `#sheetBody` blocks changes while `visiting` (allow-list `VISIT_OK` / `VISIT_SHEETS` in main.js), and `worldSync` always sends your own town (`visiting.home`), never the visited one.
+
+**Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
 - A staging copy of the site plus an admin page to moderate world reports.
