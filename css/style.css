@@ -550,3 +550,4 @@ body.world .speeds { display: none !important; }
 .tool-chip:has(.tool-money) { max-width: calc(100vw - 24px); }
 .tool-chip:has(.tool-money) #toolName { min-width: 0; flex: 1; }
 .tool-chip:has(.tool-money) { border-radius: 22px; width: calc(100vw - 24px); }
+.tool-chip .tool-hint.warn { color: #ffb3a7; font-weight: 800; }

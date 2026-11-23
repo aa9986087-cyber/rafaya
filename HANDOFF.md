@@ -187,6 +187,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Build cards show the building's usual income and upkeep per hour.
     - With a spot chosen, `buildPreview(id, spots)` puts the building into `S` for a moment, runs `analyze`, and puts the town back. The tool chip then shows income, upkeep and net per hour for that exact spot (homes: the tax when full), plus a hint when there are too few people to staff it.
 
+29. **Who a building serves or bothers (owner, 2026-11-23):**
+    - `reachHomes`/`reachLine` (main.js) count the homes and people within a building's radius.
+    - The tool chip shows «يخدم …» for services and shops, and a red «⚠️ … بيزعّل …» for polluters (the existing `pollute` already lowers those homes' happiness and raises the health bill). The building's sheet shows the same, with the fix for polluters.
+    - The grocery now has `radius: 4, happy: 3`. The old test expecting no reach was updated. The careful bot still reaches مدينة on time.
+
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

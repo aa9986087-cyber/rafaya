@@ -74,7 +74,7 @@ export const B = {
     ],
     text: "تنصبها خيمة، وأنت اللي تطورها: بيت طين، ثم شعبي، ثم فيلا، ثم عمارة. كل مستوى له سعر، ويحتاج طريق وماء واصل، والأعلى يحتاج كهرباء وخدمات قريبة."
   },
-  grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, text: "وظائف ودخل بسيط." },
+  grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, radius: 4, happy: 3, text: "وظائف ودخل بسيط، والبيوت اللي حولها (لين ٤ مربعات) مرتاحة إن البقالة قريبة." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
   bank: { cat: "shop", unique: true, name: "بنك", cost: 400, upkeep: 4, era: 0, jobs: 6, income: 0, water: -1, power: -1, text: "يعطيك قروض: تاخذ المبلغ الحين وتسدده أقساط بالساعة مع فايدة. واحد يكفي البلد." },
   souq: { cat: "shop", name: "سوق شعبي", cost: 600, upkeep: 10, era: 1, jobs: 14, income: 60, water: -2, power: -3, text: "سوق يرفع الدخل كثير." },

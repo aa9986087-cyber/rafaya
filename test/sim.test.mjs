@@ -395,7 +395,7 @@ test("upgrades say what they change; the mosque and the hospital can grow", asyn
   const s = newGame(2);
   const g = upgradeEffect(s, { id: "grocery", lvl: 0 });
   assert.ok(g.incomeNext > g.incomeNow && g.upkeepNext > g.upkeepNow);
-  assert.equal(g.radiusNext, 0, "a grocery has no reach to speak of");
+  assert.equal(g.radiusNext, g.radiusNow + 1, "a bigger grocery serves a little further"); // groceries serve the homes around them (radius 4)
   const m = upgradeEffect(s, { id: "mosque", lvl: 0 });
   assert.ok(upgradable({ id: "mosque", lvl: 0 }) && upgradable({ id: "hospital", lvl: 0 }));
   assert.ok(m.happyNext > m.happyNow && m.radiusNext === m.radiusNow + 1);

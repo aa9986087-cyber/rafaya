@@ -228,6 +228,26 @@ function buildPreview(id, spots) {
   return { income, upkeep, net: income - upkeep, jobs: (d.jobs || 0) * spots.length };
 }
 const signed = (v) => `${v >= 0 ? "+" : "−"}${fine(Math.abs(v))}`;
+/** The homes (and the people in them) within a building's reach: who it serves, or who its smoke bothers. */
+function reachHomes(spots, rad) {
+  const seen = new Set();
+  let homes = 0, people = 0;
+  for (const p of spots) for (let y = p.y - rad; y <= p.y + rad; y++) for (let x = p.x - rad; x <= p.x + rad; x++) {
+    if (!inMap(x, y) || Math.abs(x - p.x) + Math.abs(y - p.y) > rad) continue;
+    const i = idx(x, y), b = S.tiles[i].b;
+    if (b?.id !== "house" || seen.has(i)) continue;
+    seen.add(i); homes++; people += b.res || 0;
+  }
+  return { homes, people };
+}
+/** "يخدم ١٢ بيت (٨٠ ساكن)" for services and shops, "بيزعّل ٥ بيوت" for smoke and noise. */
+function reachLine(id, spots, lvlUp = 0) {
+  const d = B[id];
+  if (!d?.radius || (!d.happy && !d.pollute)) return "";
+  const r = reachHomes(spots, d.radius + lvlUp), who = `${ar(r.homes)} ${r.homes >= 3 && r.homes <= 10 ? "بيوت" : "بيت"}${r.people ? ` (${ar(r.people)} ساكن)` : ""}`;
+  if (d.pollute) return r.homes ? `⚠️ دخانه وإزعاجه بيزعّل ${who}` : "ما حوله بيوت: ما يزعج أحد ✓";
+  return r.homes ? `يخدم ${who}` : "ما حوله بيوت للحين";
+}
 
 function showPending() {
   if (!tool) return;
@@ -266,7 +286,8 @@ function showPending() {
     const shortStaff = pv && pv.jobs && pv.net < 0 && A.workers - A.employed < pv.jobs;
     $("toolName").innerHTML = `${isMulti() ? `${ar(ok.length)} مربع` : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`
       + (pv && (pv.income || pv.upkeep) ? `<span class="tool-money">بالساعة: <b class="plus">دخل ${signed(pv.income)}</b> <b class="minus">مصروف −${fine(Math.max(0, pv.upkeep))}</b> <b class="${pv.net >= 0 ? "plus" : "minus"}">صافي ${signed(pv.net)}</b>${d.buildHours ? " (بعد ما يخلص)" : ""}</span>`
-        + (shortStaff ? `<span class="tool-hint">💡 الناس قليل: الدخل يزيد لا كبرت البلد</span>` : "") : "");
+        + (shortStaff ? `<span class="tool-hint">💡 الناس قليل: الدخل يزيد لا كبرت البلد</span>` : "") : "")
+      + (reachLine(tool.id, ok) ? `<span class="tool-hint ${d.pollute && reachHomes(ok, d.radius).homes ? "warn" : ""}">${reachLine(tool.id, ok)}</span>` : "");
   }
 }
 
@@ -1083,6 +1104,7 @@ function inspect(x, y) {
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
+  if (d.radius && (d.happy || d.pollute)) { const line = reachLine(t.b.id, [{ x, y }], up.radius || 0); if (line) html += d.pollute && line.startsWith("⚠️") ? `<div class="need">${line}. الحل: أبعده عن البيوت، أو حط حديقة أو شجر بينهم.</div>` : row(d.pollute ? "الإزعاج" : "يخدم", line.replace(/^يخدم /, "")); }
   html += `</div><div class="sheet-actions">${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
@@ -2311,8 +2333,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-16", world: "2026-12-18" },
+  v: { solo: "2026-12-17", world: "2026-12-19" },
   items: [
+    ["both", "🕌", "كم يخدم وكم يزعج", "قبل لا تبني وبعده: المسجد والمدرسة والمستوصف والبقالة والحديقة يقولون لك «يخدم ١٢ بيت (٨٠ ساكن)»، والمصانع والورش والمولدات تحذرك «⚠️ بيزعّل ٧ بيوت» وتشوف منطقة الدخان بالأحمر. والبقالة صارت تريّح البيوت اللي حولها."],
     ["both", "💰", "تعرف الدخل قبل لا تشتري", "كل بطاقة بناء فيها دخلها ومصروفها بالساعة. ولا اخترت المكان، قبل «ابنِ» يحسب لك اللعبة مدينتك كأن المبنى موجود ويقولك بالضبط: دخل كذا، مصروف كذا، وصافيك يزيد أو ينقص كم. وإذا الدخل قليل لأن الناس قليلين يقولك."],
     ["world", "🌦️", "جو واحد لكل الجوف", "بعالم الجوف المطر والغبار والحر والبرد والجراد والجفاف وموسم الصرام صارت تجي لكل المدن بنفس الساعة وتخلص سوا، ورمضان والعيدين على تقويم واحد للكل يتنقل بين الفصول من سنة لسنة. والوقت والفصول والصلاة أصلاً واحدة. كذا الكل على نفس الظروف."],
     ["world", "💬", "شات الجوف", "شات عام لكل لاعبين الجوف من زر «الشات» على الجنب، ويطلع لك عدد الرسائل الجديدة. اضغط اسم المدينة تروح لها بالخريطة، وتقدر تبلّغ عن أي رسالة مسيئة. رسالة كل ٦ ثواني، والكلام البذيء ينمنع."],
