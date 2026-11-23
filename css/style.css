@@ -389,7 +389,7 @@ details .row { background: rgba(255, 255, 255, .45); }
 .visit-bar small { opacity: .8; }
 .visit-bar .btn { padding: 8px 12px; }
 body.visiting .dock, body.visiting .sheet-actions:not(.keep), body.visiting .answers { display: none !important; }
-body.visiting .speeds, body.visiting #councilBtn { opacity: .35; pointer-events: none; }
+body.visiting .speeds, body.visiting #councilBtn, body.visiting #deputyBtn, body.visiting #newsBtn { opacity: .35; pointer-events: none; }
 .visit-bar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ol-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .ol-tabs .btn { padding: 6px 12px; }

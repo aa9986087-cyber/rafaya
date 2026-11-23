@@ -404,3 +404,21 @@ test("weather follows the season: no rain in summer, Eid al-Fitr after Ramadan",
   assert.ok(!seen.locust || [...seen.locust].every((k) => k === "spring"));
   if (seen.eid) assert.ok(eidAfterRamadan > 0);
 });
+
+test("power poles carry power away from a smoky generator, and only when linked", async () => {
+  const { powerNet } = await import("../js/sim.js");
+  const s = newGame(5);
+  s.era = 1;
+  const free = (x, y) => { const t = s.tiles[y * 40 + x]; t.t = "sand"; t.b = null; };
+  for (let x = 2; x <= 16; x++) free(x, 2);
+  s.tiles[2 * 40 + 2].b = { id: "generator", lvl: 0, res: 0, cond: 100 };
+  s.tiles[2 * 40 + 6].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
+  s.tiles[2 * 40 + 10].b = { id: "pole", lvl: 0, res: 0, cond: 100 };
+  s.tiles[2 * 40 + 16].b = { id: "pole", lvl: 0, res: 0, cond: 100 }; // too far from the last one
+  const net = powerNet(s);
+  assert.ok(net.live.has(2 * 40 + 6) && net.live.has(2 * 40 + 10));
+  assert.ok(!net.live.has(2 * 40 + 16));
+  const a = analyze(s);
+  assert.equal(a.powered[2 * 40 + 13], 1, "a pole lights three tiles round it, past the generator's own reach");
+  assert.equal(a.powered[2 * 40 + 15], 0);
+});

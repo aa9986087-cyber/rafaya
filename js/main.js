@@ -328,6 +328,7 @@ function apply(x, y, quiet) {
     const why = build(S, x, y, tool.id);
     if (why) { if (!quiet || why === "ما يكفي المال") { toast(why, "bad"); sfx.deny(); } return; }
     if (placeRot && canTurn(tool.id)) tile.b.rot = placeRot;
+    if (tool.id === "pole" && !analyze(S).poles.live.has(idx(x, y))) toast("العمود ما وصله كهرب: حطه لين ٤ مربعات من مولد أو من عمود موصول", "bad");
     const road = B[tool.id].cat === "road";
     road ? sfx.road() : sfx.build();
     sync(road);
@@ -932,6 +933,7 @@ async function visitTown(code, inWorld) {
   if (!data.town.snapshot) { toast("صاحبها للحين ما بدأ يلعب فيها", ""); return; }
   let town;
   try { town = unpack(data.town.snapshot); } catch { toast("حفظ المدينة خربان", "bad"); return; }
+  if (visiting) leaveVisit(); // from one visit straight to another: home stays your own town
   save();
   visiting = { code, world: !!inWorld, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
   S = town; A = analyze(S);
@@ -945,6 +947,20 @@ async function visitTown(code, inWorld) {
   refresh();
   toast(`أهلًا بك في ${data.town.name}`, "goal");
 }
+/**
+ * Looking round someone else's town is look-only: anything in a sheet that would change it
+ * (build, upgrade, repair, remove, turn, tax, loans, decisions, replies, names) is stopped here,
+ * before its own handler runs. Reading, following a family, the world map and comments still work.
+ */
+const VISIT_OK = ".keep, [data-follow], [data-day], [data-plot], .wm-zoom, #olText, #wmTown, .ol-com";
+const VISIT_SHEETS = new Set(["online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew"]);
+for (const type of ["click", "input", "change"]) $("sheetBody").addEventListener(type, (e) => {
+  if (!visiting || VISIT_SHEETS.has(sheetFor)) return;
+  const el = e.target.closest?.("button, input, select, textarea, [data-tech], [data-opt]");
+  if (!el || el.closest(VISIT_OK)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (type === "click") { sfx.deny(); toast("هذي مدينة غيرك: تتفرج بس، ما تقدر تغيّر فيها شي", "bad"); }
+}, true);
 function leaveVisit() {
   if (!visiting) return;
   S = visiting.home; const cam = visiting.cam; visiting = null;
@@ -993,8 +1009,10 @@ function worldSync(force) {
   if (!worldMode || !id?.plot && id?.plot !== 0 || !onlineOk()) return;
   if (!force && Date.now() - lastSync < 5 * 60000) return;
   lastSync = Date.now();
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: S.pop, happy: Math.round(S.happy), money: Math.round(S.money), era: S.era,
-    snapshot: pack({ ...S, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
+  const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
+  if (!mine?.world) return;
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era,
+    snapshot: pack({ ...mine, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
   else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => {});
 }
@@ -1165,6 +1183,7 @@ async function worldMapSheet(pick) {
 }
 /** Play your own town in the world: the deputy's report first if you were away. */
 async function enterWorldTown() {
+  if (visiting) leaveVisit(); // back to your own state first, so the visited town is never kept
   const id = me();
   let raw = store.get(WORLD_SAVE);
   if (!raw && id?.plot != null) { // a new phone: take the town from the server
@@ -1220,6 +1239,7 @@ function deputySheet() {
 /** Back to the menu (or the solo game) from the world. */
 function leaveWorld() {
   if (!worldMode) return;
+  if (visiting) leaveVisit(); // never save or send a visited town as yours
   save(); worldSync(true);
   worldMode = false; document.body.classList.remove("world");
   if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
@@ -1338,6 +1358,8 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: "2026-11-25",
   items: [
+    ["🔌", "عمدان الكهرب", "حط المولد بعيد عن البيوت عشان دخانه، ووصّل الكهرب بعمدان: كل عمود ياخذ من اللي قبله لين ٤ مربعات ويوصل للبيوت حوله."],
+    ["👀", "زيارة المدن للفرجة بس", "إذا دخلت مدينة غيرك تتفرج بس: ما تقدر تبني ولا تطوّر ولا تغيّر فيها شي."],
     ["↻", "لفّ المباني", "قبل ما تبني اضغط ↻ وتشوف المبنى يلف قدامك، وبعد ما تبنيه اضغط عليه واختر «لفّ المبنى» ببلاش."],
     ["🌦️", "الجو على حسب الفصل", "المطر بالخريف والشتاء والربيع بس، والصيف حر وغبار وقيلولة، والشتاء برد. ومطر الشتاء هو اللي يخضّر الربيع."],
     ["💬", "ردود ذكية", "الأهالي يردون على حسب السالفة: تشكرهم على المطر بالدعاء، وعلى العيد بالتهنئة، وكل شكوى فيها «وش يبي» واضح."],
@@ -1812,6 +1834,16 @@ function howTo(fromMenu) {
 }
 
 function pauseMenu() {
+  if (visiting) { // looking at someone else's town: a short menu, and the way home
+    sheet(`<h2>القائمة</h2><p class="hint">أنت تتفرج على مدينة غيرك. ما تقدر تغيّر فيها شي.</p><div class="rows">
+      <button class="row link" id="pmBack" type="button"><span>🏠 ارجع لمدينتك</span><b>←</b></button>
+      <button class="row link" id="pmHow" type="button"><span>❓ الشرح</span><b>←</b></button>
+      <button class="row link" id="pmResume" type="button"><span>كمّل التفرج</span><b>←</b></button></div>`, "pause");
+    $("pmBack").addEventListener("click", () => leaveVisit());
+    $("pmHow").addEventListener("click", () => howTo(false));
+    $("pmResume").addEventListener("click", closeSheet);
+    return;
+  }
   sheet(`<h2>القائمة</h2><div class="rows">
     <button class="row link" id="pmResume" type="button"><span>كمّل اللعب</span><b>←</b></button>
     <button class="row link" id="pmHow" type="button"><span>❓ الشرح</span><b>←</b></button>

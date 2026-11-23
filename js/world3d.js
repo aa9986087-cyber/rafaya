@@ -1,7 +1,7 @@
 // The town in 3D: ground, roads, buildings (instanced), light and shadow, day and night, cars and smoke.
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
-import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen } from "./sim.js";
+import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, powerNet } from "./sim.js";
 import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
@@ -471,6 +471,28 @@ export class World {
     return 0;
   }
 
+  /** Sagging wires from each source or pole to the next pole (live poles only). */
+  syncWires(s) {
+    if (this.wires) { this.scene.remove(this.wires); this.wires.geometry.dispose(); this.wires = null; }
+    const { wires } = powerNet(s);
+    if (!wires.length) return;
+    const pts = [], top = (i) => { const c = tileCenter(i % N, Math.floor(i / N)); return { x: c.x, z: c.z, y: s.tiles[i].b?.id === "pole" ? 0.9 : 0.55 }; };
+    for (const [a, b] of wires) {
+      const p = top(a), q = top(b), len = Math.hypot(q.x - p.x, q.z - p.z);
+      let prev = p;
+      for (let k = 1; k <= 8; k++) {
+        const t = k / 8, sag = Math.sin(t * Math.PI) * 0.08 * len / 3;
+        const cur = { x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t, y: p.y + (q.y - p.y) * t - sag };
+        pts.push(prev.x, prev.y, prev.z, cur.x, cur.y, cur.z);
+        prev = cur;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    this.wires = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#3a2e26", transparent: true, opacity: 0.8 }));
+    this.scene.add(this.wires);
+  }
+
   syncBuildings(s) {
     const groups = new Map();
     const push = (key, ground, m) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
@@ -478,6 +500,7 @@ export class World {
     this.smokers = [];
     const seen = new Map(), where = new Map(), glows = [];
     this.anims ||= new Map();
+    const feeder = new Map(powerNet(s).wires.map(([from, to]) => [to, from]));
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const p = tileCenter(x, y);
@@ -489,6 +512,7 @@ export class World {
       if (roadAt(t)) continue;
       // Face the road, then any quarter turns the mayor gave it.
       let angle = this.faceAngle(s, x, y) + (t.b.rot || 0) * Math.PI / 2;
+      if (t.b.id === "pole") { const f = feeder.get(idx(x, y)); angle = f === undefined ? 0 : Math.atan2((f % N) - x, Math.floor(f / N) - y); } // the cross arm stands across its wire
       if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
@@ -553,7 +577,7 @@ export class World {
     if (landKey !== this.landKey) { this.landKey = landKey; what = { ...what, tiles: true }; }
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
-    if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); }
+    if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); this.syncWires(s); }
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
     this.syncGlows();

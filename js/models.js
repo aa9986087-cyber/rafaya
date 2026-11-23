@@ -660,6 +660,13 @@ const MAKERS = {
     const cols = ["#e74c3c", "#f4d03f", "#ffffff", "#e8a0b4", "#a77bca"];
     for (let i = 0; i < 14; i++) { const x = -0.19 + (i % 7) * 0.063, z = -0.07 + Math.floor(i / 7) * 0.14; b.add(new THREE.IcosahedronGeometry(0.028, 0), C.leaf, { x, y: 0.09, z }); b.add(new THREE.SphereGeometry(0.018, 5, 4), cols[i % cols.length], { x, y: 0.12, z }); }
   },
+  // A wooden power pole with a cross arm; the wires are drawn between poles by the world.
+  pole(b) {
+    b.box(0.12, 0.03, 0.12, C.stone);
+    b.cyl(0.028, 0.038, 0.95, "#7a5a3a", { y: 0.03 }, 6);
+    b.box(0.42, 0.035, 0.05, "#6b4e33", { y: 0.88 });
+    for (const x of [-0.18, 0, 0.18]) b.cyl(0.014, 0.014, 0.05, "#e9e4d8", { x, y: 0.905 }, 5, "shiny");
+  },
   lantern(b) {
     b.box(0.14, 0.04, 0.14, C.stone);
     b.cyl(0.02, 0.025, 0.4, "#2b2b2e", { y: 0.04 }, 6);

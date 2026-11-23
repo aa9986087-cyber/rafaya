@@ -157,6 +157,36 @@ export function build(s, x, y, id) {
   return "";
 }
 
+// ---------- power poles ----------
+/** How far a wire runs between two poles, or from a source to its first pole. */
+export const POLE_LINK = 4;
+/**
+ * Which poles carry power, and the wires between them: a pole is live when it stands within a
+ * working source's reach (or POLE_LINK of it), or within POLE_LINK of a live pole.
+ * Returns { live: Set of tile indexes, wires: [[from, to], ...] } (from is a source or a pole).
+ */
+export function powerNet(s) {
+  const poles = [], sources = [];
+  s.tiles.forEach((t, i) => {
+    const b = t.b;
+    if (!b || b.build > 0 || b.ruin) return;
+    if (b.id === "pole") poles.push(i);
+    else if (B[b.id]?.power > 0 && B[b.id]?.reach) sources.push(i);
+  });
+  const live = new Set(), wires = [], q = [];
+  const dist = (i, j) => Math.hypot((i % N) - (j % N), Math.floor(i / N) - Math.floor(j / N));
+  for (const p of poles) {
+    let best = -1, bd = Infinity;
+    for (const src of sources) { const d = dist(p, src); if (d <= POLE_LINK + 0.01 && d < bd) { bd = d; best = src; } }
+    if (best >= 0) { live.add(p); wires.push([best, p]); q.push(p); }
+  }
+  for (let h = 0; h < q.length; h++) for (const p of poles) {
+    if (live.has(p) || dist(q[h], p) > POLE_LINK + 0.01) continue;
+    live.add(p); wires.push([q[h], p]); q.push(p);
+  }
+  return { live, wires };
+}
+
 // ---------- paths ----------
 /** The road tile beside a building (its door), or -1. */
 export function doorOf(s, i) {
@@ -520,6 +550,14 @@ export function analyze(s) {
     for (let yy = y - def.reach; yy <= y + def.reach; yy++) for (let xx = x - def.reach; xx <= x + def.reach; xx++)
       if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= def.reach) mark[idx(xx, yy)] = 1;
   }
+  // Power poles carry the wires further: a pole near a source (or near a live pole) is live and lights its own reach.
+  const net = powerNet(s);
+  for (const i of net.live) {
+    const x = i % N, y = Math.floor(i / N), r = B.pole.reach;
+    for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++)
+      if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) a.powered[idx(xx, yy)] = 1;
+  }
+  a.poles = net;
   a.dryHomes = 0; a.darkHomes = 0;
   a.aquifer = s.aquifer ?? GROUND.start;
   a.groundFactor = a.aquifer >= GROUND.low ? 1 : 0.35 + 0.65 * (a.aquifer / GROUND.low);
@@ -702,7 +740,7 @@ export function analyze(s) {
   a.happyParts = [
     { id: "base", label: "الأساس", v: 48 },
     { id: "near", label: "الخدمات والأماكن الحلوة قرب البيوت", v: part.cheer * k, fix: "ابنِ مساجد ومدارس وحدائق ومستوصفات قريبة من البيوت، وطوّرها عشان توصل أبعد" },
-    { id: "smoke", label: "الدخان والإزعاج قرب البيوت", v: -part.smoke * k, fix: "انقل الورش والمصانع بعيد عن البيوت" },
+    { id: "smoke", label: "الدخان والإزعاج قرب البيوت", v: -part.smoke * k, fix: "انقل المولد والورش والمصانع بعيد عن البيوت، ووصّل الكهرب بعمدان" },
     { id: "dry", label: "بيوت ما يوصلها ماء", v: -part.dry * k, fix: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء" },
     { id: "dark", label: "فلل وعماير بلا كهرباء", v: -part.dark * k, fix: "ابنِ مولد قريب منها" },
     { id: "water", label: "الماء ما يكفي البلد", v: -(1 - a.waterRatio) * 35, fix: "زد الآبار والخزانات" },
@@ -731,7 +769,7 @@ export function houseBlocker(s, a, x, y) {
   const tile = idx(x, y);
   if (n.water && !a.watered[tile]) return "ما يوصله ماء: ابنِ بئر قريب منه (البئر يوصل لين ٥ مربعات)";
   if (n.water && a.waterRatio < 0.95) return "الماء ما يكفي البلد: زد الآبار";
-  if (n.power && !a.powered[tile]) return "ما توصله الكهرباء: ابنِ مولد قريب منه (يوصل لين ٧ مربعات)";
+  if (n.power && !a.powered[tile]) return "ما توصله الكهرباء: ابنِ مولد بعيد شوي عن البيوت، ووصّل الكهرب لهنا بعمدان";
   if (n.power && a.powerRatio < 0.95) return "الكهرباء ما تكفي: زد المولدات";
   const here = s.happy + (t.b.local || 0) * 0.6;
   if (n.happy && here < n.happy) return "يحتاج رضا أكثر (خدمات قريبة، حدائق، مساجد)";
@@ -770,7 +808,7 @@ export function bizBlocker(s, a, x, y) {
   if (next.era && s.era < next.era) return `يحتاج تصير الرافعية ${ERAS[next.era].name}`;
   const here = idx(x, y), farm = B[b.id].cat === "farm" && b.id !== "workshop";
   if (next.era && farm && !a.watered[here]) return "ما يوصله ماء: ابنِ بئر قريب منه";
-  if (next.era && !farm && !a.powered[here]) return "ما توصله الكهرباء: ابنِ مولد قريب منه";
+  if (next.era && !farm && !a.powered[here]) return "ما توصله الكهرباء: ابنِ مولد أو وصّل له عمدان كهرب";
   return "";
 }
 /** Why a building cannot be upgraded now (house or business), or "". */

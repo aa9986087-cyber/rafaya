@@ -169,7 +169,7 @@ function topics(s, a, season, f) {
   if (n.generators > 0) add("power", -1, 7, [`jawaher:الكهرباء ناقصة ${num(n.powerGap)}. مولد واحد يعطي ٧٠، فنحتاج ${nAr(n.generators)}${s.tech.solar ? `، والألواح الشمسية أنظف` : ""}.`]);
   if (n.jobGap >= 8) add("jobs", -1, 8, [`noura:فيه ${num(n.jobGap)} شخص يبي شغل زيادة عن الوظايف. ${n.jobIdea}`]);
   for (const sv of n.uncovered) add(sv.topic, -1, 4 + Math.min(4, sv.homes / 4), [`${sv.who}:${nAr(sv.homes)} بيت ${sv.area} ما يوصلها ${sv.what}. ${sv.idea}`]);
-  if (n.polluted) add("pollution", -1, 6, [`drYousef:${nAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by} وأهلها يشتكون من الدخان والإزعاج. الأفضل نبعد البيوت عنه أو نحط حديقة بينهم.`]);
+  if (n.polluted) add("pollution", -1, 6, [`drYousef:${nAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by} وأهلها يشتكون من الدخان والإزعاج. ${n.polluted.by === "مولد كهرباء" ? "انقلوا المولد بعيد ووصّلوا الكهرب بعمدان." : "الأفضل نبعده عن البيوت أو نحط حديقة بينهم."}`]);
   if (n.worst && s.happy < 60) add("growth", -1, 5, [`noura:الرضا ${nAr(Math.round(s.happy))}٪. أكبر سبب حسب كلام الناس: ${n.worst}. لو انحل نرتفع كثير.`]);
   if (n.saveFor) add("money", 0, 3, [`abuabdullah:الدخل ${num(a.net)} بالساعة، يعني ${num(a.net * 24)} باليوم. ${n.saveFor}`]);
   if (a.net < 0 && s.money > 0) add("money", -1, 7, [`abuabdullah:البلدية تصرف أكثر من دخلها: ${num(-a.net)} ريال بالساعة خسارة. بعد ${nAr(Math.max(1, Math.floor(s.money / -a.net / 24)))} يوم بتصير ديون. ارفعوا الضريبة شوي أو افتحوا محلات.`]);
@@ -250,7 +250,7 @@ export const FIX_HINT = {
   housing: "انصب خيام جديدة أو طوّر البيوت",
   dust: "سفلت الطرق (بحث «سفلتة الطرق» من المجلس)",
   money: "رجّع الميزانية فوق الصفر",
-  pollution: "انقل الورش والمصانع بعيد عن البيوت",
+  pollution: "انقل المولد والورش والمصانع بعيد عن البيوت (أداة النقل)، ووصّل الكهرب للبيوت بعمدان كهرب",
   repair: "رمّم المباني من «الأرقام»",
   traffic: "زد الطرق أو سفلتها",
   strike: "وافق على علاوة الموظفين"
