@@ -117,7 +117,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - **Protections** (in `WAR`): villages, new players (24 h), sleeping towns, bullies (2 stages above), 2 hits on one building per 6 h, 6 hits on a town per 12 h (3 if away) then a 12 h shield, max 60 damage per operation, at most 3 operations at one town at once. Homes, mosques, schools, clinics and parks can never be targeted.
     - **Relations:** peace → (threat: tension) → hostility (10 min) → war declared → 15 min warning → war 24 h → hostility. Truce (6 h) and peace (24 h cooldown) are offers the other side accepts.
     - **Local test with the real Worker:** `node scripts/copy-site.mjs && npx wrangler@4 dev --local --var WAR_TEST:1`. `WAR_TEST` opens the world locally and uses `fastWar(30)`. **Never set it on the live site.**
-    - **Status:** built and tested locally (unit tests, two accounts on wrangler dev, the trial copy). **NOT pushed to main yet: the owner asked to try the trial file first.** The world is still closed (`WORLD_OPEN = false`).
+    - **Status:** built and tested locally (unit tests, two accounts on wrangler dev, the trial copy). Pushed to main with step 17; the world is open.
 
 16. **Realistic graphics, step 1: the war (owner: «واقعي أكثر», war first, then the rest of the game; both modes).**
     - Open assets in `vendor/` (see `vendor/ASSETS-LICENSE.txt`): three.js add-ons r160 in `vendor/jsm/` (MIT: EffectComposer, UnrealBloomPass, OutputPass, EXRLoader, RoundedBoxGeometry), a Poly Haven sky HDRI `vendor/hdri/sky.exr` (CC0), and two CC0 normal maps in `vendor/tex/`. `index.html` maps `three/addons/` to `./vendor/jsm/`. The single-file bundle maps it to jsDelivr and carries the HDRI and textures inline (`globalThis.RAFAYA_ASSETS`).
@@ -125,6 +125,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `world3d.js`: the sky reflects only on paint/metal/glass (the rest of the town keeps its warm light). Bloom threshold is 3.2, so only `glow`, flames, flashes and sparks bloom (sunlit sand must not). There is no bloom on "low" quality.
     - `warfx.js`: noise smoke and fire sprites, a flare, one PointLight for blasts and rocket flames (always in the scene, so there is no shader recompile), a ground shockwave, and instanced debris with bounces. Missiles slide out of their canisters.
     - **Next:** the same realistic treatment for the rest of the game (houses, shops, roads, ground, people, cars). Ask the owner before starting.
+
+17. **Icons, smooth edges, visible damage; pushed to main and the world REOPENED (owner, 2026-11-23).**
+    - `js/icons.js`: Lucide icons (ISC). `watchIcons(document.body)` swaps every emoji in the page's text for an inline SVG as it appears (a MutationObserver). Texts may keep writing emoji. A new emoji needs an entry in `ICON_PATHS` (taken from lucide-static). SVG `<text>` is skipped: the map's relation markers draw the icon paths directly.
+    - Smooth edges: the bloom composer renders into a multisampled target (MSAA); medium quality uses pixel ratio 1.75.
+    - Damage shape: `warSquash`/`warTilt` (world3d.js) sink a building from 25% damage (down to half its height) and tilt it from 60%. `warfx.addDamage` adds seeded rubble, a blackened broken top and bent rebar (two instanced meshes, `buildRubble`), with smoke and fire from the top.
+    - `WORLD_OPEN = true` again. The live world has the war.
 
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 

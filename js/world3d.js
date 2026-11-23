@@ -22,6 +22,10 @@ function normalTex(name, repeat) {
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
+/** War damage shows in the building's shape: from 25% it sinks (part of it fell in), down to half its height when out of action. */
+export const warSquash = (wd) => (!wd || wd < 25 ? 1 : Math.max(0.5, 1 - (wd - 20) * 0.0063));
+/** …and from 60% it leans a little, always the same way for the same tile. */
+export const warTilt = (wd, x, y) => (wd >= 60 ? [((x * 13 + y * 7) % 5 - 2) * 0.018 * (wd / 100), ((x * 5 + y * 11) % 5 - 2) * 0.018 * (wd / 100)] : [0, 0]);
 const roadAt = (t) => t?.b && ROAD_IDS.includes(t.b.id);
 /** A steady pseudo-random number in 0..1 for a tile (the same every time). */
 const hash = (x, y, k = 0) => {
@@ -133,7 +137,8 @@ export class World {
     this.loadSky();
     // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
     if (quality !== "low") {
-      this.composer = new EffectComposer(this.renderer);
+      // a multisampled target keeps edges smooth (the bloom pass would otherwise lose the antialiasing)
+      this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(256, 256, { type: THREE.HalfFloatType, samples: quality === "high" ? 4 : 2 }));
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), quality === "high" ? 0.55 : 0.45, 0.35, 3.2); // threshold above sunlit sand: only lamps, fire and flashes
       this.composer.addPass(this.bloom);
@@ -563,7 +568,9 @@ export class World {
       if (t.b.id === "pole") { const f = feeder.get(idx(x, y)); angle = f === undefined ? 0 : Math.atan2((f % N) - x, Math.floor(f / N) - y); } // the cross arm stands across its wire
       if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
+      if (t.b.wd >= 25) { const [tx, tz] = warTilt(t.b.wd, x, y); q.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(tx, 0, tz))); sc.set(1, warSquash(t.b.wd), 1); }
       m4.compose(p, q, sc);
+      sc.set(1, 1, 1);
       // Building sites, and a colour variant per house so streets do not look copied.
       let key = t.b.build > 0 ? "construction" : baseKey(modelKey(t.b.id, t.b.lvl)); // military moving parts are drawn by js/warfx.js
       const variants = VARIANTS[key];
@@ -1251,10 +1258,10 @@ export class World {
 
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-    const dpr = Math.min(this.quality === "high" ? 2 : 1.25, devicePixelRatio || 1);
+    const dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.75 : 1.25, devicePixelRatio || 1);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
-    if (this.composer) { this.composer.setPixelRatio(Math.min(dpr, 1.5)); this.composer.setSize(w, h); }
+    if (this.composer) { this.composer.setPixelRatio(dpr); this.composer.setSize(w, h); }
     this.aspect = w / h;
     this.w = w; this.h = h;
     this.updateCamera();

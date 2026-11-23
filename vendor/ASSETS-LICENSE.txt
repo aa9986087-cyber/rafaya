@@ -6,3 +6,7 @@ Open assets used by the game (all free to use):
   as packed by @pmndrs/assets 1.7.0 (CC0-1.0).
 - vendor/tex/concrete-normal.webp and vendor/tex/grain-normal.webp: normal maps from @pmndrs/assets 1.7.0
   (normals 0006 and 0021), CC0-1.0.
+- js/icons.js: icons from Lucide (lucide.dev, lucide-static 1.78.0), ISC license:
+  Copyright (c) Lucide Icons and Contributors. Permission to use, copy, modify, and/or distribute this software
+  for any purpose with or without fee is hereby granted, provided that the above copyright notice and this
+  permission notice appear in all copies.

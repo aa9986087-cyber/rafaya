@@ -30,7 +30,7 @@ const WORLD_EPOCH = Date.UTC(2026, 10, 1);
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game keeps working. Set back to true to reopen.
-const WORLD_OPEN = false;
+const WORLD_OPEN = true; // reopened 2026-11-23 with «صراع الجوف» (owner: «ارفعه ثم تفتح عالم الجوف»)
 // The world's generation. Raising it wipes the whole world once (every town, player name, world
 // comment and report) and tells every phone to forget its old world town. The solo game is never touched.
 //   gen 2 (2026-11-23): the owner wiped the world so everyone starts again.

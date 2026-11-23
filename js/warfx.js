@@ -7,7 +7,8 @@ import * as THREE from "three";
 import { MAP_SIZE } from "./data.js";
 import { idx } from "./sim.js";
 import { model, SETS, MIL_LAYOUT } from "./models.js";
-import { tileCenter } from "./world3d.js";
+import { iconImage } from "./icons.js";
+import { tileCenter, warSquash, warTilt } from "./world3d.js";
 
 const FX_N = MAP_SIZE;
 const fxEase = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
@@ -55,7 +56,11 @@ function fxTexture(kind) {
     gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.7, "rgba(255,255,255,0.8)"); gr.addColorStop(1, "rgba(255,255,255,0)");
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
   } else if (kind === "wrench" || kind === "warn") {
-    g.font = "92px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(kind === "wrench" ? "🔧" : "⚠️", 64, 70);
+    // a round sign with the icon (Lucide), drawn once its picture has loaded
+    g.fillStyle = kind === "wrench" ? "rgba(31,122,70,0.92)" : "rgba(214,120,20,0.95)"; g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.9)"; g.lineWidth = 5; g.stroke();
+    const img = iconImage(kind === "wrench" ? "🔧" : "⚠️");
+    img.onload = () => { g.drawImage(img, 22, 22, 84, 84); if (FX_TEX[kind]) FX_TEX[kind].needsUpdate = true; };
   } else {
     const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
     gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,0.7)"); gr.addColorStop(1, "rgba(255,255,255,0)");
@@ -113,8 +118,10 @@ export class WarFX {
     this.state = s;
     for (const p of this.parts.values()) this.root.remove(p.group);
     this.parts.clear();
+    for (const m of this.marks.children) if (m.userData.rubble) { m.geometry.dispose(); m.material.dispose(); }
     this.marks.clear();
     this.burning = [];
+    this.rubble = [];
     for (let y = 0; y < FX_N; y++) for (let x = 0; x < FX_N; x++) {
       const t = s.tiles[idx(x, y)], b = t.b;
       if (!b || b.build > 0) continue;
@@ -155,22 +162,65 @@ export class WarFX {
             return { g: d, rotor, spin: 0 };
           });
         }
+        if (b.wd >= 25) { const [tx, tz] = warTilt(b.wd, x, y); g.scale.y = warSquash(b.wd); g.rotation.x = tx; g.rotation.z = tz; } // the moving parts sink and lean with the building
         this.root.add(g);
         this.parts.set(idx(x, y), part);
       }
-      if (b.wd > 0) this.addDamage(x, y, b.wd);
+      if (b.wd > 0) this.addDamage(x, y, b.wd, b);
       const rep = this.repairs.get(`${x}:${y}`);
       if (rep) this.addRepairSign(x, y);
     }
+    this.buildRubble();
     if (this.targets) this.showTargets(this.targets.list, this.targets.sel);
   }
 
-  addDamage(x, y, wd) {
-    const c = tileCenter(x, y);
+  /** How tall a building stands (its model's top), for the broken top and the fire. */
+  topOf(i) {
+    const w = this.w.where?.get(i), geo = w && model(w.k.split(":")[0]);
+    if (!geo) return 0.4;
+    let top = 0.2;
+    for (const set of SETS) if (geo[set]) { if (!geo[set].boundingBox) geo[set].computeBoundingBox(); top = Math.max(top, geo[set].boundingBox.max.y); }
+    return Math.min(1.4, top);
+  }
+  /** Broken concrete round the building and on its broken top, bent steel bars sticking out: one draw for all. */
+  buildRubble() {
+    const list = this.rubble;
+    if (!list.length) return;
+    const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.05, 0), new THREE.MeshStandardMaterial({ roughness: 0.95, color: "#ffffff" }), list.filter((r) => !r.bar).length);
+    const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, 0.16, 0.008), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.4, color: "#5b3a26" }), Math.max(1, list.filter((r) => r.bar).length));
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
+    let ri = 0, bi = 0;
+    for (const r of list) {
+      q.setFromEuler(e.set(r.rx, r.ry, r.rz));
+      m4.compose(r.p, q, new THREE.Vector3(r.s, r.s * (r.bar ? 1 : 0.7), r.s));
+      if (r.bar) bars.setMatrixAt(bi++, m4);
+      else { rocks.setMatrixAt(ri, m4); rocks.setColorAt(ri++, c.set(r.c)); }
+    }
+    bars.count = bi;
+    for (const m of [rocks, bars]) { m.castShadow = this.w.quality !== "low"; m.receiveShadow = true; m.userData.rubble = true; m.frustumCulled = false; this.marks.add(m); }
+  }
+
+  addDamage(x, y, wd, b) {
+    const c = tileCenter(x, y), i = idx(x, y);
+    // a seeded scatter, so the same damage looks the same each time it is drawn
+    let seed = (x * 73856093) ^ (y * 19349663) ^ Math.round(wd);
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const top = this.topOf(i) * warSquash(wd);
+    const greys = ["#8f877b", "#a49b8c", "#6f685e", "#b8ae9c", "#5a544c"];
+    // rubble on the ground: more and further out the worse it is
+    const n = Math.round(4 + wd * 0.32);
+    for (let k = 0; k < n; k++) {
+      const a = rnd() * Math.PI * 2, d = 0.28 + rnd() * (0.15 + wd * 0.003);
+      this.rubble.push({ p: new THREE.Vector3(c.x + Math.cos(a) * d, 0.02 + rnd() * 0.02, c.z + Math.sin(a) * d), rx: rnd() * 3, ry: rnd() * 3, rz: rnd() * 3, s: 0.45 + rnd() * (0.5 + wd * 0.008), c: greys[Math.floor(rnd() * greys.length)] });
+    }
+    // the broken top: blackened chunks where the roof was, and bent bars from 50%
+    if (wd >= 35) for (let k = 0; k < Math.round(wd * 0.08); k++) this.rubble.push({ p: new THREE.Vector3(c.x + (rnd() - 0.5) * 0.4, top + rnd() * 0.03, c.z + (rnd() - 0.5) * 0.4), rx: rnd() * 3, ry: rnd() * 3, rz: rnd() * 3, s: 0.6 + rnd() * 0.6, c: rnd() < 0.5 ? "#2e2a26" : "#4a443d" });
+    if (wd >= 50) for (let k = 0; k < Math.round((wd - 40) * 0.12); k++) this.rubble.push({ bar: true, p: new THREE.Vector3(c.x + (rnd() - 0.5) * 0.45, top + 0.05, c.z + (rnd() - 0.5) * 0.45), rx: (rnd() - 0.5) * 1.4, ry: rnd() * 3, rz: (rnd() - 0.5) * 1.4, s: 0.6 + rnd() * 0.7 });
+    void b;
     const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), new THREE.MeshBasicMaterial({ map: fxTexture("scorch"), transparent: true, depthWrite: false, opacity: Math.min(0.95, 0.35 + wd / 120) }));
     decal.rotation.x = -Math.PI / 2; decal.position.set(c.x, 0.03, c.z); decal.renderOrder = 2;
     this.marks.add(decal);
-    this.burning.push({ p: c, wd, t: Math.random() });
+    this.burning.push({ p: c, wd, t: Math.random(), top });
   }
   addRepairSign(x, y) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTexture("wrench"), depthTest: false, transparent: true }));
@@ -481,8 +531,8 @@ export class WarFX {
       b.t -= dt;
       if (b.t > 0) continue;
       b.t = Math.max(0.12, 0.7 - b.wd * 0.005) * (this.w.quality === "low" ? 2 : 1);
-      this.emit("smoke", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.45, (Math.random() - 0.5) * 0.4)), { size: 0.3 + b.wd * 0.004, life: 2.2 + b.wd * 0.01, color: b.wd >= 60 ? "#2f2b27" : "#6b665f", alpha: 0.35 + b.wd * 0.004, v: new THREE.Vector3(0.12, 0.35 + Math.random() * 0.2, 0.05) });
-      if (b.wd >= 60) this.emit("fire", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.35, 0.35 + Math.random() * 0.15, (Math.random() - 0.5) * 0.35)), { size: 0.22 + Math.random() * 0.12, life: 0.45, v: new THREE.Vector3(0, 0.6, 0) });
+      this.emit("smoke", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (b.top ?? 0.45) + 0.05, (Math.random() - 0.5) * 0.4)), { size: 0.3 + b.wd * 0.004, life: 2.2 + b.wd * 0.01, color: b.wd >= 60 ? "#2f2b27" : "#6b665f", alpha: 0.35 + b.wd * 0.004, v: new THREE.Vector3(0.12, 0.35 + Math.random() * 0.2, 0.05) });
+      if (b.wd >= 45) this.emit("fire", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.35, (b.top ?? 0.35) + Math.random() * 0.08, (Math.random() - 0.5) * 0.35)), { size: 0.22 + Math.random() * 0.12, life: 0.45, v: new THREE.Vector3(0, 0.6, 0) });
     }
     // marks: target rings turn, signs bob
     for (const m of this.marks.children) {

@@ -3,6 +3,7 @@ import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_S
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
+import { watchIcons, ICON_PATHS } from "./icons.js";
 import { WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey } from "./models.js";
 import { sfx, ambience, warSfx } from "./sound.js";
@@ -81,6 +82,7 @@ function noteTown() {
 const canvas = $("map");
 const world = new World(canvas, { quality: settings.quality });
 world.fx = new WarFX(world); // «صراع الجوف»: moving military parts, war damage and the war scenes
+watchIcons(document.body); // every emoji in the page's text shows as its icon (js/icons.js)
 world.dayCycle = settings.daynight;
 // Only trust a saved 3D camera (saves from the old 2D map used other numbers).
 const camOk = (c) => c && [c.x, c.z, c.zoom, c.yawTarget ?? c.yaw].every(Number.isFinite) && Math.abs(c.x) <= N / 2 && Math.abs(c.z) <= N / 2 && c.zoom >= 0.45 && c.zoom <= 3.2;
@@ -1367,7 +1369,7 @@ async function worldMapSheet(pick) {
     cells += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${colors[worldTerrain(i)]}" class="wm-cell ${worldPick === i ? "on" : ""}" data-plot="${i}"/>`;
     if (t) cells += `<circle cx="${x + cell / 2}" cy="${y + cell / 2}" r="${1.2 + Math.min(1.6, Math.log10((t.pop || 1) + 1) * 0.6)}" class="wm-town ${mine ? "mine" : ""}" data-plot="${i}"/>`;
     const rel = t && !mine && WARX.st?.rels.find((r) => r.other === i);
-    if (rel && rel.state !== "peace") cells += `<text x="${x + cell - 0.6}" y="${y + 1.9}" class="wm-rel" data-plot="${i}">${REL_ICONS[rel.state]}</text>`;
+    if (rel && rel.state !== "peace") cells += `<circle cx="${x + cell - 0.9}" cy="${y + 0.9}" r="1.25" class="wm-rel-bg ${rel.state}"/><svg x="${x + cell - 1.8}" y="${y}" width="1.8" height="1.8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="wm-rel">${ICON_PATHS[REL_ICONS[rel.state].replace(/\uFE0F/g, "")] || ""}</svg>`;
   }
   const labels = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-place">${p.name}</text>`).join("");
   const sel = worldPick, t = sel != null ? byPlot.get(sel) : null;
@@ -2184,8 +2186,11 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-04", world: "2026-12-06" },
+  v: { solo: "2026-12-07", world: "2026-12-07" },
   items: [
+    ["world", "🌍", "عالم الجوف رجع!", "خلصت الصيانة، والعالم مفتوح من جديد ومعه «صراع الجوف». أسس مدينتك من الصفر."],
+    ["world", "💥", "الضربة تبين على المبنى", "المبنى المضروب يهبط ويميل على حسب الضرر، وحوله ركام وحديد بارز وآثار حريق، وتطلع منه نار ودخان لين تصلحه."],
+    ["both", "✨", "أيقونات جديدة وصورة أنعم", "بدل الإيموجي صارت أيقونات مرتبة بكل اللعبة، والحواف صارت ناعمة بدون تسنين."],
     ["world", "✨", "حرب بشكل واقعي", "المباني العسكرية انبنت من جديد بتفاصيل واقعية: شاحنة صواريخ بحاويات، وبطارية دفاع جوي، ورادار بعاكس دوّار، وهنقر مسيّرات. والمعادن تعكس سماء حقيقية، والانفجارات صارت بلهب ودخان وشظايا ووميض يضوي اللي حوله."],
     ["world", "⚔️", "صراع الجوف", "ابنِ مركز القيادة العسكرية، وقاعدة مسيّرات، ومنصة صواريخ، ورادار، ودفاع جوي (البناء ← الدفاع والعسكرية). أعلن العداوة ثم الحرب من خريطة الجوف، واختر مبنى بمدينة خصمك وشوف الإطلاق والتحليق والاعتراض والإصابة. البيوت والمساجد والمدارس والمستوصفات محمية، والضرر ينصلح وما يمسح شي، والسيرفر هو اللي يحكم بالنتيجة."],
     ["solo", "🌐", "شلنا «مدن الربع»", "النشر بالكود ولوحة الصدارة انشالت من اللعب الفردي. الفردي صار لك لحالك، واللعب مع الناس صار بعالم الجوف بس."],

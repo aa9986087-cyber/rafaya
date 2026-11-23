@@ -514,3 +514,10 @@ body.war-scene .dock, body.war-scene .side, body.war-scene .goal, body.war-scene
 .pv-note { position: relative; z-index: 2; margin: calc(var(--top, 0px) + 8px) 16px 0; padding: 10px 12px; border-radius: 14px; background: rgba(31, 122, 70, .92); color: #fff; display: grid; gap: 4px; font-size: 13px; }
 .pv-note small { opacity: .9; }
 .pv-note .btn { justify-self: start; padding: 4px 12px; font-size: 12px; background: rgba(255, 255, 255, .18); color: #fff; border-color: rgba(255, 255, 255, .4); }
+
+/* Lucide icons in place of emoji (js/icons.js) */
+svg.ic { width: 1.15em; height: 1.15em; vertical-align: -0.22em; display: inline-block; flex: none; fill: none !important; }
+svg.ic * { fill: none !important; }
+.wm-rel { pointer-events: none; }
+.wm-rel-bg { fill: #6f6d43; stroke: #fff; stroke-width: .25; pointer-events: none; }
+.wm-rel-bg.war { fill: #c92a2a; } .wm-rel-bg.warning { fill: #e67700; } .wm-rel-bg.truce { fill: #868e96; } .wm-rel-bg.tension { fill: #d9480f; }
