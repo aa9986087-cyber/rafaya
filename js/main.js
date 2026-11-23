@@ -1211,13 +1211,20 @@ $("visitBack").addEventListener("click", () => { sfx.tap(); leaveVisit(); });
 $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments(); });
 
 // ---------- the world of al-Jouf ----------
-const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town";
+const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_KEY = "rafaya-world-gen";
 let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0 }, lastSync = 0, soloS = null;
 const worldMsNow = () => Date.now() + worldClock.offset - worldClock.epoch;
 const worldHourNow = () => Math.floor(worldMsNow() / HOUR_MS) + 3;
 const me = () => JSON.parse(store.get(WORLD_ID) || "null");
 async function loadClock() {
-  try { const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now() }; } catch { /* keep the local guess */ }
+  try {
+    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now() };
+    // the world was wiped (a new generation): forget the old name and world town on this phone
+    if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
+      try { localStorage.removeItem(WORLD_ID); localStorage.removeItem(WORLD_SAVE); } catch { /* fine */ }
+      store.set(WORLD_GEN_KEY, String(c.gen));
+    }
+  } catch { /* keep the local guess */ }
 }
 /** Send the town to the server (at most every 5 minutes, or now when leaving). */
 function worldSync(force) {
@@ -1590,8 +1597,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-02", world: "2026-12-02" },
+  v: { solo: "2026-12-02", world: "2026-12-03" },
   items: [
+    ["world", "🧹", "عالم الجوف من جديد", "مسحنا كل مدن عالم الجوف وأسماءه، والكل بيبدأ من الصفر لا رجع العالم من الصيانة. مدنكم الفردية ما تأثرت."],
     ["world", "📦", "ما عاد فيه نقل من الفردي", "المدن الفردية ما عادت تنتقل لعالم الجوف. بالعالم كل واحد يبدأ من الصفر، والفردي له حياته لحاله."],
     ["both", "🆕", "«وش الجديد» صار قسمين", "تحديثات اللعب الفردي لحالها، وتحديثات عالم الجوف لحالها. اختر القسم من فوق."],
     ["world", "🛠️", "عالم الجوف تحت الصيانة", "قفلنا عالم الجوف فترة عشان نشتغل عليه ونضيف له أشياء جديدة. مدنكم فيه محفوظة، واللعب الفردي شغال عادي."],

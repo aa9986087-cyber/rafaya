@@ -31,6 +31,11 @@ const WORLD_EPOCH = Date.UTC(2026, 10, 1);
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game and the old /api/publish leaderboard keep working. Set back to true to reopen.
 const WORLD_OPEN = false;
+// The world's generation. Raising it wipes the whole world once (every town, player name, world
+// comment and report) and tells every phone to forget its old world town. The solo game and the
+// old /api/publish leaderboard are never touched.
+//   gen 2 (2026-11-23): the owner wiped the world so everyone starts again.
+const WORLD_GEN = 2;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 const BAD = ["كلب", "حمار", "زق", "خرا", "سكس", "شرموط", "قحب", "fuck", "shit", "sex"];
 const badText = (t) => BAD.some((w) => t.toLowerCase().includes(w));
@@ -49,6 +54,15 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS players (name TEXT PRIMARY KEY, secret TEXT, recovery TEXT, created INTEGER, plot INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS plots (plot INTEGER PRIMARY KEY, owner TEXT, town TEXT, terrain TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
+    if (gen < WORLD_GEN) {
+      this.sql.exec("DELETE FROM plots");
+      this.sql.exec("DELETE FROM players");
+      this.sql.exec("DELETE FROM reports");
+      this.sql.exec("DELETE FROM comments WHERE code GLOB 'w[0-9]*'"); // world towns' comments are "w<plot>"; GLOB is case-sensitive, so the old 6-letter codes stay
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
+    }
   }
 
   async fetch(request) {
@@ -73,7 +87,7 @@ export class Board extends DurableObject {
   async world(request, p) {
     if (!WORLD_OPEN) return json({ error: "maintenance" }, 503);
     const post = request.method === "POST", body = post ? await request.json() : {};
-    if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now() });
+    if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN });
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });

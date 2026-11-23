@@ -96,6 +96,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The residents' news feed («نشرة») is per town already, so solo and world feeds never mix.
     - **Moving a solo town into the world is removed** (no `soloTowns`/`worldCopy`/`worldSwapSheet` any more). World towns that were already moved stay as they are.
 
+13. **The world was wiped (owner, 2026-11-23: «امسح كل المدن … ابيهم يبدون من جديد»).**
+    - `WORLD_GEN` in `src/worker.js` (now 2) with a `meta` table: when the stored gen is lower, the Board deletes every plot, player, report and world comment (`code GLOB 'w[0-9]*'`) once. `/api/publish` towns are kept.
+    - `/api/world/clock` returns `gen`; `loadClock()` in main.js drops `rafaya-world-id` and `rafaya-world-town` from the phone when its `rafaya-world-gen` differs. So old world towns cannot come back from phones.
+    - To wipe again some day: raise `WORLD_GEN`.
+
 **Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
