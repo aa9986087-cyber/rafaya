@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { MAP_SIZE } from "./data.js";
 import { idx } from "./sim.js";
-import { model, SETS, MIL_LAYOUT } from "./models.js";
+import { model, SETS, MIL_LAYOUT, WIND_TOWERS } from "./models.js";
 import { iconImage } from "./icons.js";
 import { tileCenter, warSquash, warTilt } from "./world3d.js";
 
@@ -126,6 +126,21 @@ export class WarFX {
       const t = s.tiles[idx(x, y)], b = t.b;
       if (!b || b.build > 0) continue;
       const c = tileCenter(x, y);
+      if (b.id === "windfarm") {
+        // the turbines' blades turn (slower when damaged, still when wrecked)
+        const g = new THREE.Group();
+        g.position.copy(c);
+        g.rotation.y = this.w.faceAngle(s, x, y) + (b.rot || 0) * Math.PI / 2;
+        const part = { kind: "wind", group: g, x, y, wd: b.wd || 0, rotors: [] };
+        for (const [wx, wz, sz] of WIND_TOWERS) {
+          const r = this.mesh("windRotor");
+          r.position.set(wx, 1.5 * sz + 0.03, wz + 0.08 * sz); r.scale.setScalar(sz); r.rotation.z = Math.random() * 6;
+          g.add(r); part.rotors.push({ r, speed: 1.4 + Math.random() * 0.5 });
+        }
+        if (b.wd >= 25) { const [tx, tz] = warTilt(b.wd, x, y); g.scale.y = warSquash(b.wd); g.rotation.x = tx; g.rotation.z = tz; }
+        this.root.add(g);
+        this.parts.set(idx(x, y), part);
+      }
       if (["radar", "airdef", "missilepad", "dronebase"].includes(b.id)) {
         const g = new THREE.Group();
         g.position.copy(c);
@@ -540,6 +555,7 @@ export class WarFX {
       if (p.dish && works) p.dish.rotation.y += dt * (this.alertT > 0 ? 4.5 : 0.9) * slow;
       if (p.turret && works && !this.tasks.length) p.turret.rotation.y += Math.sin(this.w.clock * 0.4 + p.x) * dt * 0.25;
       if (p.drones) for (const d of p.drones) d.rotor.rotation.y += dt * (works ? 1.2 : 0);
+      if (p.rotors && works) for (const w of p.rotors) w.r.rotation.z -= dt * w.speed * slow;
     }
     // damage: smoke rising, fire flickering on the worst ones
     for (const b of this.burning) {

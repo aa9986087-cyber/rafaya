@@ -501,6 +501,15 @@ export function voteShare(s) {
   return Math.max(0.05, Math.min(0.95, v));
 }
 /** Hours until the next election (the end of the year). */
+/**
+ * The province's yearly fee, by the time the town spent at each stage this year (a town that became a
+ * city last week pays a week's city fee); the hours still to come are counted at today's stage.
+ */
+export function provinceFee(s) {
+  const fh = s.feeHours || {}, counted = Object.values(fh).reduce((n, v) => n + v, 0);
+  const base = Object.entries(fh).reduce((n, [e, h]) => n + PROVINCE_FEES[e] * h / YEAR_HOURS, 0) + PROVINCE_FEES[s.era] * Math.max(0, YEAR_HOURS - counted) / YEAR_HOURS;
+  return Math.round(base * (s.feeX || 1));
+}
 export const hoursToElection = (s) => YEAR_HOURS - ((s.day - 1) % YEAR_HOURS);
 
 // ---------- moving a building ----------
@@ -1119,12 +1128,12 @@ export function step(s, r = Math.random) {
   if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
   else if (s.broke && s.money >= 0) { s.broke = false; msgs.push({ kind: "goal", text: "سددت الديون! الخدمات رجعت تشتغل." }); }
   s.feeHours ||= {}; s.feeHours[s.era] = (s.feeHours[s.era] || 0) + 1; // hours at each stage this year (the yearly fee)
+  // a warning before the fee: three days and one day ahead, with about how much
+  const toFee = hoursToElection(s);
+  if ((toFee === 72 || toFee === 24) && provinceFee(s) > 0) msgs.push({ kind: "event", title: "رسوم المحافظة", text: `رسوم المحافظة السنوية بعد ${toFee === 72 ? "٣ أيام" : "يوم واحد"}: تقريبًا ${provinceFee(s)} ريال. خلّ لها مكان بالميزانية.` });
   // A new year: the province's fee, and the council's staff ask for a raise.
   if (Math.floor((s.day - 1) / YEAR_HOURS) > yearBefore) {
-    // the fee by the time the town spent at each stage this year (a town that became a city last week pays a week's city fee)
-    const fh = s.feeHours || {}, counted = Object.values(fh).reduce((n, v) => n + v, 0);
-    const base = Object.entries(fh).reduce((n, [e, h]) => n + PROVINCE_FEES[e] * h / YEAR_HOURS, 0) + PROVINCE_FEES[s.era] * Math.max(0, YEAR_HOURS - counted) / YEAR_HOURS;
-    const fee = Math.round(base * (s.feeX || 1));
+    const fee = provinceFee(s);
     s.feeHours = {};
     if (fee) { s.money -= fee; msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
     if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }

@@ -232,6 +232,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Goal rewards with no building were roughly halved: pop 40 → 200, بلدة → 800, happy 70 → 800, net 500 → 1200, مدينة → 2500, محافظة → 6000, حاضرة → 50,000. Building goals still cover their cost.
     - The province fee is prorated by `s.feeHours` (hours at each era this year). Old saves count the untracked part at the current era.
     - The event banner (`#event`) hides 30 s after an event starts (`evBanner`). Its key ignores digits, so the hourly «باقي N ساعة» doesn't reset it.
+36. **Fee warning and turning wind turbines (owner, 2026-11-23, both modes):**
+    - `provinceFee(s)` in sim.js is the single place that computes the fee (also the estimate).
+    - `step` warns 72 h and 24 h before the year ends. The budget sheet shows the coming fee and the days left.
+    - The windfarm model has no blades now. `windRotor` (models.js) is spun by WarFX parts (kind "wind", `WIND_TOWERS`): slower when damaged, still when wrecked.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

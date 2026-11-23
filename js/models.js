@@ -905,17 +905,20 @@ const MAKERS = {
   },
   windfarm(b) {
     b.box(0.96, 0.012, 0.96, "#d9c9a2");
-    for (const [x, z, s] of [[-0.24, -0.22, 1], [0.26, 0.2, 0.9]]) {
+    for (const [x, z, s] of WIND_TOWERS) {
       b.cyl(0.018 * s, 0.032 * s, 1.5 * s, "#f2f2f0", { x, z }, 10, "shiny");
       b.box(0.06 * s, 0.06 * s, 0.14 * s, "#f2f2f0", { x, y: 1.5 * s, z }, "shiny");
-      for (let k = 0; k < 3; k++) {
-        const a = k * (Math.PI * 2 / 3) + 0.3;
-        b.add(new THREE.BoxGeometry(0.035 * s, 0.62 * s, 0.012), "#fbfbfa", { x: x + Math.sin(a) * 0.3 * s, y: 1.5 * s + Math.cos(a) * 0.3 * s + 0.03, z: z + 0.08 * s, rz: -a }, "shiny");
-      }
-      b.add(new THREE.SphereGeometry(0.03 * s, 8, 6), "#e8e8e6", { x, y: 1.53 * s, z: z + 0.08 * s }, "shiny");
       b.box(0.02, 0.02, 0.02, "#ff3b30", { x, y: 1.6 * s, z }, "lights");
     }
     b.box(0.16, 0.12, 0.12, "#c7c3ba", { x: 0.3, z: -0.32 });
+  },
+  // the blades and hub of one turbine, turning about its own middle (placed and spun by js/warfx.js)
+  windRotor(b) {
+    for (let k = 0; k < 3; k++) {
+      const a = k * (Math.PI * 2 / 3);
+      b.add(new THREE.BoxGeometry(0.035, 0.62, 0.012), "#fbfbfa", { x: Math.sin(a) * 0.3, y: Math.cos(a) * 0.3, rz: -a }, "shiny");
+    }
+    b.add(new THREE.SphereGeometry(0.03, 8, 6), "#e8e8e6", {}, "shiny");
   },
   library(b) {
     b.box(0.86, 0.36, 0.62, "#e9dfcb", { z: -0.08 });
@@ -1303,6 +1306,8 @@ const MC = {
   red: "#b3261e", black: "#1f2022", flag: "#1f7a46", earth: "#b49c71"
 };
 /** Where the moving parts sit on each building (shared with js/warfx.js). */
+/** The wind farm's two turbines: x, z and size (the rotor sits at the top of each, a little in front). */
+export const WIND_TOWERS = [[-0.24, -0.22, 1], [0.26, 0.2, 0.9]];
 export const MIL_LAYOUT = {
   radar: { x: -0.06, z: -0.06, h: [0.5, 0.72, 0.92] },
   airdef: { x: 0.02, y: 0.12, z: -0.04 },
