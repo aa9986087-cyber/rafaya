@@ -1174,9 +1174,214 @@ function bigTime(b, id) {
 }
 for (const id of BIZ) for (const lvl of [1, 2, 3]) MAKERS[`${id}${lvl}`] = (b, ground, seed) => { MAKERS[id](b, ground, seed); bizExtras(b, id, lvl); };
 
+// ---------- «صراع الجوف»: military buildings (world of al-Jouf only) and what flies ----------
+// Each building has a level 0/1/2 model ("radar", "radar1", "radar2"). The parts that move (the radar
+// dish, the air defence launcher, the missile erector, the drones) are separate small models that
+// js/warfx.js places and moves on top of the "…_b" base, so only one copy of them shows in the town.
+const MC = { sand: "#c9b48a", sandDark: "#a8936a", olive: "#6f6d43", oliveDark: "#55532f", concrete: "#bdb6a6", slab: "#a9a293", steel: "#7f868c", white: "#eceae4", flag: "#1f7a46" };
+function sandbags(b, r, n, y = 0, ox = 0, oz = 0) {
+  for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; b.add(new THREE.SphereGeometry(0.05, 6, 4), MC.sandDark, { x: ox + Math.cos(a) * r, y: y + 0.03, z: oz + Math.sin(a) * r, sy: 0.6, sx: 1.4, ry: -a }); }
+}
+function flag(b, x, z, h = 0.7) {
+  b.cyl(0.012, 0.012, h, C.grey, { x, z }, 5);
+  b.box(0.2, 0.12, 0.01, MC.flag, { x: x + 0.1, y: h - 0.14, z });
+  b.box(0.08, 0.02, 0.012, "#ffffff", { x: x + 0.1, y: h - 0.09, z });
+}
+function slabBase(b, w = 0.94, d = 0.94) { b.box(w, 0.025, d, MC.concrete); b.box(w - 0.06, 0.006, 0.02, "#e7dcc2", { y: 0.025, z: d / 2 - 0.06 }); }
+function radarDishParts(b, s = 1, y = 0) {
+  // a turning mast with a big dish looking out sideways and slightly up, and its feed arm
+  b.cyl(0.035 * s, 0.045 * s, 0.12 * s, MC.steel, { y }, 8);
+  b.box(0.08 * s, 0.05 * s, 0.08 * s, MC.slab, { y: y + 0.12 * s });
+  b.add(new THREE.CylinderGeometry(0.3 * s, 0.1 * s, 0.07 * s, 20), MC.white, { y: y + 0.32 * s, z: -0.05 * s, rx: Math.PI / 2 - 0.35 }, "shiny");
+  b.add(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 0.02 * s, 14), "#d8dcde", { y: y + 0.31 * s, z: -0.02 * s, rx: Math.PI / 2 - 0.35 }, "shiny");
+  b.box(0.025 * s, 0.025 * s, 0.26 * s, MC.steel, { y: y + 0.34 * s, z: 0.1 * s, rx: -0.35 });
+  b.box(0.05 * s, 0.05 * s, 0.05 * s, MC.steel, { y: y + 0.38 * s, z: 0.22 * s });
+  b.box(0.035 * s, 0.035 * s, 0.035 * s, "#ff3b30", { y: y + 0.62 * s, z: -0.12 * s }, "lights");
+}
+function airdefTurretParts(b, lvl) {
+  const tubes = [4, 6, 8][lvl];
+  b.cyl(0.11, 0.13, 0.06, MC.olive, {}, 12);
+  b.box(0.06, 0.12, 0.06, MC.oliveDark, { x: -0.12, y: 0.04 });
+  b.box(0.06, 0.12, 0.06, MC.oliveDark, { x: 0.12, y: 0.04 });
+  // the launcher box (it tilts up when it fires: the turret's own pivot is at y 0.12)
+  const cols = tubes / 2;
+  b.box(0.2 + cols * 0.02, 0.13, 0.36, MC.olive, { y: 0.1, z: 0.02 });
+  for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) b.cyl(0.022, 0.022, 0.012, MC.oliveDark, { x: -0.06 * (cols - 1) / 2 + c * 0.06, y: 0.135 + r * 0.055, z: 0.2, rx: Math.PI / 2 }, 8);
+  if (lvl >= 1) b.box(0.08, 0.08, 0.05, MC.steel, { x: 0, y: 0.24, z: -0.08 }, "shiny");
+  if (lvl >= 2) b.add(new THREE.BoxGeometry(0.14, 0.1, 0.01), "#2d3a46", { y: 0.3, z: -0.1 }, "shiny");
+}
+function padArmParts(b, lvl, withMissiles = true) {
+  const n = [1, 2, 3][lvl];
+  // the erector: rails and the missiles on them, pointing along +z, pivot at the back (z = -0.3)
+  b.box(0.06 * n + 0.1, 0.04, 0.62, MC.oliveDark, { z: 0.0 });
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * 0.1;
+    if (withMissiles) {
+      b.add(new THREE.CylinderGeometry(0.035, 0.035, 0.52, 10), MC.white, { x, y: 0.07, z: 0.02, rx: Math.PI / 2 }, "shiny");
+      b.add(new THREE.ConeGeometry(0.035, 0.1, 10), "#9aa1a6", { x, y: 0.07, z: 0.33, rx: Math.PI / 2 }, "shiny");
+    }
+    b.box(0.09, 0.03, 0.5, MC.steel, { x, y: 0.02, z: 0.0 });
+  }
+}
+function missileParts(b, adv) {
+  // along +z (the nose), centred on its middle
+  const L = adv ? 0.62 : 0.5, R = adv ? 0.045 : 0.038;
+  b.add(new THREE.CylinderGeometry(R, R, L, 12), adv ? "#e9e6df" : "#f2f0ea", { rx: Math.PI / 2 }, "shiny");
+  b.add(new THREE.ConeGeometry(R, 0.12, 12), adv ? "#3b3f44" : "#9aa1a6", { z: L / 2 + 0.06, rx: Math.PI / 2 }, "shiny");
+  b.add(new THREE.CylinderGeometry(R * 1.02, R * 1.02, 0.05, 12), adv ? "#b3261e" : MC.flag, { z: L / 2 - 0.08, rx: Math.PI / 2 });
+  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.box(0.008, 0.08, 0.1, MC.steel, { x: Math.cos(a) * R * 1.6, y: Math.sin(a) * R * 1.6 - 0.04, z: -L / 2 + 0.06, rz: a }); }
+}
+function droneParts(b, adv) {
+  if (adv) {
+    // a fixed-wing drone with a pusher propeller (the propeller is its own part)
+    b.add(new THREE.CylinderGeometry(0.03, 0.025, 0.42, 10), "#9a9a8a", { rx: Math.PI / 2 }, "shiny");
+    b.add(new THREE.SphereGeometry(0.032, 10, 8), "#9a9a8a", { z: 0.21 }, "shiny");
+    b.box(0.62, 0.012, 0.09, "#8c8c7c", { y: -0.006, z: 0.02 });
+    b.box(0.2, 0.01, 0.06, "#8c8c7c", { y: -0.005, z: -0.18 });
+    b.box(0.01, 0.08, 0.06, "#8c8c7c", { y: 0.03, z: -0.18 });
+    b.box(0.04, 0.02, 0.05, "#2d3a46", { y: -0.03, z: 0.12 }, "shiny");
+  } else {
+    // a four-rotor drone (the rotors are their own part)
+    b.box(0.14, 0.05, 0.14, "#4a4f45", { y: -0.025 });
+    for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { b.box(0.16, 0.014, 0.02, "#3a3e36", { x: x * 0.08, z: z * 0.08, ry: x * z > 0 ? Math.PI / 4 : -Math.PI / 4 }); b.cyl(0.012, 0.012, 0.03, "#2a2a26", { x: x * 0.14, y: -0.01, z: z * 0.14 }, 6); }
+    b.box(0.05, 0.03, 0.04, "#2d3a46", { y: -0.06, z: 0.05 }, "shiny");
+    b.box(0.02, 0.02, 0.02, "#ff3b30", { y: 0.005, z: 0.07 }, "lights");
+  }
+}
+function rotorParts(b, adv) {
+  if (adv) { b.box(0.2, 0.012, 0.02, "#2a2a26", {}); return; }
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) b.box(0.15, 0.004, 0.016, "#d9d9d0", { x: x * 0.14, y: 0.025, z: z * 0.14, ry: (x + z) * 0.6 });
+}
+function hangar(b, x, z, w, d, color = MC.sand) {
+  // an arched hangar along z, its open door facing +z
+  const r = w / 2;
+  b.add(new THREE.CylinderGeometry(r, r, d, 16, 1, false, Math.PI / 2, Math.PI), color, { x, z, rx: Math.PI / 2 }, "matte");
+  for (let k = 1; k < 4; k++) b.add(new THREE.CylinderGeometry(r * 1.01, r * 1.01, 0.012, 16, 1, false, Math.PI / 2, Math.PI), MC.sandDark, { x, z: z - d / 2 + (d * k) / 4, rx: Math.PI / 2 });
+  b.add(new THREE.CylinderGeometry(r * 0.72, r * 0.72, 0.012, 14, 1, false, Math.PI / 2, Math.PI), "#2e2a22", { x, z: z + d / 2 + 0.004, rx: Math.PI / 2 });
+}
+
+Object.assign(MAKERS, {
+  milhq_any(b, lvl = 0) {
+    slabBase(b);
+    if (lvl === 0) {
+      b.box(0.5, 0.26, 0.38, MC.sand, { x: -0.08, z: -0.08 });
+      b.box(0.52, 0.03, 0.4, MC.sandDark, { x: -0.08, y: 0.26, z: -0.08 });
+      for (let i = 0; i < 4; i++) b.box(0.06, 0.05, 0.01, "#2d3a46", { x: -0.26 + i * 0.12, y: 0.15, z: 0.115 }, "shiny");
+      b.box(0.09, 0.14, 0.012, C.door, { x: 0.08, z: 0.115 });
+      sandbags(b, 0.11, 8, 0, 0.3, 0.3);
+      flag(b, 0.3, 0.3, 0.6);
+      b.cyl(0.008, 0.008, 0.36, C.grey, { x: -0.25, y: 0.29, z: -0.2 }, 4);
+    } else if (lvl === 1) {
+      b.box(0.62, 0.42, 0.42, MC.sand, { x: -0.06, z: -0.1 });
+      b.box(0.64, 0.03, 0.44, MC.sandDark, { x: -0.06, y: 0.42, z: -0.1 });
+      for (let r = 0; r < 2; r++) for (let i = 0; i < 5; i++) b.box(0.07, 0.07, 0.01, "#2d3a46", { x: -0.3 + i * 0.12, y: 0.1 + r * 0.17, z: 0.115 }, "shiny");
+      b.cyl(0.015, 0.02, 0.5, MC.steel, { x: 0.12, y: 0.45, z: -0.2 }, 6);
+      b.add(new THREE.SphereGeometry(0.07, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.5), MC.white, { x: -0.25, y: 0.45, z: -0.2, rx: 0.5 }, "shiny");
+      b.cyl(0.16, 0.16, 0.012, "#5b5f62", { x: 0.28, z: 0.26 }, 18);
+      b.box(0.12, 0.004, 0.02, "#f2f0e8", { x: 0.28, y: 0.013, z: 0.26 }); b.box(0.02, 0.004, 0.1, "#f2f0e8", { x: 0.24, y: 0.013, z: 0.26 }); b.box(0.02, 0.004, 0.1, "#f2f0e8", { x: 0.32, y: 0.013, z: 0.26 });
+      flag(b, -0.38, 0.32, 0.75);
+      b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.12, y: 0.96, z: -0.2 }, "lights");
+    } else {
+      for (const [w, d, x, z] of [[0.94, 0.04, 0, 0.45], [0.94, 0.04, 0, -0.45], [0.04, 0.94, 0.45, 0], [0.04, 0.94, -0.45, 0]]) b.box(w, 0.1, d, MC.sandDark, { x, z });
+      b.box(0.56, 0.5, 0.4, MC.sand, { x: -0.12, z: -0.12 });
+      b.box(0.58, 0.03, 0.42, MC.sandDark, { x: -0.12, y: 0.5, z: -0.12 });
+      b.box(0.26, 0.82, 0.22, "#c0ab80", { x: 0.22, z: -0.2 });
+      b.box(0.28, 0.06, 0.24, "#2d3a46", { x: 0.22, y: 0.74, z: -0.2 }, "shiny");
+      for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) b.box(0.07, 0.07, 0.01, "#2d3a46", { x: -0.32 + i * 0.12, y: 0.08 + r * 0.14, z: 0.085 }, "shiny");
+      b.cyl(0.012, 0.018, 0.5, MC.steel, { x: 0.22, y: 0.82, z: -0.2 }, 6);
+      b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.22, y: 1.33, z: -0.2 }, "lights");
+      b.add(new THREE.SphereGeometry(0.09, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.5), MC.white, { x: -0.3, y: 0.53, z: -0.2, rx: 0.5 }, "shiny");
+      b.cyl(0.13, 0.13, 0.012, "#5b5f62", { x: 0.22, z: 0.24 }, 18);
+      flag(b, -0.38, 0.3, 0.85); flag(b, 0.0, 0.3, 0.85);
+    }
+  },
+  milhq(b) { MAKERS.milhq_any(b, 0); }, milhq1(b) { MAKERS.milhq_any(b, 1); }, milhq2(b) { MAKERS.milhq_any(b, 2); },
+
+  dronebase_any(b, lvl = 0, withDrones = true) {
+    slabBase(b);
+    b.box(0.86, 0.008, 0.03, "#e9e2cf", { x: 0, y: 0.025, z: 0.44 });
+    hangar(b, -0.18, -0.14, 0.42, 0.46);
+    if (lvl >= 1) hangar(b, 0.24, -0.2, 0.32, 0.36, "#c2ae84");
+    if (lvl >= 2) { b.box(0.12, 0.5, 0.12, MC.sand, { x: 0.36, z: 0.3 }); b.box(0.18, 0.08, 0.18, "#2d3a46", { x: 0.36, y: 0.5, z: 0.3 }, "shiny"); b.box(0.02, 0.02, 0.02, "#ff3b30", { x: 0.36, y: 0.62, z: 0.3 }, "lights"); }
+    for (const [x, z] of [[-0.15, 0.3], [0.14, 0.3]]) { b.cyl(0.12, 0.12, 0.006, "#8e8a7e", { x, y: 0.025, z }, 16); b.box(0.1, 0.004, 0.014, "#f5e27a", { x, y: 0.032, z }); b.box(0.014, 0.004, 0.1, "#f5e27a", { x, y: 0.032, z }); }
+    if (withDrones) for (const [x, z] of [[-0.15, 0.3], [0.14, 0.3]].slice(0, lvl + 1)) { const g = new Builder(); droneParts(g, false); rotorParts(g, false); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.scale(0.7, 0.7, 0.7); part.translate(x, 0.07, z); b.sets[set].push(part); } }
+  },
+  dronebase(b) { MAKERS.dronebase_any(b, 0); }, dronebase1(b) { MAKERS.dronebase_any(b, 1); }, dronebase2(b) { MAKERS.dronebase_any(b, 2); },
+  dronebase_b(b) { MAKERS.dronebase_any(b, 0, false); }, dronebase1_b(b) { MAKERS.dronebase_any(b, 1, false); }, dronebase2_b(b) { MAKERS.dronebase_any(b, 2, false); },
+
+  missilepad_any(b, lvl = 0, withArm = true) {
+    slabBase(b);
+    b.box(0.86, 0.22, 0.06, MC.slab, { z: -0.42 }); // blast wall
+    b.box(0.86, 0.02, 0.1, "#8f897b", { y: 0.22, z: -0.42 });
+    b.box(0.22, 0.16, 0.16, MC.sand, { x: 0.34, z: 0.3 });
+    b.box(0.08, 0.04, 0.01, "#2d3a46", { x: 0.34, y: 0.1, z: 0.381 }, "shiny");
+    b.box(0.02, 0.02, 0.02, "#ffd27a", { x: 0.28, y: 0.17, z: 0.31 }, "lights");
+    // the launcher vehicle
+    b.box(0.3, 0.1, 0.72, MC.olive, { y: 0.04, z: 0.0 });
+    for (const z of [-0.26, -0.08, 0.1, 0.28]) for (const x of [-0.16, 0.16]) b.add(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 10), "#26231f", { x, y: 0.05, z, rz: Math.PI / 2 });
+    b.box(0.3, 0.12, 0.14, MC.oliveDark, { y: 0.14, z: 0.32 });
+    b.box(0.22, 0.05, 0.01, "#2d3a46", { y: 0.2, z: 0.391 }, "shiny");
+    if (lvl >= 2) { b.box(0.18, 0.3, 0.18, MC.sand, { x: -0.34, z: 0.3 }); b.cyl(0.05, 0.05, 0.08, MC.white, { x: -0.34, y: 0.3, z: 0.3 }, 10); }
+    if (withArm) { const g = new Builder(); padArmParts(g, lvl); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(0, 0.16, -0.02); b.sets[set].push(part); } }
+  },
+  missilepad(b) { MAKERS.missilepad_any(b, 0); }, missilepad1(b) { MAKERS.missilepad_any(b, 1); }, missilepad2(b) { MAKERS.missilepad_any(b, 2); },
+  missilepad_b(b) { MAKERS.missilepad_any(b, 0, false); }, missilepad1_b(b) { MAKERS.missilepad_any(b, 1, false); }, missilepad2_b(b) { MAKERS.missilepad_any(b, 2, false); },
+
+  radar_any(b, lvl = 0, withDish = true) {
+    slabBase(b);
+    const h = [0.45, 0.7, 0.9][lvl];
+    b.box(0.32, 0.22, 0.26, MC.sand, { x: 0.24, z: 0.24 });
+    b.box(0.34, 0.02, 0.28, MC.sandDark, { x: 0.24, y: 0.22, z: 0.24 });
+    b.box(0.1, 0.06, 0.01, "#2d3a46", { x: 0.24, y: 0.13, z: 0.371 }, "shiny");
+    // the lattice tower
+    for (const [x, z] of [[-0.12, -0.12], [0.04, -0.12], [-0.12, 0.04], [0.04, 0.04]]) b.box(0.025, h, 0.025, MC.steel, { x: x - 0.0, z: z - 0.0 });
+    for (let y = 0.1; y < h; y += 0.14) { b.box(0.17, 0.012, 0.012, MC.steel, { x: -0.04, y, z: -0.12 }); b.box(0.17, 0.012, 0.012, MC.steel, { x: -0.04, y, z: 0.04 }); b.box(0.012, 0.012, 0.17, MC.steel, { x: -0.12, y, z: -0.04 }); b.box(0.012, 0.012, 0.17, MC.steel, { x: 0.04, y, z: -0.04 }); }
+    b.box(0.2, 0.03, 0.2, MC.slab, { x: -0.04, y: h, z: -0.04 });
+    if (lvl >= 2) b.add(new THREE.SphereGeometry(0.11, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), MC.white, { x: 0.3, y: 0.24, z: -0.26 }, "shiny");
+    if (withDish) { const g = new Builder(); radarDishParts(g, 0.75 + lvl * 0.15); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(-0.04, h + 0.03, -0.04); b.sets[set].push(part); } }
+  },
+  radar(b) { MAKERS.radar_any(b, 0); }, radar1(b) { MAKERS.radar_any(b, 1); }, radar2(b) { MAKERS.radar_any(b, 2); },
+  radar_b(b) { MAKERS.radar_any(b, 0, false); }, radar1_b(b) { MAKERS.radar_any(b, 1, false); }, radar2_b(b) { MAKERS.radar_any(b, 2, false); },
+
+  airdef_any(b, lvl = 0, withTurret = true) {
+    slabBase(b);
+    sandbags(b, 0.36, 14);
+    b.box(0.26, 0.14, 0.14, MC.olive, { x: 0.28, z: 0.3 });
+    b.box(0.1, 0.1, 0.14, MC.oliveDark, { x: 0.38, y: 0.06, z: 0.3 });
+    if (lvl >= 1) { b.cyl(0.02, 0.02, 0.32, MC.steel, { x: -0.32, z: -0.3 }, 6); b.box(0.12, 0.08, 0.02, MC.white, { x: -0.32, y: 0.34, z: -0.3 }, "shiny"); }
+    if (lvl >= 2) { b.box(0.2, 0.12, 0.12, MC.olive, { x: -0.3, z: 0.32 }); b.box(0.12, 0.012, 0.1, "#1f3f6b", { x: -0.3, y: 0.13, z: 0.32, rx: -0.3 }, "shiny"); }
+    if (withTurret) { const g = new Builder(); airdefTurretParts(g, lvl); for (const set of ["matte", "shiny", "lights"]) for (const part of g.sets[set]) { part.translate(0, 0.03, -0.02); b.sets[set].push(part); } }
+  },
+  airdef(b) { MAKERS.airdef_any(b, 0); }, airdef1(b) { MAKERS.airdef_any(b, 1); }, airdef2(b) { MAKERS.airdef_any(b, 2); },
+  airdef_b(b) { MAKERS.airdef_any(b, 0, false); }, airdef1_b(b) { MAKERS.airdef_any(b, 1, false); }, airdef2_b(b) { MAKERS.airdef_any(b, 2, false); },
+
+  armory(b) {
+    slabBase(b);
+    b.add(new THREE.SphereGeometry(0.42, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), "#b9a479", { sy: 0.42, z: -0.06 });
+    b.box(0.3, 0.2, 0.06, MC.concrete, { z: 0.3 });
+    b.box(0.2, 0.15, 0.012, "#5e6458", { z: 0.335 });
+    b.box(0.02, 0.02, 0.02, "#ffd27a", { y: 0.22, z: 0.335 }, "lights");
+    for (let i = 0; i < 3; i++) b.box(0.12, 0.08, 0.08, MC.olive, { x: 0.3, y: i * 0.08, z: 0.36 - (i % 2) * 0.02 });
+    flag(b, -0.36, 0.34, 0.55);
+  },
+
+  // the moving parts and what flies (placed and moved by js/warfx.js)
+  radarDish(b) { radarDishParts(b, 0.75); }, radarDish1(b) { radarDishParts(b, 0.9); }, radarDish2(b) { radarDishParts(b, 1.05); },
+  airdefTurret(b) { airdefTurretParts(b, 0); }, airdefTurret1(b) { airdefTurretParts(b, 1); }, airdefTurret2(b) { airdefTurretParts(b, 2); },
+  padArm(b) { padArmParts(b, 0, false); }, padArm1(b) { padArmParts(b, 1, false); }, padArm2(b) { padArmParts(b, 2, false); },
+  wMissile(b) { missileParts(b, false); }, wMissile2(b) { missileParts(b, true); },
+  wDrone(b) { droneParts(b, false); }, wDrone2(b) { droneParts(b, true); },
+  wRotor(b) { rotorParts(b, false); }, wRotor2(b) { rotorParts(b, true); },
+  wInterceptor(b) { b.add(new THREE.CylinderGeometry(0.022, 0.022, 0.32, 8), "#f4f4f0", { rx: Math.PI / 2 }, "shiny"); b.add(new THREE.ConeGeometry(0.022, 0.07, 8), "#d0d0c8", { z: 0.195, rx: Math.PI / 2 }, "shiny"); for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.box(0.005, 0.05, 0.06, "#9aa1a6", { x: Math.cos(a) * 0.035, y: Math.sin(a) * 0.035 - 0.025, z: -0.13, rz: a }); } }
+});
+const MIL_MODELS = ["milhq", "dronebase", "missilepad", "radar", "airdef"];
+/** The base of a military building without its moving parts, when it has them (else the full model). */
+export const baseKey = (key) => (MAKERS[`${key}_b`] ? `${key}_b` : key);
+
 export function modelKey(id, lvl) {
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;
   if (lvl > 0 && BIZ.includes(id)) return `${id}${lvl}`;
+  if (lvl > 0 && MIL_MODELS.includes(id)) return `${id}${Math.min(2, lvl)}`;
   return id;
 }
 

@@ -17,6 +17,7 @@
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
+import { fastWar } from "../js/war.js";
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -46,6 +47,7 @@ const makeSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), 
 export class Board extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.env = env;
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS towns (code TEXT PRIMARY KEY, secret TEXT, name TEXT, mayor TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, author TEXT, text TEXT, at INTEGER)`);
@@ -66,7 +68,7 @@ export class Board extends DurableObject {
     this.war = new WarServer(warDb, {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
-    });
+    }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
   }
 
   async fetch(request) {
@@ -82,7 +84,7 @@ export class Board extends DurableObject {
 
   // ---------- the world of al-Jouf ----------
   async world(request, p) {
-    if (!WORLD_OPEN) return json({ error: "maintenance" }, 503);
+    if (!WORLD_OPEN && this.env?.WAR_TEST !== "1") return json({ error: "maintenance" }, 503); // local tests may open it
     const post = request.method === "POST", body = post ? await request.json() : {};
     if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN });
     if (!post && p[0] === "map") {

@@ -231,6 +231,7 @@ const TOPIC_NAMES = { season: "أماكن للناس بالصيف", growth: "ر�
 /** Is anyone still upset about this topic right now? */
 /** What the mayor has to do to keep each kind of promise. */
 export const FIX_HINT = {
+  war: "يبون المبنى المضروب يتصلح: اضغط عليه واختر «🔧 إصلاح الأضرار العسكرية»، وقوّ الدفاع الجوي والرادار.",
   water: "ابنِ بئر أو خزان قريب من البيوت اللي ما يوصلها ماء",
   aquifer: "ابنِ سد على الوادي يجمع المطر، أو قلل الآبار، أو ابنِ تحلية",
   season: "الصيف: زد الآبار، وابنِ مقهى أو حديقة قريبة يجتمع فيها الناس بالليل",

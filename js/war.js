@@ -40,6 +40,12 @@ export const WAR = {
   autoBudget: 5000            // the deputy's default repair and refill budget, per day
 };
 
+/** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
+export function fastWar(div = 30) {
+  const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));
+  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, cityWindow: WAR.caps.cityWindow / div, shield: WAR.caps.shield / div }, repairPerPoint: WAR.repairPerPoint / 6 };
+}
+
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
 export const WEAPONS = {
   drone: { name: "مسيّرة شاهين", kind: "drone", price: 900, fee: 150, power: 16, evade: 1, needs: ["dronebase", 0], icon: "🛩️", text: "رخيصة وبطيئة، ضررها محدود، والدفاع يصيدها بسهولة." },

@@ -1290,7 +1290,7 @@ export function unpack(text) {
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond, rot, wd] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
-    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
+    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it

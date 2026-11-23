@@ -86,3 +86,34 @@ export const sfx = {
   levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },
   event() { tone(440, 0.2, { type: "sine", vol: 0.06 }); tone(554, 0.25, { type: "sine", vol: 0.05, at: 0.12 }); }
 };
+
+// ---------- «صراع الجوف»: war sounds (they can be turned off alone, in the settings) ----------
+let warOn = true;
+try { warOn = localStorage.getItem("rafaya-war-sound") !== "0"; } catch { /* default on */ }
+/** A burst of filtered noise: rockets, blasts, whooshes. */
+function noiseHit(dur, { from = 800, to = 200, vol = 0.2, type = "lowpass", at = 0, attack = 0.01 } = {}) {
+  if (!on || !warOn) return;
+  try {
+    const a = ac(), t = a.currentTime + at, src = a.createBufferSource();
+    src.buffer = noiseBuffer(a);
+    const f = a.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + dur);
+    const g = a.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + dur + 0.05);
+  } catch { /* no audio */ }
+}
+const wtone = (...args) => { if (warOn) tone(...args); };
+export const warSfx = {
+  get on() { return warOn; },
+  set(v) { warOn = v; try { localStorage.setItem("rafaya-war-sound", v ? "1" : "0"); } catch { /* fine */ } },
+  /** The siren: rising and falling. */
+  alarm() { for (let i = 0; i < 3; i++) { wtone(520, 0.42, { type: "sawtooth", vol: 0.035, at: i * 0.5, slide: 380 }); } },
+  /** The launcher getting ready: hydraulics and beeps. */
+  prep() { noiseHit(1.4, { from: 300, to: 900, vol: 0.05, type: "bandpass", attack: 0.3 }); [0, 0.5, 1].forEach((t) => wtone(1200, 0.08, { type: "square", vol: 0.025, at: t })); },
+  launch() { noiseHit(2.4, { from: 1800, to: 120, vol: 0.28, attack: 0.04 }); wtone(70, 1.6, { type: "sawtooth", vol: 0.06, slide: -30 }); },
+  drone() { wtone(180, 1.8, { type: "sawtooth", vol: 0.025, slide: 60 }); wtone(185, 1.8, { type: "sawtooth", vol: 0.02, slide: 70 }); },
+  whoosh() { noiseHit(0.9, { from: 3000, to: 500, vol: 0.12, type: "bandpass", attack: 0.3 }); },
+  intercept() { noiseHit(0.8, { from: 2500, to: 400, vol: 0.12, attack: 0.02 }); },
+  airBurst() { noiseHit(1.2, { from: 1400, to: 90, vol: 0.3 }); wtone(60, 0.7, { type: "sine", vol: 0.12, slide: -25 }); },
+  boom() { noiseHit(1.8, { from: 900, to: 50, vol: 0.42 }); wtone(48, 1.1, { type: "sine", vol: 0.18, slide: -20 }); noiseHit(0.5, { from: 4000, to: 800, vol: 0.06, type: "highpass", at: 0.08 }); },
+  ok() { [784, 1047].forEach((f, i) => wtone(f, 0.14, { type: "triangle", vol: 0.05, at: i * 0.1 })); }
+};

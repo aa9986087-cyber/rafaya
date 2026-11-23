@@ -49,6 +49,9 @@ test("military buildings: world only, need the command centre, wear war damage s
   assert.equal(back.tiles[idx(20, 20)].b.cond, 100);
   assert.ok(condFactor(back.tiles[idx(20, 20)].b) < 0.7);
   assert.equal(warFactor(90), 0);
+  // levels of military buildings survive a save
+  s.tiles[idx(24, 24)].b = { id: "missilepad", lvl: 2, res: 0, cond: 100 };
+  assert.equal(unpack(pack(s)).tiles[idx(24, 24)].b.lvl, 2);
   // old saves (no 8th field) load with no war damage
   const old = unpack(pack(newGame(3)));
   assert.ok(old.tiles.every((x) => !x.b?.wd));

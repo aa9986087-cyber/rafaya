@@ -103,7 +103,23 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 
 14. **«مدن الربع» removed from solo (owner, 2026-11-23: «مدن الربع بالفردي شله»).** No publish-by-code, no leaderboard, no visiting by code. The server routes `/api/publish`, `/api/board`, `/api/town/*` are gone (404); the `towns` table is left unused. Visiting other towns now exists only in the world (`visitTown(plot)`), and comments only go to `/api/world/town/:plot/comment`. Solo is fully offline now.
 
-**Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
+15. **«صراع الجوف» — war in the world (owner's PRD, 2026-11-23). WORLD ONLY; solo is untouched.**
+    - **Files:**
+      - `js/war.js`: pure rules and balance (`WAR` timings and caps, `WEAPONS`, `TARGETS`, relations, intercept chance, damage). Used by both the server and the game.
+      - `js/warserver.js`: the **authoritative** `WarServer`. It buys, handles relations, launches, settles each attack once at its arrival time, runs the deputy's repairs and refills, and keeps notes. Storage is one SQLite table `war` (rows as JSON) via `sqlWarDb`; `memWarDb` is for tests and the trial.
+      - `js/warfx.js`: three.js scenes and effects (moving radar/air-defence/erector/drone parts, launch, incoming, interception, explosion, persistent damage smoke, scorch and fire, target rings, camera shake). It only **shows** results.
+      - `js/preview.js`: TRIAL ONLY (`node scripts/bundle.mjs --preview` → `dist/rafaya-trial.html`). It is an in-page practice world with 3 bot towns and short timings (`fastWar(20)`).
+      - UI is in `main.js` under «صراع الجوف»: `warPoll`/`warApply`, `warSheet` (command tabs), `relSheet`, `startTargeting`/`targetTap`/`strikeSheet`, `warOpScene`/`warDefenseScene`/`replayOp`, `opReport`, `warDamageHtml`, `warBack`.
+    - **Server:** `POST /api/world/war/{state,buy,rel,launch,op,repair,settings,enemy}` (auth as for sync). `GET /api/world/town/:plot` also returns `damage`. Refusals come back as `200 { error: "Arabic reason" }`. Every money-spending request carries a request id (`req`/`op`): sent twice, it is done once.
+    - **Money:** the server writes `charge` rows (seq per town). The game takes each one off `S.money` once (`S.war.seq`). The server's "available" money is the last synced budget minus the charges not applied yet.
+    - **Damage:** it is kept on the server per tile (`dmg`), never trusted from a sync. The game copies it into `t.b.wd` (8th packed tile field, optional; `rot` is written as 0 when only `wd` is there). `condFactor` includes `warWorks(wd)`: from 85 the building stands idle; it is never removed. Repairs are timed on the server; damage comes off gradually.
+    - **Buildings** (`cat: "mil"`, `worldOnly`): `milhq` (needed first), `dronebase`, `missilepad` (مدينة), `radar`, `airdef`, `armory`. Levels are in `MIL` / `MIL_UP` (data.js). Upgrades use `bizBlocker`/`upgradeCost`, which are MIL-aware.
+    - **Protections** (in `WAR`): villages, new players (24 h), sleeping towns, bullies (2 stages above), 2 hits on one building per 6 h, 6 hits on a town per 12 h (3 if away) then a 12 h shield, max 60 damage per operation, at most 3 operations at one town at once. Homes, mosques, schools, clinics and parks can never be targeted.
+    - **Relations:** peace → (threat: tension) → hostility (10 min) → war declared → 15 min warning → war 24 h → hostility. Truce (6 h) and peace (24 h cooldown) are offers the other side accepts.
+    - **Local test with the real Worker:** `node scripts/copy-site.mjs && npx wrangler@4 dev --local --var WAR_TEST:1`. `WAR_TEST` opens the world locally and uses `fastWar(30)`. **Never set it on the live site.**
+    - **Status:** built and tested locally (unit tests, two accounts on wrangler dev, the trial copy). **NOT pushed to main yet: the owner asked to try the trial file first.** The world is still closed (`WORLD_OPEN = false`).
+
+**Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
 - A staging copy of the site plus an admin page to moderate world reports.

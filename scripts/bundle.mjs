@@ -6,7 +6,9 @@ const read = (f) => readFile(new URL("../" + f, import.meta.url), "utf8");
 const html = await read("index.html");
 const css = await read("css/style.css");
 const icon = Buffer.from(await read("icon.svg")).toString("base64");
-const mods = ["data", "sim", "people", "models", "world3d", "sound", "news", "main"];
+// --preview: the TRIAL copy with a practice world of al-Jouf inside the page (js/preview.js), written to dist/rafaya-trial.html
+const preview = process.argv.includes("--preview");
+const mods = ["data", "sim", "people", "models", "world3d", "warfx", "war", "sound", "news", ...(preview ? ["warserver", "preview"] : []), "main"];
 // One module: drop the local imports and exports; three.js is imported once from jsDelivr.
 const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
   .map((src) => src
@@ -45,5 +47,6 @@ ${code.replace(/^const N = MAP_SIZE;$/m, "")}
 </script>
 `;
 await mkdir(new URL("../dist/", import.meta.url), { recursive: true });
-await writeFile(new URL("../dist/rafaya.html", import.meta.url), page);
-console.log("dist/rafaya.html", Math.round(page.length / 1024), "KB");
+const out = preview ? "dist/rafaya-trial.html" : "dist/rafaya.html";
+await writeFile(new URL("../" + out, import.meta.url), page);
+console.log(out, Math.round(page.length / 1024), "KB");

@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, powerNet } from "./sim.js";
-import { model, modelKey, makerSeeded, VARIANTS } from "./models.js";
+import { model, modelKey, baseKey, makerSeeded, VARIANTS } from "./models.js";
 
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
@@ -495,7 +495,8 @@ export class World {
 
   syncBuildings(s) {
     const groups = new Map();
-    const push = (key, ground, m) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [] }); groups.get(k).list.push(m); };
+    // tint: war damage darkens a building (1 = as built)
+    const push = (key, ground, m, tint = 1) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [], tints: [] }); groups.get(k).list.push(m); groups.get(k).tints.push(tint); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
     const seen = new Map(), where = new Map(), glows = [];
@@ -517,11 +518,11 @@ export class World {
       q.setFromAxisAngle(up, angle);
       m4.compose(p, q, sc);
       // Building sites, and a colour variant per house so streets do not look copied.
-      let key = t.b.build > 0 ? "construction" : modelKey(t.b.id, t.b.lvl);
+      let key = t.b.build > 0 ? "construction" : baseKey(modelKey(t.b.id, t.b.lvl)); // military moving parts are drawn by js/warfx.js
       const variants = VARIANTS[key];
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
       const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
-      push(key, t.t, m4.clone());
+      push(key, t.t, m4.clone(), t.b.wd ? 1 - Math.min(0.5, t.b.wd * 0.006) : 1);
       const i = idx(x, y);
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
@@ -532,7 +533,8 @@ export class World {
     }
     // Reuse or rebuild the instanced meshes.
     for (const [k, inst] of this.instances) if (!groups.has(k)) { for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); } this.instances.delete(k); }
-    for (const [k, { key, ground, list }] of groups) {
+    const tc = new THREE.Color();
+    for (const [k, { key, ground, list, tints }] of groups) {
       let inst = this.instances.get(k);
       if (!inst || inst.capacity < list.length) {
         if (inst) for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); }
@@ -556,6 +558,10 @@ export class World {
         list.forEach((m, i) => mesh.setMatrixAt(i, m));
         mesh.count = list.length;
         mesh.instanceMatrix.needsUpdate = true;
+        if (set !== "lights" && (mesh.instanceColor || tints.some((v) => v < 1))) {
+          tints.forEach((v, i) => mesh.setColorAt(i, tc.setRGB(v, v * 0.96, v * 0.92)));
+          mesh.instanceColor.needsUpdate = true;
+        }
       }
     }
     this.syncSmoke();
@@ -563,6 +569,7 @@ export class World {
     this.buildingGlows = glows;
     this.where = where;
     this.homes = [...where.entries()].filter(([, w]) => w.k === "tent0" || w.k.startsWith("house")).map(([i]) => i);
+    this.fx?.syncTown(s); // war: moving parts of military buildings, damage smoke and fire
   }
 
   sync(s, what = { tiles: true, roads: true, buildings: true }) {
@@ -1211,8 +1218,9 @@ export class World {
     this.camera.top = span / 2; this.camera.bottom = -span / 2;
     this.camera.updateProjectionMatrix();
     const dist = 40;
-    this.camera.position.set(v.x + Math.sin(v.yaw) * Math.cos(v.pitch) * dist, Math.sin(v.pitch) * dist, v.z + Math.cos(v.yaw) * Math.cos(v.pitch) * dist);
-    this.camera.lookAt(v.x, 0, v.z);
+    const lift = v.y || 0, sh = this.shakeOff || { x: 0, z: 0 }; // lift: looking up at something in the air (war scenes); shake: an explosion nearby
+    this.camera.position.set(v.x + sh.x + Math.sin(v.yaw) * Math.cos(v.pitch) * dist, lift + Math.sin(v.pitch) * dist, v.z + sh.z + Math.cos(v.yaw) * Math.cos(v.pitch) * dist);
+    this.camera.lookAt(v.x + sh.x, lift, v.z + sh.z);
   }
 
   pan(dxPx, dyPx) {
@@ -1309,6 +1317,7 @@ export class World {
     this.stepEffects(dt);
     this.stepWeather(dt);
     this.stepFlood(dt);
+    this.fx?.step(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
     this.renderer.render(this.scene, this.camera);
