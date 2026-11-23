@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot } from "./data.js";
+import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
@@ -42,10 +42,11 @@ let playing = false;
 let speed = 1;
 let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
-// A town day is 24 hours and lasts 20 minutes at normal speed (50 seconds an hour).
+// A town day is 24 hours and lasts 30 minutes at normal speed (75 seconds an hour; it was 50 until the owner asked for half an hour).
 // The town moves forward one step every hour. Days start at sunrise; how much of the day is
 // light depends on the season (spring and autumn 10 min + 10 min, summer 12 + 8, winter 8 + 12).
-const HOUR_MS = 50000;
+const HOUR_MS = 75000;
+const OLD_HOUR_MS = 50000; // the world's hours before the switch (see worldHours)
 /** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
 const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
 /** The part of the day by the prayer times themselves (data.js PRAYERS), so «الظهر» runs from the dhuhr call to the asr call. */
@@ -299,13 +300,72 @@ function showPending() {
   }
 }
 
+/** The tiles of a straight run along x or y (both ends in). */
+function runTiles(a, b) {
+  const out = [], sx = Math.sign(b.x - a.x), sy = Math.sign(b.y - a.y);
+  for (let x = a.x, y = a.y; ; x += sx, y += sy) { out.push({ x, y }); if (x === b.x && y === b.y) break; }
+  return out;
+}
+/** Every tile from a to b, one step at a time along x or y, so a fast finger never leaves a gap. */
+function stepTiles(a, b) {
+  const out = [], n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+  let x = a.x, y = a.y;
+  for (let k = 1; k <= n; k++) {
+    const tx = Math.round(a.x + (b.x - a.x) * k / n), ty = Math.round(a.y + (b.y - a.y) * k / n);
+    if (tx !== x && ty !== y) out.push({ x: tx, y }); // a corner step, not a diagonal hop
+    x = tx; y = ty; out.push({ x, y });
+  }
+  return out;
+}
+/**
+ * Roads follow the finger in straight runs: the first move picks the direction, the road stays on that
+ * line, and only a clear turn (two tiles off the line) starts a new straight run from the corner.
+ */
+function roadAim(r, t) {
+  const lastT = r.trail[r.trail.length - 1];
+  if (lastT.x !== t.x || lastT.y !== t.y) { r.trail.push(t); if (r.trail.length > 4) r.trail.shift(); }
+  const dx = t.x - r.anchor.x, dy = t.y - r.anchor.y;
+  if (!r.axis) { if (Math.abs(dx) + Math.abs(dy) >= 2 || Math.max(Math.abs(dx), Math.abs(dy)) >= 1 && r.trail.length > 2) r.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y"; }
+  else {
+    const off = r.axis === "x" ? dy : dx;
+    // the finger's last few tiles: a turn only when it clearly goes sideways (a slanted drag keeps the road straight)
+    const m = { x: t.x - r.trail[0].x, y: t.y - r.trail[0].y };
+    const side = Math.abs(r.axis === "x" ? m.y : m.x), ahead = Math.abs(r.axis === "x" ? m.x : m.y);
+    if (Math.abs(off) >= 2 && side >= 2 && side > ahead * 2) {
+      const corner = r.axis === "x" ? { x: t.x, y: r.anchor.y } : { x: r.anchor.x, y: t.y };
+      r.segs.push(...runTiles(r.anchor, corner));
+      r.anchor = corner; r.axis = r.axis === "x" ? "y" : "x";
+    }
+  }
+  const end = r.axis === "x" ? { x: t.x, y: r.anchor.y } : r.axis === "y" ? { x: r.anchor.x, y: t.y } : r.anchor;
+  return [...r.segs, ...runTiles(r.anchor, end)];
+}
+const roadAimStart = (t) => ({ segs: [], anchor: t, axis: null, trail: [t] });
+function roadStroke(t) {
+  const r = drag.road ||= { ...roadAimStart(t), base: pending.slice() };
+  const tiles = roadAim(r, t);
+  const before = pending.length, seen = new Set(r.base.map((p) => idx(p.x, p.y)));
+  pending = r.base.slice();
+  for (const p of tiles) {
+    const k = idx(p.x, p.y);
+    if (seen.has(k) || !inMap(p.x, p.y)) continue;
+    seen.add(k);
+    if (canDo(p.x, p.y)) pending.push(p);
+  }
+  if (pending.length > before) sfx.road();
+}
 function paintAt(sx, sy) {
   const t = world.pick(sx, sy);
   if (!inMap(t.x, t.y)) return;
-  const key = idx(t.x, t.y);
-  if (drag?.done.has(key)) return;
-  drag?.done.add(key);
-  if (!pending.some((p) => p.x === t.x && p.y === t.y) && canDo(t.x, t.y)) { pending.push(t); sfx.road(); }
+  if (B[tool?.id]?.cat === "road") { roadStroke(t); showPending(); return; }
+  const from = drag?.last || t;
+  if (drag) drag.last = t;
+  for (const p of [t, ...stepTiles(from, t)]) {
+    const key = idx(p.x, p.y);
+    if (drag?.done.has(key)) continue;
+    drag?.done.add(key);
+    if (!pending.some((q) => q.x === p.x && q.y === p.y) && canDo(p.x, p.y)) { pending.push(p); sfx.road(); }
+  }
   showPending();
 }
 
@@ -374,7 +434,8 @@ function arrErase(t) {
   arrSync(); arrRender();
 }
 function arrPaint(t) {
-  for (const c of arrLine(t)) arrPaintOne(c);
+  drag.road ||= roadAimStart(t);
+  for (const c of roadAim(drag.road, t)) arrPaintOne(c); // straight runs, like building roads (arrPaintOne skips done tiles)
 }
 function arrPaintOne(t) {
   const h = arrange.held;
@@ -1384,13 +1445,18 @@ $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments();
 
 // ---------- the world of al-Jouf ----------
 const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_KEY = "rafaya-world-gen";
-let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0 }, lastSync = 0, soloS = null;
+let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 25) }, lastSync = 0, soloS = null;
 const worldMsNow = () => Date.now() + worldClock.offset - worldClock.epoch;
-const worldHourNow = () => Math.floor(worldMsNow() / HOUR_MS) + 3;
+/** The world's hours so far: 50 s each until the server's switch time (slowAt), 75 s each after, so the clock never jumps. */
+function worldHours() {
+  const ms = worldMsNow(), cut = Math.max(0, worldClock.slowAt - worldClock.epoch);
+  return ms <= cut ? ms / OLD_HOUR_MS : cut / OLD_HOUR_MS + (ms - cut) / HOUR_MS;
+}
+const worldHourNow = () => Math.floor(worldHours()) + 3;
 const me = () => JSON.parse(store.get(WORLD_ID) || "null");
 async function loadClock() {
   try {
-    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now() };
+    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch };
     // the world was wiped (a new generation): forget the old name and world town on this phone
     if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
       try { localStorage.removeItem(WORLD_ID); localStorage.removeItem(WORLD_SAVE); } catch { /* fine */ }
@@ -1559,7 +1625,7 @@ async function worldMapSheet(pick) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
         <div class="rows">${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
-        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
+        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>${t.renamed ? "" : `<button class="btn block" id="wmRename" type="button">✏️ غيّر اسم مدينتك (مرة وحدة بس)</button>`}` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
@@ -1577,6 +1643,7 @@ async function worldMapSheet(pick) {
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
+  $("wmRename")?.addEventListener("click", () => { sfx.tap(); renameSheet(t, plots); });
   $("wmVisit")?.addEventListener("click", () => visitTown(sel));
   $("wmRel")?.addEventListener("click", () => relSheet(sel));
   $("wmTarget")?.addEventListener("click", (e) => { const why = e.currentTarget.dataset.why; if (why) { toast(why, "bad"); sfx.deny(); return; } startTargeting(sel); });
@@ -1585,6 +1652,7 @@ async function worldMapSheet(pick) {
   });
   $("wmClaim")?.addEventListener("click", async () => {
     const town = ($("wmTown").value || "").trim() || `هجرة ${id.name}`;
+    if (plots.some((o) => townNameKey(o.town) === townNameKey(town))) { toast(`فيه مدينة بالجوف اسمها «${town}»، اختر اسم ثاني`, "bad"); sfx.deny(); return; }
     try {
       await api("/world/claim", { name: id.name, secret: id.secret, plot: sel, town, terrain: worldTerrain(sel) });
       store.set(WORLD_ID, JSON.stringify({ ...id, plot: sel }));
@@ -1595,7 +1663,29 @@ async function worldMapSheet(pick) {
       store.set(WORLD_SAVE, pack(s));
       sfx.era(); toast(`تأسست «${town}» في عالم الجوف! 🎉`, "era");
       enterWorldTown();
-    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
+    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : String(e.message) === "422" ? "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
+  });
+}
+/** Rename your town in al-Jouf: once only, and never to a name another town has. */
+function renameSheet(t, plots) {
+  const id = me();
+  sheet(`<h2>✏️ اسم مدينتك</h2><p>تقدر تغيّر اسم «${t.town}» <b>مرة وحدة بس</b>، وبعدها يثبت. والاسم لازم ما يكون لمدينة ثانية بالجوف.</p>
+    <label class="rg-name">الاسم الجديد <input id="rnTown" type="text" maxlength="20" placeholder="${t.town}"></label>
+    <div class="sheet-actions two"><button class="btn" id="rnBack" type="button">رجوع</button><button class="btn go" id="rnGo" type="button">ثبّت الاسم</button></div>`, "world");
+  $("rnBack").addEventListener("click", () => worldMapSheet(t.plot));
+  $("rnGo").addEventListener("click", async () => {
+    const town = ($("rnTown").value || "").trim();
+    if (town.length < 2) { toast("اكتب الاسم الجديد", "bad"); return; }
+    if (plots.some((o) => o.plot !== t.plot && townNameKey(o.town) === townNameKey(town))) { toast(`فيه مدينة بالجوف اسمها «${town}»، اختر اسم ثاني`, "bad"); sfx.deny(); return; }
+    if (!confirm(`متأكد؟ «${town}» بيصير اسمها للأبد وما تقدر تغيّره مرة ثانية.`)) return;
+    try {
+      const r = await api("/world/rename", { name: id.name, secret: id.secret, town });
+      if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+      if (worldMode && S.world?.plot === t.plot) { S.name = r.town; save(); refresh(); }
+      else { try { const s = unpack(store.get(WORLD_SAVE)); s.name = r.town; store.set(WORLD_SAVE, pack(s)); } catch { /* the town picks it up next time */ } }
+      sfx.era(); toast(`صار اسمها «${r.town}» 🎉`, "era");
+      worldMapSheet(t.plot);
+    } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
   });
 }
 /** Play your own town in the world: the deputy's report first if you were away. */
@@ -1687,7 +1777,10 @@ async function warSyncNow() {
   if (key === WARX.syncKey) return;
   const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era,
     snapshot: pack({ ...home, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
-  try { await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now(); } catch { /* the next try */ }
+  try {
+    const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
+    if (r?.town && worldMode && S.world && r.town !== S.name) { S.name = r.town; refresh(); } // renamed (maybe from another phone)
+  } catch { /* the next try */ }
 }
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 async function warPoll(force) {
@@ -2427,8 +2520,11 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-23", world: "2026-12-23" },
+  v: { solo: "2026-12-24", world: "2026-12-24" },
   items: [
+    ["both", "🛣️", "رسم الطرق صار مستقيم", "اسحب إصبعك والطريق يمشي معك خط مستقيم، حتى لو يدك مايلة شوي، وما يفوّت ولا مربع. تبي تلف؟ حرّك إصبعك للجنب بوضوح ويسوي لك زاوية قايمة من مكانك. ونفس الشي بالترتيب."],
+    ["both", "🕰️", "اليوم صار نص ساعة", "يوم اللعبة صار ٣٠ دقيقة بدال ٢٠ (كل ساعة باللعبة دقيقة وربع)، فتلحق تبني وتشوف مدينتك بالنهار أكثر."],
+    ["world", "✏️", "اسم مدينتك بالجوف", "كل مدينة بالجوف لها اسم ما يتكرر: إذا الاسم مأخوذ يقولك اختر غيره. وتقدر تغيّر اسم مدينتك مرة وحدة بس من خريطة الجوف ← مدينتك ← «غيّر اسم مدينتك»، ويطلع الخبر بنشرة الجوف."],
     ["both", "📅", "فصول أطول", "كل فصل صار أسبوع كامل (٧ أيام) بدال ٣، والسنة ٢٨ يوم. اليوم نفسه ما تغيّر. ورمضان صار يومين، وكل عيد يوم كامل، ورسوم المحافظة السنوية زادت بقدر ما طالت السنة."],
     ["world", "🌍", "نشرة الجوف", "داخل «النشرة» صار فيه تبويب «نشرة الجوف»: أجواء الجوف الحين واللي جاي بالـ٤٨ ساعة (مطر، غبار، رمضان، العيد)، وأكبر المدن وأسعدها، وأخبار الجوف كلها: مدن جديدة، مدن كبرت، حروب وهدن وصلح وضربات. وتطلع لك نقطة إذا فيه خبر جديد."],
     ["both", "🌙", "رمضان بوقته", "رمضان صار يجي مرة بالسنة على تقويم ثابت (مو بالصدفة)، ويقعد يوم كامل من أيام اللعبة، وبعده عيد الفطر نص يوم، وعيد الأضحى بعده بأيام. وكل سنة يتقدم شوي فيمر على كل الفصول."],
@@ -3118,7 +3214,7 @@ function frame(now) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
     if (!paused && S.day < wh) runHour();
-    acc = Math.max(0, Math.min(HOUR_MS - 1, worldMsNow() % HOUR_MS));
+    acc = Math.max(0, Math.min(HOUR_MS - 1, (worldHours() % 1) * HOUR_MS));
   } else if (playing && !visiting && speed > 0 && !paused) {
     acc += dt * 1000 * speed;
     while (acc >= HOUR_MS) { acc -= HOUR_MS; runHour(); }

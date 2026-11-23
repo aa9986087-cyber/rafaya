@@ -33,6 +33,8 @@ export const ERAS = [
  * daylight: share of the day with the sun up (long summer days, long winter nights).
  */
 export const HOURS = 24;
+/** A town's name for comparing: two towns in al-Jouf may not share it (spaces, tatweel, hamzas, ة/ه and ى/ي, case all ignored). */
+export const townNameKey = (name) => String(name || "").toLowerCase().replace(/[\s_ـ]+/g, "").replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[\u064B-\u0652]/g, "");
 export const SEASON_DAYS = 7; // a week a season (was 3: the owner found the seasons and the year too short)
 export const SEASONS = [
   { id: "spring", name: "الربيع", daylight: 0.5, start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },

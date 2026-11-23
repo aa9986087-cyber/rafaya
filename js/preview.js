@@ -22,7 +22,7 @@ function pvNews(kind, text, plot = null, n = null) {
   pvState.news = pvState.news.slice(-300);
 }
 const pvWar = new WarServer(pvDb, pvWorld, { cfg: PV_CFG });
-const pvHour = () => Math.floor((Date.now() - Date.UTC(2026, 10, 1)) / 50000) + 3;
+const pvHour = () => Math.floor((Date.now() - Date.UTC(2026, 10, 1)) / 75000) + 3; // the trial's world is slow from its start
 
 /** A rival town with roads, homes, a power station, factories and a military base. */
 function pvTown(name, plot, owner, era, mil) {
@@ -116,7 +116,7 @@ async function pvApi(path, body) {
 }
 function pvRoute(p, body) {
   const post = !!body;
-  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2 };
+  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1) };
   if (!post && p[0].startsWith("chat")) {
     const after = Number((p[0].split("after=")[1]) || 0);
     pvState.chat ||= [];
@@ -146,6 +146,7 @@ function pvRoute(p, body) {
   if (p[0] === "claim") {
     if (me.plot != null) throw new Error("409");
     if (pvState.plots[body.plot]) throw new Error("409");
+    if (Object.values(pvState.plots).some((t) => townNameKey(t.town) === townNameKey(body.town))) throw new Error("422");
     me.plot = Number(body.plot);
     pvState.plots[me.plot] = { plot: me.plot, owner: me.name, town: body.town || "هجرة", terrain: body.terrain || "plain", pop: 9, happy: 55, money: 0, era: 0, updated: Date.now(), snapshot: "" };
     pvNews("town", `🏕️ تأسست «${pvState.plots[me.plot].town}» بأرض الجوف. حيّاهم الله`, me.plot, 0);
@@ -157,7 +158,18 @@ function pvRoute(p, body) {
     if ((body.era || 0) > (t.era || 0) && ERAS[body.era]) pvNews("era", `🏙️ «${t.town}» صارت ${ERAS[body.era].name}!`, me.plot, body.era);
     Object.assign(t, { pop: body.pop, happy: body.happy, money: body.money, era: body.era, updated: Date.now() });
     if (body.snapshot) t.snapshot = body.snapshot;
-    return { ok: true };
+    return { ok: true, town: t.town };
+  }
+  if (p[0] === "rename") {
+    const t = pvState.plots[me.plot], town = String(body.town || "").trim().slice(0, 20);
+    if (!t) throw new Error("400");
+    if (t.renamed) return { error: "غيّرت الاسم قبل، ما يتغير مرة ثانية" };
+    if (town.length < 2) return { error: "الاسم ما يصلح" };
+    if (townNameKey(town) === townNameKey(t.town)) return { error: "هذا نفس الاسم" };
+    if (Object.values(pvState.plots).some((o) => o.plot !== t.plot && townNameKey(o.town) === townNameKey(town))) return { error: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" };
+    pvNews("rename", `✏️ «${t.town}» صار اسمها «${town}»`, t.plot, 0);
+    t.town = town; t.renamed = 1;
+    return { ok: true, town };
   }
   if (p[0] === "town" && p[2] === "comment") { pvState.comments.push({ plot: Number(p[1]), author: me.name, text: String(body.text || "").slice(0, 200), at: Date.now() }); return { ok: true }; }
   if (p[0] === "chat") {

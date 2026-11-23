@@ -212,6 +212,19 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `calendarAt` scales with the year: Ramadan Y/14 (48 h), each Eid 24 h, Adha at 0.28 Y. Ramadan starts 0.115 Y earlier each year.
     - `PROVINCE_FEES` were scaled by SEASON_DAYS/3 to keep the same cost per hour. `springGreen` divides by 34·SEASON_DAYS/3. The «سنة كاملة» achievement uses YEAR_HOURS.
     - Old saves and the world: the season is worked out from the hour, so it can jump once when this goes live (for everyone in the world at the same time).
+34. **Straight roads, a 30-minute day, unique and renamable town names (owner, 2026-11-23):**
+    - Roads (building and arrange): `roadAim()` in main.js.
+      - The first move picks x or y, and the road stays on that line.
+      - It turns only on a clear sideways move (≥2 tiles off the line, and the finger's last tiles mostly sideways), from the corner.
+      - `roadStroke` rebuilds the stroke's pending tiles on every move; tiles pending before the stroke stay. `arrPaint` uses the same aim.
+      - The other painting tools use `stepTiles`, so nothing is skipped.
+    - Day: `HOUR_MS` 50 s → 75 s.
+      - World continuity: the server stores `meta.slow_at` the first time the new code answers /clock, and returns it as `slowAt`.
+      - The client's `worldHours()` counts 50 s hours before slowAt and 75 s after, so the world's hour never jumps. The trial is slow from its epoch.
+    - Names: `townNameKey()` (data.js) ignores spaces, `_`, tatweel, hamza forms, ة/ه, ى/ي and harakat.
+      - Claim refuses a taken name with 422. The client also checks the map first.
+      - `POST /api/world/rename` works once (column `plots.renamed`, added with ALTER TABLE). It writes a bulletin line.
+      - /sync now returns the town's name, so a rename reaches the other phone. The UI is a button on your own town's card in the al-Jouf map.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

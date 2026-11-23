@@ -4,11 +4,12 @@
 // at the owner's request; its "towns" table is left in place, unused.)
 //
 // The world of al-Jouf (one shared map; every player has a name and one plot with their town):
-//   GET  /api/world/clock                       → { epoch, now }   (the world's shared time)
+//   GET  /api/world/clock                       → { epoch, now, gen, slowAt }   (the world's shared time: 50 s an hour before slowAt, 75 s after)
 //   POST /api/world/join     { name }           → { name, secret, recovery }
 //   POST /api/world/recover  { name, recovery } → { name, secret }
 //   GET  /api/world/map                         → { plots: [...] }  (every claimed plot, no snapshots)
 //   POST /api/world/claim    { name, secret, plot, town, terrain } → { ok }
+//   POST /api/world/rename   { name, secret, town } → { ok, town } | { error }  (once per town; names are unique in al-Jouf)
 //   POST /api/world/sync     { name, secret, pop, happy, money, era, snapshot } → { ok }
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
@@ -20,7 +21,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
-import { ERAS } from "../js/data.js";
+import { ERAS, townNameKey } from "../js/data.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -61,6 +62,7 @@ export class Board extends DurableObject {
     // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
     this.sql.exec(`CREATE TABLE IF NOT EXISTS wnews (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, plot INTEGER, n INTEGER, text TEXT, at INTEGER)`);
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
@@ -93,6 +95,11 @@ export class Board extends DurableObject {
     }
   }
 
+  /** Is this town name already used in al-Jouf (by another plot)? */
+  nameTaken(town, plot = -1) {
+    const key = townNameKey(town);
+    return this.sql.exec("SELECT plot, town FROM plots").toArray().some((t) => t.plot !== plot && townNameKey(t.town) === key);
+  }
   /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
   news(kind, text, plot = null, n = null) {
     if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
@@ -104,7 +111,12 @@ export class Board extends DurableObject {
   async world(request, p) {
     if (!WORLD_OPEN && this.env?.WAR_TEST !== "1") return json({ error: "maintenance" }, 503); // local tests may open it
     const post = request.method === "POST", body = post ? await request.json() : {};
-    if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN });
+    if (!post && p[0] === "clock") {
+      // the day went from 20 to 30 minutes: hours before slowAt were 50 s, after it 75 s (set once, the first time this code runs)
+      let slowAt = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'slow_at'").toArray()[0]?.value || 0);
+      if (!slowAt) { slowAt = Date.now(); this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('slow_at', ?)", String(slowAt)); }
+      return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN, slowAt });
+    }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
       const messages = after > 0
@@ -118,7 +130,7 @@ export class Board extends DurableObject {
       return json({ items, now: Date.now() });
     }
     if (!post && p[0] === "map") {
-      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated FROM plots ORDER BY plot LIMIT 3000").toArray();
+      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
     }
     if (!post && p[0] === "town" && p[1]) {
@@ -151,6 +163,7 @@ export class Board extends DurableObject {
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);
       if (plot < 0 || plot >= 5000 || badText(town)) return json({ error: "bad" }, 400);
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", plot).toArray().length) return json({ error: "taken" }, 409);
+      if (this.nameTaken(town)) return json({ error: "name taken" }, 422); // every town in al-Jouf has its own name
       this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), Date.now());
       this.sql.exec("UPDATE players SET plot = ? WHERE name = ?", plot, name);
       this.news("town", `🏕️ تأسست «${town}» بأرض الجوف. حيّاهم الله`, plot, 0);
@@ -169,7 +182,21 @@ export class Board extends DurableObject {
       }
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
         int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
-      return json({ ok: true });
+      return json({ ok: true, town: was?.town });
+    }
+    if (p[0] === "rename") {
+      // the mayor may rename the town once
+      if (me.plot == null) return json({ error: "no town" }, 400);
+      const row = this.sql.exec("SELECT town, renamed FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const town = clean(body.town, 20);
+      if (!row) return json({ error: "no town" }, 400);
+      if (row.renamed) return json({ error: "غيّرت الاسم قبل، ما يتغير مرة ثانية" }, 200);
+      if (town.length < 2 || badText(town)) return json({ error: "الاسم ما يصلح" }, 200);
+      if (townNameKey(town) === townNameKey(row.town)) return json({ error: "هذا نفس الاسم" }, 200);
+      if (this.nameTaken(town, me.plot)) return json({ error: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" }, 200);
+      this.sql.exec("UPDATE plots SET town = ?, renamed = 1 WHERE plot = ?", town, me.plot);
+      this.news("rename", `✏️ «${row.town}» صار اسمها «${town}»`, me.plot, 0);
+      return json({ ok: true, town });
     }
     if (p[0] === "town" && p[2] === "comment") {
       const plot = int(p[1]), text = clean(body.text, 200);
