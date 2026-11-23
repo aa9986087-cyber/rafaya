@@ -120,6 +120,7 @@ body.arranging .dock, body.arranging .side, body.arranging .goal, body.arranging
 .arr-bar { display: flex; gap: 8px; justify-content: center; }
 .arr-bar button { flex: 1; max-width: 92px; height: 58px; border: 0; border-radius: 16px; background: #fbf3e2; color: var(--ink); font-size: 22px; font-weight: 800; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .6); }
 .arr-bar button small { font-size: 12px; font-weight: 700; }
+.arr-bar button.on { background: #6f6d43; color: #fff; }
 .arr-bar button.go { background: var(--teal); color: #fff; }
 .arr-bar button:disabled { opacity: .4; }
 .tool-chip button.rot { font-size: 20px; font-weight: 800; background: rgba(255, 255, 255, .22); }

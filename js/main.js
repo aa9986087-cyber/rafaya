@@ -300,7 +300,29 @@ function arrNext(id) {
   arrange.held = { b: arrange.tray[k], from: -1 };
   arrange.tray.splice(k, 1);
 }
+/** Every tile on the line from the last one the finger was on to this one (a fast finger skips tiles). */
+function arrLine(t) {
+  const a = drag.last || t, n = Math.max(Math.abs(t.x - a.x), Math.abs(t.y - a.y)), out = [];
+  for (let k = 1; k <= n; k++) out.push({ x: Math.round(a.x + (t.x - a.x) * k / n), y: Math.round(a.y + (t.y - a.y) * k / n) });
+  if (!n) out.push(t);
+  drag.last = t;
+  return out;
+}
+/** The road eraser: roads under the finger go back to the store, to be drawn again somewhere else. */
+function arrErase(t) {
+  for (const c of arrLine(t)) {
+    if (!inMap(c.x, c.y)) continue;
+    const i = idx(c.x, c.y), b = S.tiles[i].b;
+    if (!b || B[b.id].cat !== "road" || !arrMovable(b)) continue;
+    if (!drag.pushed) { arrPush(); drag.pushed = true; }
+    arrange.tray.push(b); S.tiles[i].b = null; sfx.road();
+  }
+  arrSync(); arrRender();
+}
 function arrPaint(t) {
+  for (const c of arrLine(t)) arrPaintOne(c);
+}
+function arrPaintOne(t) {
   const h = arrange.held;
   if (!h || !inMap(t.x, t.y) || drag.done.has(idx(t.x, t.y))) return;
   drag.done.add(idx(t.x, t.y));
@@ -378,11 +400,13 @@ function arrDown(e) {
   // so panning over a crowded town never picks up a building by mistake
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && i === arrange.sel && arrMovable(S.tiles[i].b) ? i : -1 };
   // a road from the tray: the finger lays road wherever it goes
+  if (arrange.erase && i >= 0) { drag.erase = true; drag.grab = -1; drag.last = t; arrErase(t); return; }
   const h = arrange.held;
-  if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0 && !S.tiles[i].b) { drag.paint = true; drag.grab = -1; arrPaint(t); }
+  if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0) { drag.paint = true; drag.grab = -1; drag.last = t; arrPaintOne(t); } // a road in hand: the finger draws it (busy tiles are skipped)
 }
 /** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
 function arrMove(e) {
+  if (drag.erase) { arrErase(world.pick(e.clientX, e.clientY)); return true; }
   if (drag.paint) { arrPaint(world.pick(e.clientX, e.clientY)); return true; }
   if (!drag.moved) return true;
   if (drag.grab >= 0 && !arrange.held) { arrLift(drag.grab); arrange.dragging = true; }
@@ -399,7 +423,7 @@ function arrMove(e) {
 }
 function arrUp(e) {
   const t = world.pick(e.clientX, e.clientY);
-  if (drag.paint) { arrRender(); return; }
+  if (drag.paint || drag.erase) { arrRender(); return; }
   if (arrange.held && arrange.dragging) { arrDrop(t); return; }
   if (drag.moved) return;
   if (arrange.held) { arrDrop(t); return; } // something from the tray: tap where it goes
@@ -420,16 +444,18 @@ function arrRender() {
   $("arrTray").hidden = !arrange.tray.length && !(arrange.held && arrange.held.from < 0);
   $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? (B[arrange.held.b.id].cat === "road" ? `اسحب إصبعك على الأرض وترصف «${B[arrange.held.b.id].name}» (باقي ${ar(1 + arrange.tray.filter((b) => b.id === arrange.held.b.id).length)})` : `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`)
     : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
+    : arrange.erase ? "اسحب إصبعك على الطرق وتنشال للمخزن. بعدها اختر الطريق من المخزن وارسمه بإصبعك."
     : sel != null ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه`
     : "اضغط على مبنى عشان تختاره، بعدها اسحبه بإصبعك لمكانه. حطه على مبنى ثاني ويتبادلون مكانهم.";
   $("arrRot").disabled = sel == null || !canTurn(S.tiles[sel]?.b?.id);
   $("arrUndo").disabled = !arrange.hist.length;
+  $("arrErase").classList.toggle("on", !!arrange.erase);
   $("arrTray").querySelectorAll("[data-k]").forEach((el) => el.addEventListener("click", () => {
     if (arrange.held && arrange.held.from < 0) arrange.tray.push(arrange.held.b);
     const k = Number(el.dataset.k), b = arrange.tray[k];
     arrPush();
     arrange.tray.splice(k, 1);
-    arrange.held = { b, from: -1 }; arrange.dragging = false; arrange.sel = null;
+    arrange.held = { b, from: -1 }; arrange.dragging = false; arrange.sel = null; arrange.erase = false;
     sfx.tap(); arrRender();
   }));
 }
@@ -437,6 +463,13 @@ $("arrRot").addEventListener("click", () => {
   const sel = arrange?.sel, b = sel != null && S.tiles[sel].b;
   if (!b || !canTurn(b.id)) return;
   arrPush(); b.rot = ((b.rot || 0) + 1) % 4; sfx.tap(); arrSync(); arrRender();
+});
+$("arrErase").addEventListener("click", () => {
+  if (!arrange) return;
+  sfx.tap();
+  if (arrange.held && arrange.held.from < 0) { arrange.tray.push(arrange.held.b); arrange.held = null; }
+  arrange.erase = !arrange.erase; arrange.sel = null;
+  arrRender();
 });
 $("arrAll").addEventListener("click", () => {
   if (!arrange) return;
@@ -2192,8 +2225,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-10", world: "2026-12-10" },
+  v: { solo: "2026-12-11", world: "2026-12-11" },
   items: [
+    ["both", "🛣️", "الطرق بالترتيب صارت رسم", "بوضع الترتيب: زر «امسح طرق» واسحب إصبعك على الطرق وتنشال كلها للمخزن، بعدها اختر الطريق من المخزن وارسمه بإصبعك وين تبي، بدون فراغات حتى لو سحبت بسرعة."],
     ["both", "🏙️", "مباني أوقع (المرحلة الأولى)", "الجدران صار فيها ملمس لياسة حقيقي، والحواف ناعمة تلقط الضوء، والشبابيك والألواح الشمسية زجاج يعكس السماء، والرمل فيه حبيبات. وانشال «وقت العالم» و«وش الجديد» من شاشة اللعب (وش الجديد باقي بالقائمة الرئيسية)."],
     ["both", "🌍", "زر الجوف على الشاشة", "خريطة عالم الجوف صار لها زر «الجوف» على جنب الشاشة، حتى وأنت تلعب فردي، بدون ما تطلع للقائمة."],
     ["both", "🧱", "«المكان مشغول» صار يوضح", "إذا ما قدرت تبني بمكان، تعرف وش اللي فيه (مثلاً «كسارة حجر»)، والصخور ما عاد تعلّق فوق المباني."],

@@ -151,6 +151,8 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `mats.matte` has the CC0 plaster normal map. The ground and the desert have the grain normal map. `shiny` reflects the sky too.
     - **Next stages:** detailed houses and shops, cars, palms and trees, people, roads with kerbs.
 
+21. **Roads in the layout editor (owner: «اذا جيت بحط طريق معاناه»):** a «امسح طرق» button (`#arrErase`, `arrange.erase`) lifts every road the finger slides over into the tray (`arrErase`, one undo step per slide). A road taken from the tray is drawn by sliding (`arrPaint` → `arrLine` fills the tiles a fast finger skips; busy tiles are skipped), even when the slide starts on a busy tile.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
