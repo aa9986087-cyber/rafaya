@@ -735,8 +735,8 @@ export class World {
       const colors = ["#f4f4f2", "#f4f4f2", "#e9e1cf", "#c3c6ca", "#f4f4f2", "#a8322a", "#2c3e63", "#d9c39a"];
       for (let i = 0; i < 40; i++) this.carMesh.setColorAt(i, new THREE.Color(colors[i % colors.length]));
       const trim = model("pickupTrim");
-      this.carTrim = ["matte", "shiny", "lights"].filter((k) => trim[k]).map((k) => new THREE.InstancedMesh(trim[k], this.mats[k], 40));
-      for (const m of [this.carMesh, ...this.carTrim]) { m.castShadow = m.material !== this.mats.lights && this.quality !== "low"; m.frustumCulled = false; m.count = 0; this.scene.add(m); }
+      this.carTrim = SETS.filter((k) => trim[k]).map((k) => new THREE.InstancedMesh(trim[k], this.mats[k], 40));
+      for (const m of [this.carMesh, ...this.carTrim]) { m.castShadow = m.material !== this.mats.lights && m.material !== this.mats.glow && this.quality !== "low"; m.frustumCulled = false; m.count = 0; this.scene.add(m); }
     }
     this.carsWanted = want;
     while (this.cars.length < want && this.roads.length) {

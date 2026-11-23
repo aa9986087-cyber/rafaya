@@ -159,6 +159,8 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Bloom only on «عالية». Medium pixel ratio is back to 1.5.
     - Pushed to main with everything since step 18.
 
+23. **Realistic graphics, stage 2:** `palm()` has a ringed trunk, 11 arching fronds (3 parts each, rising then drooping: angle `e`) with leaflets, and date clusters. The pickup body is rounded (`rbox` in the matte set, painted per car); its trim has tyres, metal rims, glass, glowing lamps and mirrors. `carTrim` uses all `SETS`. **Next:** houses and shops in more detail, people, kerbs.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

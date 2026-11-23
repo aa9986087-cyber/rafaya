@@ -132,18 +132,33 @@ export function oliveTree(b, x, z, s = 1) {
   b.add(new THREE.IcosahedronGeometry(0.065 * s, 0), "#6e8a4e", { x: x - 0.05 * s, y: 0.19 * s, z: z - 0.04 * s, sy: 0.8 });
 }
 export function palm(b, x, z, s = 1, lean = 0) {
-  const segs = 6, h = 0.62 * s;
+  // a date palm: a ringed trunk (the old frond bases), a crown of arching fronds with leaflets, dates under it
+  const segs = 7, h = 0.62 * s;
   for (let i = 0; i < segs; i++) {
-    const t = i / segs, r = 0.03 * s * (1 - t * 0.35);
-    b.cyl(r * 0.92, r, h / segs + 0.01, i % 2 ? C.trunk : "#6b4a2b", { x: x + lean * t * t * 0.2, y: t * h, z }, 6);
+    const t = i / segs, r = 0.032 * s * (1 - t * 0.3);
+    b.cyl(r * 0.9, r * 1.05, h / segs + 0.006, i % 2 ? C.trunk : "#6b4a2b", { x: x + lean * t * t * 0.2, y: t * h, z }, 7);
+    b.cyl(r * 1.12, r * 1.12, 0.012, "#5c3f24", { x: x + lean * t * t * 0.2, y: t * h + h / segs - 0.006, z }, 7);
   }
   const top = { x: x + lean * 0.2, y: h, z };
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2, droop = 0.55 + (i % 3) * 0.12;
-    b.add(new THREE.BoxGeometry(0.34 * s, 0.012, 0.07 * s), i % 2 ? C.leaf : C.leafDark,
-      { x: top.x + Math.cos(a) * 0.15 * s, y: top.y - 0.04 * s, z: top.z + Math.sin(a) * 0.15 * s, ry: -a, rz: -droop });
+  const fronds = 11;
+  for (let i = 0; i < fronds; i++) {
+    const a = (i / fronds) * Math.PI * 2 + (i % 2) * 0.15, up = i % 3 === 0 ? 0.25 : 0; // a few young fronds stand up
+    // e: how steeply each part of the frond points up (it rises a little, then arches over and down)
+    let px = top.x, py = top.y + 0.01, pz = top.z, e = 0.55 + up;
+    for (let k = 0; k < 3; k++) {
+      const len = 0.13 * s, cx = Math.cos(a), cz = Math.sin(a);
+      const dx = cx * Math.cos(e) * len, dy = Math.sin(e) * len, dz = cz * Math.cos(e) * len;
+      const shade = k === 2 ? C.leafDark : i % 2 ? C.leaf : "#357d38";
+      b.add(new THREE.BoxGeometry(len, 0.006, 0.012 * s), "#6f8f3a", { x: px + dx / 2, y: py + dy / 2, z: pz + dz / 2, ry: -a, rz: e });
+      b.add(new THREE.BoxGeometry(len * 1.02, 0.004, (0.075 - k * 0.018) * s), shade, { x: px + dx / 2, y: py + dy / 2 - 0.004, z: pz + dz / 2, ry: -a, rz: e, rx: 0.35 });
+      px += dx; py += dy; pz += dz;
+      e -= 0.55; // each part bends further down
+    }
   }
-  for (let i = 0; i < 3; i++) b.add(new THREE.SphereGeometry(0.035 * s, 5, 4), C.orange, { x: top.x + Math.cos(i * 2.1) * 0.05 * s, y: top.y - 0.06 * s, z: top.z + Math.sin(i * 2.1) * 0.05 * s });
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.6 + 0.4;
+    for (let k = 0; k < 3; k++) b.add(new THREE.SphereGeometry(0.02 * s, 6, 4), k ? "#c46a1c" : C.orange, { x: top.x + Math.cos(a) * 0.05 * s + (k - 1) * 0.012, y: top.y - 0.05 * s - k * 0.018, z: top.z + Math.sin(a) * 0.05 * s });
+  }
 }
 
 function tree(b, x, z, s = 1) {
@@ -994,27 +1009,30 @@ const MAKERS = {
     b.box(0.018, 0.02, 0.008, "#a3542e", { x: -0.004, y: 0.05, z: 0.043 });                        // a handbag
   },
   // ---- the pickup (جيب حوض): body takes the per-car colour; trim keeps its own ----
+  // A pickup (جيب حوض) along +x: a rounded body with a sloped bonnet and wheel arches (painted per car),
+  // and its trim: tyres with rims, glass, lamps, bumpers and the bed.
   pickupBody(b) {
-    b.box(0.27, 0.045, 0.12, C.white, { y: 0.022 });                          // chassis and sides
-    b.box(0.07, 0.022, 0.118, C.white, { x: 0.1, y: 0.066 });                 // bonnet
-    b.box(0.095, 0.058, 0.116, C.white, { x: 0.02, y: 0.066 });               // cab
-    b.box(0.1, 0.03, 0.008, C.white, { x: -0.083, y: 0.066, z: 0.056 });       // bed sides
-    b.box(0.1, 0.03, 0.008, C.white, { x: -0.083, y: 0.066, z: -0.056 });
-    b.box(0.008, 0.03, 0.12, C.white, { x: -0.131, y: 0.066 });                // tailgate
+    b.rbox(0.27, 0.04, 0.122, 0.012, C.white, { y: 0.026 }, "matte");                      // the body
+    b.rbox(0.075, 0.03, 0.118, 0.01, C.white, { x: 0.096, y: 0.056 }, "matte");            // bonnet
+    b.add(new THREE.BoxGeometry(0.03, 0.02, 0.116), C.white, { x: 0.065, y: 0.078, rz: -0.5 }); // windscreen frame
+    b.rbox(0.1, 0.058, 0.118, 0.016, C.white, { x: 0.012, y: 0.06 }, "matte");             // the cab
+    for (const z of [0.058, -0.058]) b.rbox(0.105, 0.032, 0.008, 0.003, C.white, { x: -0.083, y: 0.062, z }, "matte"); // bed sides
+    b.rbox(0.008, 0.032, 0.12, 0.003, C.white, { x: -0.133, y: 0.062 }, "matte");         // tailgate
   },
   pickupTrim(b) {
     for (const [x, z] of [[0.085, 0.058], [0.085, -0.058], [-0.08, 0.058], [-0.08, -0.058]]) {
-      b.cyl(0.026, 0.026, 0.022, "#1d1d1f", { x, y: 0.026 - 0.011, z, rx: Math.PI / 2 }, 10);
-      b.cyl(0.012, 0.012, 0.024, "#b9bcc0", { x, y: 0.026 - 0.012, z, rx: Math.PI / 2 }, 8);
+      b.add(new THREE.CylinderGeometry(0.026, 0.026, 0.024, 14), "#1b1b1d", { x, y: 0.024, z, rx: Math.PI / 2 }, "matte");
+      b.add(new THREE.CylinderGeometry(0.014, 0.014, 0.026, 10), "#c9ccd0", { x, y: 0.024, z, rx: Math.PI / 2 }, "metal");
     }
-    b.add(new THREE.BoxGeometry(0.004, 0.042, 0.104), "#2a3b47", { x: 0.069, y: 0.098, rz: 0.35 }, "shiny");   // windscreen
-    for (const z of [0.0585, -0.0585]) b.box(0.06, 0.03, 0.003, "#2a3b47", { x: 0.02, y: 0.078, z }, "shiny"); // side windows
-    b.box(0.004, 0.028, 0.1, "#2a3b47", { x: -0.028, y: 0.078 }, "shiny");                                       // back window
-    b.box(0.098, 0.004, 0.104, "#3a3632", { x: -0.083, y: 0.046 });                                              // bed floor
-    b.box(0.006, 0.02, 0.07, "#2b2b2e", { x: 0.136, y: 0.03 });                                                 // grille
-    for (const z of [0.045, -0.045]) { b.box(0.004, 0.012, 0.02, "#fff6d8", { x: 0.137, y: 0.034, z }, "lights"); b.box(0.004, 0.014, 0.012, "#d23a2a", { x: -0.136, y: 0.06, z }); }
-    b.box(0.006, 0.012, 0.124, "#9a9da1", { x: 0.138, y: 0.012 });                                              // bumpers
-    b.box(0.006, 0.012, 0.124, "#9a9da1", { x: -0.137, y: 0.012 });
+    b.add(new THREE.BoxGeometry(0.004, 0.044, 0.104), "#22303a", { x: 0.066, y: 0.1, rz: 0.4 }, "glass");   // windscreen
+    for (const z of [0.0595, -0.0595]) b.box(0.07, 0.03, 0.003, "#22303a", { x: 0.014, y: 0.078, z }, "glass"); // side windows
+    b.box(0.004, 0.028, 0.1, "#22303a", { x: -0.039, y: 0.078 }, "glass");                                       // back window
+    b.box(0.1, 0.004, 0.104, "#3a3632", { x: -0.083, y: 0.048 });                                                // bed floor
+    b.box(0.006, 0.022, 0.07, "#2b2b2e", { x: 0.135, y: 0.034 }, "metal");                                       // grille
+    for (const z of [0.045, -0.045]) { b.box(0.004, 0.012, 0.022, "#fff6d8", { x: 0.137, y: 0.042, z }, "glow"); b.box(0.004, 0.016, 0.012, "#d23a2a", { x: -0.137, y: 0.064, z }, "glow"); }
+    b.box(0.008, 0.014, 0.126, "#9a9da1", { x: 0.139, y: 0.016 }, "metal");                                      // bumpers
+    b.box(0.008, 0.014, 0.126, "#9a9da1", { x: -0.139, y: 0.016 }, "metal");
+    for (const z of [0.062, -0.062]) b.box(0.008, 0.006, 0.01, "#1b1b1d", { x: 0.058, y: 0.082, z });           // mirrors
   },
   // A small desert acacia (طلح/سمر): low, wide and close to the ground, as in the Rafaya plains.
   acacia(b) {
