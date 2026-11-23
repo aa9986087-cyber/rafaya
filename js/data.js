@@ -50,7 +50,9 @@ export const CATS = [
   { id: "serv", name: "خدمات" },
   { id: "road", name: "طرق" },
   { id: "deco", name: "زينة" },
-  { id: "proj", name: "مشاريع كبرى" }
+  { id: "proj", name: "مشاريع كبرى" },
+  // only in the world of al-Jouf (see js/war.js): never shown or buildable in a solo town
+  { id: "mil", name: "الدفاع والعسكرية", worldOnly: true }
 ];
 
 /*
@@ -140,6 +142,15 @@ export const B = {
   skyline: { cat: "proj", visitors: true, name: "أبراج الرافعية", cost: 140000, upkeep: 380, era: 4, unique: true, buildHours: 240, jobs: 400, radius: 16, happy: 20, income: 1300, water: -20, power: -40, text: "مركز مال وأعمال بأبراج زجاج: تاج الحاضرة." },
   airport: { cat: "proj", visitors: true, name: "مطار الرافعية", cost: 45000, upkeep: 160, era: 3, unique: true, buildHours: 168, jobs: 150, radius: 10, happy: 8, income: 900, water: -10, power: -30, pollute: 4, text: "رحلات داخلية تربط الرافعية بالمملكة. أكبر مشروع في المحافظة." },
 
+  // Defence (world of al-Jouf only). Levels, capacities and the rest of the war rules are in MIL below and js/war.js.
+  // hq: everything military needs the command centre first; max: how many a town may have.
+  milhq: { cat: "mil", worldOnly: true, unique: true, name: "مركز القيادة العسكرية", cost: 2500, upkeep: 15, era: 1, power: -4, text: "قلب القوة العسكرية: منه تدير الترسانة والدفاع والعمليات والعلاقات مع المدن. كل شي عسكري يحتاجه أول." },
+  dronebase: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "قاعدة المسيّرات", cost: 1200, upkeep: 10, era: 1, power: -3, text: "هنقر يجهّز المسيّرات ويخزنها ويطلقها. كل تطوير يزيد السعة ويفتح مسيّرات أقوى." },
+  radar: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "محطة الرادار والإنذار المبكر", cost: 1000, upkeep: 8, era: 1, power: -6, text: "رادار يدور طول الوقت: يرصد الهجمات قبل وصولها ويرفع دقة الدفاع الجوي. بدونه الدفاع شبه أعمى." },
+  airdef: { cat: "mil", worldOnly: true, hq: true, max: 4, name: "بطارية الدفاع الجوي", cost: 1600, upkeep: 12, era: 1, power: -3, text: "تعترض الصواريخ والمسيّرات الجاية لمدينتك بذخيرة اعتراضية تشتريها. كل مستوى أدق وأقوى ضد الصواريخ." },
+  missilepad: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "منصة الصواريخ", cost: 3000, upkeep: 20, era: 2, power: -5, text: "منصة إطلاق صواريخ بعيدة المدى، تنرفع قبل الإطلاق وتنجهز بعده. كل تطوير يزيد الصواريخ ويقصّر وقت التجهيز." },
+  armory: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "مستودع الذخائر", cost: 1500, upkeep: 5, era: 1, text: "يزيد سعة تخزين المسيّرات والصواريخ والذخيرة الاعتراضية ٥٠٪، ويعرض المخزون كله." },
+
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 110, text: "أنظف وأحسن من الترابي، ويشيل ضعف السيارات." },
   avenue: { cat: "road", name: "شارع رئيسي", cost: 60, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 300, text: "مسارين بكل اتجاه وجزيرة نخل بالنص. يشيل زحمة كبيرة: حطه على الطرق اللي توصل الحارات بالشغل." },
@@ -187,7 +198,32 @@ export const BIZ_UP = [
   { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, happy: 1.7, radius: 2, era: 1 },
   { cost: 2.6, income: 3.3, jobs: 2.3, upkeep: 2.7, happy: 2.1, radius: 3, era: 3 }
 ];
-export const bizLevel = (b) => BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0] || BIZ_UP[0];
+export const bizLevel = (b) => (MIL[b?.id] ? MIL_UP[b.lvl || 0] : BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0]) || BIZ_UP[0];
+
+/**
+ * Military buildings (world of al-Jouf only) grow in up to three levels. Each level: its name, the
+ * stage the town needs, and what it does (read by js/war.js on the server and in the game).
+ *   milhq: ops = operations in the air at once, guard = extra interception chance
+ *   dronebase: cap = drones stored, salvo = drones in one operation, reload = minutes before the next launch
+ *   missilepad: cap = missiles, reload = minutes
+ *   radar: detect = how much it sharpens the air defence
+ *   airdef: vsDrone / vsMissile = interception chance, intc = interceptors it holds
+ *   armory: store = × storage of everything
+ */
+export const MIL = {
+  milhq: [{ name: "مركز قيادة صغير", era: 1, ops: 1, guard: 0.02 }, { name: "مقر قيادة متطور", era: 2, ops: 2, guard: 0.04 }, { name: "قيادة عسكرية إقليمية", era: 3, ops: 3, guard: 0.06 }],
+  dronebase: [{ name: "هنقر مسيّرات", era: 1, cap: 2, salvo: 2, reload: 4 }, { name: "قاعدة مسيّرات", era: 2, cap: 4, salvo: 3, reload: 3 }, { name: "قاعدة مسيّرات كبرى", era: 3, cap: 6, salvo: 4, reload: 2 }],
+  missilepad: [{ name: "منصة صواريخ", era: 2, cap: 1, reload: 8 }, { name: "منصة صواريخ مزدوجة", era: 2, cap: 2, reload: 6 }, { name: "مجمع صواريخ", era: 3, cap: 3, reload: 4 }],
+  radar: [{ name: "رادار إنذار", era: 1, detect: 0.85 }, { name: "رادار بعيد المدى", era: 2, detect: 1 }, { name: "منظومة رادار متقدمة", era: 3, detect: 1.12 }],
+  airdef: [{ name: "دفاع جوي قصير المدى", era: 1, vsDrone: 0.4, vsMissile: 0.15, intc: 4 }, { name: "دفاع جوي متوسط المدى", era: 2, vsDrone: 0.52, vsMissile: 0.35, intc: 8 }, { name: "دفاع جوي متقدم", era: 3, vsDrone: 0.62, vsMissile: 0.5, intc: 12 }],
+  armory: [{ name: "مستودع الذخائر", era: 1, store: 1.5 }]
+};
+/** A military level's price (× the building's price) and running costs (× its upkeep); nothing else changes. */
+export const MIL_UP = [
+  { cost: 0, income: 1, jobs: 1, upkeep: 1, happy: 1, radius: 0 },
+  { cost: 1.5, income: 1, jobs: 1, upkeep: 1.6, happy: 1, radius: 0 },
+  { cost: 3, income: 1, jobs: 1, upkeep: 2.4, happy: 1, radius: 0 }
+];
 
 // The five prayers, by the town's hour (hour 0 is sunrise; D is the hours of daylight that season).
 export const PRAYERS = [

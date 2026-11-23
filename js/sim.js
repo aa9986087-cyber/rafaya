@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -139,9 +139,12 @@ export function cantBuild(s, x, y, id) {
   if (!inMap(x, y)) return "خارج الأرض";
   const t = s.tiles[idx(x, y)];
   if (!owns(s, x, y)) return "الأرض هذي مو لك: اضغط عليها عشان تشتريها";
+  if (def.worldOnly && !s.world) return "هذا بعالم الجوف بس";
   if (def.era > s.era) return `تحتاج الرافعية تصير ${ERAS[def.era].name}`;
   if (!techUnlocked(s, def)) return `تحتاج بحث «${TECH[def.tech].name}»`;
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
+  if (def.hq && !s.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة العسكرية أول";
+  if (def.max && s.tiles.filter((t) => t.b?.id === id).length >= def.max) return `الحد ${def.max} بالمدينة`;
   if (t.b) {
     // a better road can be laid over an old one
     if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
@@ -451,6 +454,7 @@ export function moveBlocker(s, fx, fy, tx, ty) {
   if (!from) return "ما فيه مبنى هنا";
   if (ROAD_IDS.includes(from.id)) return "الطرق ما تنقل: أزلها وارسمها من جديد";
   if (from.build > 0) return "تحت الإنشاء: انتظر لين يخلص";
+  if (from.wd > 0) return "فيه ضرر عسكري: أصلحه قبل تنقله";
   if (!inMap(tx, ty)) return "خارج الأرض";
   if (!owns(s, tx, ty)) return "الأرض هذي مو لك";
   const t = s.tiles[idx(tx, ty)];
@@ -510,7 +514,9 @@ export function demolish(s, x, y) {
 /** Buildings that wear out (roads and tents do not; tents are mended by their families). */
 const wears = (b) => b && !ROAD_IDS.includes(b.id) && b.id !== "parking" && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
 /** A worn building (below the WEAK line) works at 60%. */
-export const condFactor = (b) => ((b?.cond ?? 100) < UPKEEP_RULES.weak ? 0.6 : 1);
+export const condFactor = (b) => ((b?.cond ?? 100) < UPKEEP_RULES.weak ? 0.6 : 1) * warWorks(b?.wd);
+/** War damage (world of al-Jouf, kept apart from wear in b.wd, 0 … 100) slows a building; from 85 it stands idle. */
+export const warWorks = (wd) => (!wd ? 1 : wd >= 85 ? 0 : 1 - wd * 0.007);
 /** What it costs to bring a building back to new. */
 export const repairCost = (b) => (wears(b) ? Math.round(B[b.id].cost * UPKEEP_RULES.repair * (100 - (b.cond ?? 100)) / 100) : 0);
 export function repair(s, x, y) {
@@ -560,7 +566,7 @@ export function analyze(s) {
   const a = {
     count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: B.house.levels.map(() => 0),
     waterSupply: 0, waterUse: 0, powerSupply: 0, powerUse: 0, cap: 0, jobs: 0, income: 0, farmIncome: 0,
-    upkeep: 0, costs: { services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0, insurance: 0, health: 0, theft: 0 },
+    upkeep: 0, costs: { military: 0, services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0, insurance: 0, health: 0, theft: 0 },
     value: 0, repairBill: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
     services: Array.from({ length: N * N }, () => new Set())
   };
@@ -608,7 +614,7 @@ export function analyze(s) {
     if (gw) a.groundSupply += def.water * f * a.groundFactor;
     if (def.water > 0) a.waterSupply += def.water * f * (gw ? a.groundFactor : 1); else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
     if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
-    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : "services"] += (def.upkeep || 0) * up.upkeep;
+    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : def.cat === "mil" ? "military" : "services"] += (def.upkeep || 0) * up.upkeep;
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
@@ -809,7 +815,7 @@ export function houseBlocker(s, a, x, y) {
 }
 
 /** Building materials the next level needs. */
-export const upgradeMats = (b) => (b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : 0);
+export const upgradeMats = (b) => (b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : MIL[b?.id] ? MAT.biz[b.lvl + 2] || 0 : 0);
 /** Everything the next level costs now: money, plus whatever materials are short, bought from outside. */
 export function upgradePrice(s, b) {
   const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0));
@@ -824,12 +830,22 @@ function payUpgrade(s, b) {
 }
 /** What the next level of this house costs (0 at the top). */
 export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
+  : MIL[b?.id] ? (MIL[b.id][b.lvl + 1] ? Math.round(B[b.id].cost * MIL_UP[b.lvl + 1].cost) : 0)
   : BIZ_LEVELS[b?.id] && BIZ_UP[b.lvl + 1] ? Math.round(B[b.id].cost * BIZ_UP[b.lvl + 1].cost) : 0);
-/** Can this building be upgraded at all (a house, a farm, a shop, a workshop)? */
-export const upgradable = (b) => b?.id === "house" || !!BIZ_LEVELS[b?.id];
+/** Can this building be upgraded at all (a house, a farm, a shop, a workshop, a military building with levels)? */
+export const upgradable = (b) => b?.id === "house" || !!BIZ_LEVELS[b?.id] || (MIL[b?.id]?.length || 0) > 1;
 /** Why this farm, shop or workshop cannot move up a level now, or "". */
 export function bizBlocker(s, a, x, y) {
   const b = s.tiles[idx(x, y)]?.b;
+  if (b && MIL[b.id]) {
+    const next = MIL[b.id][b.lvl + 1];
+    if (!next) return "أعلى مستوى";
+    if (b.build > 0) return "تحت الإنشاء";
+    if (b.wd > 0) return "فيه ضرر عسكري: أصلحه أول";
+    if ((b.cond ?? 100) < 40) return "رمّمه أول";
+    if (s.era < next.era) return `يحتاج تصير ${ERAS[next.era].name}`;
+    return "";
+  }
   if (!b || !BIZ_LEVELS[b.id]) return "ما يتطور";
   const next = BIZ_UP[b.lvl + 1];
   if (!next) return "أعلى مستوى";
@@ -865,6 +881,10 @@ export function upgradeEffect(s, b) {
     const capNow = Math.round(now.cap * concrete), capNext = Math.round(next.cap * concrete);
     return { house: true, capNow, capNext, taxGain: (capNext - capNow) * perHead };
   }
+  if (MIL[b.id]) {
+    if (!MIL[b.id][b.lvl + 1]) return null;
+    return { mil: true, upkeepNow: (def.upkeep || 0) * MIL_UP[b.lvl].upkeep, upkeepNext: (def.upkeep || 0) * MIL_UP[b.lvl + 1].upkeep, now: MIL[b.id][b.lvl], next: MIL[b.id][b.lvl + 1] };
+  }
   if (!BIZ_LEVELS[b.id] || !BIZ_UP[b.lvl + 1]) return null;
   const u0 = bizLevel(b), u1 = BIZ_UP[b.lvl + 1];
   return {
@@ -879,7 +899,7 @@ export function upgradeEffect(s, b) {
 /** Upgrade whatever is on this tile. */
 export const upgradeAt = (s, x, y, a = analyze(s)) => (s.tiles[idx(x, y)]?.b?.id === "house" ? upgradeHouse(s, x, y, a) : upgradeBiz(s, x, y, a));
 /** The name of a building at its level. */
-export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
+export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : MIL[b.id]?.length > 1 ? MIL[b.id][b.lvl]?.name || B[b.id].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
 
 /** The mayor upgrades a house one level. Returns why not, or "". */
 export function upgradeHouse(s, x, y, a = analyze(s)) {
@@ -1234,7 +1254,7 @@ export function deputyCatchUp(s, hours, r = Math.random) {
 // ---------- saving ----------
 
 export function pack(s) {
-  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}${t.b.rot ? `:${t.b.rot}` : ""}` : ""));
+  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}${t.b.rot || t.b.wd ? `:${t.b.rot || 0}` : ""}${t.b.wd ? `:${Math.round(t.b.wd * 10) / 10}` : ""}` : ""));
   const { tiles: _, ...rest } = s;
   return JSON.stringify({ ...rest, tiles });
 }
@@ -1268,12 +1288,13 @@ export function unpack(text) {
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
-    const [t, id, lvl, res, build, cond, rot] = String(str).split(":");
+    const [t, id, lvl, res, build, cond, rot, wd] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
     const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it
+    if (b && Number(wd) > 0) b.wd = Math.min(100, Number(wd)); // war damage (world of al-Jouf), kept by the server
     return { t: ground, b };
   });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));

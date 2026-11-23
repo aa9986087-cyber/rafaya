@@ -13,7 +13,10 @@
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
+//   POST /api/world/war/ACTION { name, secret, ... }   → «صراع الجوف», decided here (see js/warserver.js):
+//        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
+import { WarServer, sqlWarDb } from "../js/warserver.js";
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -50,14 +53,20 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS plots (plot INTEGER PRIMARY KEY, owner TEXT, town TEXT, terrain TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
       this.sql.exec("DELETE FROM plots");
       this.sql.exec("DELETE FROM players");
       this.sql.exec("DELETE FROM reports");
       this.sql.exec("DELETE FROM comments WHERE code GLOB 'w[0-9]*'"); // world towns' comments are "w<plot>"; GLOB is case-sensitive, so the old 6-letter codes stay
+      this.sql.exec("DELETE FROM war");
       this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
     }
+    this.war = new WarServer(warDb, {
+      town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
+      player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
+    });
   }
 
   async fetch(request) {
@@ -85,7 +94,7 @@ export class Board extends DurableObject {
       const town = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0];
       if (!town) return json({ error: "no such town" }, 404);
       const comments = this.sql.exec("SELECT author, text, at FROM comments WHERE code = ? ORDER BY id DESC LIMIT 30", `w${plot}`).toArray();
-      return json({ town, comments });
+      return json({ town, comments, damage: this.war.publicDamage(plot) });
     }
     if (post && p[0] === "join") {
       const name = clean(body.name, 16);
@@ -129,6 +138,11 @@ export class Board extends DurableObject {
       this.sql.exec("INSERT INTO comments (code, author, text, at) VALUES (?, ?, ?, ?)", `w${plot}`, name, text, Date.now());
       this.sql.exec("DELETE FROM comments WHERE code = ? AND id NOT IN (SELECT id FROM comments WHERE code = ? ORDER BY id DESC LIMIT 100)", `w${plot}`, `w${plot}`);
       return json({ ok: true });
+    }
+    if (p[0] === "war" && p[1]) {
+      const who = this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0];
+      const res = this.war.handle(p[1], body, who);
+      return json(res, res.error === "not found" ? 404 : 200); // a refusal comes back as { error: "why, in Arabic" }
     }
     if (p[0] === "report") {
       this.sql.exec("INSERT INTO reports (plot, by, reason, at) VALUES (?, ?, ?, ?)", int(body.plot), name, clean(body.reason, 200), Date.now());

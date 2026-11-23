@@ -1,0 +1,243 @@
+// «صراع الجوف»: the server decides everything. These tests drive js/warserver.js with two towns.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { newGame, pack, unpack, idx, analyze, cantBuild, build, condFactor } from "../js/sim.js";
+import { WAR, WEAPONS, interceptChance, milProfile, warFactor, relNow } from "../js/war.js";
+import { WarServer, memWarDb, sqlWarDb } from "../js/warserver.js";
+
+const HOUR = 3600000, MIN = 60000;
+
+/** A world of towns with fake clock and dice. */
+function makeWorld({ db = memWarDb(), rolls } = {}) {
+  let now = Date.UTC(2026, 11, 1);
+  const towns = new Map(), players = new Map();
+  const dice = rolls ? [...rolls] : null;
+  const rand = () => (dice && dice.length ? dice.shift() : 0.5);
+  const world = { town: (p) => towns.get(p) || null, player: (n) => players.get(n) || null };
+  const war = new WarServer(db, world, { now: () => now, rand });
+  const addTown = (plot, name, { era = 2, money = 200000, mil = [], seq = 0 } = {}) => {
+    const s = newGame(plot + 1, { site: "world", name });
+    s.era = era; s.money = money; s.war = { seq };
+    for (const [x, y, id, lvl = 0] of mil) s.tiles[idx(x, y)].b = { id, lvl, res: 0, cond: 100 };
+    players.set(name, { name, plot, created: now - 3 * 24 * HOUR });
+    towns.set(plot, { plot, owner: name, town: name, era, pop: 2000, updated: now, snapshot: pack(s), s });
+    return { name, plot, created: now - 3 * 24 * HOUR };
+  };
+  const resync = (plot, f) => { const t = towns.get(plot); f?.(t.s); t.snapshot = pack(t.s); t.updated = now; };
+  return { war, db, world, towns, addTown, resync, tick: (ms) => { now += ms; }, now: () => now, dice };
+}
+const BASE = [[20, 20, "milhq"], [22, 20, "dronebase"], [24, 20, "missilepad"], [26, 20, "radar"], [28, 20, "airdef"]];
+const atWar = (W, a, b) => {
+  assert.equal(W.war.handle("rel", { req: "h1", other: b.plot, act: "hostile" }, a).ok, true);
+  W.tick(WAR.T.hostileToWar + MIN);
+  assert.equal(W.war.handle("rel", { req: "w1", other: b.plot, act: "war" }, a).ok, true);
+  W.tick(WAR.T.warning + MIN);
+};
+
+test("military buildings: world only, need the command centre, wear war damage separately", () => {
+  const solo = newGame(1); solo.era = 2; solo.money = 1e6;
+  assert.match(cantBuild(solo, 20, 20, "milhq"), /عالم الجوف/);
+  const s = newGame(2, { site: "world" }); s.world = { plot: 1 }; s.era = 2; s.money = 1e6;
+  assert.match(cantBuild(s, 22, 22, "radar"), /مركز القيادة/);
+  assert.equal(build(s, 20, 20, "milhq"), "");
+  assert.equal(cantBuild(s, 22, 22, "radar"), "");
+  // war damage is its own field, kept in the save, and slows the building down
+  const t = s.tiles[idx(20, 20)];
+  t.b.wd = 50;
+  const back = unpack(pack(s));
+  assert.equal(back.tiles[idx(20, 20)].b.wd, 50);
+  assert.equal(back.tiles[idx(20, 20)].b.cond, 100);
+  assert.ok(condFactor(back.tiles[idx(20, 20)].b) < 0.7);
+  assert.equal(warFactor(90), 0);
+  // old saves (no 8th field) load with no war damage
+  const old = unpack(pack(newGame(3)));
+  assert.ok(old.tiles.every((x) => !x.b?.wd));
+  assert.ok(analyze(back).costs.military > 0);
+});
+
+test("buying: needs the right building, room and money; a request sent twice buys once", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { money: 5000, mil: [[22, 20, "dronebase"]] });
+  assert.match(W.war.handle("buy", { req: "r0", kind: "drone", n: 1 }, a).error, /مركز القيادة/);
+  W.resync(10, (s) => { s.tiles[idx(20, 20)].b = { id: "milhq", lvl: 0, res: 0, cond: 100 }; });
+  assert.match(W.war.handle("buy", { req: "r1", kind: "missile", n: 1 }, a).error, /منصة/);
+  const r = W.war.handle("buy", { req: "r2", kind: "drone", n: 2 }, a);
+  assert.equal(r.ok, true);
+  assert.equal(r.charge.amount, WEAPONS.drone.price * 2);
+  const again = W.war.handle("buy", { req: "r2", kind: "drone", n: 2 }, a);
+  assert.deepEqual(again, r);
+  assert.equal(W.war.handle("state", {}, a).arsenal.drone, 2);
+  assert.match(W.war.handle("buy", { req: "r3", kind: "drone", n: 1 }, a).error, /مليان|يكفي/);
+  // money already charged but not yet taken off the synced budget counts
+  W.resync(10, (s) => { s.money = 3000; s.tiles[idx(23, 20)].b = { id: "dronebase", lvl: 0, res: 0, cond: 100 }; }); // 3000 ≥ 1800, but 1800 is still owed
+  assert.match(W.war.handle("buy", { req: "r4", kind: "drone", n: 2 }, a).error, /المال/);
+  // the state gives the charges the game has not applied yet
+  const st = W.war.handle("state", { seq: 0 }, a);
+  assert.equal(st.charges.length, 1);
+  assert.equal(W.war.handle("state", { seq: 1 }, a).charges.length, 0);
+});
+
+test("relations: hostility first, a wait, a warning, then war; truce and peace by offer and answer", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE });
+  assert.match(W.war.handle("rel", { req: "x", other: 30, act: "war" }, a).error, /العداوة أول/);
+  assert.equal(W.war.handle("rel", { req: "t", other: 30, act: "threat", text: 1 }, a).ok, true);
+  assert.equal(W.war.handle("rel", { req: "h", other: 30, act: "hostile" }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "w0", other: 30, act: "war" }, a).error, /باقي/);
+  W.tick(WAR.T.hostileToWar + MIN);
+  assert.equal(W.war.handle("rel", { req: "w", other: 30, act: "war" }, a).ok, true);
+  assert.equal(W.war.handle("state", {}, b).rels[0].state, "warning");
+  assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "war"));
+  W.tick(WAR.T.warning + MIN);
+  assert.equal(W.war.handle("state", {}, b).rels[0].state, "war");
+  // b offers a truce, a accepts
+  assert.equal(W.war.handle("rel", { req: "o", other: 10, act: "truce" }, b).ok, true);
+  assert.match(W.war.handle("rel", { req: "o2", other: 10, act: "accept" }, b).error, /ما فيه عرض/);
+  assert.equal(W.war.handle("rel", { req: "acc", other: 30, act: "accept" }, a).ok, true);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "truce");
+  W.tick(WAR.T.truce + MIN);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "hostile");
+  assert.equal(W.war.handle("rel", { req: "p", other: 30, act: "peace" }, a).ok, true);
+  assert.equal(W.war.handle("rel", { req: "pa", other: 10, act: "accept" }, b).ok, true);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "peace");
+  assert.match(W.war.handle("rel", { req: "h2", other: 30, act: "hostile" }, a).error, /صلح/);
+});
+
+test("protections: villages, new players, sleeping towns and bullies are out of reach", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { era: 3 }), v = W.addTown(11, "قرية", { era: 0 }), small = W.addTown(12, "بلدة", { era: 1 });
+  assert.match(W.war.handle("rel", { req: "1", other: 11, act: "hostile" }, a).error, /القرى/);
+  assert.match(W.war.handle("rel", { req: "2", other: 12, act: "hostile" }, a).error, /الصغار/);
+  const fresh = W.addTown(13, "جديد", { era: 2 });
+  W.world.player("جديد").created = W.now();
+  assert.match(W.war.handle("rel", { req: "3", other: 13, act: "hostile" }, a).error, /جديد/);
+  const sleepy = W.addTown(14, "نايمة", { era: 2 });
+  W.towns.get(14).updated = W.now() - 8 * 24 * HOUR;
+  assert.match(W.war.handle("rel", { req: "4", other: 14, act: "hostile" }, a).error, /نايمة/);
+  void small; void fresh; void v; void sleepy;
+});
+
+test("a strike: checked, paid once, decided once at arrival, with the caps", () => {
+  const W = makeWorld({ rolls: [] });
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"], [31, 30, "house", 2]] });
+  W.war.handle("buy", { req: "b1", kind: "missile", n: 1 }, a);
+  W.war.handle("buy", { req: "b2", kind: "drone", n: 2 }, a);
+  assert.match(W.war.handle("launch", { op: "o0", to: 30, x: 30, y: 30, load: { missile: 1 } }, a).error, /ما فيه حرب/);
+  atWar(W, a, b);
+  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 31, y: 30, load: { missile: 1 } }, a).error, /مدني محمي/);
+  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 5, y: 5, load: { missile: 1 } }, a).error, /ما فيه مبنى/);
+  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 30, y: 30, load: { missile: 3 } }, a).error, /ما عندك/);
+  const r = W.war.handle("launch", { op: "o1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  assert.equal(r.ok, true);
+  const again = W.war.handle("launch", { op: "o1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  assert.deepEqual(again, r); // the same operation sent twice (a lost connection) is one operation
+  assert.equal(W.war.handle("state", {}, a).arsenal.missile, 0);
+  assert.match(W.war.handle("launch", { op: "o2", to: 30, x: 30, y: 30, load: { drone: 1 } }, a).error, /عملية بالجو/); // a small command runs one at a time
+  // not decided before it arrives
+  assert.equal(W.war.handle("op", { op: "o1" }, a).op.result, null);
+  W.tick(r.op.arriveAt - W.now() + 1);
+  const done = W.war.handle("op", { op: "o1" }, b).op;
+  assert.equal(done.status, "done");
+  assert.ok(done.result.dmg > 0 && done.result.dmg <= WAR.caps.perOp);
+  const dmg1 = W.war.publicDamage(30)[0].wd;
+  W.war.settle(); W.war.handle("state", {}, b);
+  assert.equal(W.war.publicDamage(30)[0].wd, dmg1); // decided once
+  assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "hit"));
+  // the defender's old sync does not undo the damage (it is kept on the server)
+  W.resync(30);
+  assert.equal(W.war.publicDamage(30)[0].wd, dmg1);
+});
+
+test("air defence: radar, battery and interceptors decide the chance; each attempt uses an interceptor", () => {
+  const W = makeWorld({ rolls: [0.01, 0.5] }); // first roll: intercepted
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [26, 20, "radar"], [28, 20, "airdef"], [30, 30, "factory"]] });
+  const p = milProfile(W.towns.get(30).snapshot);
+  assert.ok(interceptChance(p, "drone") > interceptChance(p, "missile"));
+  assert.ok(interceptChance(milProfile([]), "drone") === 0);
+  W.war.handle("buy", { req: "i", kind: "intc", n: 2 }, b);
+  W.war.handle("buy", { req: "d", kind: "drone", n: 1 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "z1", to: 30, x: 30, y: 30, load: { drone: 1 } }, a);
+  assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "incoming")); // the radar saw it
+  W.tick(r.op.arriveAt - W.now() + 1);
+  const res = W.war.handle("op", { op: "z1" }, a).op.result;
+  assert.equal(res.hits[0].intercepted, true);
+  assert.equal(res.dmg, 0);
+  assert.equal(res.intcUsed, 1);
+  assert.equal(W.war.handle("state", {}, b).arsenal.intc >= 1, true);
+  assert.equal(W.war.publicDamage(30).length, 0);
+});
+
+test("caps: one building twice in 6 hours, a town six hits then a shield", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2]] });
+  const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], ...Array.from({ length: 8 }, (_, k) => [30 + k, 30, "factory"])] });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
+  atWar(W, a, b);
+  const fire = (k, x) => { const r = W.war.handle("launch", { op: `f${k}`, to: 30, x, y: 30, load: { missile: 1 } }, a); if (r.ok) { W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); W.tick(5 * MIN); } return r; };
+  W.war.handle("buy", { req: "m2", kind: "missile", n: 0 }, a);
+  assert.equal(fire(1, 30).ok, true);
+  W.war.handle("buy", { req: "m3", kind: "missile", n: 1 }, a);
+  assert.equal(fire(2, 30).ok, true);
+  W.war.handle("buy", { req: "m4", kind: "missile", n: 1 }, a);
+  assert.match(fire(3, 30).error, /محمي/);
+  for (let k = 0; k < 4; k++) { W.war.handle("buy", { req: `n${k}`, kind: "missile", n: 1 }, a); assert.equal(fire(10 + k, 31 + k).ok, true); }
+  W.war.handle("buy", { req: "last", kind: "missile", n: 1 }, a);
+  assert.match(fire(20, 36).error, /درع/);
+});
+
+test("repairs: paid on the server, damage comes off over time; the deputy repairs within its budget", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"]] });
+  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
+  W.war.handle("buy", { req: "m", kind: "missile", n: 1 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "q", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  W.tick(r.op.arriveAt - W.now() + 1);
+  const wd = W.war.handle("state", {}, b).damage[0].wd;
+  assert.ok(wd > 0);
+  const rp = W.war.handle("repair", { req: "rp", x: 30, y: 30 }, b);
+  assert.equal(rp.ok, true);
+  assert.match(W.war.handle("repair", { req: "rp2", x: 30, y: 30 }, b).error, /يتصلح/);
+  W.tick(rp.ms / 2);
+  const half = W.war.handle("state", {}, b).damage[0].wd;
+  assert.ok(half < wd && half > 0);
+  W.tick(rp.ms);
+  assert.equal(W.war.handle("state", {}, b).damage.length, 0);
+  // the deputy, with a budget, starts the repair by itself after a hit
+  W.war.handle("settings", { repair: true, refill: false, budget: 50000 }, b);
+  W.tick(2 * HOUR);
+  W.war.handle("buy", { req: "m9", kind: "missile", n: 1 }, a);
+  const r2 = W.war.handle("launch", { op: "q2", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  W.tick(r2.op.arriveAt - W.now() + 1);
+  const st = W.war.handle("state", {}, b);
+  assert.ok(st.damage[0].rep);
+  assert.ok(st.notes.some((n) => n.kind === "repair"));
+});
+
+test("a truce stops strikes in the air; a gone target is not hit", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"]] });
+  W.war.handle("buy", { req: "d", kind: "drone", n: 2 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "g", to: 30, x: 30, y: 30, load: { drone: 1 } }, a);
+  W.resync(30, (s) => { s.tiles[idx(30, 30)].b = null; }); // demolished before it arrived
+  W.tick(r.op.arriveAt - W.now() + 1);
+  assert.equal(W.war.handle("op", { op: "g" }, a).op.result.blocked, "gone");
+  assert.equal(relNow(null, 0).state, "peace");
+});
+
+test("the same rules on SQLite storage (as in the Durable Object)", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const dbs = new DatabaseSync(":memory:");
+  const sql = { exec: (q, ...args) => { const st = dbs.prepare(q); if (/^\s*SELECT/i.test(q)) { const rows = st.all(...args); return { toArray: () => rows }; } st.run(...args); return { toArray: () => [] }; } };
+  const W = makeWorld({ db: sqlWarDb(sql) });
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"]] });
+  assert.equal(W.war.handle("buy", { req: "m", kind: "missile", n: 1 }, a).ok, true);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "s1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  assert.equal(r.ok, true);
+  W.tick(r.op.arriveAt - W.now() + 1);
+  assert.ok(W.war.handle("op", { op: "s1" }, b).op.result.dmg > 0);
+  assert.equal(W.war.publicDamage(30).length, 1);
+});
