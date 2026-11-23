@@ -72,6 +72,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
      | transit | road capacity ×1.3 |
      | wind | unlocks windfarm |
 
+9. **Solo town → world.** In the world map, an empty plot offers «انقل مدينتك الفردية لهنا». The town's owner card has «📦 انقل مدينة فردية مكانها», which asks twice before replacing the world town.
+   - `soloTowns()` reads the solo saves: الرافعية and the region towns.
+   - `worldCopy()` clones the town onto the world clock (day = world hour, `site` "world", `world.from`) and clears posts, promises and the pending decision. Buildings, people, money, loans, tech and land are kept.
+   - The solo town stays (it is a copy).
+   - Caveat: a player could swap the solo copy in again to restore money. Not blocked.
+
 **Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

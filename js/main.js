@@ -1350,11 +1350,12 @@ async function worldMapSheet(pick) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
         <div class="rows">${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
-        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>` : `<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
+        <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button><button class="btn block" id="wmSwap" type="button">📦 انقل مدينة فردية مكانها</button>` : `<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
-          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
+          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>
+          ${soloTowns().length ? `<h3>📦 أو انقل مدينتك الفردية لهنا</h3><p class="hint">تعبت على مدينتك؟ انقلها بكل مبانيها وناسها وفلوسها، ومدينتك الفردية تبقى بعد.</p><div class="rows">${soloTowns().map(soloRow).join("")}</div>` : ""}` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
   sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
@@ -1368,6 +1369,20 @@ async function worldMapSheet(pick) {
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
+  $("wmSwap")?.addEventListener("click", () => worldSwapSheet());
+  $("sheetBody").querySelectorAll(".rg-card [data-from]").forEach((b) => b.addEventListener("click", async () => {
+    const solo = soloTowns().find((o) => o.site === b.dataset.from);
+    if (!solo) return;
+    const town = (solo.s.name || "الرافعية").slice(0, 20);
+    try {
+      await api("/world/claim", { name: id.name, secret: id.secret, plot: sel, town, terrain: solo.s.terrain || worldTerrain(sel) });
+      store.set(WORLD_ID, JSON.stringify({ ...id, plot: sel }));
+      store.set(WORLD_SAVE, pack(worldCopy(solo.s, sel, id.name)));
+      sfx.era(); toast(`انتقلت «${town}» لعالم الجوف 🎉`, "era");
+      await enterWorldTown();
+
+    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط النقل", "bad"); worldMapSheet(); }
+  }));
   $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
   $("wmReport")?.addEventListener("click", async () => {
     try { await api("/world/report", { name: id?.name, secret: id?.secret, plot: sel, reason: "اسم أو كلام مسيء" }); toast("وصل البلاغ، شكرًا", "goal"); } catch { toast("سجّل اسمك أول", "bad"); }
@@ -1384,6 +1399,51 @@ async function worldMapSheet(pick) {
       sfx.era(); toast(`تأسست «${town}» في عالم الجوف! 🎉`, "era");
       enterWorldTown();
     } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
+  });
+}
+// ---------- bringing a solo town into the world ----------
+/** The towns played alone on this phone (الرافعية and the region's towns), newest first. */
+function soloTowns() {
+  if (!worldMode && playing) save(); // the town on screen, as it is now
+  const ids = [...new Set(["main", ...SITES.map((x) => x.id), ...Object.keys(RG?.towns || {})])];
+  const out = [];
+  for (const site of ids) {
+    const raw = store.get(townKey(site));
+    if (!raw) continue;
+    try { const s = unpack(raw); if (s.day > 3 || s.pop > 0) out.push({ site, s }); } catch { /* a broken save is skipped */ }
+  }
+  return out.sort((p, q) => (q.s.savedAt || 0) - (p.s.savedAt || 0));
+}
+/**
+ * A copy of a solo town made ready for the world: it joins the world's clock (seasons and the year go
+ * on from there), and what was waiting on the old clock (posts, promises, a pending decision) is cleared.
+ * Buildings, people, money, loans, research and land all come along. The solo town stays as it is.
+ */
+function worldCopy(solo, plot, owner) {
+  const s = unpack(pack(solo));
+  const now = worldHourNow();
+  Object.assign(s, { day: now, site: "world", world: { plot, owner, start: now, from: solo.site || "main" }, news: [], promises: [], comebacks: [], decision: null, cam: null, savedAt: Date.now(), newsUnread: 0 });
+  s.events = (s.events || []).filter((e) => !e.repay); // loans are kept in s.loans; one-off events end
+  return s;
+}
+const soloRow = (o) => `<button class="row link" type="button" data-from="${o.site}"><span><b>${o.s.name || "الرافعية"}</b><small>${ERAS[o.s.era || 0].name} · ${money(o.s.pop)} ساكن · ${money(Math.round(o.s.money))} ريال</small></span><b>←</b></button>`;
+/** Swap your world town for one of your solo towns (asked twice: the world town is replaced). */
+function worldSwapSheet(pick) {
+  const id = me(), list = soloTowns();
+  const chosen = pick && list.find((o) => o.site === pick);
+  sheet(`<h2>📦 انقل مدينتك الفردية للعالم</h2>
+    ${!list.length ? `<p class="hint">ما لقيت مدن فردية بهالجوال.</p>` : chosen ? `
+      <div class="need">مدينتك اللي بعالم الجوف الحين بتروح، وتنحط مكانها «${chosen.s.name || "الرافعية"}» بكل مبانيها وناسها وفلوسها. متأكد؟</div>
+      <div class="sheet-actions keep"><button class="btn go block" id="wsYes" type="button">إيه، انقلها</button><button class="btn block" id="wsNo" type="button">لا، رجعني</button></div>`
+      : `<p>اختر المدينة اللي تبي تنقلها. تنحط بأرضك بالعالم (مكان مدينتك الحالية)، ومدينتك الفردية تبقى مثل ما هي.</p><div class="rows">${list.map(soloRow).join("")}</div>`}`, "world");
+  $("sheetBody").querySelectorAll("[data-from]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); worldSwapSheet(b.dataset.from); }));
+  $("wsNo")?.addEventListener("click", () => worldSwapSheet());
+  $("wsYes")?.addEventListener("click", async () => {
+    const s = worldCopy(chosen.s, id.plot, id.name);
+    store.set(WORLD_SAVE, pack(s));
+    sfx.era(); toast(`انتقلت «${s.name || "الرافعية"}» لعالم الجوف 🎉`, "era");
+    await enterWorldTown();
+
   });
 }
 /** Play your own town in the world: the deputy's report first if you were away. */
@@ -1561,8 +1621,9 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-29",
+  v: "2026-11-30",
   items: [
+    ["📦", "انقل مدينتك لعالم الجوف", "تعبت على مدينتك بالفردي؟ بخريطة الجوف اضغط أرض فاضية واختر «انقل مدينتك الفردية لهنا»، وتنتقل بكل مبانيها وناسها وفلوسها. واللي عنده مدينة بالعالم يقدر يبدلها. ومدينتك الفردية تبقى مثل ما هي."],
     ["🧪", "بحوث جديدة بالمجلس", "١٤ بحث جديد: الزراعة الحديثة، عصر الزيتون، تغذية الماء الجوفي، تصريف السيول، تدوير المياه، ترشيد الكهرباء، التسويق، الطب الوقائي، الكاميرات الأمنية، اللوجستية، الحكومة الإلكترونية، إحياء التراث، النقل العام، وطاقة الرياح."],
     ["🛣️", "الطرق تنشال بالترتيب", "«شيل الكل» يشيل الطرق والزفلت بعد، وترصفها من جديد بسحب إصبعك على الأرض."],
     ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
