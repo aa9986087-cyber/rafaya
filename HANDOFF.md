@@ -84,7 +84,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Buttons get `appearance: none` and no padding so Safari matches Chrome.
     - To test the notch in Playwright, override `--top`/`--bottom`/`--left`/`--right` on `:root` (Chromium reports no safe areas).
 
-**Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
+11. **🛠️ The al-Jouf world is CLOSED for maintenance (owner asked, 2026-11-23: «ابيك تقفل الاولاين صيانه لاني بشتغل عليه كثير»).**
+    - Switch: `const WORLD_OPEN = false` in `src/worker.js`. Every `/api/world/*` answers 503 `{error:"maintenance"}`; nothing in the world tables is touched.
+    - The client shows `worldClosedSheet()` (main.js) on «🌍 عالم الجوف» and on the world map. Solo play and the old `/api/publish` board still work.
+    - **To reopen:** set `WORLD_OPEN = true`, remove the «تحت الصيانة» line from `WHATS_NEW` (add a «رجع العالم» one), push to main.
+    - Whole-site maintenance is a different switch (the `MAINTENANCE` file, see copy-site.mjs); it is NOT on.
+
+**Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
 - A staging copy of the site plus an admin page to moderate world reports.

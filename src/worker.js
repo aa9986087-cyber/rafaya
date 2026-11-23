@@ -27,6 +27,10 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
 // The world's clock started here; every town's hour is counted from it (50 seconds an hour).
 const WORLD_EPOCH = Date.UTC(2026, 10, 1);
+// Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
+// { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
+// the solo game and the old /api/publish leaderboard keep working. Set back to true to reopen.
+const WORLD_OPEN = false;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 const BAD = ["كلب", "حمار", "زق", "خرا", "سكس", "شرموط", "قحب", "fuck", "shit", "sex"];
 const badText = (t) => BAD.some((w) => t.toLowerCase().includes(w));
@@ -67,6 +71,7 @@ export class Board extends DurableObject {
 
   // ---------- the world of al-Jouf ----------
   async world(request, p) {
+    if (!WORLD_OPEN) return json({ error: "maintenance" }, 503);
     const post = request.method === "POST", body = post ? await request.json() : {};
     if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now() });
     if (!post && p[0] === "map") {

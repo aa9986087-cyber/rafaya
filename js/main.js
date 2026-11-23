@@ -1095,7 +1095,7 @@ const onlineOk = () => location.protocol.startsWith("http") && !location.hostnam
 const myKey = () => `rafaya-online-${S.site || "main"}`;
 async function api(path, body) {
   const r = await fetch(API + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
-  if (!r.ok) throw new Error(String(r.status));
+  if (!r.ok) throw new Error(r.status === 503 ? "maintenance" : String(r.status));
   return r.json();
 }
 let boardBy = "pop";
@@ -1237,8 +1237,19 @@ addEventListener("pagehide", () => worldSync(true));
 document.addEventListener("visibilitychange", () => { if (document.hidden) worldSync(true); });
 
 /** The way into the world: a name first, then the map. */
+/** The world is closed for maintenance (the server answers 503): say so, and that nothing is lost. */
+function worldClosedSheet() {
+  sheet(`<h2>🛠️ عالم الجوف تحت الصيانة</h2>
+    <p>نشتغل على عالم الجوف ونضيف له أشياء جديدة، وبيرجع قريب إن شاء الله.</p>
+    <div class="rows"><div class="row"><span>مدينتك بالعالم</span><b>محفوظة ✓</b></div><div class="row"><span>اللعب الفردي</span><b>شغال عادي</b></div></div>
+    <p class="hint">إذا رجع العالم، يمسك نائب العمدة مدينتك عن الأيام اللي فاتت مثل العادة.</p>`, "world");
+}
+async function worldIsClosed() {
+  try { await api("/world/clock"); return false; } catch (e) { return e.message === "maintenance"; }
+}
 async function openWorld() {
   if (!onlineOk()) { toast("عالم الجوف يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev", "bad"); return; }
+  if (await worldIsClosed()) { worldClosedSheet(); return; }
   await loadClock();
   if (!me()) { worldJoinSheet(); return; }
   worldMapSheet();
@@ -1346,7 +1357,7 @@ async function worldMapSheet(pick) {
   worldPick = pick ?? worldPick;
   const id = me();
   let plots = [];
-  try { plots = (await api("/world/map")).plots; } catch { toast("ما قدرت أوصل للسيرفر", "bad"); return; }
+  try { plots = (await api("/world/map")).plots; } catch (e) { if (e.message === "maintenance") worldClosedSheet(); else toast("ما قدرت أوصل للسيرفر", "bad"); return; }
   const byPlot = new Map(plots.map((p) => [p.plot, p]));
   const { cols, rows } = WORLD, cell = 5;
   const colors = { mountain: "#b9a58a", plain: "#e6cf9c", bigwadi: "#c9b878", wadi: "#d8c38e", dunes: "#efc98a", meadow: "#b8c27a" };
@@ -1637,8 +1648,9 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-30",
+  v: "2026-12-01",
   items: [
+    ["🛠️", "عالم الجوف تحت الصيانة", "قفلنا عالم الجوف فترة عشان نشتغل عليه ونضيف له أشياء جديدة. مدنكم فيه محفوظة، واللعب الفردي شغال عادي."],
     ["📦", "انقل مدينتك لعالم الجوف", "تعبت على مدينتك بالفردي؟ بخريطة الجوف اضغط أرض فاضية واختر «انقل مدينتك الفردية لهنا»، وتنتقل بكل مبانيها وناسها وفلوسها. واللي عنده مدينة بالعالم يقدر يبدلها. ومدينتك الفردية تبقى مثل ما هي."],
     ["🧪", "بحوث جديدة بالمجلس", "١٤ بحث جديد: الزراعة الحديثة، عصر الزيتون، تغذية الماء الجوفي، تصريف السيول، تدوير المياه، ترشيد الكهرباء، التسويق، الطب الوقائي، الكاميرات الأمنية، اللوجستية، الحكومة الإلكترونية، إحياء التراث، النقل العام، وطاقة الرياح."],
     ["🛣️", "الطرق تنشال بالترتيب", "«شيل الكل» يشيل الطرق والزفلت بعد، وترصفها من جديد بسحب إصبعك على الأرض."],
