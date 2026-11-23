@@ -121,7 +121,14 @@ function topics(s, a, season, f) {
   // Season and weather
   if (season.id === "spring" && f.faydaGreen > 0 && springGreen(s) < 0.6) add("season", -1, 4, [`mubarak:الربيع هالسنة ضعيف، الوسم ما نزل والفيضة ما اخضرت مثل كل سنة. الحلال بيحتاج علف.`]);
   if (season.id === "spring" && f.faydaGreen > 0 && springGreen(s) >= 0.6) add("fayda", 1, 5, [`الفيضة اخضرّت ونوّرت الخزامى! الإبل شبعت والناس طلعوا يكشتون. لا تبنون عليها تكفون.`, `haya:الله على ريحة الخزامى بالفيضة العصر. هالربيع خير.`]);
-  if (season.id === "summer") add("season", -1, 3, [`الحر لاهب، والبيوت تبي ماء أكثر بالصيف. زيدوا الآبار قبل لا ينقص الماء.`, `abufahad:بالقايلة ما أحد يطلع والشارع فاضي لين المغرب، والبيع واقف. لو فيه مقهى أو مكان يجتمع فيه الناس بالليل، تتحرك البلد.`]);
+  if (season.id === "summer") {
+    // the same complaint must not argue with what is happening: Ramadan nights are busy, and a town with a café or park has its evening place
+    const ramadan = s.events.some((e) => e.id === "ramadan"), hangout = (a.count.cafe || 0) + (a.count.park || 0) > 0;
+    add("season", -1, 3, [`الحر لاهب، والبيوت تبي ماء أكثر بالصيف. زيدوا الآبار قبل لا ينقص الماء.`,
+      ...(ramadan ? [`abufahad:صيام وحر! بالنهار الشارع فاضي، والبركة بعد التراويح.${hangout ? "" : " لو فيه مقهى أو حديقة يجتمع فيها الناس بعد الفطور، تتحرك البلد أكثر."}`]
+        : hangout ? []
+        : [`abufahad:بالقايلة ما أحد يطلع والشارع فاضي لين المغرب، والبيع واقف. لو فيه مقهى أو مكان يجتمع فيه الناس بالليل، تتحرك البلد.`])]);
+  }
   if (season.id === "winter" && f.tents >= 3) add("season", -1, 4, [`umsaad:البرد قارص والخيام ما تدفّي. متى نسكن بيوت طين؟`]);
   if (season.id === "autumn" && f.palms >= 1) add("dates", 1, 3, [`abukhalid:بدا الصرام! تمر هالسنة ممتاز، السكري والخلاص ما شاء الله.`]);
   for (const e of s.events) {

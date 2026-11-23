@@ -423,9 +423,9 @@ export const EVENTS = [
   { id: "cold", name: "موجة برد", text: "برد قارس: الناس يدفّون بالدفايات والحطب، والكهرباء عليها ضغط.", days: 24, seasons: { winter: 3 }, happy: -4, power: 0.9 },
   { id: "locust", name: "جراد", text: "سرب جراد نزل على المزارع! المحصول بيقل يوم كامل.", days: 24, seasons: { spring: 2 }, farm: 0.4 },
   { id: "drought", name: "جفاف", text: "ما نزل مطر من زمان والآبار نقصت. وفّروا الماء.", days: 36, seasons: { summer: 3, autumn: 1 }, water: 0.7 },
-  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 72, seasons: { spring: 1, summer: 1, autumn: 1, winter: 1 }, shop: 1.3, happy: 8 },
-  { id: "eid", name: "عيد الفطر", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, seasons: {}, happy: 15, shop: 1.2 },
-  { id: "adha", name: "عيد الأضحى", text: "عيد الأضحى مبارك! الأضاحي والزيارات في كل البيوت.", days: 24, seasons: { spring: 0.7, summer: 0.7, autumn: 0.7, winter: 0.7 }, happy: 12, shop: 1.15 },
+  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 24, seasons: { spring: 1, summer: 1, autumn: 1, winter: 1 }, shop: 1.3, happy: 8 },
+  { id: "eid", name: "عيد الفطر", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 12, seasons: {}, happy: 15, shop: 1.2 },
+  { id: "adha", name: "عيد الأضحى", text: "عيد الأضحى مبارك! الأضاحي والزيارات في كل البيوت.", days: 12, seasons: { spring: 0.7, summer: 0.7, autumn: 0.7, winter: 0.7 }, happy: 12, shop: 1.15 },
   { id: "dates", name: "موسم الصرام", text: "موسم الصرام! أسعار التمور فوق.", days: 36, seasons: { summer: 2, autumn: 3 }, farm: 1.4 },
   { id: "visit", name: "زيارة المحافظ", text: "المحافظ زار البلد وأعجبه، وصرف دعم.", days: 1, seasons: { spring: 1, summer: 0.6, autumn: 1, winter: 1 }, gift: true },
   { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 36, seasons: { spring: 2, autumn: 2, winter: 1 }, tech: "tourism", shop: 1.6, happy: 10 }
@@ -513,7 +513,10 @@ export const DECISIONS = [
       { label: "اعطهم العلاوة", note: "رواتب البلدية +١٥٪ دايم", raise: 0.15, boost: { name: "الموظفين مبسوطين", hours: 24, happy: 3 } },
       { label: "ارفض", note: "إضراب يوم كامل: المساجد والمدارس والمستوصفات تقفل", boost: { name: "إضراب الموظفين", hours: 24, strike: true, happy: -6 } }
     ] },
-  { id: "needy", weight: 3, title: "عوايل محتاجة", text: "فيه عوايل بالرافعية ما عندها تدفئة ولا أكل يكفي. أهل الخير يطالبون البلدية تساهم.",
+  { id: "needy", weight: 3, title: "عوايل محتاجة", text: (s, season) => season.id === "winter" ? "فيه عوايل بالرافعية ما عندها تدفئة ولا أكل يكفي بهالبرد. أهل الخير يطالبون البلدية تساهم."
+      : s.events.some((e) => e.id === "ramadan") ? "رمضان شهر الخير، وفيه عوايل بالرافعية ما عندها فطور وسحور يكفيها. أهل الخير يطالبون البلدية تساهم بسلال رمضان."
+      : season.id === "summer" ? "فيه عوايل بالرافعية ما عندها مكيف ولا أكل يكفي بهالحر. أهل الخير يطالبون البلدية تساهم."
+      : "فيه عوايل بالرافعية ما عندها اللي يكفيها. أهل الخير يطالبون البلدية تساهم.",
     when: (s, a, season) => (season.id === "winter" || s.events.some((e) => e.id === "ramadan")) && s.pop >= 50,
     options: [
       { label: "ادعمهم", note: "ريالين عن كل ساكن، والرضا +٨ يومين", costPer: { people: 2 }, boost: { name: "دعم المحتاجين", hours: 48, happy: 8 } },

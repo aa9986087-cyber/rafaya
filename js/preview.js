@@ -11,8 +11,16 @@ const pvSave = () => { try { localStorage.setItem(PV_KEY, JSON.stringify({ ...pv
 const pvDb = memWarDb(pvState.war);
 const pvWorld = {
   town: (plot) => { const t = pvState.plots[plot]; return t ? { ...t } : null; },
-  player: (name) => pvState.players[name] || null
+  player: (name) => pvState.players[name] || null,
+  news: (kind, text, plot) => pvNews(kind, text, plot)
 };
+/** The trial's world bulletin, like the live one (src/worker.js news()). */
+function pvNews(kind, text, plot = null, n = null) {
+  pvState.news ||= [];
+  if (n != null && pvState.news.some((x) => x.kind === kind && x.plot === plot && x.n === n)) return;
+  pvState.news.push({ id: (pvState.news[pvState.news.length - 1]?.id || 0) + 1, kind, plot, n, text, at: Date.now() });
+  pvState.news = pvState.news.slice(-300);
+}
 const pvWar = new WarServer(pvDb, pvWorld, { cfg: PV_CFG });
 const pvHour = () => Math.floor((Date.now() - Date.UTC(2026, 10, 1)) / 50000) + 3;
 
@@ -114,6 +122,11 @@ function pvRoute(p, body) {
     pvState.chat ||= [];
     return { messages: after ? pvState.chat.filter((m) => m.id > after) : pvState.chat.slice(-50), now: Date.now() };
   }
+  if (!post && p[0].startsWith("news")) {
+    pvState.news ||= [];
+    if (!pvState.news.length) for (const t of Object.values(pvState.plots)) pvNews("town", `🏕️ تأسست «${t.town}» بأرض الجوف. حيّاهم الله`, t.plot, 0);
+    return { items: pvState.news.slice(-60).reverse(), now: Date.now() };
+  }
   if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t) };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];
@@ -135,11 +148,13 @@ function pvRoute(p, body) {
     if (pvState.plots[body.plot]) throw new Error("409");
     me.plot = Number(body.plot);
     pvState.plots[me.plot] = { plot: me.plot, owner: me.name, town: body.town || "هجرة", terrain: body.terrain || "plain", pop: 9, happy: 55, money: 0, era: 0, updated: Date.now(), snapshot: "" };
+    pvNews("town", `🏕️ تأسست «${pvState.plots[me.plot].town}» بأرض الجوف. حيّاهم الله`, me.plot, 0);
     return { ok: true, plot: me.plot };
   }
   if (p[0] === "sync") {
     const t = pvState.plots[me.plot];
     if (!t) throw new Error("400");
+    if ((body.era || 0) > (t.era || 0) && ERAS[body.era]) pvNews("era", `🏙️ «${t.town}» صارت ${ERAS[body.era].name}!`, me.plot, body.era);
     Object.assign(t, { pop: body.pop, happy: body.happy, money: body.money, era: body.era, updated: Date.now() });
     if (body.snapshot) t.snapshot = body.snapshot;
     return { ok: true };

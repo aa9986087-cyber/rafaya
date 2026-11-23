@@ -199,6 +199,14 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The owner wanted the mosque's reach shown like water and power, not as a count of homes.
     - `reachLine` for `service: "mosque"` now says «مداه N مربعات حوله».
     - `mosqueMap()`/`mosqueGaps()` (main.js) colour every tile any mosque reaches in green and the homes outside it in red (heat overlay), with a toast giving the count. There is a button in the happiness sheet and in every mosque's sheet.
+32. **No contradictions, نشرة الجوف, prayer-time labels, Ramadan calendar (owner, 2026-11-23):**
+    - `here()` in main.js puts the town's own name in place of «الرافعية» in sheets (except whatsnew, settings, how, region, welcome, wnews), toasts and chips.
+    - The needy decision's `text` is a function of season and Ramadan. The decision sheet accepts text functions.
+    - The summer «القايلة» complaint changes in Ramadan and is dropped when there is a café or park.
+    - World bulletin: table `wnews` (wiped with the gen). `Board.news()` gets lines from claim, sync (era up, pop marks 100…20000, once each) and WarServer (`world.news`: war, truce, peace, hit, intercept). `GET /api/world/news`. The trial (preview.js) has `pvNews`.
+    - Client: `WNEWS`, `wnewsPoll` (60 s), tabs in `newsSheet`, `worldNewsSheet` (forecast via `worldEventsAt` 48 h ahead, top towns from /map, the feed). The badge counts unread world lines not about your own town.
+    - `partOfDay` now follows PRAYERS: الضحى until dhuhr, الظهر until asr, and so on.
+    - Ramadan, Eid and Adha are never random now, in either mode. `calendarAt(hour)` (sim.js): Ramadan 24 h, Eid 12 h, Adha 12 h, 80 h after Ramadan starts, once per YEAR_HOURS (288), 33 h earlier each year. Solo syncs them by `s.day`; the world uses the same function inside `worldEventsAt`.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

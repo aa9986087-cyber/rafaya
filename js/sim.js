@@ -129,30 +129,37 @@ export function worldEventsAt(hour) {
     sharedCache.next = start + ev.days + 20 + Math.floor(r() * 60);
   }
   const out = sharedCache.list.filter((e) => e.start <= hour && hour < e.end);
-  // the calendar: Ramadan starts 11 days (here 33 hours) earlier each year, Eid al-Fitr right after it,
-  // Eid al-Adha 70 days (here about 57 hours) after Eid al-Fitr
-  const Y = YEAR_HOURS, yr = Math.floor(hour / Y);
+  return out.concat(calendarAt(hour));
+}
+export const CALENDAR_EVENTS = ["ramadan", "eid", "adha"];
+/**
+ * Ramadan and the two Eids, by a fixed calendar in both modes (never by chance): once a game year,
+ * as long as they are in a real year by share (Ramadan one game day of the twelve, each Eid half a day),
+ * starting 33 hours earlier each year so they move through the seasons like the Hijri calendar does.
+ */
+export function calendarAt(hour) {
+  const out = [], Y = YEAR_HOURS, yr = Math.floor(hour / Y);
   for (const y of [yr - 1, yr]) {
     const r0 = y * Y + (((200 - y * 33) % Y) + Y) % Y;
-    for (const [id, a, b] of [["ramadan", r0, r0 + 72], ["eid", r0 + 72, r0 + 96], ["adha", r0 + 153, r0 + 177]]) {
+    for (const [id, a, b] of [["ramadan", r0, r0 + 24], ["eid", r0 + 24, r0 + 36], ["adha", r0 + 80, r0 + 92]]) {
       const ev = EVENTS.find((e) => e.id === id);
       if (a <= hour && hour < b) out.push({ id, start: a, end: b, name: ev.name });
     }
   }
   return out;
 }
-/** In the world: the town's shared events become exactly the world's (they start and end for everyone at once). */
-function syncSharedEvents(s, msgs) {
-  const want = worldEventsAt(s.day);
-  const have = new Set(s.events.filter((e) => SHARED_EVENTS.includes(e.id)).map((e) => e.id));
-  s.events = s.events.filter((e) => !SHARED_EVENTS.includes(e.id) || want.some((w) => w.id === e.id));
+/** In the world: the town's shared events become exactly the world's (they start and end for everyone at once).
+ *  Alone: only the calendar (Ramadan and the Eids) is synced, by the town's own hour. */
+function syncSharedEvents(s, msgs, ids = SHARED_EVENTS, want = worldEventsAt(s.day), where = " (بكل الجوف)") {
+  const have = new Set(s.events.filter((e) => ids.includes(e.id)).map((e) => e.id));
+  s.events = s.events.filter((e) => !ids.includes(e.id) || want.some((w) => w.id === e.id));
   for (const w of want) {
     const e = s.events.find((x) => x.id === w.id);
     if (e) { e.left = w.end - s.day; continue; }
     s.events.push({ id: w.id, left: w.end - s.day, name: w.name, shared: true });
     if (!have.has(w.id) && s.day - w.start < 2) {
       const ev = EVENTS.find((x) => x.id === w.id);
-      msgs.push({ kind: "event", title: w.name, text: `${ev.text} (بكل الجوف)` });
+      msgs.push({ kind: "event", title: w.name, text: `${ev.text}${where}` });
     }
   }
 }
@@ -1138,14 +1145,12 @@ export function step(s, r = Math.random) {
   // Events.
   // Rain that falls in autumn and winter makes next spring green.
   if (s.events.some((e) => e.id === "rain") && ["autumn", "winter"].includes(seasonOf(s.day).id)) s.wet = (s.wet ?? 24) + 1;
-  // Eid al-Fitr comes the day Ramadan ends.
-  const ramadanEnds = s.events.some((e) => e.id === "ramadan" && e.left === 1);
   s.events = s.events.filter((e) => --e.left > 0);
   if (s.world) syncSharedEvents(s, msgs); // the world: one weather and one calendar for every town
-  else if (ramadanEnds) { const eid = EVENTS.find((e) => e.id === "eid"); s.events.push({ id: "eid", left: eid.days }); msgs.push({ kind: "event", title: eid.name, text: eid.text }); }
+  else syncSharedEvents(s, msgs, CALENDAR_EVENTS, calendarAt(s.day), ""); // alone: Ramadan and the Eids by the calendar, never by chance
   const sid = seasonOf(s.day).id;
-  if (!s.events.some((e) => e.id !== "boost" && (!s.world || !SHARED_EVENTS.includes(e.id))) && s.day > 12 && r() < 0.025) {
-    const pool = EVENTS.filter((e) => (!e.tech || s.tech[e.tech]) && (e.seasons?.[sid] || 0) > 0 && (!s.world || !SHARED_EVENTS.includes(e.id)));
+  if (!s.events.some((e) => e.id !== "boost" && !CALENDAR_EVENTS.includes(e.id) && (!s.world || !SHARED_EVENTS.includes(e.id))) && s.day > 12 && r() < 0.025) {
+    const pool = EVENTS.filter((e) => (!e.tech || s.tech[e.tech]) && (e.seasons?.[sid] || 0) > 0 && !CALENDAR_EVENTS.includes(e.id) && (!s.world || !SHARED_EVENTS.includes(e.id)));
     if (!pool.length) pool.push(...EVENTS.filter((e) => e.id === "visit"));
     let roll = r() * pool.reduce((t, e) => t + e.seasons[sid], 0);
     const ev = pool.find((e) => (roll -= e.seasons[sid]) < 0) || pool[0];

@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -48,9 +48,16 @@ let openCat = null;
 const HOUR_MS = 50000;
 /** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
 const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
+/** The part of the day by the prayer times themselves (data.js PRAYERS), so «الظهر» runs from the dhuhr call to the asr call. */
 function partOfDay(p, d) {
-  if (p < d) { const q = p / d; return q < 0.15 ? "الصبح" : q < 0.4 ? "الضحى" : q < 0.55 ? "الظهر" : q < 0.85 ? "العصر" : "المغرب"; }
-  return (p - d) / (1 - d) < 0.85 ? "الليل" : "الفجر";
+  const x = p * HOURS, D = d * HOURS, at = (id) => PRAYERS.find((q) => q.id === id).at(D);
+  if (x >= at("fajr")) return "الفجر";
+  if (x < 2.5) return "الصبح";
+  if (x < at("dhuhr")) return "الضحى";
+  if (x < at("asr")) return "الظهر";
+  if (x < at("maghrib")) return "العصر";
+  if (x < at("isha")) return "المغرب";
+  return "الليل";
 }
 /** A clock reading such as ٤:٣٠ م. Sunrise is earlier on long summer days. */
 function clockAt(p, d) {
@@ -784,12 +791,12 @@ function refresh() {
   $("sSeasonBar").style.width = `${Math.round(se.progress * 100)}%`;
   $("sSeasonBar").dataset.s = se.id;
   const goal = GOALS[S.goal];
-  $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : "<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!";
+  $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : here("<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!");
   // The banner shows the main event, or else the strongest boost from a decision.
   const main = S.events.find((e) => e.id !== "boost"), boost = S.events.find((e) => e.id === "boost");
   const ev = main ? { ...EVENTS.find((e) => e.id === main.id), ...(main.name ? { name: main.name } : {}) } : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
   $("event").hidden = !ev;
-  if (ev) $("event").innerHTML = `<b>${ev.name}</b> ${ev.text}`;
+  if (ev) $("event").innerHTML = here(`<b>${ev.name}</b> ${ev.text}`);
   $("councilDot").hidden = !!S.research || !Object.entries(TECH).some(([id, t]) => !S.tech[id] && t.era <= S.era && S.money >= t.cost);
   document.querySelectorAll("[data-speed]").forEach((b) => b.classList.toggle("on", Number(b.dataset.speed) === speed));
   if (openCat) renderCards();
@@ -802,7 +809,7 @@ document.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("cli
 function toast(text, kind = "") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  el.textContent = ar(text);
+  el.textContent = ar(here(text));
   $("toasts").append(el);
   const long = kind === "era" || kind.startsWith("season");
   setTimeout(() => el.classList.add("out"), long ? 4200 : 2300);
@@ -812,10 +819,16 @@ function toast(text, kind = "") {
 
 let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
+/** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
+const NAME_KEEP = new Set(["wnews", "whatsnew", "settings", "settings-menu", "how", "region", "welcome"]);
+function here(text) {
+  const n = S?.name;
+  return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
+}
 function sheet(html, kind) {
   clearTimeout(sheetHide); // a sheet opened while the last one was closing must stay open
   sheetFor = kind; sheetAt = performance.now();
-  $("sheetBody").innerHTML = html;
+  $("sheetBody").innerHTML = NAME_KEEP.has(kind) ? html : here(html);
   $("sheet").hidden = false;
   $("sheet").classList.remove("closing");
 }
@@ -882,7 +895,7 @@ function addPosts(posts) {
   if (sheetFor === "news") newsSheet();
 }
 function showNewsCount() {
-  const n = S.newsUnread || 0;
+  const n = (S.newsUnread || 0) + (worldMode ? wnewsUnread() : 0);
   $("newsCount").hidden = !n;
   $("newsCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
 }
@@ -970,13 +983,15 @@ function promisesHtml() {
   return `<details class="proms" open><summary>🤝 وعودك (${ar(open.length)})${waiting.length ? ` · ينتظرون جواب (${ar(waiting.length)})` : ""}</summary>${open.join("")}${waiting.join("")}</details>`;
 }
 function newsSheet() {
+  if (worldMode && WNEWS.tab === "world") { worldNewsSheet(); return; }
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
   const trust = Math.round(moodOf(S, null));
-  sheet(`<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون أهل الرافعية عن بلدهم. اختار ردك: الوعد يريّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
+  sheet(`${newsTabs("town")}<div class="news-head"><h2>نشرة الرافعية</h2><p>وش يقولون أهل الرافعية عن بلدهم. اختار ردك: الوعد يريّحهم بس لازم توفي، و«نشوف» يرجعون لك بعدها، والرفض يزعّلهم.</p>
     <div class="trust"><span>ثقة الأهالي بالعمدة</span><i class="bar"><i style="width:${trust}%" class="${trust < 45 ? "low" : ""}"></i></i><b>${ar(trust)}٪</b></div></div>
     ${promisesHtml()}
     <div class="feed">${posts.length ? posts.map(postHtml).join("") : `<p class="empty">للحين ما أحد كتب شي. الناس يتكلمون كل كم ساعة.</p>`}</div>`, "news");
+  bindNewsTabs();
   $("sheetBody").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => answer(b.dataset.post, b.dataset.kind)));
   $("sheetBody").querySelectorAll("[data-home]").forEach((b) => b.addEventListener("click", () => {
     const i = Number(b.dataset.home);
@@ -985,6 +1000,62 @@ function newsSheet() {
   }));
 }
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
+
+// ---------- نشرة الجوف (world only): what happens in al-Jouf, for everyone ----------
+const WNEWS = { items: [], polled: 0, busy: false, tab: "town", map: null };
+const wnewsSeen = () => Number(store.get("rafaya-wnews-seen") || 0);
+const wnewsUnread = () => WNEWS.items.filter((x) => x.id > wnewsSeen() && x.plot !== S.world?.plot).length;
+async function wnewsPoll(force) {
+  if (!worldMode || WNEWS.busy || (!force && Date.now() - WNEWS.polled < 60000)) return;
+  WNEWS.busy = true; WNEWS.polled = Date.now();
+  try { const r = await api("/world/news"); WNEWS.items = r.items || []; } catch { /* the next time */ }
+  WNEWS.busy = false;
+  showNewsCount();
+}
+function newsTabs(on) {
+  if (!worldMode) return "";
+  const n = wnewsUnread();
+  return `<div class="wn-tabs"><button type="button" class="btn${on === "town" ? " go" : ""}" data-ntab="town">📰 نشرة مدينتي${S.newsUnread && on !== "town" ? `<i class="dot"></i>` : ""}</button><button type="button" class="btn${on === "world" ? " go" : ""}" data-ntab="world">🌍 نشرة الجوف${n && on !== "world" ? `<i class="dot"></i>` : ""}</button></div>`;
+}
+function bindNewsTabs() {
+  $("sheetBody").querySelectorAll("[data-ntab]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); WNEWS.tab = b.dataset.ntab; newsSheet(); }));
+}
+/** The weather and the calendar are the same for every town in al-Jouf: what is on now and what comes in the next two days. */
+function worldForecast() {
+  const h = S.day, now = worldEventsAt(h), seen = new Set(now.map((e) => `${e.id}:${e.start}`)), soon = [];
+  for (let k = 1; k <= 48; k++) for (const e of worldEventsAt(h + k)) {
+    const key = `${e.id}:${e.start}`;
+    if (!seen.has(key)) { seen.add(key); soon.push({ ...e, in: k }); }
+  }
+  const icon = (id) => ({ rain: "🌧️", dust: "🌪️", heat: "🔥", cold: "❄️", locust: "🦗", drought: "🏜️", dates: "🌴", ramadan: "🌙", eid: "🎉", adha: "🐑" })[id] || "📅";
+  const left = (e) => e.end - h;
+  return `${now.length ? now.map((e) => row(`${icon(e.id)} ${e.name} (الحين)`, `باقي ${ar(left(e))} ساعة`)).join("") : row("☀️ الجو", "هادي ما فيه شي")}
+    ${soon.length ? soon.map((e) => row(`${icon(e.id)} ${e.name}`, `بعد ${ar(e.in)} ساعة`)).join("") : `<p class="hint">ما فيه شي متوقع بالـ٤٨ ساعة الجاية.</p>`}`;
+}
+function agoText(at) {
+  const m = Math.max(0, Math.round((Date.now() - at) / 60000));
+  return m < 1 ? "الحين" : m < 60 ? `قبل ${ar(m)} دقيقة` : m < 1440 ? `قبل ${ar(Math.round(m / 60))} ساعة` : `قبل ${ar(Math.round(m / 1440))} يوم`;
+}
+async function worldNewsSheet(refreshed) {
+  const top = (WNEWS.map || []).slice();
+  const big = top.sort((p, q) => q.pop - p.pop).slice(0, 5), happy = (WNEWS.map || []).filter((t) => t.pop >= 30).sort((p, q) => q.happy - p.happy).slice(0, 3);
+  const mine = S.world?.plot;
+  const town = (t) => `<button type="button" class="linkish" data-goplot="${t.plot}">«${t.town}»${t.plot === mine ? " (مدينتك)" : ""}</button>`;
+  sheet(`${newsTabs("world")}<div class="news-head"><h2>🌍 نشرة الجوف</h2><p>اللي يصير بأرض الجوف كلها: الأجواء، والمدن الجديدة، واللي كبرت، والحروب والصلح.</p></div>
+    <h3>🌦️ أجواء الجوف (واحدة للكل)</h3><div class="rows">${worldForecast()}</div>
+    ${big.length ? `<h3>🏆 أكبر المدن</h3><div class="rows">${big.map((t, i) => row(`${ar(i + 1)}. ${town(t)}`, `${money(t.pop)} ساكن · ${ERAS[t.era]?.name || ""}`)).join("")}</div>` : ""}
+    ${happy.length ? `<h3>😊 أسعد المدن</h3><div class="rows">${happy.map((t) => row(town(t), `${ar(t.happy)}٪`, "plus")).join("")}</div>` : ""}
+    <h3>📰 الأخبار</h3>
+    <div class="rows">${WNEWS.items.length ? WNEWS.items.map((x) => `<div class="row wnews ${x.id > wnewsSeen() ? "new" : ""}"><span>${ar(x.text)}</span><small>${agoText(x.at)}</small></div>`).join("") : `<p class="hint">${refreshed ? "للحين ما صار شي بالجوف." : "نحمّل…"}</p>`}</div>`, "wnews");
+  bindNewsTabs();
+  $("sheetBody").querySelectorAll("[data-goplot]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); const p = Number(b.dataset.goplot); if (p === mine) closeSheet(); else visitTown(p); }));
+  if (WNEWS.items.length) store.set("rafaya-wnews-seen", String(WNEWS.items[0].id));
+  showNewsCount();
+  if (!refreshed) {
+    await Promise.all([wnewsPoll(true), api("/world/map").then((r) => { WNEWS.map = r.plots || []; }).catch(() => {})]);
+    if (sheetFor === "wnews") worldNewsSheet(true);
+  }
+}
 
 /** The mayor answers a post with one of the offered replies. */
 function answer(id, kind) {
@@ -1004,7 +1075,7 @@ function decisionSheet() {
   const d = DECISIONS.find((x) => x.id === S.decision?.id);
   if (!d) return;
   sfx.event();
-  sheet(`<div class="decision"><span class="badge">قرار</span><h2>${d.title}</h2><p>${d.text}</p>
+  sheet(`<div class="decision"><span class="badge">قرار</span><h2>${d.title}</h2><p>${typeof d.text === "function" ? d.text(S, seasonOf(S.day)) : d.text}</p>
     <div class="choices">${d.options.map((o, i) => { const c = optionCost(S, A, o), poor = c > 0 && S.money < c; return `<button type="button" class="choice ${i === 0 ? "first" : ""}" data-choice="${i}" ${poor ? "disabled" : ""}>
       <b>${o.label}</b><small>${o.note}${o.costPer ? ` (${money(c)} ريال)` : ""}${poor ? " · ما يكفي المال" : ""}</small></button>`; }).join("")}</div></div>`, "decision");
   $("sheetClose").hidden = true;
@@ -2356,8 +2427,12 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-21", world: "2026-12-21" },
+  v: { solo: "2026-12-22", world: "2026-12-22" },
   items: [
+    ["world", "🌍", "نشرة الجوف", "داخل «النشرة» صار فيه تبويب «نشرة الجوف»: أجواء الجوف الحين واللي جاي بالـ٤٨ ساعة (مطر، غبار، رمضان، العيد)، وأكبر المدن وأسعدها، وأخبار الجوف كلها: مدن جديدة، مدن كبرت، حروب وهدن وصلح وضربات. وتطلع لك نقطة إذا فيه خبر جديد."],
+    ["both", "🌙", "رمضان بوقته", "رمضان صار يجي مرة بالسنة على تقويم ثابت (مو بالصدفة)، ويقعد يوم كامل من أيام اللعبة، وبعده عيد الفطر نص يوم، وعيد الأضحى بعده بأيام. وكل سنة يتقدم شوي فيمر على كل الفصول."],
+    ["both", "🕐", "الوقت مضبوط على الصلاة", "اللي مكتوب فوق (الضحى، الظهر، العصر، المغرب) صار يمشي مع أذان كل صلاة: الساعة ١ الظهر يكتب «الظهر» مو «العصر»."],
+    ["both", "🗞️", "كلام الناس منطقي", "الناس صاروا يسمّون مدينتك باسمها مو «الرافعية»، وطلب العوايل المحتاجة يناسب الوقت (تدفئة بالشتاء، مكيف بالصيف، فطور وسحور برمضان)، وما عاد أحد يشتكي إن البيع واقف ورمضان شغال."],
     ["both", "🕌", "مدى المساجد على الخريطة", "مثل الماء والكهرباء: من «الرضا» أو من أي مسجد اضغط «اعرض وين توصل المساجد» وتشوف وين يوصل المسجد بالأخضر، والبيوت اللي برا المدى بالأحمر مع عددها. ولا جيت تبني مسجد يقولك مداه كم مربع."],
     ["both", "📊", "صافي اليوم صار حقيقي", "بالأرقام «اللي دخل آخر ٢٤ ساعة» صار مجموع اللي دخل فعلاً، مو ساعة وحدة × ٢٤ عشان كذا كان يتقلب. والصافي بالساعة طبيعي يتغير: وقت الصلاة المحلات تسكر، ووقت الذروة الزحمة تأخر الموظفين، وتشوف تحته ليش."],
     ["both", "🕌", "كم يخدم وكم يزعج", "قبل لا تبني وبعده: المسجد والمدرسة والمستوصف والبقالة والحديقة يقولون لك «يخدم ١٢ بيت (٨٠ ساكن)»، والمصانع والورش والمولدات تحذرك «⚠️ بيزعّل ٧ بيوت» وتشوف منطقة الدخان بالأحمر. والبقالة صارت تريّح البيوت اللي حولها."],
@@ -3055,7 +3130,7 @@ function frame(now) {
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
-  if (playing && worldMode && !arrange) { warPoll(); chatPoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
+  if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); if (playing) layoutSide(); }
   const t0 = performance.now();

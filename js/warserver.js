@@ -77,6 +77,8 @@ export class WarServer {
     const at = this.now();
     this.db.put("note", `${plot}:${at}:${(noteN = (noteN + 1) % 1e6)}`, { at, kind, text, ...extra }, { k1: String(plot), at });
   }
+  /** A line for the world's bulletin (everyone reads it): only wars, truces, peace and strikes, never who is online. */
+  news(kind, text, plot) { try { this.world?.news?.(kind, text, plot); } catch { /* the bulletin never stops the war */ } }
   rel(a, b) { return this.db.get("rel", pairId(a, b)); }
   saveRel(a, b, r) { this.db.put("rel", pairId(a, b), r, { k1: String(Math.min(a, b)), k2: String(Math.max(a, b)), at: this.now() }); }
   /** A request already answered (the same request id sent again) gives back the same answer. */
@@ -227,6 +229,7 @@ export class WarServer {
       log("war", "إعلان حرب");
       this.note(other, "war", `⚔️ مدينة «${myName}» أعلنت عليك الحرب! أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: me.plot });
       this.note(me.plot, "war", `⚔️ أعلنت الحرب على «${theirName}». أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}.`, { from: other });
+      this.news("war", `⚔️ «${myName}» أعلنت الحرب على «${theirName}»`, other);
     } else if (act === "truce" || act === "peace") {
       r.offer = { kind: act, by: me.plot, at: now };
       log(act + "Offer", act === "truce" ? "عرض هدنة" : "عرض صلح");
@@ -237,10 +240,12 @@ export class WarServer {
         r.state = "truce"; r.since = now; r.truceEnd = now + this.cfg.T.truce;
         log("truce", "هدنة");
         for (const [p, o] of [[me.plot, theirName], [other, myName]]) this.note(p, "truce", `🏳️ هدنة مع «${o}» لمدة ${minutesText(this.cfg.T.truce)}: ما فيه ضربات.`, { from: p === me.plot ? other : me.plot });
+        this.news("truce", `🏳️ هدنة بين «${myName}» و«${theirName}»`, other);
       } else {
         r.state = "peace"; r.since = now; r.cool = now + this.cfg.T.peaceCool;
         log("peace", "صلح");
         for (const p of [me.plot, other]) this.note(p, "peace", `🕊️ انتهت الحرب بين «${myName}» و«${theirName}».`, { from: p === me.plot ? other : me.plot });
+        this.news("peace", `🕊️ صلح بين «${myName}» و«${theirName}»: انتهت الحرب`, other);
       }
     } else if (act === "reject") {
       const kind = r.offer.kind; r.offer = null;
@@ -395,9 +400,11 @@ export class WarServer {
     } else if (dmg > 0) {
       this.note(op.to, "hit", `💥 تعرض ${op.bname} لضربة عسكرية من «${op.fromTown}» وتضرر بنسبة ${nf(dmg)}٪.${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
       this.note(op.from, "result", `🎯 إصابة ناجحة: ${op.bname} في «${op.toTown}» تضرر ${nf(dmg)}٪.`, { op: op.id });
+      this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»`, op.to);
     } else {
       this.note(op.to, "intercept", `🛡️ دفاعاتك نجحت في اعتراض هجوم «${op.fromTown}».`, { op: op.id });
       this.note(op.from, "result", `🛡️ دفاع «${op.toTown}» اعترض عمليتك.`, { op: op.id });
+      this.news("intercept", `🛡️ دفاع «${op.toTown}» صدّ هجوم «${op.fromTown}»`, op.to);
     }
     // the deputy: repairs and interceptors within the owner's daily budget
     if (them) this.deputy(them, da, now);

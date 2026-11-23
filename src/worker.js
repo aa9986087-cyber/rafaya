@@ -20,6 +20,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
+import { ERAS } from "../js/data.js";
+const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -59,6 +61,8 @@ export class Board extends DurableObject {
     // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS wnews (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, plot INTEGER, n INTEGER, text TEXT, at INTEGER)`);
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
@@ -68,10 +72,12 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM comments WHERE code GLOB 'w[0-9]*'"); // world towns' comments are "w<plot>"; GLOB is case-sensitive, so the old 6-letter codes stay
       this.sql.exec("DELETE FROM war");
       this.sql.exec("DELETE FROM chat");
+      this.sql.exec("DELETE FROM wnews");
       this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
     }
     this.war = new WarServer(warDb, {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
+      news: (kind, text, plot) => this.news(kind, text, plot),
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
     }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
   }
@@ -87,6 +93,13 @@ export class Board extends DurableObject {
     }
   }
 
+  /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
+  news(kind, text, plot = null, n = null) {
+    if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
+    this.sql.exec("INSERT INTO wnews (kind, plot, n, text, at) VALUES (?, ?, ?, ?, ?)", kind, plot, n, text, Date.now());
+    this.sql.exec("DELETE FROM wnews WHERE id NOT IN (SELECT id FROM wnews ORDER BY id DESC LIMIT 300)");
+  }
+
   // ---------- the world of al-Jouf ----------
   async world(request, p) {
     if (!WORLD_OPEN && this.env?.WAR_TEST !== "1") return json({ error: "maintenance" }, 503); // local tests may open it
@@ -98,6 +111,11 @@ export class Board extends DurableObject {
         ? this.sql.exec("SELECT id, name, plot, town, text, at FROM chat WHERE id > ? ORDER BY id ASC LIMIT 100", after).toArray()
         : this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 50", ).toArray().reverse();
       return json({ messages, now: Date.now() });
+    }
+    if (!post && p[0] === "news") {
+      const after = int(new URL(request.url).searchParams.get("after"));
+      const items = this.sql.exec("SELECT id, kind, plot, text, at FROM wnews WHERE id > ? ORDER BY id DESC LIMIT 60", after).toArray();
+      return json({ items, now: Date.now() });
     }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated FROM plots ORDER BY plot LIMIT 3000").toArray();
@@ -135,12 +153,20 @@ export class Board extends DurableObject {
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", plot).toArray().length) return json({ error: "taken" }, 409);
       this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), Date.now());
       this.sql.exec("UPDATE players SET plot = ? WHERE name = ?", plot, name);
+      this.news("town", `🏕️ تأسست «${town}» بأرض الجوف. حيّاهم الله`, plot, 0);
       return json({ ok: true, plot });
     }
     if (p[0] === "sync") {
       if (me.plot == null) return json({ error: "no town" }, 400);
       const snapshot = String(body.snapshot || "");
       if (snapshot.length > MAX_SNAPSHOT) return json({ error: "snapshot too big" }, 413);
+      const was = this.sql.exec("SELECT town, pop, era FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      if (was) {
+        const era = int(body.era), pop = int(body.pop);
+        if (era > (was.era || 0) && ERAS[era]) this.news("era", `🏙️ «${was.town}» صارت ${ERAS[era].name}!`, me.plot, era);
+        const mark = POP_MARKS.filter((m) => pop >= m && (was.pop || 0) < m).pop();
+        if (mark) this.news("pop", `👨‍👩‍👧 «${was.town}» وصل عدد سكانها ${mark.toLocaleString("en-US")}`, me.plot, mark);
+      }
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
         int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
       return json({ ok: true });
