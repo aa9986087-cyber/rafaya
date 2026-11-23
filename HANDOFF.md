@@ -243,6 +243,9 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 38. **Service cards and reach maps (owner, 2026-11-23, both modes):**
     - Tapping a `serv` card in the dock opens `serviceInfo(id)`: cost, upkeep, happiness, radius, how many you have, and the homes outside reach, with «اعرض مداه» and «ابنِ» buttons. Tapping it again while it is the tool deselects it as before.
     - `needCover`/`needGaps`/`needMap` generalise the mosque map. Buildings with the same `service` cover for each other; park and stadium go by their own id. Upgraded radii are counted.
+39. **Roads follow the finger again (owner, 2026-11-23, both modes):**
+    - The owner didn't like straight-only roads, so straight runs (step 34) were removed.
+    - `roadAim` now keeps the finger's path tile by tile, using `stepTiles` so there are no gaps. Stepping back onto the path cuts it there (the undo from step 37 stays). It is used by building (`roadStroke`) and by arrange (`arrPaint`).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

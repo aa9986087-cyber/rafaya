@@ -301,12 +301,6 @@ function showPending() {
   }
 }
 
-/** The tiles of a straight run along x or y (both ends in). */
-function runTiles(a, b) {
-  const out = [], sx = Math.sign(b.x - a.x), sy = Math.sign(b.y - a.y);
-  for (let x = a.x, y = a.y; ; x += sx, y += sy) { out.push({ x, y }); if (x === b.x && y === b.y) break; }
-  return out;
-}
 /** Every tile from a to b, one step at a time along x or y, so a fast finger never leaves a gap. */
 function stepTiles(a, b) {
   const out = [], n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
@@ -319,36 +313,19 @@ function stepTiles(a, b) {
   return out;
 }
 /**
- * Roads follow the finger in straight runs: the first move picks the direction, the road stays on that
- * line, and only a clear turn (two tiles off the line) starts a new straight run from the corner.
+ * Roads follow the finger, tile by tile (a fast finger leaves no gap). Going back over the road already
+ * drawn while still holding takes it back to there, so a wrong tile is undone without lifting the finger.
  */
 function roadAim(r, t) {
-  const lastT = r.trail[r.trail.length - 1];
-  if (lastT.x !== t.x || lastT.y !== t.y) { r.trail.push(t); if (r.trail.length > 4) r.trail.shift(); }
-  // going back over the road already drawn takes it back to there (a wrong turn is undone without lifting the finger)
-  const back = r.segs.findIndex((p) => p.x === t.x && p.y === t.y);
-  if (back >= 0) {
-    const prev = r.segs[back - 1];
-    r.axis = prev ? (prev.y === t.y ? "x" : "y") : null;
-    r.segs = r.segs.slice(0, back); r.anchor = t; r.trail = [t];
+  const last = r.path[r.path.length - 1];
+  if (last.x === t.x && last.y === t.y) return r.path;
+  for (const p of stepTiles(last, t)) {
+    const k = r.path.findIndex((q) => q.x === p.x && q.y === p.y);
+    if (k >= 0) r.path = r.path.slice(0, k + 1); else r.path.push(p);
   }
-  const dx = t.x - r.anchor.x, dy = t.y - r.anchor.y;
-  if (!r.axis) { if (Math.abs(dx) + Math.abs(dy) >= 2 || Math.max(Math.abs(dx), Math.abs(dy)) >= 1 && r.trail.length > 2) r.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y"; }
-  else {
-    const off = r.axis === "x" ? dy : dx;
-    // the finger's last few tiles: a turn only when it clearly goes sideways (a slanted drag keeps the road straight)
-    const m = { x: t.x - r.trail[0].x, y: t.y - r.trail[0].y };
-    const side = Math.abs(r.axis === "x" ? m.y : m.x), ahead = Math.abs(r.axis === "x" ? m.x : m.y);
-    if (Math.abs(off) >= 2 && side >= 2 && side > ahead * 2) {
-      const corner = r.axis === "x" ? { x: t.x, y: r.anchor.y } : { x: r.anchor.x, y: t.y };
-      r.segs.push(...runTiles(r.anchor, corner));
-      r.anchor = corner; r.axis = r.axis === "x" ? "y" : "x";
-    }
-  }
-  const end = r.axis === "x" ? { x: t.x, y: r.anchor.y } : r.axis === "y" ? { x: r.anchor.x, y: t.y } : r.anchor;
-  return [...r.segs, ...runTiles(r.anchor, end)];
+  return r.path;
 }
-const roadAimStart = (t) => ({ segs: [], anchor: t, axis: null, trail: [t] });
+const roadAimStart = (t) => ({ path: [t] });
 function roadStroke(t) {
   const r = drag.road ||= { ...roadAimStart(t), base: pending.slice() };
   const tiles = roadAim(r, t);
@@ -454,7 +431,7 @@ function arrPaint(t) {
   }
   for (const c of want) {
     const i = idx(c.x, c.y), had = S.tiles[i]?.b;
-    arrPaintOne(c); // straight runs, like building roads (it skips tiles already done)
+    arrPaintOne(c); // the finger's path, like building roads (it skips tiles already done)
     if (inMap(c.x, c.y) && !had && S.tiles[i].b) drag.placed.set(i, S.tiles[i].b);
   }
   arrSync(); arrRender();
@@ -2579,15 +2556,14 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-28", world: "2026-12-28" },
+  v: { solo: "2026-12-29", world: "2026-12-29" },
   items: [
     ["both", "🏫", "تفاصيل الخدمات ومداها", "اضغط أي خدمة بقائمة البناء (مسجد، مدرسة، مستوصف، شرطة، حديقة…) وتطلع لك تفاصيلها: السعر والمصروف وكم تفرّح الناس ومداها وكم عندك منها وكم بيت برا مداها. وفيها زر «اعرض مداه» يلوّن الخريطة: الأخضر يوصله والأحمر البيوت اللي برا، وزر «ابنِ»."],
-    ["both", "↩️", "ترجع وانت ماسك", "وانت ترسم طريق وإصبعك ماسك: لو لف معك غلط يمين أو يسار، ارجع بإصبعك على نفس الطريق للزاوية وينمسح الغلط، وكمّل بدون ما ترفع إصبعك. وكل ما رجعت على الطريق يقصر معك. ونفس الشي بالترتيب."],
+    ["both", "↩️", "ترجع وانت ماسك", "الطريق يمشي مع إصبعك وين ما تروح زي أول، وما يفوّت مربعات لو سحبت بسرعة. ولو طلع مربع غلط وانت ماسك، ارجع بإصبعك على نفس الطريق وينمسح اللي بعده، وكمّل بدون ما ترفع إصبعك. ونفس الشي بالترتيب."],
     ["both", "🔔", "تنبيه رسوم المحافظة", "قبل رسوم المحافظة السنوية بـ٣ أيام وبيوم يوصلك تنبيه بالمبلغ تقريبًا، وبالأرقام تشوف كم باقي لها وكم بتدفع."],
     ["both", "🌬️", "مراوح الرياح تدور", "مراوح مزرعة الرياح صارت تدور، وإذا تضررت المزرعة تبطّي، وإذا انهدمت توقف."],
     ["both", "⚖️", "موازنة الفلوس", "التجار يشترون من محاصيل مزارعك على قد حجم بلدك: المزارع الأولى تبيع كامل، واللي يزيد عن الطلب ينباع بـ٤٠٪ (تشوفه بالأرقام). مكافآت المهام اللي ما تطلب بناء (عدد السكان، الرضا، المرحلة) صارت أقل، ومهام البناء باقية تغطي سعرها. ورسوم المحافظة صارت على قد الوقت اللي قضيته بكل مرحلة، فما تنضرب برسوم مدينة كاملة لو صرت مدينة آخر السنة."],
     ["both", "🔔", "شريط الأحداث يختفي", "شريط الحدث (موجة حر، رمضان، مطر…) يطلع ٣٠ ثانية أول ما يبدأ وبعدين يختفي، وتلقاه بمربع الوقت فوق."],
-    ["both", "🛣️", "رسم الطرق صار مستقيم", "اسحب إصبعك والطريق يمشي معك خط مستقيم، حتى لو يدك مايلة شوي، وما يفوّت ولا مربع. تبي تلف؟ حرّك إصبعك للجنب بوضوح ويسوي لك زاوية قايمة من مكانك. ونفس الشي بالترتيب."],
     ["both", "🕰️", "اليوم صار نص ساعة", "يوم اللعبة صار ٣٠ دقيقة بدال ٢٠ (كل ساعة باللعبة دقيقة وربع)، فتلحق تبني وتشوف مدينتك بالنهار أكثر."],
     ["world", "✏️", "اسم مدينتك بالجوف", "كل مدينة بالجوف لها اسم ما يتكرر: إذا الاسم مأخوذ يقولك اختر غيره. وتقدر تغيّر اسم مدينتك مرة وحدة بس من خريطة الجوف ← مدينتك ← «غيّر اسم مدينتك»، ويطلع الخبر بنشرة الجوف."],
     ["both", "📅", "فصول أطول", "كل فصل صار أسبوع كامل (٧ أيام) بدال ٣، والسنة ٢٨ يوم. اليوم نفسه ما تغيّر. ورمضان صار يومين، وكل عيد يوم كامل، ورسوم المحافظة السنوية زادت بقدر ما طالت السنة."],
