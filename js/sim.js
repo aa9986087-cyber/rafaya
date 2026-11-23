@@ -134,14 +134,16 @@ export function worldEventsAt(hour) {
 export const CALENDAR_EVENTS = ["ramadan", "eid", "adha"];
 /**
  * Ramadan and the two Eids, by a fixed calendar in both modes (never by chance): once a game year,
- * as long as they are in a real year by share (Ramadan one game day of the twelve, each Eid half a day),
+ * about as long as they are in a real year by share (Ramadan two game days of the 28, each Eid one day),
  * starting 33 hours earlier each year so they move through the seasons like the Hijri calendar does.
  */
 export function calendarAt(hour) {
   const out = [], Y = YEAR_HOURS, yr = Math.floor(hour / Y);
+  const first = Math.round(Y * 0.694), shift = Math.round(Y * 0.115); // where Ramadan starts in year 0, and how much earlier each year
+  const ram = Math.round(Y / 14), eid = 24, adha = Math.round(Y * 0.28); // Ramadan about a twelfth of the year; Eid al-Adha about 99 days after it starts
   for (const y of [yr - 1, yr]) {
-    const r0 = y * Y + (((200 - y * 33) % Y) + Y) % Y;
-    for (const [id, a, b] of [["ramadan", r0, r0 + 24], ["eid", r0 + 24, r0 + 36], ["adha", r0 + 80, r0 + 92]]) {
+    const r0 = y * Y + (((first - y * shift) % Y) + Y) % Y;
+    for (const [id, a, b] of [["ramadan", r0, r0 + ram], ["eid", r0 + ram, r0 + ram + eid], ["adha", r0 + adha, r0 + adha + eid]]) {
       const ev = EVENTS.find((e) => e.id === id);
       if (a <= hour && hour < b) out.push({ id, start: a, end: b, name: ev.name });
     }
@@ -458,7 +460,7 @@ function stepGround(s, a, raining, msgs) {
 
 // ---------- the year's weather ----------
 /** How green spring is: from the rain of the autumn and winter before it (0.3 dry … 1 a good year). */
-export const springGreen = (s) => clamp(0.3 + (s.wet ?? 24) / 34, 0.3, 1);
+export const springGreen = (s) => clamp(0.3 + (s.wet ?? 24) / (34 * SEASON_DAYS / 3), 0.3, 1); // rain hours in autumn and winter, by how long they are
 /** Decisions that suit a season come up more in it. */
 const SEASON_DECISIONS = { fire: { summer: 2, winter: 1.3, spring: 0.7, autumn: 0.7 }, powercut: { summer: 2, winter: 1.3, spring: 0.6, autumn: 0.6 }, thirst: { summer: 1.6, winter: 0.6 }, fever: { winter: 1.6, summer: 0.7 }, dusty: { spring: 1.5, summer: 1.5, winter: 0.3 } };
 

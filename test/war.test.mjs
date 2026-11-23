@@ -263,4 +263,5 @@ test("the world: every town gets the same rain, dust, Ramadan and Eid at the sam
   // no rain in summer, ever
   for (let h = 0; h < 20000; h += 7) for (const e of worldEventsAt(h)) if (e.id === "rain") assert.notEqual(seasonOfTest(e.start), "summer");
 });
-function seasonOfTest(h) { const day = Math.floor(Math.max(0, h - 1) / 24); return ["spring", "summer", "autumn", "winter"][Math.floor(day / 3) % 4]; }
+function seasonOfTest(h) { const day = Math.floor(Math.max(0, h - 1) / 24); return ["spring", "summer", "autumn", "winter"][Math.floor(day / SEASON_DAYS_T) % 4]; }
+const { SEASON_DAYS: SEASON_DAYS_T } = await import("../js/data.js");

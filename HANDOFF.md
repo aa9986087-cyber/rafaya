@@ -207,6 +207,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Client: `WNEWS`, `wnewsPoll` (60 s), tabs in `newsSheet`, `worldNewsSheet` (forecast via `worldEventsAt` 48 h ahead, top towns from /map, the feed). The badge counts unread world lines not about your own town.
     - `partOfDay` now follows PRAYERS: الضحى until dhuhr, الظهر until asr, and so on.
     - Ramadan, Eid and Adha are never random now, in either mode. `calendarAt(hour)` (sim.js): Ramadan 24 h, Eid 12 h, Adha 12 h, 80 h after Ramadan starts, once per YEAR_HOURS (288), 33 h earlier each year. Solo syncs them by `s.day`; the world uses the same function inside `worldEventsAt`.
+33. **Longer seasons (owner, 2026-11-23, both modes):**
+    - `SEASON_DAYS` 3 → 7, and `YEAR_HOURS = 24 * 4 * SEASON_DAYS` (672). The day is unchanged: `HOUR_MS` is 50 s, so a day takes 20 real minutes at ▶ and 4 at ⏩. The frame `dt` is capped at 0.1 s, so a slow phone runs slower, never faster.
+    - `calendarAt` scales with the year: Ramadan Y/14 (48 h), each Eid 24 h, Adha at 0.28 Y. Ramadan starts 0.115 Y earlier each year.
+    - `PROVINCE_FEES` were scaled by SEASON_DAYS/3 to keep the same cost per hour. `springGreen` divides by 34·SEASON_DAYS/3. The «سنة كاملة» achievement uses YEAR_HOURS.
+    - Old saves and the world: the season is worked out from the hour, so it can jump once when this goes live (for everyone in the world at the same time).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

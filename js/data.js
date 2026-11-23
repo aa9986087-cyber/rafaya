@@ -33,7 +33,7 @@ export const ERAS = [
  * daylight: share of the day with the sun up (long summer days, long winter nights).
  */
 export const HOURS = 24;
-export const SEASON_DAYS = 3;
+export const SEASON_DAYS = 7; // a week a season (was 3: the owner found the seasons and the year too short)
 export const SEASONS = [
   { id: "spring", name: "الربيع", daylight: 0.5, start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
   { id: "summer", name: "الصيف", daylight: 0.6, start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
@@ -423,9 +423,9 @@ export const EVENTS = [
   { id: "cold", name: "موجة برد", text: "برد قارس: الناس يدفّون بالدفايات والحطب، والكهرباء عليها ضغط.", days: 24, seasons: { winter: 3 }, happy: -4, power: 0.9 },
   { id: "locust", name: "جراد", text: "سرب جراد نزل على المزارع! المحصول بيقل يوم كامل.", days: 24, seasons: { spring: 2 }, farm: 0.4 },
   { id: "drought", name: "جفاف", text: "ما نزل مطر من زمان والآبار نقصت. وفّروا الماء.", days: 36, seasons: { summer: 3, autumn: 1 }, water: 0.7 },
-  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 24, seasons: { spring: 1, summer: 1, autumn: 1, winter: 1 }, shop: 1.3, happy: 8 },
-  { id: "eid", name: "عيد الفطر", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 12, seasons: {}, happy: 15, shop: 1.2 },
-  { id: "adha", name: "عيد الأضحى", text: "عيد الأضحى مبارك! الأضاحي والزيارات في كل البيوت.", days: 12, seasons: { spring: 0.7, summer: 0.7, autumn: 0.7, winter: 0.7 }, happy: 12, shop: 1.15 },
+  { id: "ramadan", name: "رمضان", text: "رمضان كريم! المحلات تبيع أكثر والناس يسهرون.", days: 48, seasons: { spring: 1, summer: 1, autumn: 1, winter: 1 }, shop: 1.3, happy: 8 },
+  { id: "eid", name: "عيد الفطر", text: "عيدكم مبارك! فرحة في كل الحارات.", days: 24, seasons: {}, happy: 15, shop: 1.2 },
+  { id: "adha", name: "عيد الأضحى", text: "عيد الأضحى مبارك! الأضاحي والزيارات في كل البيوت.", days: 24, seasons: { spring: 0.7, summer: 0.7, autumn: 0.7, winter: 0.7 }, happy: 12, shop: 1.15 },
   { id: "dates", name: "موسم الصرام", text: "موسم الصرام! أسعار التمور فوق.", days: 36, seasons: { summer: 2, autumn: 3 }, farm: 1.4 },
   { id: "visit", name: "زيارة المحافظ", text: "المحافظ زار البلد وأعجبه، وصرف دعم.", days: 1, seasons: { spring: 1, summer: 0.6, autumn: 1, winter: 1 }, gift: true },
   { id: "festival", name: "مهرجان الرافعية", text: "المهرجان جاب زوار من كل مكان.", days: 36, seasons: { spring: 2, autumn: 2, winter: 1 }, tech: "tourism", shop: 1.6, happy: 10 }
@@ -594,8 +594,8 @@ export const DECISIONS = [
  */
 export const UPKEEP_RULES = { decay: 100 / (24 * 24), mudDecay: 100 / (24 * 16), weak: 40, repair: 0.2, ruinHours: 48, insure: 0.0003, insurePays: 0.7 };
 /** Paid once a year (12 days) to the province, by stage. */
-export const PROVINCE_FEES = [0, 1500, 6000, 20000];
-export const YEAR_HOURS = 24 * 12;
+export const PROVINCE_FEES = [0, 1500, 6000, 20000].map((f) => Math.round(f * SEASON_DAYS / 3)); // a yearly fee: the year got longer, so the fee grew with it (the same per hour)
+export const YEAR_HOURS = 24 * 4 * SEASON_DAYS;
 
 /** Achievements: test(s, a) with the town state and its analysis. */
 const PROJECTS = ["gate", "heritage", "tower", "airport", "marid", "themepark", "station", "bigstadium", "skyline"];
@@ -605,7 +605,7 @@ export const ACHIEVEMENTS = [
   { id: "mud", name: "من الشعر إلى الطين", text: "أول بيت طين", test: (s, a) => a.levels.slice(1).some((n) => n > 0) },
   { id: "pop100", name: "مية نفس", text: "١٠٠ ساكن", test: (s) => s.pop >= 100 },
   { id: "town", name: "صارت بلدة", text: "وصل الرافعية لبلدة", test: (s) => s.era >= 1 },
-  { id: "year", name: "سنة كاملة", text: "عِش أربعة مواسم", test: (s) => s.day >= 3 + 24 * 12 },
+  { id: "year", name: "سنة كاملة", text: "عِش أربعة مواسم", test: (s) => s.day >= 3 + YEAR_HOURS },
   { id: "villa", name: "أول فيلا", text: "بيت يتطور لفيلا", test: (s, a) => a.levels[3] + a.levels[4] > 0 },
   { id: "pop1000", name: "ألف ساكن", text: "١٠٠٠ ساكن", test: (s) => s.pop >= 1000 },
   { id: "city", name: "صارت مدينة", text: "وصل الرافعية لمدينة", test: (s) => s.era >= 2 },
