@@ -22,7 +22,7 @@ function pvNews(kind, text, plot = null, n = null) {
   pvState.news = pvState.news.slice(-300);
 }
 const pvWar = new WarServer(pvDb, pvWorld, { cfg: PV_CFG });
-const pvHour = () => Math.floor((Date.now() - Date.UTC(2026, 10, 1)) / 75000) + 3; // the trial's world is slow from its start
+const pvHour = () => Math.floor((Date.now() - Date.UTC(2026, 10, 1)) / 50000) + 3;
 
 /** A rival town with roads, homes, a power station, factories and a military base. */
 function pvTown(name, plot, owner, era, mil) {
@@ -116,7 +116,7 @@ async function pvApi(path, body) {
 }
 function pvRoute(p, body) {
   const post = !!body;
-  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1) };
+  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) };
   if (!post && p[0].startsWith("chat")) {
     const after = Number((p[0].split("after=")[1]) || 0);
     pvState.chat ||= [];

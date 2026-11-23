@@ -246,6 +246,9 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 39. **Roads follow the finger again (owner, 2026-11-23, both modes):**
     - The owner didn't like straight-only roads, so straight runs (step 34) were removed.
     - `roadAim` now keeps the finger's path tile by tile, using `stepTiles` so there are no gaps. Stepping back onto the path cuts it there (the undo from step 37 stays). It is used by building (`roadStroke`) and by arrange (`arrPaint`).
+40. **The day is back to 20 minutes (owner, 2026-11-23, both modes):**
+    - `HOUR_MS` is 50 s again. The server also stores `meta.fast_at` (the first /clock of this code) and returns it.
+    - `worldHours()` counts 50 s hours before slowAt, 75 s from slowAt to fastAt, and 50 s after, so the world's hour never jumps. Seasons stay 7 days.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

@@ -4,7 +4,7 @@
 // at the owner's request; its "towns" table is left in place, unused.)
 //
 // The world of al-Jouf (one shared map; every player has a name and one plot with their town):
-//   GET  /api/world/clock                       → { epoch, now, gen, slowAt }   (the world's shared time: 50 s an hour before slowAt, 75 s after)
+//   GET  /api/world/clock                       → { epoch, now, gen, slowAt }   (the world's shared time: 50 s an hour, but 75 s between slowAt and fastAt)
 //   POST /api/world/join     { name }           → { name, secret, recovery }
 //   POST /api/world/recover  { name, recovery } → { name, secret }
 //   GET  /api/world/map                         → { plots: [...] }  (every claimed plot, no snapshots)
@@ -113,9 +113,13 @@ export class Board extends DurableObject {
     const post = request.method === "POST", body = post ? await request.json() : {};
     if (!post && p[0] === "clock") {
       // the day went from 20 to 30 minutes: hours before slowAt were 50 s, after it 75 s (set once, the first time this code runs)
-      let slowAt = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'slow_at'").toArray()[0]?.value || 0);
-      if (!slowAt) { slowAt = Date.now(); this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('slow_at', ?)", String(slowAt)); }
-      return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN, slowAt });
+      // and back to 20 minutes at fastAt (set once too): 75 s hours only between the two
+      const meta = (k) => Number(this.sql.exec("SELECT value FROM meta WHERE key = ?", k).toArray()[0]?.value || 0);
+      const setMeta = (k, v) => this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", k, String(v));
+      let slowAt = meta("slow_at"), fastAt = meta("fast_at");
+      if (!slowAt) { slowAt = Date.now(); setMeta("slow_at", slowAt); }
+      if (!fastAt) { fastAt = Date.now(); setMeta("fast_at", fastAt); }
+      return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN, slowAt, fastAt });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));

@@ -42,12 +42,13 @@ let playing = false;
 let speed = 1;
 let tool = null; // { id } | { id: "bulldoze" } | null (look around)
 let openCat = null;
-// A town day is 24 hours and lasts 30 minutes at normal speed (75 seconds an hour; it was 50 until the owner asked for half an hour).
+// A town day is 24 hours and lasts 20 minutes at normal speed (50 seconds an hour). For a while it was
+// 30 minutes (75 s an hour); the owner found it too slow, so it is back to 20 (see worldHours for the world's clock).
 // The town moves forward one step every hour. Days start at sunrise; how much of the day is
 // light depends on the season (spring and autumn 10 min + 10 min, summer 12 + 8, winter 8 + 12).
-const HOUR_MS = 75000;
+const HOUR_MS = 50000;
 const evBanner = { key: null, at: 0, t: 0 }; // the event banner's 30 seconds
-const OLD_HOUR_MS = 50000; // the world's hours before the switch (see worldHours)
+const SLOW_HOUR_MS = 75000; // the world's hours between slowAt and fastAt (see worldHours)
 /** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
 const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
 /** The part of the day by the prayer times themselves (data.js PRAYERS), so «الظهر» runs from the dhuhr call to the asr call. */
@@ -1481,18 +1482,23 @@ $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments();
 
 // ---------- the world of al-Jouf ----------
 const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_KEY = "rafaya-world-gen";
-let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 25) }, lastSync = 0, soloS = null;
+let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) }, lastSync = 0, soloS = null;
 const worldMsNow = () => Date.now() + worldClock.offset - worldClock.epoch;
-/** The world's hours so far: 50 s each until the server's switch time (slowAt), 75 s each after, so the clock never jumps. */
+/**
+ * The world's hours so far, so the clock never jumps when the day's length changed: 50 s each until the
+ * server's slowAt, 75 s each from slowAt to fastAt (the 30-minute days), and 50 s each again after fastAt.
+ */
 function worldHours() {
-  const ms = worldMsNow(), cut = Math.max(0, worldClock.slowAt - worldClock.epoch);
-  return ms <= cut ? ms / OLD_HOUR_MS : cut / OLD_HOUR_MS + (ms - cut) / HOUR_MS;
+  const ms = worldMsNow(), a = Math.max(0, worldClock.slowAt - worldClock.epoch), b = Math.max(a, worldClock.fastAt - worldClock.epoch);
+  if (ms <= a) return ms / HOUR_MS;
+  if (ms <= b) return a / HOUR_MS + (ms - a) / SLOW_HOUR_MS;
+  return a / HOUR_MS + (b - a) / SLOW_HOUR_MS + (ms - b) / HOUR_MS;
 }
 const worldHourNow = () => Math.floor(worldHours()) + 3;
 const me = () => JSON.parse(store.get(WORLD_ID) || "null");
 async function loadClock() {
   try {
-    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch };
+    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch };
     // the world was wiped (a new generation): forget the old name and world town on this phone
     if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
       try { localStorage.removeItem(WORLD_ID); localStorage.removeItem(WORLD_SAVE); } catch { /* fine */ }
@@ -2556,15 +2562,15 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-29", world: "2026-12-29" },
+  v: { solo: "2026-12-30", world: "2026-12-30" },
   items: [
+    ["both", "🕰️", "اليوم رجع ٢٠ دقيقة", "يوم اللعبة رجع ٢٠ دقيقة (كل ساعة باللعبة ٥٠ ثانية) عشان اللعب ما يبطى. والفصول باقية ٧ أيام."],
     ["both", "🏫", "تفاصيل الخدمات ومداها", "اضغط أي خدمة بقائمة البناء (مسجد، مدرسة، مستوصف، شرطة، حديقة…) وتطلع لك تفاصيلها: السعر والمصروف وكم تفرّح الناس ومداها وكم عندك منها وكم بيت برا مداها. وفيها زر «اعرض مداه» يلوّن الخريطة: الأخضر يوصله والأحمر البيوت اللي برا، وزر «ابنِ»."],
     ["both", "↩️", "ترجع وانت ماسك", "الطريق يمشي مع إصبعك وين ما تروح زي أول، وما يفوّت مربعات لو سحبت بسرعة. ولو طلع مربع غلط وانت ماسك، ارجع بإصبعك على نفس الطريق وينمسح اللي بعده، وكمّل بدون ما ترفع إصبعك. ونفس الشي بالترتيب."],
     ["both", "🔔", "تنبيه رسوم المحافظة", "قبل رسوم المحافظة السنوية بـ٣ أيام وبيوم يوصلك تنبيه بالمبلغ تقريبًا، وبالأرقام تشوف كم باقي لها وكم بتدفع."],
     ["both", "🌬️", "مراوح الرياح تدور", "مراوح مزرعة الرياح صارت تدور، وإذا تضررت المزرعة تبطّي، وإذا انهدمت توقف."],
     ["both", "⚖️", "موازنة الفلوس", "التجار يشترون من محاصيل مزارعك على قد حجم بلدك: المزارع الأولى تبيع كامل، واللي يزيد عن الطلب ينباع بـ٤٠٪ (تشوفه بالأرقام). مكافآت المهام اللي ما تطلب بناء (عدد السكان، الرضا، المرحلة) صارت أقل، ومهام البناء باقية تغطي سعرها. ورسوم المحافظة صارت على قد الوقت اللي قضيته بكل مرحلة، فما تنضرب برسوم مدينة كاملة لو صرت مدينة آخر السنة."],
     ["both", "🔔", "شريط الأحداث يختفي", "شريط الحدث (موجة حر، رمضان، مطر…) يطلع ٣٠ ثانية أول ما يبدأ وبعدين يختفي، وتلقاه بمربع الوقت فوق."],
-    ["both", "🕰️", "اليوم صار نص ساعة", "يوم اللعبة صار ٣٠ دقيقة بدال ٢٠ (كل ساعة باللعبة دقيقة وربع)، فتلحق تبني وتشوف مدينتك بالنهار أكثر."],
     ["world", "✏️", "اسم مدينتك بالجوف", "كل مدينة بالجوف لها اسم ما يتكرر: إذا الاسم مأخوذ يقولك اختر غيره. وتقدر تغيّر اسم مدينتك مرة وحدة بس من خريطة الجوف ← مدينتك ← «غيّر اسم مدينتك»، ويطلع الخبر بنشرة الجوف."],
     ["both", "📅", "فصول أطول", "كل فصل صار أسبوع كامل (٧ أيام) بدال ٣، والسنة ٢٨ يوم. اليوم نفسه ما تغيّر. ورمضان صار يومين، وكل عيد يوم كامل، ورسوم المحافظة السنوية زادت بقدر ما طالت السنة."],
     ["world", "🌍", "نشرة الجوف", "داخل «النشرة» صار فيه تبويب «نشرة الجوف»: أجواء الجوف الحين واللي جاي بالـ٤٨ ساعة (مطر، غبار، رمضان، العيد)، وأكبر المدن وأسعدها، وأخبار الجوف كلها: مدن جديدة، مدن كبرت، حروب وهدن وصلح وضربات. وتطلع لك نقطة إذا فيه خبر جديد."],
