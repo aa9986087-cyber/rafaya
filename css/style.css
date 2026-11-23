@@ -448,3 +448,7 @@ body.world .side .world-only { display: grid; }
 .effect { display: grid; gap: 6px; margin: 6px 0; padding: 8px; border-radius: 12px; background: rgba(44, 138, 122, .08); }
 .row.eff b small { opacity: .75; font-weight: 600; }
 .bar.wide { height: 10px; margin: 6px 0 4px; }
+/* Safari on iPhone gives buttons its own padding and look, which made the square side buttons
+   bigger than the space worked out for them: same size on every browser */
+button { -webkit-appearance: none; appearance: none; margin: 0; }
+.side-btn, .speeds button, .wm-zoom button, .arr-bar button, .tool-chip button { padding: 0; box-sizing: border-box; overflow: hidden; }

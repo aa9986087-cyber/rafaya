@@ -78,6 +78,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
    - The solo town stays (it is a copy).
    - Caveat: a player could swap the solo copy in again to restore money. Not blocked.
 
+10. **iPhone layout.** On small notched iPhones in world mode (7 side buttons), the left rail spilled into the build bar and the world-time chip.
+    - `layoutSide()` now measures from the lowest left HUD item, prefers one compact column, and re-measures and shrinks until the last button clears the bar.
+    - It reruns on `visualViewport` resize, orientation change, ResizeObserver (hud/dock/side), body class changes and fonts ready.
+    - Buttons get `appearance: none` and no padding so Safari matches Chrome.
+    - To test the notch in Playwright, override `--top`/`--bottom`/`--left`/`--right` on `:root` (Chromium reports no safe areas).
+
 **Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

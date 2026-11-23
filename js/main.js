@@ -95,16 +95,32 @@ addEventListener("resize", () => { world.resize(); layoutSide(); });
 function layoutSide() {
   const side = document.querySelector(".side"), speeds = document.querySelector(".speeds"), dock = document.querySelector(".dock");
   if (!side || !speeds || !dock) return;
-  const top = speeds.getBoundingClientRect().bottom + 10, bottom = dock.getBoundingClientRect().top - 10;
-  const n = [...side.children].filter((c) => getComputedStyle(c).display !== "none").length, gap = 6, avail = Math.max(0, bottom - top);
-  let size = Math.floor((avail - gap * (n - 1)) / n), cols = 1;
-  if (size < 40) { cols = 2; size = Math.floor((avail - gap * (Math.ceil(n / 2) - 1)) / Math.ceil(n / 2)); }
-  size = Math.max(36, Math.min(50, size));
-  side.style.top = `${Math.round(top)}px`;
-  side.style.setProperty("--sz", `${size}px`);
-  side.classList.toggle("compact", size < 50);
-  side.classList.toggle("two", cols === 2);
+  // the rail sits between whatever is lowest on the left at the top and the build bar at the bottom
+  const tops = [speeds, ...document.querySelectorAll(".world-time")].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
+  const top = Math.max(...tops.map((r) => r.bottom), 0) + 10, bottom = dock.getBoundingClientRect().top - 10;
+  const shown = [...side.children].filter((c) => getComputedStyle(c).display !== "none");
+  const n = shown.length, gap = 6, avail = Math.max(0, bottom - top);
+  const fit = (cols) => { const rows = Math.ceil(n / cols); return Math.floor((avail - gap * (rows - 1)) / rows); };
+  let cols = 1, size = fit(1);
+  if (size < 38) { cols = 2; size = fit(2); }
+  size = Math.max(28, Math.min(50, size));
+  const apply = () => {
+    side.style.top = `${Math.round(top)}px`;
+    side.style.setProperty("--sz", `${size}px`);
+    side.classList.toggle("compact", size < 50);
+    side.classList.toggle("two", cols === 2);
+  };
+  apply();
+  // check what really happened (fonts, Safari's bars): shrink until the last button clears the bar
+  for (let k = 0; k < 12 && shown.length && Math.max(...shown.map((c) => c.getBoundingClientRect().bottom)) > bottom + 1 && size > 26; k++) { size -= 2; apply(); }
 }
+// iPhone Safari shows and hides its bars without a window resize: lay the rail out again whenever
+// the visible area, the HUD or the build bar change size
+window.visualViewport?.addEventListener("resize", () => layoutSide());
+addEventListener("orientationchange", () => setTimeout(layoutSide, 250));
+if (window.ResizeObserver) { const ro = new ResizeObserver(() => layoutSide()); for (const sel of [".hud", ".dock", ".side"]) { const el = document.querySelector(sel); if (el) ro.observe(el); } }
+new MutationObserver(() => layoutSide()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+document.fonts?.ready.then(() => layoutSide());
 
 const sync = (roads) => world.sync(S, { tiles: false, roads, buildings: true });
 
