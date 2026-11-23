@@ -99,7 +99,9 @@ export const ICON_PATHS = {
 "☄": "<path d=\"M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4\" />",
 "⏭": "<path d=\"M21 4v16\" /> <path d=\"M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z\" />"
 };
+ICON_PATHS["🚩"] = ICON_PATHS["🏳"]; // report
 const ICON_COLORS = {"🔥": "#e8590c", "💥": "#d9480f", "🚨": "#e03131", "⚠": "#e67700", "✅": "#2f9e44", "❌": "#e03131", "🏆": "#d4a53a", "🛡": "#1c7ed6", "💡": "#e0a800", "🎉": "#d4a53a", "😠": "#e03131", "🕊": "#2f9e44", "🏳": "#868e96", "🚀": "#c92a2a", "💧": "#1c7ed6", "⚡": "#e0a800"};
+ICON_COLORS["🚩"] = "#e03131";
 const EMOJI_RE = /(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)/gu;
 const iconKey = (e) => e.replace(/\uFE0F/g, "");
 /** The icon for one emoji, as markup (or null when there is none). */

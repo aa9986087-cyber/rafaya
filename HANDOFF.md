@@ -172,6 +172,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Heat: `perfWatch` (main.js) averages how long `world.frame` takes. Slow (> 18 ms) for 4 s raises `world.degrade(level)`: 1 = pixel ratio 1.25, 2 = no shadows, 3 = pixel ratio 1. The level is stored per quality (`rafaya-perf-level`) and reset when the quality setting changes.
     - Behind an open sheet or on the menu the town draws at 15 fps.
 
+26. **The public chat of al-Jouf (world only, owner: «حط شات عام باللاولاين»):**
+    - Server: table `chat` (newest 500). `GET /api/world/chat[?after=ID]` and `POST /api/world/chat` (signed in; 200 characters; one message per 6 s per name; `badText` filter). A world wipe clears it.
+    - Client: `#chatBtn` (world-only, unread `#chatCount`), `chatSheet`, and `chatPoll` (every 20 s, 4 s while the sheet is open). 🚩 reports go through `/api/world/report`. The town chip opens the map at that town.
+    - It never shows who is online.
+    - The trial copy has a chat too, with the bots saying a word now and then.
+
 **Nothing is half-done.** All tests pass (38/38). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**

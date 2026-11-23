@@ -13,6 +13,8 @@
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
+//   GET  /api/world/chat?after=ID               → { messages: [...] }  (the public chat, newest 50 or those after ID)
+//   POST /api/world/chat     { name, secret, text } → { ok, message }  (one message every 6 s, 200 characters)
 //   POST /api/world/war/ACTION { name, secret, ... }   → «صراع الجوف», decided here (see js/warserver.js):
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
@@ -54,6 +56,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS players (name TEXT PRIMARY KEY, secret TEXT, recovery TEXT, created INTEGER, plot INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS plots (plot INTEGER PRIMARY KEY, owner TEXT, town TEXT, terrain TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
+    // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
@@ -63,6 +67,7 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM reports");
       this.sql.exec("DELETE FROM comments WHERE code GLOB 'w[0-9]*'"); // world towns' comments are "w<plot>"; GLOB is case-sensitive, so the old 6-letter codes stay
       this.sql.exec("DELETE FROM war");
+      this.sql.exec("DELETE FROM chat");
       this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
     }
     this.war = new WarServer(warDb, {
@@ -87,6 +92,13 @@ export class Board extends DurableObject {
     if (!WORLD_OPEN && this.env?.WAR_TEST !== "1") return json({ error: "maintenance" }, 503); // local tests may open it
     const post = request.method === "POST", body = post ? await request.json() : {};
     if (!post && p[0] === "clock") return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN });
+    if (!post && p[0] === "chat") {
+      const after = int(new URL(request.url).searchParams.get("after"));
+      const messages = after > 0
+        ? this.sql.exec("SELECT id, name, plot, town, text, at FROM chat WHERE id > ? ORDER BY id ASC LIMIT 100", after).toArray()
+        : this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 50", ).toArray().reverse();
+      return json({ messages, now: Date.now() });
+    }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
@@ -145,6 +157,18 @@ export class Board extends DurableObject {
       const who = this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0];
       const res = this.war.handle(p[1], body, who);
       return json(res, res.error === "not found" ? 404 : 200); // a refusal comes back as { error: "why, in Arabic" }
+    }
+    if (p[0] === "chat") {
+      const text = clean(body.text, 200);
+      if (!text) return json({ error: "اكتب شي" }, 200);
+      if (badText(text)) return json({ error: "الكلام هذا ما يصير بالشات" }, 200);
+      const last = this.sql.exec("SELECT at FROM chat WHERE name = ? ORDER BY id DESC LIMIT 1", name).toArray()[0];
+      if (last && Date.now() - last.at < 6000) return json({ error: "على هونك: رسالة كل ٦ ثواني" }, 200);
+      const town = me.plot != null ? this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0]?.town || "" : "";
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, Date.now());
+      this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
+      const message = this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
+      return json({ ok: true, message });
     }
     if (p[0] === "report") {
       this.sql.exec("INSERT INTO reports (plot, by, reason, at) VALUES (?, ?, ?, ?)", int(body.plot), name, clean(body.reason, 200), Date.now());

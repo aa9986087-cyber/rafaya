@@ -525,3 +525,15 @@ svg.ic * { fill: none !important; }
 
 /* the world runs on everyone's clock: no speed buttons, so the whole group goes */
 body.world .speeds { display: none !important; }
+
+/* the public chat of al-Jouf */
+.chat-list { max-height: min(52vh, 420px); overflow-y: auto; display: grid; gap: 8px; padding: 4px 2px 8px; overscroll-behavior: contain; }
+.chat-msg { background: rgba(111, 109, 67, .09); border-radius: 14px; padding: 8px 12px; max-width: 88%; justify-self: start; }
+.chat-msg.mine { background: rgba(44, 138, 122, .14); justify-self: end; }
+.chat-msg p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.chat-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.chat-head small { opacity: .6; }
+.chat-town { border: 0; background: rgba(212, 165, 58, .2); color: inherit; border-radius: 99px; padding: 1px 8px; font: inherit; font-size: 12px; }
+.chat-rep { border: 0; background: none; padding: 0 2px; margin-inline-start: auto; opacity: .55; font-size: 13px; }
+.chat-send { display: flex; gap: 8px; margin-top: 8px; }
+.chat-send input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid #d9c9a8; background: #fffaf0; }

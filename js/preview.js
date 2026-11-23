@@ -86,6 +86,16 @@ function pvBots() {
   pvSave();
 }
 
+/** The trial's chat: your messages, and now and then a word from the bots. */
+function pvChat(name, plot, text) {
+  pvState.chat ||= [];
+  const id = (pvState.chat[pvState.chat.length - 1]?.id || 0) + 1;
+  pvState.chat.push({ id, name, plot, town: pvState.plots[plot]?.town || "", text, at: Date.now() });
+  pvState.chat = pvState.chat.slice(-200);
+}
+const PV_LINES = ["السلام عليكم يا أهل الجوف", "أحد عنده مسيّرات للبيع؟ 😄", "الهدنة أحسن لنا كلنا", "مدينتي صارت محافظة الحمدلله", "ترى الرادار حقي صاحي", "وش أحسن مكان للمزارع؟", "الله يجمعنا على خير"];
+setInterval(() => { const bots = Object.values(pvState.players).filter((p) => p.bot); if (bots.length && Math.random() < 0.25) { const b = bots[Math.floor(Math.random() * bots.length)]; pvChat(b.name, b.plot, PV_LINES[Math.floor(Math.random() * PV_LINES.length)]); pvSave(); } }, 15000);
+
 /** The trial's answer to every /api call the game makes. */
 async function pvApi(path, body) {
   await new Promise((r) => setTimeout(r, 60)); // a little like a network
@@ -99,6 +109,11 @@ async function pvApi(path, body) {
 function pvRoute(p, body) {
   const post = !!body;
   if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2 };
+  if (!post && p[0].startsWith("chat")) {
+    const after = Number((p[0].split("after=")[1]) || 0);
+    pvState.chat ||= [];
+    return { messages: after ? pvState.chat.filter((m) => m.id > after) : pvState.chat.slice(-50), now: Date.now() };
+  }
   if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t) };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];
@@ -130,6 +145,12 @@ function pvRoute(p, body) {
     return { ok: true };
   }
   if (p[0] === "town" && p[2] === "comment") { pvState.comments.push({ plot: Number(p[1]), author: me.name, text: String(body.text || "").slice(0, 200), at: Date.now() }); return { ok: true }; }
+  if (p[0] === "chat") {
+    const text = String(body.text || "").replace(/[<>]/g, "").trim().slice(0, 200);
+    if (!text) return { error: "اكتب شي" };
+    pvChat(me.name, me.plot, text);
+    return { ok: true };
+  }
   if (p[0] === "report") return { ok: true };
   if (p[0] === "war") return pvWar.handle(p[1], body, me);
   throw new Error("404");

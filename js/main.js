@@ -1198,7 +1198,7 @@ async function visitTown(code, opts = {}) {
  * before its own handler runs. Reading, following a family, the world map and comments still work.
  */
 const VISIT_OK = ".keep, [data-follow], [data-day], [data-plot], [data-district], .wm-zoom, #olText, #wmTown, .ol-com";
-const VISIT_SHEETS = new Set(["online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew", "war", "war-rel", "war-strike", "war-report", "war-back"]); // the war sheets only talk to the server
+const VISIT_SHEETS = new Set(["chat", "online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew", "war", "war-rel", "war-strike", "war-report", "war-back"]); // the war sheets only talk to the server
 for (const type of ["click", "input", "change"]) $("sheetBody").addEventListener(type, (e) => {
   if (!visiting || VISIT_SHEETS.has(sheetFor)) return;
   const el = e.target.closest?.("button, input, select, textarea, [data-tech], [data-opt]");
@@ -2093,6 +2093,66 @@ async function warBack(reportOpen) {
   const open = () => { show(); $("wbOps").addEventListener("click", () => warSheet("ops")); $("wbOk").addEventListener("click", closeSheet); };
   if (reportOpen) { const wait = setInterval(() => { if (sheetFor !== "deputyReport" && $("sheet").hidden) { clearInterval(wait); open(); } }, 800); } else open();
 }
+// ---------- the public chat of al-Jouf (world only; it never shows who is online) ----------
+const CHAT = { msgs: [], last: 0, polled: 0, busy: false };
+const chatSeen = () => Number(store.get("rafaya-chat-seen") || 0);
+async function chatPoll(force) {
+  if (!worldMode || CHAT.busy || (!force && Date.now() - CHAT.polled < (sheetFor === "chat" ? 4000 : 20000))) return;
+  CHAT.busy = true; CHAT.polled = Date.now();
+  try {
+    const r = await api(`/world/chat${CHAT.last ? `?after=${CHAT.last}` : ""}`);
+    if (r.messages?.length) {
+      CHAT.msgs = [...CHAT.msgs, ...r.messages].slice(-120);
+      CHAT.last = CHAT.msgs[CHAT.msgs.length - 1].id;
+      if (sheetFor === "chat") chatSheet(true);
+    }
+  } catch { /* the next time */ }
+  CHAT.busy = false;
+  chatCount();
+}
+function chatCount() {
+  const mine = me()?.name, n = CHAT.msgs.filter((m) => m.id > chatSeen() && m.name !== mine).length;
+  $("chatCount").hidden = !n || sheetFor === "chat";
+  $("chatCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
+}
+function chatSheet(keep) {
+  const id = me(), box = $("chatList"), stick = !keep || !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  const draft = $("chatText")?.value || "";
+  const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
+  sheet(`<h2>💬 شات الجوف</h2>
+    <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
+        <div class="chat-head"><b>${m.name}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
+        <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
+    <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
+    <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>`, "chat");
+  const list = $("chatList");
+  if (stick) list.scrollTop = list.scrollHeight;
+  store.set("rafaya-chat-seen", String(CHAT.last));
+  chatCount();
+  const send = async () => {
+    const text = $("chatText").value.trim();
+    if (!text) return;
+    if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; }
+    $("chatGo").disabled = true;
+    let r;
+    try { r = await api("/world/chat", { name: id.name, secret: id.secret, text }); } catch { r = { error: "ما وصلت الرسالة، جرّب بعد شوي" }; }
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); $("chatGo").disabled = false; return; }
+    $("chatText").value = "";
+    sfx.tap();
+    await chatPoll(true);
+    chatSheet();
+  };
+  $("chatGo").addEventListener("click", send);
+  $("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  $("sheetBody").querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(Number(b.dataset.town)); }));
+  $("sheetBody").querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", async () => {
+    const m = CHAT.msgs.find((x) => x.id === Number(b.dataset.rep));
+    if (!m || !id) return;
+    try { await api("/world/report", { name: id.name, secret: id.secret, plot: m.plot, reason: `شات (${m.name}): ${m.text}` }); toast("وصل البلاغ، شكرًا", "goal"); b.disabled = true; } catch { toast("ما وصل البلاغ", "bad"); }
+  }));
+}
+$("chatBtn").addEventListener("click", async () => { sfx.tap(); chatSheet(); await chatPoll(true); });
+
 /** The military part of another town's card on the al-Jouf map. */
 function warCardHtml(plot) {
   if (!worldMode) return "";
@@ -2225,8 +2285,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-15", world: "2026-12-15" },
+  v: { solo: "2026-12-15", world: "2026-12-16" },
   items: [
+    ["world", "💬", "شات الجوف", "شات عام لكل لاعبين الجوف من زر «الشات» على الجنب، ويطلع لك عدد الرسائل الجديدة. اضغط اسم المدينة تروح لها بالخريطة، وتقدر تبلّغ عن أي رسالة مسيئة. رسالة كل ٦ ثواني، والكلام البذيء ينمنع."],
     ["both", "🏙️", "فلل وعماير وأبراج جديدة", "الفلل صار فيها حجر وأعمدة على المدخل وبلكونة زجاج وبوابة حديد ومظلة سيارات وسيارة وحديقة بنخلة، والعماير صار تحتها محلات بلوحات، وفيها بلكونات ومكيفات سبليت وخزانات على السطح، والأبراج السكنية زجاج بين أعمدة حجر وتاج منوّر."],
     ["both", "🔋", "حماية من الحرارة لكل الجوالات", "إذا حسّت اللعبة إن جوالك يتعب، تخفف نفسها لحالها (دقة أقل، ثم بدون ظلال) وتتذكر هذا. ووقت ما تكون فاتح نافذة أو بالقائمة الرئيسية ترسم أقل بكثير."],
     ["both", "🏘️", "مدينة أوقع (المرحلة الثالثة)", "أرصفة على حواف الطرق، وظل ناعم تحت كل مبنى يخليه قاعد على الأرض، والناس بأشكال أنعم."],
@@ -2915,7 +2976,7 @@ function frame(now) {
   }
   if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
-  if (playing && worldMode && !arrange) warPoll(); // «صراع الجوف»: at most every 25 seconds
+  if (playing && worldMode && !arrange) { warPoll(); chatPoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); if (playing) layoutSide(); }
   const t0 = performance.now();
