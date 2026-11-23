@@ -126,8 +126,7 @@ export class WarServer {
       return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, ...v, hist: (r.hist || []).slice(-20) };
     }).filter((r) => r.state !== "peace" || r.hist.length);
     const ops = this.db.list("op", { either: String(me.plot), limit: 40 }).map((o) => this.opPublic(o, me));
-    const since = Number(body.since) || 0;
-    const notes = this.db.list("note", { k1: String(me.plot), since, limit: 60 });
+    const notes = this.db.list("note", { k1: String(me.plot), limit: 60 }); // the newest 60 (the game knows which it has seen)
     const charges = this.db.list("charge", { k1: String(me.plot) }).filter((c) => c.seq > (Number(body.seq) || 0)).sort((x, y) => x.seq - y.seq);
     const dmg = [...this.damage(me.plot).values()];
     return {

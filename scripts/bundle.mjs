@@ -17,6 +17,7 @@ const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
     .replace(/^export (const|function|let|class|async function) /gm, "$1 "))
   .join("\n");
 // Every module now shares one scope, so the same top-level name twice would break the page.
+// (N, the map size, is declared once by sim.js; the other modules import it as MAP_SIZE as N.)
 const names = new Map();
 for (const m of mods) for (const [, n] of (await read(`js/${m}.js`)).matchAll(/^(?:export )?(?:const|let|function|class|async function) ([A-Za-z_$][\w$]*)/gm)) {
   if (names.has(n) && !(n === "N")) throw new Error(`"${n}" is declared in both ${names.get(n)} and ${m}`);
@@ -26,7 +27,7 @@ const bodyStart = html.indexOf(">", html.indexOf("<body")) + 1;
 const body = html.slice(bodyStart, html.indexOf("</body>")).replace(/<script[^>]*><\/script>/, "");
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
 const page = `<meta charset="utf-8">
-<title>الرافعية</title>
+<title>${preview ? "تجربة صراع الجوف" : "الرافعية"}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="data:image/svg+xml;base64,${icon}">
 ${fonts}
@@ -42,8 +43,7 @@ ${body}
 </script>
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js";
-const N = 30;
-${code.replace(/^const N = MAP_SIZE;$/m, "")}
+${code}
 </script>
 `;
 await mkdir(new URL("../dist/", import.meta.url), { recursive: true });

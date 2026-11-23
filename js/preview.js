@@ -141,9 +141,11 @@ function pvReadyTown(s) {
   for (let x = 19; x < 53; x++) { put(x, 27, "asphalt"); put(x, 35, "road"); }
   for (let y = 27; y < 36; y++) { put(26, y, "road"); put(44, y, "road"); }
   for (let x = 20; x < 52; x += 2) { if ([26, 44].includes(x)) continue; put(x, 28, "house", x % 3 ? 3 : 2); put(x, 34, "house", 2); }
-  put(21, 26, "mosque"); put(24, 26, "school"); put(28, 26, "clinic"); put(31, 26, "park"); put(34, 26, "well"); put(37, 26, "tank");
-  put(40, 26, "generator"); put(47, 26, "factory"); put(50, 26, "workshop"); put(29, 36, "datefactory"); put(33, 36, "mall"); put(37, 36, "souq");
-  s.era = 2; s.money = 300000; s.pop = 1300; s.tech = { ...(s.tech || {}), asphalt: true };
+  put(21, 26, "mosque"); put(24, 26, "school"); put(28, 26, "clinic"); put(31, 26, "park"); put(34, 26, "bigmosque");
+  put(47, 26, "factory"); put(50, 26, "workshop"); put(29, 36, "datefactory"); put(33, 36, "mall"); put(37, 36, "souq");
+  // water and power for everyone: a desalination plant and two wind farms between the streets
+  put(36, 31, "desal"); put(29, 31, "windfarm"); put(41, 31, "windfarm"); put(40, 26, "generator"); put(22, 31, "tank"); put(50, 31, "tank");
+  s.era = 2; s.money = 300000; s.pop = 0; s.tech = { ...(s.tech || {}), asphalt: true, wind: true, desal: true };
   return s;
 }
 

@@ -1030,7 +1030,7 @@ function inspect(x, y) {
     floatAt(x, y, `⬆ ${levelName(S.tiles[idx(x, y)].b)}`, "up");
     inspect(x, y);
   });
-  $("warOpen")?.addEventListener("click", () => warSheet());
+  $("warOpen")?.addEventListener("click", async () => { await warPoll(true); warSheet(); });
   $("warRepair")?.addEventListener("click", () => warRepairAt(x, y));
   $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); refresh(); save(); inspect(x, y); });
   $("turnOne")?.addEventListener("click", () => { sfx.tap(); t.b.rot = ((t.b.rot || 0) + 1) % 4; world.sync(S, { buildings: true }); save(); });
@@ -1497,10 +1497,22 @@ async function warApi(action, body = {}) {
   if (!id || id.plot == null) return { error: "سجّل وأسس مدينتك بعالم الجوف أول" };
   try { return await api(`/world/war/${action}`, { name: id.name, secret: id.secret, ...body }); } catch (e) { return { error: e.message === "maintenance" ? "عالم الجوف تحت الصيانة" : "ما قدرت أوصل للسيرفر: جرّب بعد شوي" }; }
 }
+/** The buildings as the server last saw them: when they changed, send the town before any war action (the server only trusts what it has). */
+const warTownKey = (s) => `${s.era}|${s.tiles.map((t) => (t.b ? `${t.b.id}${t.b.lvl}${t.b.build > 0 ? "b" : ""}` : "")).join(",")}`;
+async function warSyncNow() {
+  const home = visiting ? visiting.home : S, id = me();
+  if (!worldMode || !home?.world || id?.plot == null) return;
+  const key = warTownKey(home);
+  if (key === WARX.syncKey) return;
+  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era,
+    snapshot: pack({ ...home, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
+  try { await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now(); } catch { /* the next try */ }
+}
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 async function warPoll(force) {
   if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < 25000)) return WARX.st;
   WARX.busy = true; WARX.polled = Date.now();
+  if (force) await warSyncNow();
   const st = await warApi("state", { since: warSeen(), seq: (visiting ? visiting.home : S).war?.seq || 0 });
   WARX.busy = false;
   if (st.error) return WARX.st;
@@ -1530,6 +1542,7 @@ function warApply(st) {
   }
   if (!visiting && (changed || paid)) { A = analyze(S); world.sync(S, { buildings: true }); refresh(); }
   if (paid || changed) { save(); worldSync(true); }
+  warWatch(st); // a fresh attack on us plays first; its notes then wait in the log
   // notes: the newest few as toasts, the big ones into the town's news
   const fresh = (st.notes || []).filter((n) => n.at > warSeen()).sort((a, b) => a.at - b.at);
   if (fresh.length) {
@@ -1539,7 +1552,6 @@ function warApply(st) {
     warNews(fresh);
   }
   $("warDot").hidden = !(st.rels || []).some((r) => r.offer && r.offer.by !== me()?.plot) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
-  warWatch(st);
   if (sheetFor === "war") warSheet(WARX.tab);
 }
 /** Results to show: an attack on us that just landed (played here if the mayor is home), our own that just landed. */
@@ -1665,6 +1677,7 @@ async function warSheet(tab = "home") {
   $("sheetBody").querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", async () => {
     const kind = b.dataset.buy === "intcfill" ? "intc" : b.dataset.buy, n = b.dataset.buy === "intcfill" ? caps.intc - ars.intc : 1;
     b.disabled = true;
+    await warSyncNow();
     const r = await warApi("buy", { req: warReq(), kind, n });
     if (r.error) { toast(r.error, "bad"); sfx.deny(); b.disabled = false; return; }
     sfx.coin(); toast(`✓ ${r.charge.why} (−${money(r.charge.amount)} ريال)`, "goal");
@@ -1687,7 +1700,7 @@ function relTimer(r) {
 
 // ---------- relations with one town ----------
 async function relSheet(plot) {
-  const st = WARX.st || await warPoll(true);
+  const st = await warPoll(true) || WARX.st;
   let r = st?.rels.find((x) => x.other === plot);
   let info = r ? { town: r.town, owner: r.owner, era: r.era } : null;
   if (!info) { try { const d = await api(`/world/town/${plot}`); info = { town: d.town.town, owner: d.town.owner, era: d.town.era }; } catch { toast("ما لقيت المدينة", "bad"); return; } }
@@ -1942,8 +1955,10 @@ async function warDefenseScene(op) {
   sceneUi(true); closeSheet(); setTool(null);
   try {
     banner(`🚨 هجوم من «${op.fromTown}»!`, "bad");
-    const t = S.tiles[idx(op.x, op.y)];
+    const t = S.tiles[idx(op.x, op.y)], rk = `${op.x}:${op.y}`, rep = world.fx.repairs.get(rk);
+    world.fx.repairs.delete(rk); // the deputy's repair starts after the hit, not before
     if (t?.b && op.result.dmg) { t.b.wd = op.result.before || 0; if (!t.b.wd) delete t.b.wd; world.sync(S, { buildings: true }); } // as it stood before the hit
+    if (rep) setTimeout(() => { world.fx.repairs.set(rk, rep); world.sync(S, { buildings: true }); }, 9000);
     if (!op.result.blocked) await world.fx.playIncoming(incomingOpts(op, defenceOf(S)));
     world.fx.clear();
     opReport(op, true);
@@ -2529,7 +2544,7 @@ function happySheet() {
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
 $("worldBtn").addEventListener("click", () => { sfx.tap(); worldMapSheet(); });
 $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
-$("warBtn").addEventListener("click", () => { sfx.tap(); warSheet(); });
+$("warBtn").addEventListener("click", async () => { sfx.tap(); sheet(`<h2>⚔️ القيادة العسكرية</h2><p class="hint">نحمّل…</p>`, "war"); await warPoll(true); warSheet(); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
 
 function goals() {
