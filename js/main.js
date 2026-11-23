@@ -325,6 +325,13 @@ function stepTiles(a, b) {
 function roadAim(r, t) {
   const lastT = r.trail[r.trail.length - 1];
   if (lastT.x !== t.x || lastT.y !== t.y) { r.trail.push(t); if (r.trail.length > 4) r.trail.shift(); }
+  // going back over the road already drawn takes it back to there (a wrong turn is undone without lifting the finger)
+  const back = r.segs.findIndex((p) => p.x === t.x && p.y === t.y);
+  if (back >= 0) {
+    const prev = r.segs[back - 1];
+    r.axis = prev ? (prev.y === t.y ? "x" : "y") : null;
+    r.segs = r.segs.slice(0, back); r.anchor = t; r.trail = [t];
+  }
   const dx = t.x - r.anchor.x, dy = t.y - r.anchor.y;
   if (!r.axis) { if (Math.abs(dx) + Math.abs(dy) >= 2 || Math.max(Math.abs(dx), Math.abs(dy)) >= 1 && r.trail.length > 2) r.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y"; }
   else {
@@ -436,7 +443,21 @@ function arrErase(t) {
 }
 function arrPaint(t) {
   drag.road ||= roadAimStart(t);
-  for (const c of roadAim(drag.road, t)) arrPaintOne(c); // straight runs, like building roads (arrPaintOne skips done tiles)
+  drag.placed ||= new Map(); // tiles this stroke put a road on (so going back can take them up again)
+  if (arrange.held) drag.roadId = arrange.held.b.id;
+  const want = roadAim(drag.road, t), keep = new Set(want.map((c) => idx(c.x, c.y)));
+  // the finger went back: the roads past it go back to the store
+  for (const [i, b] of [...drag.placed]) {
+    if (keep.has(i)) continue;
+    S.tiles[i].b = null; drag.placed.delete(i); drag.done.delete(i);
+    if (arrange.held) arrange.tray.push(b); else arrange.held = { b, from: -1 };
+  }
+  for (const c of want) {
+    const i = idx(c.x, c.y), had = S.tiles[i]?.b;
+    arrPaintOne(c); // straight runs, like building roads (it skips tiles already done)
+    if (inMap(c.x, c.y) && !had && S.tiles[i].b) drag.placed.set(i, S.tiles[i].b);
+  }
+  arrSync(); arrRender();
 }
 function arrPaintOne(t) {
   const h = arrange.held;
@@ -2524,8 +2545,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-26", world: "2026-12-26" },
+  v: { solo: "2026-12-27", world: "2026-12-27" },
   items: [
+    ["both", "↩️", "ترجع وانت ماسك", "وانت ترسم طريق وإصبعك ماسك: لو لف معك غلط يمين أو يسار، ارجع بإصبعك على نفس الطريق للزاوية وينمسح الغلط، وكمّل بدون ما ترفع إصبعك. وكل ما رجعت على الطريق يقصر معك. ونفس الشي بالترتيب."],
     ["both", "🔔", "تنبيه رسوم المحافظة", "قبل رسوم المحافظة السنوية بـ٣ أيام وبيوم يوصلك تنبيه بالمبلغ تقريبًا، وبالأرقام تشوف كم باقي لها وكم بتدفع."],
     ["both", "🌬️", "مراوح الرياح تدور", "مراوح مزرعة الرياح صارت تدور، وإذا تضررت المزرعة تبطّي، وإذا انهدمت توقف."],
     ["both", "⚖️", "موازنة الفلوس", "التجار يشترون من محاصيل مزارعك على قد حجم بلدك: المزارع الأولى تبيع كامل، واللي يزيد عن الطلب ينباع بـ٤٠٪ (تشوفه بالأرقام). مكافآت المهام اللي ما تطلب بناء (عدد السكان، الرضا، المرحلة) صارت أقل، ومهام البناء باقية تغطي سعرها. ورسوم المحافظة صارت على قد الوقت اللي قضيته بكل مرحلة، فما تنضرب برسوم مدينة كاملة لو صرت مدينة آخر السنة."],

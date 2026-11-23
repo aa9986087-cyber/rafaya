@@ -236,6 +236,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `provinceFee(s)` in sim.js is the single place that computes the fee (also the estimate).
     - `step` warns 72 h and 24 h before the year ends. The budget sheet shows the coming fee and the days left.
     - The windfarm model has no blades now. `windRotor` (models.js) is spun by WarFX parts (kind "wind", `WIND_TOWERS`): slower when damaged, still when wrecked.
+37. **Undo while drawing a road (owner, 2026-11-23, both modes):**
+    - In `roadAim`, a finger back on a tile of the committed segments cuts the path back to that tile, taking that segment's axis.
+    - Going back to a wrong turn's corner undoes the turn, and going back along the road shortens it.
+    - Arrange (`arrPaint`) keeps `drag.placed`. Roads no longer on the path go back to the store or the hand.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
