@@ -14,6 +14,7 @@
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
+//   GET  /api/world/live  (WebSocket)            → hints pushed the moment something changes: chat, war, news, town
 //   GET  /api/world/chat?after=ID               → { messages: [...] }  (the public chat, newest 50 or those after ID)
 //   POST /api/world/chat     { name, secret, text } → { ok, message }  (one message every 6 s, 200 characters)
 //   POST /api/world/war/ACTION { name, secret, ... }   → «صراع الجوف», decided here (see js/warserver.js):
@@ -80,13 +81,56 @@ export class Board extends DurableObject {
     this.war = new WarServer(warDb, {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
       news: (kind, text, plot) => this.news(kind, text, plot),
+      ping: (plot) => this.live({ t: "war" }, plot), // a war note for this town: its game asks for the state now
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
     }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
+  }
+
+  // ---------- live: one socket per open game, so news reaches everyone the moment it happens ----------
+  // The server pushes small hints ({ t: "chat", message } / { t: "war" } / { t: "news" } / { t: "town", plot });
+  // the game then asks the usual routes. Nobody can see who is connected (never shown, never sent).
+  liveSocket(request) {
+    if (request.headers.get("Upgrade") !== "websocket") return json({ error: "websocket only" }, 426);
+    const pair = new WebSocketPair();
+    this.ctx.acceptWebSocket(pair[1]);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+  async webSocketMessage(ws, msg) {
+    let m; try { m = JSON.parse(String(msg)); } catch { return; }
+    if (m.t === "ping") { try { ws.send('{"t":"pong"}'); } catch { /* gone */ } return; }
+    if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
+      const row = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", clean(m.name, 16)).toArray()[0];
+      const ok = row && row.secret === (await hash(String(m.secret || "")));
+      ws.serializeAttachment({ plot: ok ? row.plot : null });
+      try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
+    }
+  }
+  webSocketClose(ws) { try { ws.close(); } catch { /* already */ } }
+  webSocketError() { /* the game reconnects by itself */ }
+  /** Wake up when the next strike arrives, to settle it then (results and notes go out live). */
+  async armWar() {
+    const next = this.war.nextArrival();
+    if (!next) return;
+    const cur = await this.ctx.storage.getAlarm();
+    if (!cur || cur > next) await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next + 200));
+  }
+  async alarm() {
+    try { this.war.settle(); } catch { /* the next request settles it */ }
+    await this.armWar();
+  }
+  /** Tell every open game (or only the town at plot) that something changed. */
+  live(msg, plot = null) {
+    const text = JSON.stringify(msg);
+    for (const ws of this.ctx.getWebSockets()) {
+      if (plot != null && ws.deserializeAttachment()?.plot !== plot) continue;
+      try { ws.send(text); } catch { /* closing */ }
+    }
   }
 
   async fetch(request) {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
+    if (parts[1] === "world" && parts[2] === "live" && (WORLD_OPEN || this.env?.WAR_TEST === "1")) return this.liveSocket(request);
     try {
       if (parts[1] === "world") return this.world(request, parts.slice(2));
       return json({ error: "not found" }, 404);
@@ -105,6 +149,7 @@ export class Board extends DurableObject {
     if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
     this.sql.exec("INSERT INTO wnews (kind, plot, n, text, at) VALUES (?, ?, ?, ?, ?)", kind, plot, n, text, Date.now());
     this.sql.exec("DELETE FROM wnews WHERE id NOT IN (SELECT id FROM wnews ORDER BY id DESC LIMIT 300)");
+    this.live({ t: "news" });
   }
 
   // ---------- the world of al-Jouf ----------
@@ -186,6 +231,7 @@ export class Board extends DurableObject {
       }
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
         int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
+      if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
     }
     if (p[0] === "rename") {
@@ -200,6 +246,7 @@ export class Board extends DurableObject {
       if (this.nameTaken(town, me.plot)) return json({ error: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" }, 200);
       this.sql.exec("UPDATE plots SET town = ?, renamed = 1 WHERE plot = ?", town, me.plot);
       this.news("rename", `✏️ «${row.town}» صار اسمها «${town}»`, me.plot, 0);
+      this.live({ t: "town", plot: me.plot });
       return json({ ok: true, town });
     }
     if (p[0] === "town" && p[2] === "comment") {
@@ -213,6 +260,7 @@ export class Board extends DurableObject {
     if (p[0] === "war" && p[1]) {
       const who = this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0];
       const res = this.war.handle(p[1], body, who);
+      await this.armWar(); // the next strike lands on time, even if nobody asks
       return json(res, res.error === "not found" ? 404 : 200); // a refusal comes back as { error: "why, in Arabic" }
     }
     if (p[0] === "chat") {
@@ -225,6 +273,7 @@ export class Board extends DurableObject {
       this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, Date.now());
       this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
       const message = this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
+      this.live({ t: "chat", message });
       return json({ ok: true, message });
     }
     if (p[0] === "report") {

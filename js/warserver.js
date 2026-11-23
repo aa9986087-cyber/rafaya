@@ -76,6 +76,7 @@ export class WarServer {
   note(plot, kind, text, extra = {}) {
     const at = this.now();
     this.db.put("note", `${plot}:${at}:${(noteN = (noteN + 1) % 1e6)}`, { at, kind, text, ...extra }, { k1: String(plot), at });
+    try { this.world?.ping?.(Number(plot)); } catch { /* live hints never stop the war */ }
   }
   /** A line for the world's bulletin (everyone reads it): only wars, truces, peace and strikes, never who is online. */
   news(kind, text, plot) { try { this.world?.news?.(kind, text, plot); } catch { /* the bulletin never stops the war */ } }
@@ -342,6 +343,11 @@ export class WarServer {
   }
 
   /** Decide every attack whose time has come (called on every request; each attack is decided once). */
+  /** When the next operation in flight arrives (for the server's alarm), or 0. */
+  nextArrival() {
+    const all = this.db.list("fly", {});
+    return all.length ? Math.min(...all.map((f) => f.at)) : 0;
+  }
   settle() {
     const now = this.now();
     for (const f of this.db.list("fly", { upTo: now })) {

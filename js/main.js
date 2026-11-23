@@ -1104,7 +1104,7 @@ const WNEWS = { items: [], polled: 0, busy: false, tab: "town", map: null };
 const wnewsSeen = () => Number(store.get("rafaya-wnews-seen") || 0);
 const wnewsUnread = () => WNEWS.items.filter((x) => x.id > wnewsSeen() && x.plot !== S.world?.plot).length;
 async function wnewsPoll(force) {
-  if (!worldMode || WNEWS.busy || (!force && Date.now() - WNEWS.polled < 60000)) return;
+  if (!worldMode || WNEWS.busy || (!force && Date.now() - WNEWS.polled < (LIVE.ok ? 300000 : 60000))) return; // live: the server tells us
   WNEWS.busy = true; WNEWS.polled = Date.now();
   try { const r = await api("/world/news"); WNEWS.items = r.items || []; } catch { /* the next time */ }
   WNEWS.busy = false;
@@ -1432,6 +1432,19 @@ async function visitTown(code, opts = {}) {
   refresh();
   if (!opts.target && !opts.scene) toast(`أهلًا بك في ${data.town.name}`, "goal");
 }
+/** The town being visited changed (its owner built something): show it as it is now, camera and sheet left alone. */
+async function refreshVisit() {
+  if (!visiting?.world) return;
+  const code = visiting.code;
+  let data, town;
+  try { data = await api(`/world/town/${code}`); town = unpack(data.town.snapshot); } catch { return; }
+  if (!visiting || visiting.code !== code || !data.town.snapshot) return;
+  for (const t of town.tiles) if (t.b) delete t.b.wd;
+  for (const r of data.damage || []) { const t = town.tiles[idx(r.x, r.y)]; if (t?.b && t.b.id === r.bid) t.b.wd = r.wd; }
+  S = town; A = analyze(S);
+  world.sync(S, { tiles: true, roads: true, buildings: true });
+  refresh();
+}
 /**
  * Looking round someone else's town is look-only: anything in a sheet that would change it
  * (build, upgrade, repair, remove, turn, tax, loans, decisions, replies, names) is stopped here,
@@ -1506,11 +1519,58 @@ async function loadClock() {
     }
   } catch { /* keep the local guess */ }
 }
-/** Send the town to the server (at most every 5 minutes, or now when leaving). */
+// ---------- live: the server pushes what changed the moment it happens (chat, war, the bulletin, towns) ----------
+const LIVE = { ws: null, ok: false, tries: 0, timer: 0, ping: 0 };
+function liveOpen() {
+  if (LIVE.ws || globalThis.RAFAYA_PREVIEW || !onlineOk() || !worldMode) return;
+  let ws;
+  try { ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API}/world/live`); } catch { liveRetry(); return; }
+  LIVE.ws = ws;
+  ws.onopen = () => {
+    LIVE.ok = true; LIVE.tries = 0;
+    const id = me();
+    if (id) ws.send(JSON.stringify({ t: "hello", name: id.name, secret: id.secret }));
+    clearInterval(LIVE.ping); LIVE.ping = setInterval(() => { try { ws.send('{"t":"ping"}'); } catch { /* closing */ } }, 45000); // phones drop quiet sockets
+    warPoll(true); chatPoll(true); wnewsPoll(true); // catch up on what happened while not connected
+  };
+  ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } liveHint(m); };
+  ws.onclose = () => { LIVE.ws = null; LIVE.ok = false; clearInterval(LIVE.ping); liveRetry(); };
+  ws.onerror = () => { try { ws.close(); } catch { /* closed */ } };
+}
+function liveRetry() {
+  clearTimeout(LIVE.timer);
+  if (!worldMode) return;
+  LIVE.timer = setTimeout(liveOpen, Math.min(30000, 1000 * 2 ** LIVE.tries++)); // 1 s, 2 s, 4 s… up to 30 s
+}
+function liveClose() {
+  clearTimeout(LIVE.timer); clearInterval(LIVE.ping);
+  const ws = LIVE.ws; LIVE.ws = null; LIVE.ok = false;
+  if (ws) { ws.onclose = null; try { ws.close(); } catch { /* closed */ } }
+}
+/** What the server said changed: ask for it now. */
+function liveHint(m) {
+  if (!worldMode) return;
+  if (m.t === "chat" && m.message) {
+    if (!CHAT.msgs.some((x) => x.id === m.message.id)) { CHAT.msgs = [...CHAT.msgs, m.message].slice(-120); CHAT.last = Math.max(CHAT.last || 0, m.message.id); }
+    if (sheetFor === "chat") chatSheet(true);
+    chatCount();
+  } else if (m.t === "war") warPoll(true);
+  else if (m.t === "news") { wnewsPoll(true).then(() => { if (sheetFor === "wnews") worldNewsSheet(true); }); }
+  else if (m.t === "town") {
+    if (m.plot === me()?.plot) return;
+    if (sheetFor === "world") clearTimeout(liveHint.map), liveHint.map = setTimeout(() => { if (sheetFor === "world") worldMapSheet(); }, 800);
+    if (visiting?.world && Number(visiting.code) === m.plot && !WARX.targeting) clearTimeout(liveHint.visit), liveHint.visit = setTimeout(() => refreshVisit(), 800);
+  }
+}
+// back on the phone after a while: the socket may have died while asleep
+document.addEventListener("visibilitychange", () => { if (!document.hidden && worldMode && !LIVE.ws) { LIVE.tries = 0; liveOpen(); } });
+
+/** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
 function worldSync(force) {
+  if (worldMode && !force) { clearTimeout(worldSync.soon); worldSync.soon = setTimeout(() => warSyncNow(), 3000); } // only sent if the layout changed
   const id = me();
   if (!worldMode || !id?.plot && id?.plot !== 0 || !onlineOk()) return;
-  if (!force && Date.now() - lastSync < 5 * 60000) return;
+  if (!force && Date.now() - lastSync < 2 * 60000) return;
   lastSync = Date.now();
   if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
@@ -1743,6 +1803,7 @@ async function enterWorldTown() {
   try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   if (!worldMode) { if (playing) save(); soloS = S; }
   worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
+  liveOpen();
   S = town;
   const gap = worldHourNow() - S.day;
   const report = gap > 1 ? deputyCatchUp(S, gap) : null;
@@ -1826,7 +1887,7 @@ async function warSyncNow() {
 }
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 async function warPoll(force) {
-  if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < 25000)) return WARX.st;
+  if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < (LIVE.ok ? 90000 : 25000))) return WARX.st; // live: pushed at once, this is only a safety net
   WARX.busy = true; WARX.polled = Date.now();
   if (force) await warSyncNow();
   const st = await warApi("state", { since: warSeen(), seq: (visiting ? visiting.home : S).war?.seq || 0 });
@@ -2374,7 +2435,7 @@ async function warBack(reportOpen) {
 const CHAT = { msgs: [], last: 0, polled: 0, busy: false };
 const chatSeen = () => Number(store.get("rafaya-chat-seen") || 0);
 async function chatPoll(force) {
-  if (!worldMode || CHAT.busy || (!force && Date.now() - CHAT.polled < (sheetFor === "chat" ? 4000 : 20000))) return;
+  if (!worldMode || CHAT.busy || (!force && Date.now() - CHAT.polled < (LIVE.ok ? 120000 : sheetFor === "chat" ? 4000 : 20000))) return; // live: messages arrive by themselves
   CHAT.busy = true; CHAT.polled = Date.now();
   try {
     const r = await api(`/world/chat${CHAT.last ? `?after=${CHAT.last}` : ""}`);
@@ -2446,6 +2507,7 @@ function leaveWorld() {
   if (visiting) leaveVisit(); // never save or send a visited town as yours
   save(); worldSync(true);
   worldMode = false; document.body.classList.remove("world"); showWhatsNewDot();
+  liveClose();
   if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
 }
 
@@ -2562,8 +2624,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-31", world: "2026-12-31" },
+  v: { solo: "2026-12-31", world: "2027-01-01" },
   items: [
+    ["world", "⚡", "الجوف صار مباشر", "كل شي بعالم الجوف يوصلك على طول: رسايل الشات، والإنذارات والضربات والهدن، وأخبار نشرة الجوف، ومدن الناس لما يبنون فيها (تشوفها تتغير وانت تزورها). ومدينتك توصل للناس خلال ثواني من أي بناء. والضربة تنحسب بالضبط وقت وصولها حتى لو محد فاتح."],
     ["both", "🔆", "السطوع طبيعي بالنهار", "السيارات والآبار كانت تلمع بقوة بالنهار على الرسوم العالية. الحين التوهّج بالليل بس (المصابيح والأضواء)، وبالنهار الألوان طبيعية."],
     ["both", "🕰️", "اليوم رجع ٢٠ دقيقة", "يوم اللعبة رجع ٢٠ دقيقة (كل ساعة باللعبة ٥٠ ثانية) عشان اللعب ما يبطى. والفصول باقية ٧ أيام."],
     ["both", "🏫", "تفاصيل الخدمات ومداها", "اضغط أي خدمة بقائمة البناء (مسجد، مدرسة، مستوصف، شرطة، حديقة…) وتطلع لك تفاصيلها: السعر والمصروف وكم تفرّح الناس ومداها وكم عندك منها وكم بيت برا مداها. وفيها زر «اعرض مداه» يلوّن الخريطة: الأخضر يوصله والأحمر البيوت اللي برا، وزر «ابنِ»."],

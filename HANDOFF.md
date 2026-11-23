@@ -252,6 +252,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 41. **No daytime glare (owner, 2026-11-23, both modes, high quality only):**
     - The sun on well water and car headlights bloomed into white halos by day.
     - `setTimeOfDay` now scales the glow material (1.2 by day → 7 at night) and the bloom threshold (6.5 by day → 3.2 at night, and 3.2 during a war scene).
+42. **Live al-Jouf (owner, 2026-11-23, world only):**
+    - WebSocket `GET /api/world/live` uses the Durable Object's hibernatable sockets (`acceptWebSocket`). The client sends `{t:"hello", name, secret}`, and the socket remembers its plot. Pings every 45 s.
+    - The server pushes hints: `chat` (with the message), `news`, `town` (a town's snapshot changed or it was renamed), and `war` (to that plot only; WarServer.note → `world.ping`). Who is online is never sent or shown.
+    - Strikes settle on time: after every war call, `armWar()` sets a DO alarm at the next arrival, and `alarm()` settles.
+    - Client: `LIVE`, `liveOpen` / `liveRetry` (1 s…30 s) / `liveClose` / `liveHint`. When live, polls are only safety nets (war 90 s, chat 120 s, news 5 min).
+    - A town's layout goes up 3 s after a change (`warSyncNow` only sends when the layout key changed); its numbers every 2 min. `refreshVisit()` redraws a visited town live.
+    - The trial (preview) has no socket and keeps polling.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
