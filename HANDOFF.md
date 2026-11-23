@@ -249,6 +249,9 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 40. **The day is back to 20 minutes (owner, 2026-11-23, both modes):**
     - `HOUR_MS` is 50 s again. The server also stores `meta.fast_at` (the first /clock of this code) and returns it.
     - `worldHours()` counts 50 s hours before slowAt, 75 s from slowAt to fastAt, and 50 s after, so the world's hour never jumps. Seasons stay 7 days.
+41. **No daytime glare (owner, 2026-11-23, both modes, high quality only):**
+    - The sun on well water and car headlights bloomed into white halos by day.
+    - `setTimeOfDay` now scales the glow material (1.2 by day → 7 at night) and the bloom threshold (6.5 by day → 3.2 at night, and 3.2 during a war scene).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

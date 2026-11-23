@@ -1308,6 +1308,10 @@ export class World {
     this.mats.lights.opacity = Math.min(1, this.night * 1.4);
     if (this.envNight !== Math.round(this.night * 20)) { this.envNight = Math.round(this.night * 20); for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v * (1 - this.night * 0.8); }
     if (this.glowMesh) this.glowMesh.material.opacity = Math.max(0, this.night * 0.95 - 0.15);
+    // lamps and headlights shine at night; by day they are plain colours, and only fire and flashes bloom
+    // (by day the sun on water and car paint was blooming into white halos)
+    this.mats.glow.color.setScalar(1.2 + 5.8 * this.night);
+    if (this.bloom) this.bloom.threshold = this.fx?.tasks?.length ? 3.2 : 3.2 + 3.3 * (1 - this.night); // a war scene keeps its flashes
   }
 
   // ---------- camera ----------
