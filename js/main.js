@@ -1089,69 +1089,27 @@ function quartersSheet() {
   $("sheetBody").querySelectorAll("[data-qshow]").forEach((b) => b.addEventListener("click", () => showDistrict(Number(b.dataset.qshow))));
 }
 
-// ---------- online: publish your town, the leaderboard, visiting friends ----------
+// ---------- online: the server API and visiting other world towns ----------
 const API = "/api";
 const onlineOk = () => location.protocol.startsWith("http") && !location.hostname.endsWith("claudeusercontent.com");
-const myKey = () => `rafaya-online-${S.site || "main"}`;
 async function api(path, body) {
   const r = await fetch(API + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
   if (!r.ok) throw new Error(r.status === 503 ? "maintenance" : String(r.status));
   return r.json();
 }
-let boardBy = "pop";
-async function onlineSheet() {
-  if (visiting) { visitComments(); return; }
-  const mine = JSON.parse(store.get(myKey()) || "null");
-  const mayor = store.get("rafaya-mayor") || "";
-  sheet(`<h2>🌐 مدن الربع</h2>
-    <p>انشر مدينتك عشان ربعك يشوفونها ويعلقون عليها، وتدخل لوحة الصدارة. اسم العمدة يطلع للكل، فلا تكتب اسمك الكامل.</p>
-    <div class="rows"><label class="rg-name">اسم العمدة <input id="olMayor" type="text" maxlength="24" value="${mayor.replace(/"/g, "")}" placeholder="مثلاً: أبو فهد"></label>
-      <button class="btn go block" id="olPublish" type="button">${mine ? "حدّث مدينتي المنشورة" : "انشر مدينتي"}</button>
-      ${mine ? `<div class="row"><span>كود مدينتك</span><b class="ol-code">${mine.code}</b></div><button class="btn block" id="olCopy" type="button">انسخ الكود وأرسله لربعك</button>` : ""}</div>
-    <h3>زور مدينة</h3>
-    <div class="q-edit"><input id="olCode" type="text" maxlength="8" placeholder="اكتب كود المدينة" style="text-transform:uppercase"><button class="btn go" id="olVisit" type="button">زور</button></div>
-    <h3>🏆 لوحة الصدارة</h3>
-    <div class="ol-tabs">${[["pop", "أكبر مدينة"], ["happy", "أسعد أهالي"], ["money", "أغنى بلدية"]].map(([k, t]) => `<button class="btn ${boardBy === k ? "go" : ""}" type="button" data-by="${k}">${t}</button>`).join("")}</div>
-    <div class="rows" id="olBoard"><p class="hint">نحمّل…</p></div>`, "online");
-  $("olPublish").addEventListener("click", publishTown);
-  $("olCopy")?.addEventListener("click", () => { navigator.clipboard?.writeText(`زور مدينتي «${S.name}» في الرافعية: الكود ${mine.code}\n${location.origin}`).then(() => toast("نسخت الكود ✓", "goal"), () => toast(mine.code)); });
-  $("olVisit").addEventListener("click", () => visitTown($("olCode").value.trim().toUpperCase()));
-  $("sheetBody").querySelectorAll("[data-by]").forEach((b) => b.addEventListener("click", () => { boardBy = b.dataset.by; onlineSheet(); }));
-  if (!onlineOk()) { $("olBoard").innerHTML = `<div class="need">الأونلاين يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev</div>`; return; }
-  try {
-    const { towns } = await api(`/board?by=${boardBy}`);
-    if (sheetFor !== "online") return;
-    $("olBoard").innerHTML = towns.length ? towns.map((t, k) => `<div class="row ol-row ${mine?.code === t.code ? "now" : ""}"><b class="ol-rank">${ar(k + 1)}</b><span><b>${t.name}</b><small>العمدة ${t.mayor} · ${ERAS[t.era]?.name || ""} · ${money(t.pop)} ساكن · رضا ${ar(t.happy)}٪ · ${money(t.money)} ريال</small></span>${mine?.code === t.code ? "" : `<button class="btn" type="button" data-visit="${t.code}">زور</button>`}</div>`).join("") : `<p class="hint">للحين ما أحد نشر مدينته. كن أول واحد!</p>`;
-    $("olBoard").querySelectorAll("[data-visit]").forEach((b) => b.addEventListener("click", () => visitTown(b.dataset.visit)));
-  } catch { $("olBoard").innerHTML = `<div class="need">ما قدرت أوصل للسيرفر. جرب بعدين.</div>`; }
-}
-async function publishTown() {
-  if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
-  const mayor = $("olMayor").value.trim().slice(0, 24);
-  if (!mayor) { toast("اكتب اسم العمدة", "bad"); return; }
-  store.set("rafaya-mayor", mayor);
-  save();
-  const mine = JSON.parse(store.get(myKey()) || "null");
-  const snap = pack({ ...S, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} });
-  try {
-    const r = await api("/publish", { code: mine?.code, secret: mine?.secret, name: S.name || "الرافعية", mayor, pop: S.pop, happy: Math.round(S.happy), money: Math.round(S.money), era: S.era, snapshot: snap });
-    store.set(myKey(), JSON.stringify(r));
-    sfx.goal(); toast(`انتشرت مدينتك! الكود: ${r.code}`, "goal");
-    onlineSheet();
-  } catch { toast("ما قدرت أنشر الحين، جرب بعدين", "bad"); }
-}
-async function visitTown(code, inWorld) {
-  if (code === "" || code == null) { toast("اكتب الكود", "bad"); return; }
+/** Look round another player's town in the world of al-Jouf (look-only). */
+async function visitTown(code) {
+  if (code === "" || code == null) return;
   if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
   let data;
-  try { data = await api(inWorld ? `/world/town/${code}` : `/town/${encodeURIComponent(code)}`); } catch { toast("ما لقيت المدينة", "bad"); return; }
-  if (inWorld) data.town = { ...data.town, name: data.town.town, mayor: data.town.owner };
+  try { data = await api(`/world/town/${code}`); } catch { toast("ما لقيت المدينة", "bad"); return; }
+  data.town = { ...data.town, name: data.town.town, mayor: data.town.owner };
   if (!data.town.snapshot) { toast("صاحبها للحين ما بدأ يلعب فيها", ""); return; }
   let town;
   try { town = unpack(data.town.snapshot); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   if (visiting) leaveVisit(); // from one visit straight to another: home stays your own town
   save();
-  visiting = { code, world: !!inWorld, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
+  visiting = { code, world: true, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
   S = town; A = analyze(S);
   closeSheet(); setTool(null);
   world.stopFollow?.(); $("followTag").hidden = true;
@@ -1194,15 +1152,15 @@ function visitComments() {
     <div class="rows">${v.comments.length ? v.comments.map((c) => `<div class="row ol-com"><span><b>${c.author}</b><small>${new Date(c.at).toLocaleDateString("ar-SA")}</small></span><p>${c.text}</p></div>`).join("") : `<p class="hint">ما أحد علّق للحين.</p>`}</div>
     <h3>اكتب تعليقك</h3>
     <textarea id="olText" maxlength="200" rows="3" placeholder="مدينتك حلوة! عجبني…"></textarea>
-    <div class="sheet-actions keep"><button class="btn go block" id="olSend" type="button">أرسل باسم ${v.world ? me()?.name || "زائر" : store.get("rafaya-mayor") || "زائر"}</button></div>`, "online");
+    <div class="sheet-actions keep"><button class="btn go block" id="olSend" type="button">أرسل باسم ${me()?.name || "زائر"}</button></div>`, "online");
   $("olSend").addEventListener("click", async () => {
     const text = $("olText").value.trim();
     if (!text) return;
     try {
       const id = me();
-      if (v.world) { if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; } await api(`/world/town/${v.code}/comment`, { name: id.name, secret: id.secret, text }); }
-      else await api(`/town/${v.code}/comment`, { author: store.get("rafaya-mayor") || "زائر", text });
-      v.comments.unshift({ author: v.world ? id.name : store.get("rafaya-mayor") || "زائر", text, at: Date.now() });
+      if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; }
+      await api(`/world/town/${v.code}/comment`, { name: id.name, secret: id.secret, text });
+      v.comments.unshift({ author: id.name, text, at: Date.now() });
       sfx.coin(); toast("وصل تعليقك ✓", "goal"); visitComments();
     } catch { toast("ما وصل التعليق، جرب بعدين", "bad"); }
   });
@@ -1402,7 +1360,7 @@ async function worldMapSheet(pick) {
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
-  $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
+  $("wmVisit")?.addEventListener("click", () => visitTown(sel));
   $("wmReport")?.addEventListener("click", async () => {
     try { await api("/world/report", { name: id?.name, secret: id?.secret, plot: sel, reason: "اسم أو كلام مسيء" }); toast("وصل البلاغ، شكرًا", "goal"); } catch { toast("سجّل اسمك أول", "bad"); }
   });
@@ -1597,8 +1555,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-02", world: "2026-12-03" },
+  v: { solo: "2026-12-04", world: "2026-12-03" },
   items: [
+    ["solo", "🌐", "شلنا «مدن الربع»", "النشر بالكود ولوحة الصدارة انشالت من اللعب الفردي. الفردي صار لك لحالك، واللعب مع الناس صار بعالم الجوف بس."],
     ["world", "🧹", "عالم الجوف من جديد", "مسحنا كل مدن عالم الجوف وأسماءه، والكل بيبدأ من الصفر لا رجع العالم من الصيانة. مدنكم الفردية ما تأثرت."],
     ["world", "📦", "ما عاد فيه نقل من الفردي", "المدن الفردية ما عادت تنتقل لعالم الجوف. بالعالم كل واحد يبدأ من الصفر، والفردي له حياته لحاله."],
     ["both", "🆕", "«وش الجديد» صار قسمين", "تحديثات اللعب الفردي لحالها، وتحديثات عالم الجوف لحالها. اختر القسم من فوق."],
@@ -1622,7 +1581,6 @@ const WHATS_NEW = {
     ["both", "🏞️", "بحيرة السد صارت حقيقية", "ماء بشط ناعم ورمل مبلول حوله وموج يتحرك، والأرض صارت ألوانها تندمج بدل المربعات."],
     ["world", "🤏", "قرّب وبعّد خريطة الجوف", "بإصبعين تقرّب وتبعّد، وبإصبع تسحب، أو بأزرار ＋ و－."],
     ["world", "🌍", "عالم الجوف", "عالم أونلاين واحد لكل اللاعبين على خريطة الجوف: سمّ نفسك، أسس مدينتك، وادخل مدن غيرك. العالم يمشي دايم، ونائب العمدة يمسك مدينتك وأنت طالع."],
-    ["solo", "🌐", "مدن الربع والصدارة", "انشر مدينتك، وزور مدن ربعك وعلّق عليها، وشوف مين أكبر وأسعد وأغنى."],
     ["solo", "🗺️", "خريطة المنطقة", "أسس الرديفة والأضارع وصفان، ووصّلها بالرافعية بطرق، وصر أمير المنطقة."],
     ["both", "👨‍👩‍👧", "أهل الرافعية", "كل بيت فيه عوايل بأسمائهم ووظايفهم وعيالهم. تابع أي واحد وهو رايح دوامه."],
     ["both", "🚦", "المرور الحقيقي", "الناس يروحون دوامهم بسياراتهم، والطرق تتزحم. شوارع رئيسية ودوارات وإشارات ومواقف."],
@@ -2047,9 +2005,6 @@ function howTo(fromMenu) {
       <p>من الشاشة الرئيسية «🌍 عالم الجوف»: تختار اسمك (واحفظ كود الاسترجاع)، وتختار أرض في خريطة الجوف وتأسس مدينتك: القريات وطبرجل وسكاكا ودومة الجندل والحماد والنفود الكبير، كل منطقة لها أرضها. وتضغط على أي مدينة بالخريطة وتدخلها وتشوفها وتعلق عليها.</p>
       <p>وقت العالم واحد للكل ويمشي دايم، فما فيه تسريع. وإذا طلعت يمسك مدينتك «نائب العمدة» حسب أوامرك (من القائمة)، ومعه «درع الغياب»: ما تفلس، وما تخسر أكثر من ٥٪ من ناسك باليوم، وبعد أسبوع غياب تنام مدينتك لين ترجع. وأول ما ترجع يعطيك تقريره.</p></details>
 
-    <details><summary>مدن الربع والصدارة</summary>
-      <p>من «القائمة ← مدن الربع» تنشر مدينتك وتاخذ كود ترسله لربعك، وهم يزورونها بالكود ويشوفونها بالـ3D ويعلقون عليها. وفيه لوحة صدارة: أكبر مدينة، وأسعد أهالي، وأغنى بلدية. الزيارة للفرجة بس، ما تقدر تبني في مدينة غيرك.</p></details>
-
     <details><summary>المنطقة والمدن الثانية</summary>
       <p>لما تصير الرافعية بلدة تنفتح «خريطة المنطقة» (اضغط مربع الوقت فوق، أو من القائمة). تأسس فيها مدن المنطقة: «الرديفة» في روضة تخضر بالربيع، و«الأضارع» في أرض جبلية فيها حجر كثير، و«صفان» في النفود: رمل واسع بلا وادي.</p>
       <p>وصّل المدن بطرق: ناسها يتسوقون عند بعض وتجارها يشترون من ورش بعض. وتقدر تحوّل فلوس من مدينة لثانية. المدن اللي ما أنت فيها توقف لين ترجع لها. وإذا صار عندك ٣ مدن صرت «أمير المنطقة».</p></details>
@@ -2109,8 +2064,7 @@ function pauseMenu() {
     <button class="row link" id="pmHow" type="button"><span>❓ الشرح</span><b>←</b></button>
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
     ${worldMode ? `<button class="row link" id="pmWorld" type="button"><span>🌍 خريطة عالم الجوف</span><b>←</b></button>
-    <button class="row link" id="pmDeputy" type="button"><span>🧑‍💼 أوامر نائب العمدة</span><b>←</b></button>` : `<button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>
-    <button class="row link" id="pmOnline" type="button"><span>🌐 مدن الربع والصدارة</span><b>←</b></button>`}
+    <button class="row link" id="pmDeputy" type="button"><span>🧑‍💼 أوامر نائب العمدة</span><b>←</b></button>` : `<button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>`}
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
@@ -2119,7 +2073,6 @@ function pauseMenu() {
   $("pmHow").addEventListener("click", () => howTo(false));
   $("pmNew").addEventListener("click", () => whatsNewSheet());
   $("pmRegion")?.addEventListener("click", () => regionSheet());
-  $("pmOnline")?.addEventListener("click", () => onlineSheet());
   $("pmWorld")?.addEventListener("click", () => worldMapSheet());
   $("pmDeputy")?.addEventListener("click", () => deputySheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
@@ -2161,7 +2114,7 @@ $("mNew").addEventListener("click", () => {
   for (const id of Object.keys(RG.towns)) if (id !== "main") { try { localStorage.removeItem(townKey(id)); } catch { /* fine */ } }
   RG = { towns: {}, roads: [], active: "main" };
   S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
-  wnMark("solo");
+  wnMark("solo"); showWhatsNewDot();
   sfx.goal(); startPlaying();
   sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
     <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>

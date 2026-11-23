@@ -101,6 +101,8 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `/api/world/clock` returns `gen`; `loadClock()` in main.js drops `rafaya-world-id` and `rafaya-world-town` from the phone when its `rafaya-world-gen` differs. So old world towns cannot come back from phones.
     - To wipe again some day: raise `WORLD_GEN`.
 
+14. **«مدن الربع» removed from solo (owner, 2026-11-23: «مدن الربع بالفردي شله»).** No publish-by-code, no leaderboard, no visiting by code. The server routes `/api/publish`, `/api/board`, `/api/town/*` are gone (404); the `towns` table is left unused. Visiting other towns now exists only in the world (`visitTown(plot)`), and comments only go to `/api/world/town/:plot/comment`. Solo is fully offline now.
+
 **Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
@@ -217,7 +219,7 @@ A mobile-first 3D town builder (three.js, plain ES modules, **no build tool, no 
   - Deputy orders.
 - **Sync:** every 5 min and on page hide.
 - **Others:** visit other towns and comment; report abuse.
-- **API endpoints:** `/api/world/{join,recover,clock,map,claim,sync,town/:plot,report}` plus older `/api/publish`, `/api/board`, `/api/town`.
+- **API endpoints:** `/api/world/{join,recover,clock,map,claim,sync,town/:plot,report}` (the older `/api/publish`, `/api/board`, `/api/town` were removed in step 14).
 
 ---
 

@@ -408,11 +408,6 @@ details .row { background: rgba(255, 255, 255, .45); }
 body.visiting .dock, body.visiting .sheet-actions:not(.keep), body.visiting .answers { display: none !important; }
 body.visiting .speeds, body.visiting #councilBtn, body.visiting #deputyBtn, body.visiting #newsBtn { opacity: .35; pointer-events: none; }
 .visit-bar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ol-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-.ol-tabs .btn { padding: 6px 12px; }
-.ol-row { justify-content: flex-start; }
-.ol-row span { flex: 1; }
-.ol-rank { flex: none; width: 26px; text-align: center; }
 .ol-code { font-family: monospace; letter-spacing: 2px; font-size: 20px; }
 .ol-com { display: grid; justify-content: stretch; }
 .ol-com p { margin: 2px 0 0; }
