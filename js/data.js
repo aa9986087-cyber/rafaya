@@ -1,25 +1,21 @@
 // Everything the town can build, research and become. Numbers are per in-game day.
 
-export const MAP_SIZE = 56;
+export const MAP_SIZE = 72;
 /**
- * The town owns the middle (OWN_START … MAP_SIZE − OWN_START); around it two rings of land are
- * bought in plots: the near ring (5 tiles wide) and the far edges (OUTER tiles wide), each in four sides.
- * A far plot needs the near plot on its side first.
+ * The town owns the middle (OWN_START … MAP_SIZE − OWN_START, 36 × 36); around it three rings of land
+ * are bought in plots, each ring in four sides: the near land (RINGS[0] … OWN_START), the far land,
+ * and the edges. A plot further out needs the one inside it on the same side first.
  */
-export const OWN_START = 13;
-export const OUTER = 8;
+export const OWN_START = 18;
+export const RINGS = [12, 6, 0];
+const SIDES = [["n", "الشمال"], ["e", "الشرق"], ["s", "الجنوب"], ["w", "الغرب"]];
 export const PLOTS = [
-  { id: "n", name: "الأرض الشمالية" },
-  { id: "e", name: "الأرض الشرقية" },
-  { id: "s", name: "الأرض الجنوبية" },
-  { id: "w", name: "الأرض الغربية" },
-  { id: "n2", name: "أطراف الشمال", needs: "n" },
-  { id: "e2", name: "أطراف الشرق", needs: "e" },
-  { id: "s2", name: "أطراف الجنوب", needs: "s" },
-  { id: "w2", name: "أطراف الغرب", needs: "w" }
+  ...SIDES.map(([id, n]) => ({ id, name: `أرض ${n} القريبة` })),
+  ...SIDES.map(([id, n]) => ({ id: `${id}2`, name: `أرض ${n} البعيدة`, needs: id })),
+  ...SIDES.map(([id, n]) => ({ id: `${id}3`, name: `أطراف ${n}`, needs: `${id}2` }))
 ];
 /** Each plot costs more than the last one bought. */
-export const PLOT_PRICES = [6000, 12000, 20000, 32000, 50000, 75000, 110000, 160000];
+export const PLOT_PRICES = [5000, 8000, 12000, 16000, 22000, 30000, 40000, 52000, 70000, 90000, 120000, 160000];
 
 /** Town stages: reaching the population opens the stage and its buildings. */
 export const ERAS = [
@@ -256,31 +252,55 @@ export const REGION = { found: [15000, 30000, 60000, 120000, 200000], startMoney
 
 // The world of al-Jouf: one map shared by every player, in plots (COLS × ROWS). Each part of the
 // region has its own land; the names mark where the real places are (roughly).
+// The map grew from 24 × 16 to 40 × 26: the first map sits inside it at (8, 5) and its plots keep their
+// numbers (0 … 383); the land added round it is numbered after them, in reading order.
 export const WORLD = {
-  cols: 24, rows: 16,
+  cols: 40, rows: 26, first: { cols: 24, rows: 16, x: 8, y: 5 },
   places: [
-    { name: "القريات", x: 3, y: 3, terrain: "mountain", r: 3.2 },
-    { name: "طبرجل", x: 8, y: 5, terrain: "plain", r: 3 },
-    { name: "دومة الجندل", x: 11, y: 9, terrain: "bigwadi", r: 2.6 },
-    { name: "الرافعية", x: 6, y: 10, terrain: "wadi", r: 2.2 },
-    { name: "سكاكا", x: 14, y: 7, terrain: "wadi", r: 3 },
-    { name: "الحماد", x: 13, y: 2, terrain: "mountain", r: 4 },
-    { name: "النفود الكبير", x: 18, y: 13, terrain: "dunes", r: 6 },
-    { name: "روضات الجوف", x: 20, y: 4, terrain: "meadow", r: 3 }
+    { name: "القريات", x: 11, y: 8, terrain: "mountain", r: 3.2 },
+    { name: "طبرجل", x: 16, y: 10, terrain: "plain", r: 3 },
+    { name: "دومة الجندل", x: 19, y: 14, terrain: "bigwadi", r: 2.6 },
+    { name: "الرافعية", x: 14, y: 15, terrain: "wadi", r: 2.2 },
+    { name: "سكاكا", x: 22, y: 12, terrain: "wadi", r: 3 },
+    { name: "الحماد", x: 21, y: 7, terrain: "mountain", r: 4 },
+    { name: "النفود الكبير", x: 26, y: 19, terrain: "dunes", r: 7 },
+    { name: "روضات الجوف", x: 28, y: 9, terrain: "meadow", r: 3 },
+    { name: "الحديثة", x: 5, y: 6, terrain: "plain", r: 2.6 },
+    { name: "العيساوية", x: 9, y: 12, terrain: "plain", r: 2.2 },
+    { name: "الشويحطية", x: 23, y: 3, terrain: "mountain", r: 2.6 },
+    { name: "صوير", x: 32, y: 12, terrain: "plain", r: 2.6 },
+    { name: "ميقوع", x: 25, y: 14, terrain: "wadi", r: 2 },
+    { name: "أبو عجرم", x: 33, y: 18, terrain: "dunes", r: 2.6 },
+    { name: "زلوم", x: 18, y: 21, terrain: "meadow", r: 2.2 }
   ]
 };
+const FIRST = WORLD.first, FIRST_N = FIRST.cols * FIRST.rows;
+const inFirst = (x, y) => x >= FIRST.x && x < FIRST.x + FIRST.cols && y >= FIRST.y && y < FIRST.y + FIRST.rows;
+const ADDED = [], ADDED_AT = new Map();
+for (let y = 0; y < WORLD.rows; y++) for (let x = 0; x < WORLD.cols; x++) if (!inFirst(x, y)) { ADDED_AT.set(y * WORLD.cols + x, ADDED.length); ADDED.push([x, y]); }
+/** Where a plot is on the map ([-1, -1] if there is no such plot). */
+export function worldXY(plot) {
+  if (plot >= 0 && plot < FIRST_N) return [(plot % FIRST.cols) + FIRST.x, Math.floor(plot / FIRST.cols) + FIRST.y];
+  return ADDED[plot - FIRST_N] || [-1, -1];
+}
+/** The plot number of a place on the map. */
+export function worldPlot(x, y) {
+  if (inFirst(x, y)) return (y - FIRST.y) * FIRST.cols + (x - FIRST.x);
+  return FIRST_N + ADDED_AT.get(y * WORLD.cols + x);
+}
 /** The nearest named place to a plot. */
 export function worldPlace(plot) {
-  const x = plot % WORLD.cols, y = Math.floor(plot / WORLD.cols);
+  const [x, y] = worldXY(plot);
   return WORLD.places.reduce((b, p) => (Math.hypot(x - p.x, y - p.y) / p.r < Math.hypot(x - b.x, y - b.y) / b.r ? p : b)).name;
 }
 /** The kind of land of a plot: the nearest place inside its reach, the dunes to the south-east, plain elsewhere. */
 export function worldTerrain(plot) {
-  const x = plot % WORLD.cols, y = Math.floor(plot / WORLD.cols);
+  const [x, y] = worldXY(plot);
   let best = null, bd = 1e9;
   for (const p of WORLD.places) { const d = Math.hypot(x - p.x, y - p.y) / p.r; if (d < 1 && d < bd) { bd = d; best = p; } }
   if (best) return best.terrain;
-  return y >= 11 || (x >= 17 && y >= 8) ? "dunes" : "plain";
+  if (y <= 2) return "mountain"; // the stony Hamad to the north
+  return y >= 16 || (x >= 25 && y >= 13) ? "dunes" : "plain";
 }
 
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.
@@ -332,7 +352,7 @@ export const GOALS = [
   { text: "ابنِ مزرعة رياح", test: (s) => s.count.windfarm >= 1, reward: 21000 },
   { text: "ابنِ قلعة مارد", test: (s) => s.count.marid >= 1, reward: 45000 },
   { text: "أول برج سكني", test: (s) => s.levels[5] >= 1, reward: 48000 },
-  { text: "اشترِ أرض من الأطراف البعيدة", test: (s) => ["n2", "e2", "s2", "w2"].some((p) => s.owned?.[p]), reward: 50000 },
+  { text: "اشترِ أرض بعيدة", test: (s) => ["n2", "e2", "s2", "w2"].some((p) => s.owned?.[p]), reward: 22000 },
   { text: "ابنِ محطة القطار", test: (s) => s.count.station >= 1, reward: 165000 },
   { text: "صارت الرافعية حاضرة (٩٠٠٠ ساكن)", test: (s) => s.pop >= 9000, reward: 100000 },
   { text: "ابنِ أبراج الرافعية", test: (s) => s.count.skyline >= 1, reward: 200000 }
@@ -543,7 +563,7 @@ export const ACHIEVEMENTS = [
   { id: "rich", name: "خزنة مليانة", text: "٥٠٬٠٠٠ ريال بالميزانية", test: (s) => s.money >= 50000 },
   { id: "province", name: "محافظة الرافعية", text: "وصل الرافعية لمحافظة", test: (s) => s.era >= 3 },
   { id: "allland", name: "كل الأرض لك", text: "اشترِ كل الأراضي القريبة", test: (s) => ["n", "e", "s", "w"].every((p) => s.owned?.[p]) },
-  { id: "alledges", name: "الرافعية من الطرف للطرف", text: "اشترِ كل الأطراف البعيدة", test: (s) => ["n2", "e2", "s2", "w2"].every((p) => s.owned?.[p]) },
+  { id: "alledges", name: "الرافعية من الطرف للطرف", text: "اشترِ كل الأراضي لين الأطراف", test: (s) => ["n3", "e3", "s3", "w3"].every((p) => s.owned?.[p]) },
   { id: "hadira", name: "حاضرة الجوف", text: "وصل الرافعية لحاضرة", test: (s) => s.era >= 4 },
   { id: "skytower", name: "فوق الغيم", text: "أول برج سكني", test: (s, a) => a.levels[5] > 0 },
   { id: "allprojects", name: "الرافعية الكبرى", text: "كمّل كل المشاريع الكبرى", test: (s) => PROJECTS.every((id) => finished(s, id)) },

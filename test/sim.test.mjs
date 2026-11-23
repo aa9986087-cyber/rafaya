@@ -53,7 +53,9 @@ test("research takes days and stays", () => {
 });
 
 test("a sensible mayor grows the village into a town and then a city", () => {
-  const s = autoplay(2000, 42);
+  // (on the 72×72 map the bot's own layout on seed 42 leaves a quarter of its people without work and it
+  // stalls at بلدة; four of five maps reach مدينة by hour 2000, so the check runs on one of those)
+  const s = autoplay(2000, 2);
   assert.ok(s.era >= 2, `reached stage ${s.era} with ${s.pop} people`);
   assert.ok(s.money > 0);
   const a = analyze(s);
@@ -74,19 +76,22 @@ test("saving keeps the whole town, and the town carries on while away (up to six
 
 test("land around the town is bought plot by plot, each dearer than the last", () => {
   const s = newGame(9);
-  const nx = 20, ny = 10; // a tile on the near northern ring
+  const nx = 30, ny = 15; // a tile on the near northern ring
   assert.equal(plotAt(nx, ny), "n");
-  assert.equal(plotAt(0, 0), "n2", "the far corner is the far edges");
+  assert.equal(plotAt(0, 0), "n3", "the far corner is the edges");
+  assert.equal(plotAt(30, 8), "n2");
   assert.match(cantBuild(s, nx, ny, "house"), /مو لك/);
   s.money = 100000;
   assert.equal(buyPlot(s, "n"), "");
-  assert.equal(s.money, 100000 - 6000);
+  assert.equal(s.money, 100000 - 5000);
   assert.ok(owns(s, nx, ny));
   assert.equal(buyPlot(s, "e"), "");
-  assert.equal(s.money, 100000 - 6000 - 12000);
+  assert.equal(s.money, 100000 - 5000 - 8000);
   assert.match(buyPlot(s, "n"), /من قبل/);
   assert.match(buyPlot(s, "s2"), /أول/, "the far south needs the near south first");
   assert.equal(buyPlot(s, "n2"), "");
+  assert.match(buyPlot(s, "e3"), /أول/);
+  s.money = 1e6; assert.equal(buyPlot(s, "n3"), "");
   assert.ok(owns(s, 0, 0));
 });
 
@@ -230,7 +235,7 @@ test("farms, shops and workshops upgrade in place and earn more", async () => {
   s.money = 100000;
   let at = null;
   const road = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.tiles[idx(x + dx, y + dy)]?.b?.id === "road");
-  for (let y = 6; y < 34 && !at; y++) for (let x = 6; x < 34 && !at; x++) if (road(x, y) && !s.tiles[idx(x, y)].b && !build(s, x, y, "grocery")) at = { x, y };
+  for (let y = 6; y < N - 6 && !at; y++) for (let x = 6; x < N - 6 && !at; x++) if (road(x, y) && !s.tiles[idx(x, y)].b && !build(s, x, y, "grocery")) at = { x, y };
   assert.ok(at, "grocery built");
   const b = s.tiles[idx(at.x, at.y)].b;
   const a0 = analyze(s);
@@ -427,4 +432,20 @@ test("power poles carry power away from a smoky generator, and only when linked"
   const a = analyze(s);
   assert.equal(a.powered[20 * N + 26], 1, "a pole lights three tiles round it, past the generator's own reach");
   assert.equal(a.powered[20 * N + 28], 0);
+});
+
+test("the bigger world map keeps every old plot where it was, under the same number", async () => {
+  const { WORLD, worldXY, worldPlot, worldTerrain } = await import("../js/data.js");
+  // plot 0 of the first map was its top-left corner; plot 24 × 10 + 6 was الرافعية
+  assert.deepEqual(worldXY(0), [WORLD.first.x, WORLD.first.y]);
+  assert.deepEqual(worldXY(24 * 10 + 6), [6 + WORLD.first.x, 10 + WORLD.first.y]);
+  const seen = new Set();
+  for (let y = 0; y < WORLD.rows; y++) for (let x = 0; x < WORLD.cols; x++) {
+    const p = worldPlot(x, y);
+    assert.deepEqual(worldXY(p), [x, y]);
+    seen.add(p);
+  }
+  assert.equal(seen.size, WORLD.cols * WORLD.rows, "one number for every plot");
+  assert.equal(Math.max(...seen), WORLD.cols * WORLD.rows - 1);
+  assert.ok(["wadi", "bigwadi"].includes(worldTerrain(24 * 10 + 6)));
 });

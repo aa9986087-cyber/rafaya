@@ -36,7 +36,15 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
    - New buildings: olive, oilpress (olive chain), windfarm, library, olivetree, bigfountain, and the projects marid, themepark, station, bigstadium, skyline. New goals and achievements.
    - Bots: `placeNear` targets one cluster at a time. Careful bots grow fine to hour 1800. Late-game collapses after ~2500 h are a known bot pathology: they spam tanks and solar.
 
-**Nothing is half-done.** All tests pass (28/28). Everything is pushed and auto-deployed.
+6. **Even bigger (the owner said the world felt small).**
+   - The town map is now **72 × 72**: a free core of 36 × 36 (`OWN_START` 18) and **12 plots** in three rings (`RINGS` [12, 6, 0]; ids n/e/s/w, n2…, n3…, each needing the one inside it), with cheaper prices.
+   - Old 30/40/56 saves are centred.
+   - **The al-Jouf world map grew from 24 × 16 to 40 × 26.** The old map sits at (8, 5) and **old plot numbers are unchanged** (0 … 383); new cells are numbered after them. Use `worldXY(plot)` / `worldPlot(x, y)` in data.js; never `plot % cols`.
+   - New places were added.
+   - The growth test moved from seed 42 to seed 2: on 72 × 72, seed 42's bot stalls at بلدة with 25 % unemployment, while the other seeds reach مدينة.
+   - Also: «شيل الكل» no longer lifts roads/parking (`arrMovable` checks `cat !== "road"`).
+
+**Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
 - A staging copy of the site plus an admin page to moderate world reports.

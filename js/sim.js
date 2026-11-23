@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, OUTER, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -14,14 +14,19 @@ export function rng(seed) {
 
 // ---------- land ----------
 
-const O = OWN_START, E = N - OWN_START, O2 = OUTER, E2 = N - OUTER;
+const O = OWN_START, E = N - OWN_START;
 /** The side of a ring a tile is on (lo … hi is the inside of that ring). The corners go clockwise. */
 const sideOf = (x, y, lo, hi) => (y < lo && x < hi ? "n" : x >= hi && y < hi ? "e" : y >= hi && x >= lo ? "s" : "w");
-/** Which plot a tile belongs to ("" for the land the town starts with): near ring n/e/s/w, far edges n2/e2/s2/w2. */
+/** Which plot a tile belongs to ("" for the land the town starts with): rings n…, n2…, n3… outward. */
 export function plotAt(x, y) {
   if (x >= O && x < E && y >= O && y < E) return "";
-  if (x >= O2 && x < E2 && y >= O2 && y < E2) return sideOf(x, y, O, E);
-  return `${sideOf(x, y, O2, E2)}2`;
+  let inner = O;
+  for (let k = 0; k < RINGS.length; k++) {
+    const lo = RINGS[k], hi = N - lo;
+    if (x >= lo && x < hi && y >= lo && y < hi) return sideOf(x, y, inner, N - inner) + (k ? k + 1 : "");
+    inner = lo;
+  }
+  return "";
 }
 export const owns = (s, x, y) => { const p = plotAt(x, y); return !p || !!s.owned?.[p]; };
 export const plotPrice = (s) => PLOT_PRICES[Math.min(PLOT_PRICES.length - 1, PLOTS.filter((p) => s.owned?.[p.id]).length)];

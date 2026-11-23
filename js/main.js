@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace } from "./data.js";
+import { B, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { modelKey } from "./models.js";
@@ -1213,7 +1213,7 @@ function worldJoinSheet(recover) {
 }
 let worldPick = null;
 /** How far the world map is zoomed in, kept while the sheet redraws. */
-let wmView = null;
+let wmView = null, wmSeen = false;
 /**
  * Two fingers zoom the map in and out, one finger drags it, and a short tap picks a plot.
  * The view is the SVG viewBox, kept inside the map.
@@ -1223,7 +1223,7 @@ function mapZoom(svg, W, H, onPick) {
   let v = wmView || { x: 0, y: 0, w: W, h: H };
   const ratio = H / W;
   const apply = () => {
-    v.w = Math.min(W, Math.max(W / 4, v.w)); v.h = v.w * ratio;
+    v.w = Math.min(W, Math.max(W / 6, v.w)); v.h = v.w * ratio;
     v.x = Math.min(W - v.w, Math.max(0, v.x)); v.y = Math.min(H - v.h, Math.max(0, v.y));
     svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
     wmView = v.w >= W ? null : { ...v };
@@ -1232,7 +1232,7 @@ function mapZoom(svg, W, H, onPick) {
   const zoomAt = (k, cx, cy) => {
     const r = svg.getBoundingClientRect();
     const px = v.x + ((cx - r.left) / r.width) * v.w, py = v.y + ((cy - r.top) / r.height) * v.h;
-    const nw = Math.min(W, Math.max(W / 4, v.w / k)), s2 = nw / v.w;
+    const nw = Math.min(W, Math.max(W / 6, v.w / k)), s2 = nw / v.w;
     v.x = px - (px - v.x) * s2; v.y = py - (py - v.y) * s2; v.w = nw;
     apply();
   };
@@ -1287,8 +1287,9 @@ async function worldMapSheet(pick) {
   const { cols, rows } = WORLD, cell = 5;
   const colors = { mountain: "#b9a58a", plain: "#e6cf9c", bigwadi: "#c9b878", wadi: "#d8c38e", dunes: "#efc98a", meadow: "#b8c27a" };
   let cells = "";
-  for (let i = 0; i < cols * rows; i++) {
-    const x = (i % cols) * cell, y = Math.floor(i / cols) * cell, t = byPlot.get(i), mine = id?.plot === i;
+  for (let k = 0; k < cols * rows; k++) {
+    const i = worldPlot(k % cols, Math.floor(k / cols));
+    const x = (k % cols) * cell, y = Math.floor(k / cols) * cell, t = byPlot.get(i), mine = id?.plot === i;
     cells += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${colors[worldTerrain(i)]}" class="wm-cell ${worldPick === i ? "on" : ""}" data-plot="${i}"/>`;
     if (t) cells += `<circle cx="${x + cell / 2}" cy="${y + cell / 2}" r="${1.2 + Math.min(1.6, Math.log10((t.pop || 1) + 1) * 0.6)}" class="wm-town ${mine ? "mine" : ""}" data-plot="${i}"/>`;
   }
@@ -1313,8 +1314,11 @@ async function worldMapSheet(pick) {
       <div class="wm-zoom"><button type="button" id="wmIn" aria-label="قرّب">＋</button><button type="button" id="wmOut" aria-label="بعّد">－</button></div></div>
     ${detail}
     ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}`, "world");
+  // first time open: close in on your own town (or the middle), the whole of al-Jouf is a pinch away
+  if (!wmView && !wmSeen) { const [mx, my] = id?.plot != null ? worldXY(id.plot) : [WORLD.cols / 2, WORLD.rows / 2]; const w = cols * cell / 2, h = rows * cell / 2; wmView = { x: mx * cell - w / 2, y: my * cell - h / 2, w, h }; }
+  wmSeen = true;
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
-  $("wmMine")?.addEventListener("click", () => { wmView = null; worldMapSheet(id.plot); });
+  $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
   $("wmVisit")?.addEventListener("click", () => visitTown(sel, true));
   $("wmReport")?.addEventListener("click", async () => {
@@ -1509,10 +1513,11 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-26",
+  v: "2026-11-27",
   items: [
     ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
-    ["🗺️", "الأرض كبرت", "الخريطة صارت أكبر بكثير: ٤ أراضي قريبة و٤ أطراف بعيدة تشتريها."],
+    ["🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ١٢ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، وأسعارها أرخص من قبل."],
+    ["🌍", "عالم الجوف صار أكبر", "خريطة الجوف كبرت كثير وفيها أماكن جديدة: الحديثة، العيساوية، الشويحطية، صوير، ميقوع، أبو عجرم، زلوم. ومدن اللاعبين بقت بمكانها."],
     ["🏙️", "مرحلة الحاضرة", "بعد المحافظة صارت فيه «حاضرة» (٩٠٠٠ ساكن)، وبرج سكني يسع ١٢٠، ومستوى رابع للمحلات والمزارع والمسجد والمستشفى."],
     ["🫒", "زيتون الجوف", "مزرعة زيتون ومعصرة تعصر زيت الجوف وتصدّره، ونصب الزيتونة."],
     ["🌬️", "مزرعة رياح", "توربينات مثل دومة الجندل: كهرباء كثيرة ونظيفة بلا دخان."],
