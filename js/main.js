@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -2333,8 +2333,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-17", world: "2026-12-19" },
+  v: { solo: "2026-12-20", world: "2026-12-20" },
   items: [
+    ["both", "📊", "صافي اليوم صار حقيقي", "بالأرقام «اللي دخل آخر ٢٤ ساعة» صار مجموع اللي دخل فعلاً، مو ساعة وحدة × ٢٤ عشان كذا كان يتقلب. والصافي بالساعة طبيعي يتغير: وقت الصلاة المحلات تسكر، ووقت الذروة الزحمة تأخر الموظفين، وتشوف تحته ليش."],
     ["both", "🕌", "كم يخدم وكم يزعج", "قبل لا تبني وبعده: المسجد والمدرسة والمستوصف والبقالة والحديقة يقولون لك «يخدم ١٢ بيت (٨٠ ساكن)»، والمصانع والورش والمولدات تحذرك «⚠️ بيزعّل ٧ بيوت» وتشوف منطقة الدخان بالأحمر. والبقالة صارت تريّح البيوت اللي حولها."],
     ["both", "💰", "تعرف الدخل قبل لا تشتري", "كل بطاقة بناء فيها دخلها ومصروفها بالساعة. ولا اخترت المكان، قبل «ابنِ» يحسب لك اللعبة مدينتك كأن المبنى موجود ويقولك بالضبط: دخل كذا، مصروف كذا، وصافيك يزيد أو ينقص كم. وإذا الدخل قليل لأن الناس قليلين يقولك."],
     ["world", "🌦️", "جو واحد لكل الجوف", "بعالم الجوف المطر والغبار والحر والبرد والجراد والجفاف وموسم الصرام صارت تجي لكل المدن بنفس الساعة وتخلص سوا، ورمضان والعيدين على تقويم واحد للكل يتنقل بين الفصول من سنة لسنة. والوقت والفصول والصلاة أصلاً واحدة. كذا الكل على نفس الظروف."],
@@ -2440,7 +2441,8 @@ function budget() {
   sheet(`<h2>الأرقام</h2>
     <div class="rows">
       ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
-      ${row("يعني باليوم (٢٤ ساعة)", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net * 24))}`, A.net >= 0 ? "plus" : "minus")}
+      ${(() => { const d = dayNet(S, A); return row("اللي دخل فعلاً آخر ٢٤ ساعة", `${d >= 0 ? "+" : "−"}${money(Math.abs(d))}`, d >= 0 ? "plus" : "minus"); })()}
+      <div class="hint">💡 الصافي بالساعة يتغير طول اليوم وهذا طبيعي مو خطأ: ${A.prayer && A.prayer.id !== "fajr" ? "<b>الحين وقت صلاة والمحلات مسكرة</b> فمبيعاتها أقل" : "وقت الصلاة المحلات تسكر فتقل مبيعاتها"}، و${A.congestion > 0.02 ? "<b>الحين فيه زحمة</b> تأخر الموظفين والزبائن" : "وقت الذروة الزحمة تأخر الموظفين والزبائن"}. عشان كذا رقم اليوم محسوب من اللي دخل فعلاً، مو ساعة وحدة × ٢٤.</div>
       ${A.net < 0 && S.money > 0 ? `<div class="need">تخسر كل ساعة. بعد ${ar(Math.max(1, Math.floor(S.money / -A.net)))} ساعة تصير الميزانية بالسالب.</div>` : ""}
       ${S.broke ? `<div class="need">البلدية مفلسة: المساجد والمدارس والمستوصفات مقفلة لين ترجع الميزانية فوق الصفر.</div>` : S.money < 0 ? `<div class="need">الميزانية بالسالب: الرواتب متأخرة، والخدمات تشتغل بنص طاقتها، والناس زعلانين. لو زادت الديون عن ${money(1500 + A.upkeep * 12)} تفلس البلدية.</div>` : ""}
     </div>

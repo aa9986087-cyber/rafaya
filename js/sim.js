@@ -1177,8 +1177,17 @@ export function step(s, r = Math.random) {
   for (const x of ACHIEVEMENTS) if (!s.ach[x.id] && x.test(s, after)) { s.ach[x.id] = s.day; msgs.push({ kind: "ach", text: `🏆 إنجاز: ${x.name}` }); }
   s.history.push({ d: s.day, p: s.pop, m: Math.round(s.money), h: Math.round(s.happy), n: a.net });
   if (s.history.length > 60) s.history.shift();
+  // the last 24 real hourly nets, so "per day" is what really came in, not this hour × 24
+  s.netLog = (s.netLog || []).concat(a.net).slice(-24);
   s.lastGrowth = s.pop - before;
   return { a, msgs };
+}
+
+/** What really came in over the last 24 hours (short logs are scaled up to a day). */
+export function dayNet(s, a) {
+  const log = s.netLog || [];
+  if (!log.length) return a.net * 24;
+  return Math.round(log.reduce((n, v) => n + v, 0) * 24 / log.length);
 }
 
 /** What an option costs right now (some depend on how many tents or roads there are). */
