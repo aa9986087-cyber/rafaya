@@ -92,7 +92,7 @@ export const B = {
   dairy: { cat: "farm", name: "مصنع ألبان ومسلخ", cost: 2200, upkeep: 25, era: 1, jobs: 20, income: 90, water: -4, power: -6, radius: 2, pollute: 3, text: "حليب ولحم من حلال الرافعية. يحتاج ٤ حظائر موصولة به بطريق." },
   mill: { cat: "farm", name: "صوامع ومطحنة", cost: 2400, upkeep: 25, era: 1, jobs: 15, income: 100, power: -8, radius: 2, pollute: 3, text: "تطحن قمح المزارع المحورية. تحتاج ٣ مزارع محورية موصولة بها بطريق." },
   olive: { cat: "farm", name: "مزرعة زيتون", cost: 260, upkeep: 3, era: 1, jobs: 6, income: 20, water: -4, text: "الجوف أرض الزيتون: صفوف زيتون تعطي دخل زين، وإذا وصلتها بمعصرة يصير دخلها أكثر." },
-  oilpress: { cat: "farm", name: "معصرة زيتون", cost: 2600, upkeep: 26, era: 1, jobs: 18, income: 130, water: -3, power: -6, radius: 2, pollute: 2, text: "تعصر زيت الجوف وتصدّره. تحتاج ٥ مزارع زيتون موصولة بها بطريق." },
+  oilpress: { cat: "farm", name: "معصرة زيتون", cost: 2600, upkeep: 26, era: 1, tech: "oliveoil", jobs: 18, income: 130, water: -3, power: -6, radius: 2, pollute: 2, text: "تعصر زيت الجوف وتصدّره. تحتاج ٥ مزارع زيتون موصولة بها بطريق." },
   factory: { cat: "farm", name: "مصنع", cost: 3500, upkeep: 45, era: 2, jobs: 60, income: 200, water: -8, power: -20, radius: 5, pollute: 14, text: "وظائف كثيرة وتلوّث." },
 
   // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
@@ -103,7 +103,7 @@ export const B = {
   generator: { cat: "util", name: "مولد كهرباء", cost: 700, upkeep: 14, era: 1, power: 70, reach: 7, radius: 3, pollute: 10, text: "كهرباء ٧٠ وحدة لين ٧ مربعات، بس دخانه يزعج اللي حوله ٣ مربعات. حطه بعيد عن البيوت ووصّل الكهرب بعمدان." },
   pole: { cat: "util", name: "عمود كهرباء", cost: 25, upkeep: 0.3, era: 1, pole: true, reach: 3, text: "ينقل الكهرب بسلك: حطه قريب من المولد أو المحطة أو من عمود ثاني (لين ٤ مربعات)، ويوصل الكهرب للي حوله لين ٣ مربعات. كذا تبعد المولد ودخانه عن البيوت." },
   solar: { cat: "util", name: "ألواح شمسية", cost: 1600, upkeep: 6, era: 1, tech: "solar", power: 90, reach: 6, text: "كهرباء ٩٠ وحدة نظيفة، توصل لين ٦ مربعات." },
-  windfarm: { cat: "util", name: "مزرعة رياح", cost: 7000, upkeep: 30, era: 2, power: 450, reach: 13, text: "توربينات رياح مثل اللي بدومة الجندل: كهرباء ٤٥٠ وحدة نظيفة بلا دخان، توصل لين ١٣ مربع." },
+  windfarm: { cat: "util", name: "مزرعة رياح", cost: 7000, upkeep: 30, era: 2, tech: "wind", power: 450, reach: 13, text: "توربينات رياح مثل اللي بدومة الجندل: كهرباء ٤٥٠ وحدة نظيفة بلا دخان، توصل لين ١٣ مربع." },
   powerplant: { cat: "util", name: "محطة كهرباء", cost: 5000, upkeep: 60, era: 2, power: 600, reach: 14, radius: 5, pollute: 12, text: "كهرباء ٦٠٠ وحدة توصل لين ١٤ مربع." },
 
   mosque: { cat: "serv", name: "مسجد", cost: 350, upkeep: 4, era: 0, water: -1, power: -1, radius: 5, happy: 14, service: "mosque", text: "يفرّح الحارة اللي حوله." },
@@ -323,6 +323,20 @@ export const TECH = {
   desal: { name: "تحلية المياه", cost: 3000, days: 12, era: 2, text: "يفتح محطة التحلية." },
   smart: { name: "المدينة الذكية", cost: 6000, days: 16, era: 3, text: "الدخل كله أكثر بـ٢٠٪." },
   pest: { name: "مكافحة الآفات", cost: 400, days: 12, era: 0, text: "الجراد ما يضر المزارع إلا شوي." },
+  hydro: { name: "الزراعة الحديثة", cost: 800, days: 10, era: 1, text: "مزارع النخل والخضار والزيتون تنتج أكثر بـ١٥٪." },
+  oliveoil: { name: "عصر الزيتون", cost: 900, days: 10, era: 1, text: "يفتح معصرة الزيتون: زيت الجوف يتصدّر." },
+  recharge: { name: "تغذية الماء الجوفي", cost: 1000, days: 14, era: 1, text: "آبار تغذية ترجّع ماء المطر للأرض: الماء الجوفي يرجع أسرع." },
+  floodworks: { name: "تصريف السيول", cost: 1100, days: 14, era: 1, text: "عبّارات وقنوات: السيل يخرّب نص اللي كان يخربه." },
+  recycle: { name: "إعادة تدوير المياه", cost: 1400, days: 12, era: 1, text: "البلد كله يصرف ماء أقل بـ١٥٪." },
+  efficiency: { name: "ترشيد الكهرباء", cost: 1400, days: 12, era: 1, text: "البلد كله يصرف كهرباء أقل بـ١٥٪." },
+  marketing: { name: "التسويق والتجارة الإلكترونية", cost: 1600, days: 12, era: 1, text: "المحلات تبيع أكثر بـ١٥٪." },
+  health: { name: "الطب الوقائي", cost: 1600, days: 14, era: 2, text: "فاتورة علاج أمراض الدخان تنزل للنص." },
+  security: { name: "الكاميرات الأمنية", cost: 1800, days: 14, era: 2, text: "السرقات تقل ٦٠٪." },
+  logistics: { name: "الخدمات اللوجستية", cost: 2000, days: 14, era: 2, text: "المصانع تشتغل كامل بمزارع أقل (٧٠٪ من العدد)." },
+  egov: { name: "الحكومة الإلكترونية", cost: 2200, days: 16, era: 2, text: "رواتب موظفي البلدية أقل بـ٢٠٪." },
+  heritage: { name: "إحياء التراث", cost: 2400, days: 16, era: 2, text: "دخل الزوار والمشاريع الكبرى أكثر بـ٢٥٪." },
+  transit: { name: "النقل العام", cost: 2500, days: 16, era: 2, text: "باصات وتنظيم: الطرق تشيل سيارات أكثر بـ٣٠٪ والزحمة تخف." },
+  wind: { name: "طاقة الرياح", cost: 3500, days: 20, era: 2, text: "يفتح مزرعة الرياح: كهرباء كثيرة بلا دخان." },
   dams: { name: "سدود الأودية", cost: 1200, days: 24, era: 1, text: "يفتح بناء السدود على الوادي: تحجز السيل، وتجمع المطر في بحيرة، وتغذي الماء الجوفي." }
 };
 for (const t of Object.values(TECH)) t.cost = Math.round(t.cost * PRICE.tech);

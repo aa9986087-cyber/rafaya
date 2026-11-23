@@ -268,7 +268,25 @@ function confirmPending() {
 // A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom; a tap
 // on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
 // ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
-const arrMovable = (b) => !!b && B[b.id]?.cat !== "road" && !(b.build > 0); // roads, parking and junctions stay put
+const arrMovable = (b) => !!b && !(b.build > 0); // everything moves, roads too (like walls in a base editor)
+const arrSync = () => world.sync(S, { tiles: false, roads: true, buildings: true });
+/** Lay the next one of the same kind from the tray (roads are laid by dragging a finger along). */
+function arrNext(id) {
+  const k = arrange.tray.findIndex((b) => b.id === id);
+  if (k < 0) { arrange.held = null; return; }
+  arrange.held = { b: arrange.tray[k], from: -1 };
+  arrange.tray.splice(k, 1);
+}
+function arrPaint(t) {
+  const h = arrange.held;
+  if (!h || !inMap(t.x, t.y) || drag.done.has(idx(t.x, t.y))) return;
+  drag.done.add(idx(t.x, t.y));
+  if (layoutBlocker(S, t.x, t.y, h.b)) return;
+  S.tiles[idx(t.x, t.y)].b = h.b;
+  sfx.road();
+  arrNext(h.b.id);
+  arrSync(); arrRender();
+}
 function arrSnapshot() {
   const at = [];
   S.tiles.forEach((t, i) => { if (arrMovable(t.b)) at.push([i, t.b, t.b.rot || 0]); });
@@ -296,7 +314,7 @@ function leaveArrange(keep) {
   document.body.classList.remove("arranging");
   $("arrange").hidden = true;
   world.setGhost(null); world.setHover(null); world.setOverlay(null);
-  A = analyze(S); sync(false); refresh();
+  A = analyze(S); arrSync(); refresh();
   if (keep) { save(); toast("انحفظ ترتيب البلد ✓", "goal"); sfx.build(); }
 }
 const arrPush = () => { arrange.hist.push(arrSnapshot()); if (arrange.hist.length > 40) arrange.hist.shift(); };
@@ -307,7 +325,7 @@ function arrLift(i) {
   S.tiles[i].b = null;
   arrange.held = { b, from: i };
   arrange.sel = null;
-  sync(false);
+  arrSync();
 }
 /** Put what is in the hand down on tile t (or back where it came from); a building there swaps. */
 function arrDrop(t) {
@@ -315,7 +333,7 @@ function arrDrop(t) {
   if (!h) return;
   arrange.held = null; arrange.dragging = false;
   const back = () => { if (h.from >= 0) S.tiles[h.from].b = h.b; else arrange.tray.push(h.b); };
-  if (!t || !inMap(t.x, t.y)) { back(); sync(false); arrRender(); return; }
+  if (!t || !inMap(t.x, t.y)) { back(); arrSync(); arrRender(); return; }
   const i = idx(t.x, t.y), there = S.tiles[i].b;
   if (there && arrMovable(there) && h.from >= 0) {
     // swap: each goes to the other's place, if both fit there
@@ -328,15 +346,19 @@ function arrDrop(t) {
     if (why) { back(); toast(why, "bad"); sfx.deny(); }
     else { S.tiles[i].b = h.b; arrange.sel = i; sfx.build(); }
   }
-  sync(false); arrRender();
+  arrSync(); arrRender();
 }
 function arrDown(e) {
   const t = world.pick(e.clientX, e.clientY);
   const i = inMap(t.x, t.y) ? idx(t.x, t.y) : -1;
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && arrMovable(S.tiles[i].b) ? i : -1 };
+  // a road from the tray: the finger lays road wherever it goes
+  const h = arrange.held;
+  if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0 && !S.tiles[i].b) { drag.paint = true; drag.grab = -1; arrPaint(t); }
 }
 /** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
 function arrMove(e) {
+  if (drag.paint) { arrPaint(world.pick(e.clientX, e.clientY)); return true; }
   if (!drag.moved) return true;
   if (drag.grab >= 0 && !arrange.held) { arrLift(drag.grab); arrange.dragging = true; }
   if (arrange.held && arrange.dragging) {
@@ -352,6 +374,7 @@ function arrMove(e) {
 }
 function arrUp(e) {
   const t = world.pick(e.clientX, e.clientY);
+  if (drag.paint) { arrRender(); return; }
   if (arrange.held && arrange.dragging) { arrDrop(t); return; }
   if (drag.moved) return;
   if (arrange.held) { arrDrop(t); return; } // something from the tray: tap where it goes
@@ -370,7 +393,7 @@ function arrRender() {
   arrange.tray.forEach((b, k) => { const key = modelKey(b.id, b.lvl); if (!groups.has(key)) groups.set(key, { b, list: [] }); groups.get(key).list.push(k); });
   $("arrTray").innerHTML = [...groups.entries()].map(([key, g]) => `<button type="button" class="arr-item ${arrange.held && arrange.held.from < 0 && modelKey(arrange.held.b.id, arrange.held.b.lvl) === key ? "on" : ""}" data-k="${g.list[0]}"><img alt="" src="${thumbnail(key)}"><b>${levelName(g.b)}</b><i>${ar(g.list.length)}</i></button>`).join("");
   $("arrTray").hidden = !arrange.tray.length && !(arrange.held && arrange.held.from < 0);
-  $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`
+  $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? (B[arrange.held.b.id].cat === "road" ? `اسحب إصبعك على الأرض وترصف «${B[arrange.held.b.id].name}» (باقي ${ar(1 + arrange.tray.filter((b) => b.id === arrange.held.b.id).length)})` : `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`)
     : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
     : sel != null ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه`
     : "اسحب أي مبنى بإصبعك وحطه وين تبي. حطه على مبنى ثاني ويتبادلون مكانهم.";
@@ -388,19 +411,19 @@ function arrRender() {
 $("arrRot").addEventListener("click", () => {
   const sel = arrange?.sel, b = sel != null && S.tiles[sel].b;
   if (!b || !canTurn(b.id)) return;
-  arrPush(); b.rot = ((b.rot || 0) + 1) % 4; sfx.tap(); sync(false); arrRender();
+  arrPush(); b.rot = ((b.rot || 0) + 1) % 4; sfx.tap(); arrSync(); arrRender();
 });
 $("arrAll").addEventListener("click", () => {
   if (!arrange) return;
   if (arrange.held) arrDrop(null);
   arrPush();
   S.tiles.forEach((t) => { if (arrMovable(t.b)) { arrange.tray.push(t.b); t.b = null; } });
-  arrange.sel = null; sfx.remove(); sync(false); arrRender();
+  arrange.sel = null; sfx.remove(); arrSync(); arrRender();
 });
 $("arrUndo").addEventListener("click", () => {
   if (!arrange?.hist.length) return;
   arrange.held = null; arrRestore(arrange.hist.pop()); arrange.sel = null;
-  sfx.tap(); sync(false); arrRender();
+  sfx.tap(); arrSync(); arrRender();
 });
 $("arrCancel").addEventListener("click", () => { sfx.tap(); leaveArrange(false); });
 $("arrSave").addEventListener("click", () => {
@@ -1538,8 +1561,10 @@ function electionSheet(m) {
 
 // ---------- what is new in this version ----------
 const WHATS_NEW = {
-  v: "2026-11-28",
+  v: "2026-11-29",
   items: [
+    ["🧪", "بحوث جديدة بالمجلس", "١٤ بحث جديد: الزراعة الحديثة، عصر الزيتون، تغذية الماء الجوفي، تصريف السيول، تدوير المياه، ترشيد الكهرباء، التسويق، الطب الوقائي، الكاميرات الأمنية، اللوجستية، الحكومة الإلكترونية، إحياء التراث، النقل العام، وطاقة الرياح."],
+    ["🛣️", "الطرق تنشال بالترتيب", "«شيل الكل» يشيل الطرق والزفلت بعد، وترصفها من جديد بسحب إصبعك على الأرض."],
     ["🧩", "وضع الترتيب", "مثل كلانس: من «ترتيب» اسحب أي مبنى بإصبعك لمكان ثاني ببلاش، حطه على مبنى ثاني ويتبادلون، «شيل الكل» يحطها بالمخزن وترتب من الصفر، وفيه تراجع وإلغاء."],
     ["📍", "وين الحارة؟", "إذا أحد بالنشرة أو بالوعود ذكر حارة، تحتها زر «📍 وين؟» يوديك لها وتضوي أرضها."],
     ["🗺️", "الأرض كبرت", "أرض البداية صارت أوسع، وحولها ٢٤ أرض تشتريها: قريبة ثم بعيدة ثم الأطراف، كل جهة نصين، وأسعارها تبدأ من ٣ آلاف."],
@@ -1755,8 +1780,8 @@ function chainInfo(t, x, y) {
   const asFactory = A.chainAt?.get(i);
   if (asFactory) {
     const c = asFactory.chain;
-    return `${row(`يجيه من ${B[c.from].name}`, `${ar(asFactory.got)} من ${ar(c.need)}`, asFactory.fill >= 1 ? "plus" : "minus")}<i class="prog"><i style="width:${Math.round(asFactory.fill * 100)}%"></i></i>
-      ${asFactory.fill < 1 ? `<p class="hint">🚚 يشتغل بـ${ar(Math.round((0.3 + 1.7 * asFactory.fill) / 2 * 100))}٪. يحتاج ${ar(c.need - asFactory.got)} ${B[c.from].name} زيادة موصولة به بطريق (المزرعة لازم يكون جنبها طريق يوصل للمصنع).</p>` : `<p class="hint">🚚 الشاحنات توصله كل اللي يحتاجه.</p>`}`;
+    return `${row(`يجيه من ${B[c.from].name}`, `${ar(asFactory.got)} من ${ar(asFactory.need ?? c.need)}`, asFactory.fill >= 1 ? "plus" : "minus")}<i class="prog"><i style="width:${Math.round(asFactory.fill * 100)}%"></i></i>
+      ${asFactory.fill < 1 ? `<p class="hint">🚚 يشتغل بـ${ar(Math.round((0.3 + 1.7 * asFactory.fill) / 2 * 100))}٪. يحتاج ${ar((asFactory.need ?? c.need) - asFactory.got)} ${B[c.from].name} زيادة موصولة به بطريق (المزرعة لازم يكون جنبها طريق يوصل للمصنع).</p>` : `<p class="hint">🚚 الشاحنات توصله كل اللي يحتاجه.</p>`}`;
   }
   const chains = CHAINS.filter((c) => c.from === t.b.id);
   if (!chains.length) return "";

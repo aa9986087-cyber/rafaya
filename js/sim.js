@@ -237,7 +237,7 @@ function traffic(s, a) {
     if (isRoad(t)) {
       const x = i % N, y = Math.floor(i / N);
       const ways = near4.filter(([dx, dy]) => inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)])).length;
-      cap[i] = (def.cap || 45) * (ways >= 3 && !def.junction ? TRAFFIC.crossing : 1);
+      cap[i] = (def.cap || 45) * (ways >= 3 && !def.junction ? TRAFFIC.crossing : 1) * (s.tech?.transit ? 1.3 : 1);
       return;
     }
     if (t.b.id === "parking") {
@@ -326,17 +326,17 @@ function netsOf(net, i) {
 export function chainLinks(s, net = roadNets(s)) {
   const links = [], at = new Map();
   for (const c of CHAINS) {
-    const factories = [], producers = [];
+    const factories = [], producers = [], need = s.tech?.logistics ? Math.ceil(c.need * 0.7) : c.need;
     s.tiles.forEach((t, i) => {
       if (!t.b || t.b.build > 0 || t.b.ruin) return;
       if (t.b.id === c.to) factories.push({ i, nets: netsOf(net, i), got: 0 });
       else if (t.b.id === c.from) producers.push({ i, nets: netsOf(net, i) });
     });
     for (const p of producers) {
-      const f = factories.find((f) => f.got < c.need && [...p.nets].some((n) => f.nets.has(n)));
+      const f = factories.find((f) => f.got < need && [...p.nets].some((n) => f.nets.has(n)));
       if (f) { f.got++; links.push({ from: p.i, to: f.i, chain: c.id, cargo: c.cargo }); }
     }
-    for (const f of factories) at.set(f.i, { chain: c, got: f.got, fill: Math.min(1, f.got / c.need) });
+    for (const f of factories) at.set(f.i, { chain: c, got: f.got, need, fill: Math.min(1, f.got / need) });
   }
   return { links, at };
 }
@@ -389,7 +389,7 @@ function stepGround(s, a, raining, msgs) {
   const share = a.waterSupply ? Math.min(1, a.groundSupply / a.waterSupply) : 0;
   const pumped = Math.min(a.waterUse, a.waterSupply) * share;
   const lakes = (s.lake || 0) > 10 ? a.count.dam : 0;
-  const delta = -pumped * GROUND.pump * (s.terrain === "plain" ? 0.6 : 1) - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0);
+  const delta = -pumped * GROUND.pump * (s.terrain === "plain" ? 0.6 : 1) - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0) + (s.tech.recharge ? GROUND.base * 1.5 + (raining ? GROUND.rain * 0.5 : 0) : 0);
   s.aquifer = Math.max(0, Math.min(100, before + delta));
   if (before >= GROUND.low && s.aquifer < GROUND.low) msgs.push({ kind: "event", title: "الماء الجوفي", text: `الآبار بدت تنشف: الماء الجوفي نزل لـ${Math.round(s.aquifer)}٪، والآبار تعطي أقل. ابنِ سد يجمع المطر أو خفف الضخ.` });
   if (before >= 15 && s.aquifer < 15) msgs.push({ kind: "event", title: "الماء الجوفي", text: "الماء الجوفي قرب يخلص! الآبار والخزانات صارت تعطي ثلث ماها. تحتاج سدود أو تحلية." });
@@ -643,11 +643,15 @@ export function analyze(s) {
   // Smoke and noise next to homes make people ill: the clinic's bill.
   for (let i = 0; i < N * N; i++) { const t = s.tiles[i]; if (t.b?.id === "house" && a.pollution[i] > 0) c.health += (t.b.res || 0) * Math.min(30, a.pollution[i]) * 0.004; }
   if (s.tech.zakat) for (const k of ["services", "utilities", "business", "staff"]) c[k] *= 0.85;
+  if (s.tech.health) c.health *= 0.5;
+  if (s.tech.egov) c.staff *= 0.8;
   a.upkeep = Object.values(c).reduce((n, v) => n + v, 0);
   a.peopleCost = c.staff + c.cleaning + c.waterNet; a.roadCost = c.roads; a.loan = c.loan;
   a.waterSupply *= activeEvent(s, "water");
   a.powerSupply *= activeEvent(s, "power");
   if (seasonOf(s.day).id === "summer") { a.waterUse = Math.round(a.waterUse * 1.1); a.powerUse = Math.round(a.powerUse * 1.15); } // heat: more water, air conditioners
+  if (s.tech.recycle) a.waterUse = Math.round(a.waterUse * 0.85);
+  if (s.tech.efficiency) a.powerUse = Math.round(a.powerUse * 0.85);
   a.waterRatio = a.waterUse ? clamp(a.waterSupply / a.waterUse, 0, 1) : 1;
   // Until the town builds its first power source nothing runs on electricity (and nothing misses it).
   a.grid = a.powerSupply > 0;
@@ -660,11 +664,11 @@ export function analyze(s) {
   a.unemployment = a.workers ? 1 - a.employed / a.workers : 0;
 
   // Money for one day.
-  const shopMult = activeEvent(s, "shop") * (s.tech.smart ? 1.2 : 1);
+  const shopMult = activeEvent(s, "shop") * (s.tech.smart ? 1.2 : 1) * (s.tech.marketing ? 1.15 : 1);
   // Locusts take 60% of the harvest, or 15% with pest control.
   let farmEvents = activeEvent(s, "farm");
   if (s.tech.pest && s.events.some((e) => e.id === "locust")) farmEvents = (farmEvents / 0.4) * 0.85;
-  const farmMult = farmEvents * (s.tech.irrigation ? 1.3 : 1) * (s.tech.smart ? 1.2 : 1);
+  const farmMult = farmEvents * (s.tech.irrigation ? 1.3 : 1) * (s.tech.smart ? 1.2 : 1) * (s.tech.hydro ? 1.15 : 1);
   // Local shops can only sell what the residents spend (about 0.6 riyal a person an hour, more in
   // Ramadan and Eid); more shops than that share the same customers. Visitors' places (hotel, the
   // grand projects) and industry sell outside the town, so they are not capped.
@@ -698,7 +702,7 @@ export function analyze(s) {
     if (!t.b || !t.b.works) continue;
     const def = B[t.b.id];
     if (!def.income) continue;
-    if (def.cat === "farm" && (t.b.id === "palms" || t.b.id === "veg")) {
+    if (def.cat === "farm" && (t.b.id === "palms" || t.b.id === "veg" || t.b.id === "olive")) {
       const wadi = t.t === "wadi" ? 1.5 : s.terrain === "dunes" ? 0.7 : 1;
       a.farmIncome += def.income * bizLevel(t.b).income * wadi * farmMult * (0.4 + 0.6 * a.waterRatio) * (0.5 + 0.5 * a.staffing) * condFactor(t.b);
     } else {
@@ -709,7 +713,7 @@ export function analyze(s) {
       if (t.b.id === "pen" && a.grazing?.has(idx(x, y))) inc *= 1 + 0.5 * springGreen(s); // a dry spring has little grass
       if (t.b.id === "pivot") inc *= a.groundFactor;
       if (def.cat === "shop" && a.parkingNear?.[idx(x, y)]) inc *= 1.1;
-      if (def.visitors) a.visitorIncome += inc * shopMult;
+      if (def.visitors) a.visitorIncome += inc * shopMult * (s.tech.heritage ? 1.25 : 1);
       else if (def.cat === "shop") a.shopRaw += inc * shopMult;
       else a.industryIncome += inc;
     }
@@ -731,7 +735,7 @@ export function analyze(s) {
   if (s.pop >= 300) {
     let homes = 0, safe = 0;
     for (let i = 0; i < N * N; i++) if (s.tiles[i].b?.id === "house" && s.tiles[i].b.works) { homes++; if (a.services[i].has("safety")) safe++; }
-    a.costs.theft = homes ? a.shopIncome * 0.12 * (1 - safe / homes) : 0;
+    a.costs.theft = (homes ? a.shopIncome * 0.12 * (1 - safe / homes) : 0) * (s.tech.security ? 0.4 : 1);
     a.upkeep += a.costs.theft;
   }
   // Tax per person falls a little as the town grows, so big cities do not drown in money.
@@ -1007,7 +1011,7 @@ export function step(s, r = Math.random) {
     s.tiles.forEach((t, i) => {
       if (t.t !== "wadi" || !t.b || i % N > firstDam || t.b.id === "dam") return;
       const isRoad = ROAD_IDS.includes(t.b.id);
-      if (r() < (isRoad ? 0.3 : 0.45) * (s.terrain === "bigwadi" ? 1.4 : 1)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
+      if (r() < (isRoad ? 0.3 : 0.45) * (s.terrain === "bigwadi" ? 1.4 : 1) * (s.tech.floodworks ? 0.5 : 1)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
       else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
     });
     if (lost.length || damaged.length) {

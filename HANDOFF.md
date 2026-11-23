@@ -49,6 +49,29 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
    - The 9 quarters (`districtOf`) are now thirds of the town's own 36 × 36 land, not of the whole map.
    - Any news post or promise naming a quarter shows «📍 وين …؟». It calls `showDistrict(d)`: the camera moves there and the quarter's land lights up orange for 8 s. The quarters sheet's «وريني» uses it too.
 
+8. **Roads in the layout editor and 14 new research projects.**
+   - The owner wanted «شيل الكل» to lift the asphalt too (I first misread it as a complaint). Now everything moves, roads included.
+     - A road picked from the tray is laid by dragging a finger: `arrPaint`, `arrNext`.
+     - Arrange redraws with `arrSync()`, which includes roads.
+   - New TECH entries, each with a real effect in sim.js:
+
+     | Tech | Effect |
+     |---|---|
+     | hydro | farmMult ×1.15; olive is now in the farm branch |
+     | oliveoil | unlocks oilpress |
+     | recharge | aquifer refills faster |
+     | floodworks | flood damage chance ×0.5 |
+     | recycle | water use ×0.85 |
+     | efficiency | power use ×0.85 |
+     | marketing | shopMult ×1.15 |
+     | health | health bill ×0.5 |
+     | security | theft ×0.4 |
+     | logistics | chain need ×0.7; `chainAt` entries now carry `need` |
+     | egov | staff ×0.8 |
+     | heritage | visitor income ×1.25 |
+     | transit | road capacity ×1.3 |
+     | wind | unlocks windfarm |
+
 **Nothing is half-done.** All tests pass (29/29). Everything is pushed and auto-deployed.
 
 **Ideas raised before, not started (only build them if the owner asks):**
