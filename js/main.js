@@ -268,7 +268,7 @@ function confirmPending() {
 // A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom; a tap
 // on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
 // ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
-const arrMovable = (b) => !!b && !ROAD_IDS.includes(b.id) && !(b.build > 0);
+const arrMovable = (b) => !!b && B[b.id]?.cat !== "road" && !(b.build > 0); // roads, parking and junctions stay put
 function arrSnapshot() {
   const at = [];
   S.tiles.forEach((t, i) => { if (arrMovable(t.b)) at.push([i, t.b, t.b.rot || 0]); });
