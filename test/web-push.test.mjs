@@ -63,3 +63,8 @@ test("the service worker reports the actual notification display result for a te
     ["push-test", "test-id", false],
   ]);
 });
+
+test("the push request uses only fetch options Cloudflare Workers accept (redirect: \"error\" made every push fail)", async () => {
+  const worker = await readFile(new URL("../src/worker.js", import.meta.url), "utf8");
+  assert.ok(!/redirect:\s*["']error["']/.test(worker), "Workers reject redirect: \"error\": the push never leaves the server");
+});

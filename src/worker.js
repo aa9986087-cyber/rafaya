@@ -95,6 +95,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER, p256dh TEXT, auth TEXT)`);
     try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN p256dh TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN auth TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN last_status INTEGER"); } catch { /* already there */ } // the provider's last answer (the owner's panel)
+    try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN last_at INTEGER"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
     this.outbox = [];
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
@@ -189,10 +191,11 @@ export class Board extends DurableObject {
         headers["Content-Encoding"] = "aes128gcm";
         headers["Content-Type"] = "application/octet-stream";
       }
-      const r = await fetch(sub.endpoint, { method: "POST", body: payload, redirect: "error", signal: AbortSignal.timeout(8000), headers });
+      const r = await fetch(sub.endpoint, { method: "POST", body: payload, signal: AbortSignal.timeout(8000), headers }); // (no redirect option set to error: Workers refuse it, and every push failed before leaving)
       if (r.status === 404 || r.status === 410) this.sql.exec("DELETE FROM pushsubs WHERE k = ?", sub.k); // the phone dropped it
+      else this.sql.exec("UPDATE pushsubs SET last_status = ?, last_at = ? WHERE k = ?", r.status, Date.now(), sub.k);
       return r.status;
-    } catch { return 0; }
+    } catch { try { this.sql.exec("UPDATE pushsubs SET last_status = 0, last_at = ? WHERE k = ?", Date.now(), sub.k); } catch { /* gone */ } return 0; }
   }
   /**
    * The citizens' important requests: a town whose mayor has been away over an hour, with an unanswered
@@ -332,6 +335,8 @@ export class Board extends DurableObject {
         chatToday: one("SELECT COUNT(*) n FROM chat WHERE at > ?", now - 86400000).n,
         reports: one("SELECT COUNT(*) n FROM reports").n, banned: one("SELECT COUNT(*) n FROM players WHERE banned = 1").n,
         pushPhones: one("SELECT COUNT(*) n FROM pushsubs").n,
+        pushOk: one("SELECT COUNT(*) n FROM pushsubs WHERE last_status BETWEEN 200 AND 299").n,
+        pushFail: one("SELECT COUNT(*) n FROM pushsubs WHERE last_status IS NOT NULL AND (last_status < 200 OR last_status > 299)").n,
         biggest: this.sql.exec("SELECT town, owner, pop, era FROM plots ORDER BY pop DESC LIMIT 5").toArray()
       });
     }
@@ -587,7 +592,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const phones = statuses.filter((status) => status >= 200 && status < 300).length;
       if (phones) return json({ ok: true, phones });
       const expired = !!endpoint && statuses.some((status) => status === 404 || status === 410);
-      return json({ expired, error: expired ? "اشتراك هالجهاز انتهى." : "مزوّد الإشعارات ما قبل التجربة الحين. جرّب بعد شوي." });
+      const code = statuses.find((st) => st && (st < 200 || st >= 300)) ?? 0;
+      return json({ expired, error: expired ? "اشتراك هالجهاز انتهى." : `مزوّد الإشعارات ما قبل التجربة (الرد: ${code || "ما وصل"}). جرّب بعد شوي، ولو تكرر أرسل الرقم للمطور.` });
     }
     if (p[0] === "push" && p[1] === "sub") { // this phone wants notifications for the player's town
       const endpoint = String(body.endpoint || "");

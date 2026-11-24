@@ -1716,36 +1716,21 @@ async function pushIosHelp() {
   const v = iosVersion(), old = v && v < 16.04;
   let code = "";
   const id = me();
-  if (!old && id?.secret) {
-    try {
-      code = (await iosPrepareMove(true)).code || "";
-      if (!code) {
-        const h = await api("/world/handoff", { name: id.name, secret: id.secret });
-        code = h.code || ""; // the account-only transfer is the fallback
-        // The home-screen app can still restore the account from the legacy link.
-        if (h.token) {
-          history.replaceState(null, "", `/?link=${h.token}`);
-          document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?t=${h.token}`);
-        }
-      }
-    } catch { /* shown without */ }
-  }
+  if (!old) { try { code = (await iosPrepareMove(true)).code || ""; } catch { /* shown without */ } } // the whole game: by itself, or by this code (the owner's two ways)
   // iOS 26 moved Share into the «⋯» menu and added an «Open as Web App» switch that must stay on
   const v26 = v >= 26;
   const MORE_IC = `<b style="font-size:20px;letter-spacing:1px">⋯</b>`;
   sheet(`<h2>🔔 تنبيهات الآيفون</h2>
-    ${old ? `<div class="need">حدّث الآيفون أول: الإعدادات ← عام ← تحديث البرنامج</div>` : `<p>حطّ اللعبة على شاشة جوالك مثل التطبيق:</p>
+    ${old ? `<div class="need">حدّث الآيفون أول: الإعدادات ← عام ← تحديث البرنامج</div>` : `<p>حطّ اللعبة على شاشة جوالك مثل التطبيق، ولعبتك تنتقل معها:</p>
     <div class="rows">
       ${v26 ? `<div class="row g-step"><b class="g-n">١</b><span>اضغط ${MORE_IC} تحت يمين بسفاري ← <b>«مشاركة»</b> ${SHARE_IC}</span></div>`
         : `<div class="row g-step"><b class="g-n">١</b><span>اضغط ${SHARE_IC} تحت بسفاري <small>(ما تشوفه؟ اضغط ${MORE_IC} تحت يمين)</small></span></div>`}
-      <div class="row g-step"><b class="g-n">٢</b><span>انزل شوي واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b></span></div>
-      <div class="row g-step"><b class="g-n">٣</b><span>${v26 ? "خل <b>«فتح كتطبيق ويب»</b> شغّال ✅ ثم " : ""}اضغط <b>«إضافة»</b> فوق</span></div>
-      <div class="row g-step"><b class="g-n">٤</b><span>سكّر سفاري وافتح <b>الرافعية</b> من الأيقونة الجديدة ← <b>«فعّل التنبيهات»</b></span></div>
+      <div class="row g-step"><b class="g-n">٢</b><span>اختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b>${v26 ? " وخل <b>«فتح كتطبيق ويب»</b> شغّال ✅" : ""} ← <b>«إضافة»</b></span></div>
+      <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>الرافعية</b> من الأيقونة: لعبتك تجيك لحالها، ولو طلب منك رمز اكتب اللي تحت</span></div>
+      <div class="row g-step"><b class="g-n">٤</b><span>الإعدادات ← <b>«التنبيهات على الجوال»</b></span></div>
     </div>
-    <p class="hint">حسابك ومدينتك ينتقلون لحالهم ✓</p>
-    <p class="ios-point">👇 الأزرار تحت الشاشة، تحت هالصفحة</p>
-    ${code ? `<details class="ios-fallback"><summary>🔑 احتياط: لو ما انتقل حسابك</summary><p>بالأيقونة: الجوف ← «احتياط: عندي رمز نقل» واكتب (صالح ٢٤ ساعة):</p>
-      <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}`}`, "push");
+    ${code ? `<div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b><span>رمز لعبتك · لو ما انتقلت لحالها (صالح ٢٤ ساعة)</span></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button>` : ""}
+    <p class="ios-point">👇 الأزرار تحت الشاشة، تحت هالصفحة</p>`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 /** A fresh town on the same land and name (the restart, here or from another phone). */

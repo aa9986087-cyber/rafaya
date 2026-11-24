@@ -79,7 +79,7 @@ async function show() {
 async function home() {
   const s = await api("stats");
   frame(`<div class="grid">
-    ${[["اللاعبين", s.players], ["المدن", s.towns], ["جدد اليوم", s.newToday], ["لعبوا اليوم", s.activeToday], ["رسايل الشات اليوم", s.chatToday], ["البلاغات", s.reports], ["محظورين", s.banned], ["جوالات فيها تنبيهات", s.pushPhones]].map(([t, v]) => `<div class="card stat"><b>${n(v)}</b><span>${t}</span></div>`).join("")}
+    ${[["اللاعبين", s.players], ["المدن", s.towns], ["جدد اليوم", s.newToday], ["لعبوا اليوم", s.activeToday], ["رسايل الشات اليوم", s.chatToday], ["البلاغات", s.reports], ["محظورين", s.banned], ["جوالات فيها تنبيهات", s.pushPhones], ["آخر تنبيه وصلها ✅", s.pushOk], ["آخر تنبيه فشل ❌", s.pushFail]].map(([t, v]) => `<div class="card stat"><b>${n(v)}</b><span>${t}</span></div>`).join("")}
     </div><h3>🏆 أكبر المدن</h3>${s.biggest.map((t) => `<div class="card row"><span><b>${esc(t.town)}</b> <small>${esc(t.owner)}</small></span><span>${n(t.pop)} ساكن · ${ERAS[t.era] || ""}</span></div>`).join("")}`);
 }
 async function reports() {
