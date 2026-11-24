@@ -383,7 +383,12 @@ export class Board extends DurableObject {
     }
     if (p[0] === "players") {
       const q = `%${clean(new URL(request.url).searchParams.get("q"), 20)}%`;
-      return json({ list: this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray() });
+      const list = this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray();
+      for (const r of list) { // each phone with notifications on: its push service, and the service's last answer (201 = taken)
+        r.phones = r.plot == null ? [] : this.sql.exec("SELECT endpoint, created, last_status, last_at, p256dh IS NOT NULL AS keyed FROM pushsubs WHERE plot = ? ORDER BY created DESC", r.plot).toArray()
+          .map((x) => { let host = ""; try { host = new URL(x.endpoint).host; } catch { /* blank */ } return { host, created: x.created, status: x.last_status, at: x.last_at, keyed: !!x.keyed }; });
+      }
+      return json({ list });
     }
     if (post && p[0] === "ban") {
       const nm = clean(body.name, 16);
