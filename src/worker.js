@@ -97,6 +97,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN auth TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN last_status INTEGER"); } catch { /* already there */ } // the provider's last answer (the owner's panel)
     try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN last_at INTEGER"); } catch { /* already there */ }
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS pushack (receipt TEXT PRIMARY KEY, sent INTEGER, host TEXT, got INTEGER, shown INTEGER, at INTEGER)`); // the closed-game test: what the provider said, and what the phone itself reported
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
     this.outbox = [];
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
@@ -444,6 +445,12 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM pushq WHERE k = ?", k);
       return json({ items });
     }
+    if (p[0] === "push" && p[1] === "ack") { // the phone's service worker reports a test it got (POST), the game reads it back (GET)
+      const receipt = String((post ? body.receipt : new URL(request.url).searchParams.get("r")) || "");
+      if (!/^[a-f0-9-]{36}$/.test(receipt)) return json({ error: "bad" }, 400);
+      if (post) { this.sql.exec("UPDATE pushack SET got = ?, shown = ? WHERE receipt = ?", Date.now(), body.shown ? 1 : 0, receipt); return json({ ok: true }); }
+      return json(this.sql.exec("SELECT sent, host, got, shown, at FROM pushack WHERE receipt = ?", receipt).toArray()[0] || {});
+    }
     if (post && p[0] === "push" && p[1] === "unsub") {
       this.sql.exec("DELETE FROM pushsubs WHERE k = ?", await hash(String(body.endpoint || "")));
       return json({ ok: true });
@@ -587,9 +594,14 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         : this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ?", me.plot).toArray();
       if (!subs.length) return json({ error: "ما فيه اشتراك مسجّل لهالجهاز. فعّل التنبيهات أول." });
       if (body.later) { // the test the phone gets with the game closed: some (Samsung's web apps) show nothing while the game is open
-        const message = { title: "🔔 تجربة التنبيهات", body: "وصلك التنبيه والتطبيق مسكّر. كذا بتجيك تنبيهات الجوف 👍", tag: "test-later" };
-        this.ctx.waitUntil(new Promise((resolve) => setTimeout(resolve, 12000)).then(() => Promise.all(subs.map((sub) => this.sendPush(sub, message, "300")))));
-        return json({ ok: true, later: true });
+        const ack = typeof body.receipt === "string" && /^[a-f0-9-]{36}$/.test(body.receipt) ? body.receipt : null;
+        const message = { title: "🔔 تجربة التنبيهات", body: "وصلك التنبيه والتطبيق مسكّر. كذا بتجيك تنبيهات الجوف 👍", tag: "test-later", ...(ack ? { ack } : {}) };
+        let host = ""; try { host = new URL(subs[0].endpoint).host; } catch { /* shown blank */ }
+        if (ack) { this.sql.exec("DELETE FROM pushack WHERE at < ?", Date.now() - 86400000); this.sql.exec("INSERT OR REPLACE INTO pushack (receipt, host, at) VALUES (?, ?, ?)", ack, host, Date.now()); }
+        this.ctx.waitUntil(new Promise((resolve) => setTimeout(resolve, 12000)).then(() => Promise.all(subs.map((sub) => this.sendPush(sub, message, "300")))).then((st) => {
+          if (ack) this.sql.exec("UPDATE pushack SET sent = ? WHERE receipt = ?", st.find((x) => x >= 200 && x < 300) ?? st[0] ?? 0, ack);
+        }));
+        return json({ ok: true, later: true, host });
       }
       const receipt = typeof body.receipt === "string" && /^[a-f0-9-]{36}$/.test(body.receipt) ? body.receipt : undefined;
       const message = { title: "🔔 تجربة التنبيهات", body: "وصلتك تجربة التنبيه من عالم الجوف.", tag: receipt ? `test-${receipt}` : "test", receipt };

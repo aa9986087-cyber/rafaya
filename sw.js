@@ -31,6 +31,9 @@ self.addEventListener("push", (e) => e.waitUntil((async () => {
       await self.registration.showNotification(it.title, { body: it.body, tag: it.tag || "jouf", renotify: !it.receipt, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", dir: "rtl", lang: "ar", data: { url: "/" } });
       shown = true;
     } finally {
+      if (it.ack) { // the closed-game test: tell the server this phone got it, and whether it could show it
+        try { await fetch("/api/world/push/ack", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ receipt: it.ack, shown }) }); } catch { /* the game says "no report" */ }
+      }
       if (it.receipt) {
         const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
         for (const window of windows) window.postMessage({ type: "push-test", receipt: it.receipt, shown });
