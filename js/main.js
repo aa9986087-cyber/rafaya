@@ -3133,8 +3133,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-28", world: "2027-01-31" },
+  v: { solo: "2027-02-01", world: "2027-02-01" },
   items: [
+    ["both", "🔑", "كود النسخة الاحتياطية صار قصير", "• بالإعدادات ← «نسخة احتياطية» ← «🔑 اطلع كود»: يطلع لك كود قصير مثل K7PM-2QXA بدل الكود الطويل. • تكتبه بالجهاز الثاني من «استرجع من كود»، ويبقى ٦٠ يوم."],
     ["world", "🛠️", "إصلاحات الخريطة والشات", "• اسم «الرافعية» على خريطة الجوف وبالشات صار يطلع مثل ما هو، بدل ما يتبدل باسم مدينتك. • ولما تكتب بالشات ما تطلع لك قائمة كتاباتك القديمة فوق الكيبورد."],
     ["world", "🔔", "التنبيهات رجعت مثل أول", "• رجّعنا طريقة اشتراك جوالك بالتنبيهات مثل ما كانت لما كانت توصل. • إذا ما وصلتك: الإعدادات ← طفّ «التنبيهات على الجوال» وشغّلها من جديد."],
     ["world", "✏️", "قوانين الأسماء بالجوف", "• ممنوع تكتب باسمك أو اسم مدينتك اسم شخص حقيقي غير اسمك، أو اسم أو رمز عائلة أو فخذ أو قبيلة. • إذا الإدارة طلبت منك تغيّر الاسم، يطلع لك السبب ومعك يوم كامل تغيّره، وإذا ما غيّرته تنحذف مدينتك من عالم الجوف. • والمطور صار يكتب معكم بالشات باسم «🛠️ المطور»."],
@@ -3676,9 +3677,9 @@ function settingsSheet(fromMenu) {
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
-    <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
-    <textarea id="saveCode" readonly></textarea>
-    <div class="sheet-actions two"><button class="btn" id="copySave" type="button">انسخ الكود</button><button class="btn" id="loadSave" type="button">استرجع من كود</button></div>
+    <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
+    <div id="backupBox"></div>
+    <div class="sheet-actions two"><button class="btn" id="copySave" type="button">🔑 اطلع كود</button><button class="btn" id="loadSave" type="button">استرجع من كود</button></div>
     <h3>عن اللعبة</h3>
     <p>صُنعت في الرافعية بيد Vamos. الرسم ثلاثي الأبعاد بمكتبة three.js (ترخيص MIT)، وكل المباني مصممة داخل اللعبة.</p>`, fromMenu ? "settings-menu" : "settings");
   $("sheetBody").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
@@ -3738,15 +3739,40 @@ function settingsSheet(fromMenu) {
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
-  const code = btoa(unescape(encodeURIComponent(pack(S))));
-  $("saveCode").value = code;
-  $("copySave").addEventListener("click", async () => { try { await navigator.clipboard.writeText(code); toast("انسخ الكود."); } catch { $("saveCode").select(); } });
-  $("loadSave").addEventListener("click", () => {
-    $("saveCode").readOnly = false; $("saveCode").value = ""; $("saveCode").focus();
+  // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
+  const longCode = () => btoa(unescape(encodeURIComponent(pack(S))));
+  const short = onlineOk() && !globalThis.RAFAYA_PREVIEW && typeof CompressionStream !== "undefined";
+  $("copySave").addEventListener("click", async (e) => {
+    const box = $("backupBox"), button = e.currentTarget;
+    let code = "";
+    if (short) {
+      button.disabled = true; box.innerHTML = `<p class="hint">نطلع الكود…</p>`;
+      try {
+        const r = await (await fetch(API + "/move/backup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(pack(S)), old: store.get("rafaya-backup-code") || "" }) })).json();
+        if (r.code) { code = `${r.code.slice(0, 4)}-${r.code.slice(4)}`; store.set("rafaya-backup-code", r.code); }
+      } catch { /* the long code below */ }
+      button.disabled = false;
+    }
+    if (code) box.innerHTML = `<div class="backup-code" dir="ltr">${code}</div><p class="hint">هذا كود مدينتك الحين. لو كملت لعب وتبي آخر شي، اطلع كود جديد.</p>`;
+    else { code = longCode(); box.innerHTML = `<textarea id="saveCode" readonly></textarea><p class="hint">ما قدرنا نوصل للسيرفر، فهذا الكود الطويل.</p>`; $("saveCode").value = code; }
+    try { await navigator.clipboard.writeText(code); toast("انسخ الكود ✓"); } catch { $("saveCode")?.select(); }
+  });
+  $("loadSave").addEventListener("click", function first() { // the first tap shows the box; the next one restores (it used to clear what was typed)
+    this.removeEventListener("click", first);
+    $("backupBox").innerHTML = `<label class="rg-name">الكود <input id="restoreCode" type="text" autocomplete="off" dir="ltr" placeholder="ABCD-EFGH" style="text-transform:uppercase"></label>`;
+    $("restoreCode").focus();
     $("loadSave").textContent = "استرجع الحين";
-    $("loadSave").onclick = () => {
-      try { S = unpack(decodeURIComponent(escape(atob($("saveCode").value.trim())))); save(); world.sync(S); refresh(); closeSheet(); toast("رجعت مدينتك!", "goal"); }
-      catch { toast("الكود غير صحيح", "bad"); }
+    $("loadSave").onclick = async () => {
+      const raw = $("restoreCode").value.trim();
+      try {
+        let text;
+        if (raw.replace(/[^A-Za-z0-9]/g, "").length === 8) { // the short code
+          const r = await (await fetch(API + "/move/restore", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: raw }) })).json();
+          if (r.error || !r.data) { toast(r.error || "الكود غير صحيح", "bad"); return; }
+          text = await gunzipText(r.data);
+        } else text = decodeURIComponent(escape(atob(raw))); // an old long code still works
+        S = unpack(text); save(); world.sync(S); refresh(); closeSheet(); toast("رجعت مدينتك!", "goal");
+      } catch { toast("الكود غير صحيح", "bad"); }
     };
   });
 }

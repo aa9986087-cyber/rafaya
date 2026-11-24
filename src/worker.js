@@ -98,6 +98,9 @@ export class Board extends DurableObject {
     // the iPhone's home-screen app keeps its own storage: Safari leaves a copy of the game's saves here (gzip,
     // base64) under a random token; the app takes it once on its first launch. Kept 7 days at most.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS moves (token TEXT PRIMARY KEY, data TEXT, at INTEGER)`);
+    // backups: a town (gzip, base64) under a short code like K7PM-2QXA to type on any phone; kept 60 days
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS backups (code TEXT PRIMARY KEY, data TEXT, at INTEGER)`);
+    this.backupFails = [];
     try { this.sql.exec("ALTER TABLE moves ADD COLUMN code TEXT"); } catch { /* already there */ } // 6 digits to type in the app (24 h)
     this.moveFails = [];
     this.sql.exec(`CREATE TABLE IF NOT EXISTS handoff (code TEXT PRIMARY KEY, name TEXT, at INTEGER)`);
@@ -329,6 +332,25 @@ export class Board extends DurableObject {
       let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM moves WHERE code = ?", code).toArray().length);
       this.sql.exec("INSERT INTO moves (token, data, at, code) VALUES (?, ?, ?, ?)", token, data, now, code);
       return json({ token, code });
+    }
+    if (action === "backup") { // a short code for this town's copy (the same phone asking again replaces its last one)
+      const data = String(body.data || "");
+      if (!data || data.length > 1800000) return json({ error: "كبير" }, 413);
+      this.sql.exec("DELETE FROM backups WHERE at < ?", now - 60 * 86400000);
+      const old = String(body.old || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+      if (old) this.sql.exec("DELETE FROM backups WHERE code = ?", old);
+      const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I/L: easy to read and type
+      let code; do { code = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => abc[b % abc.length]).join(""); } while (this.sql.exec("SELECT 1 FROM backups WHERE code = ?", code).toArray().length);
+      this.sql.exec("INSERT INTO backups (code, data, at) VALUES (?, ?, ?)", code, data, now);
+      return json({ code });
+    }
+    if (action === "restore") { // the copy behind a short code (it stays, so it works again on another phone)
+      this.backupFails = this.backupFails.filter((t) => now - t < 60000);
+      if (this.backupFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
+      const code = String(body.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+      const row = code.length === 8 ? this.sql.exec("SELECT data FROM backups WHERE code = ?", code).toArray()[0] : null;
+      if (!row) { this.backupFails.push(now); return json({ error: "الكود غلط أو انتهى (يبقى ٦٠ يوم)" }); }
+      return json({ data: row.data });
     }
     if (action === "take") { // the home-screen app: the copy, once (by the link's token, or the 6-digit code typed)
       const raw = String(body.token || body.code || ""), byCode = raw.replace(/\D/g, "").length === 6 && raw.length <= 8;
