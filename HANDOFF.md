@@ -316,6 +316,18 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - **No-code move (done):** `/world/handoff` also returns a long token (7 days, once). `pushIosHelp` puts it in the address (`/?link=TOKEN`) and points the manifest link at `/api/world/manifest?t=TOKEN` (start_url `/?link=TOKEN`).
     - On the home-screen app's first launch, the startup code claims it by itself and cleans the address. The 6-digit code sits under «ما انتقل حسابك؟» as the fallback.
     - Short steps for each phone. iPhone in Safari: 3 steps (share → add to home screen → open the icon → enable). The code sits under «🔑 احتياط». Android: the phone's own allow prompt, no steps. Refused once: `pushDeniedHelp` gives one step for this phone (iPhone settings, or 🔒 by the address on Android).
+51. **The owner's control panel (owner, 2026-11-24):**
+    - `/admin.html` (copied by copy-site, noindex) talks to `/api/admin/*` with an `x-admin` token.
+    - Login checks the owner's code against `ADMIN_CODE_HASH` in worker.js. The code itself is only in the owner's chat, never in the repo. Ten failed logins in 10 minutes lock login for 10 minutes. Tokens are kept hashed in `admintokens`.
+    - Tools:
+      - stats.
+      - reports: clear, ban, rename.
+      - chat: delete (a live `chatdel` hint removes it from open games), ban.
+      - players: search, ban/unban with a reason (`players.banned`; banned players get 403 "banned" and a toast), gift.
+      - gift: a negative charge plus a note of kind "gift", shown as a centred box like the apology.
+      - announce: a bulletin line plus a chat message as «📢 الإدارة».
+      - away: the awayfix page.
+    - To change the code: put the SHA-256 of the new code in `ADMIN_CODE_HASH`.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

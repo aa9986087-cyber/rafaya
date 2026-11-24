@@ -47,6 +47,9 @@ const WORLD_OPEN = true; // reopened 2026-11-23 with «صراع الجوف» (ow
 //   gen 2 (2026-11-23): the owner wiped the world so everyone starts again.
 const WORLD_GEN = 2;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
+// The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
+// never in the repository). A login makes a token for that phone; tokens are kept hashed.
+const ADMIN_CODE_HASH = "54906eee335cadf9ae395da8a17a35b2cd6c6695fded1d995d7174970a08218b";
 const BAD = ["كلب", "حمار", "زق", "خرا", "سكس", "شرموط", "قحب", "fuck", "shit", "sex"];
 const badText = (t) => BAD.some((w) => t.toLowerCase().includes(w));
 async function hash(text) {
@@ -70,7 +73,11 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
-    try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ } // the citizens' unanswered requests (for reminders)
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
+    this.adminFails = []; // the citizens' unanswered requests (for reminders)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
     // moving an account to another app on the same phone (the iPhone's home-screen app keeps its own storage):
@@ -233,6 +240,7 @@ export class Board extends DurableObject {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
     if (parts[1] === "world" && parts[2] === "live" && (WORLD_OPEN || this.env?.WAR_TEST === "1")) return this.liveSocket(request);
+    if (parts[1] === "admin") { try { const res = await this.admin(request, parts.slice(2)); await this.flush(); return res; } catch (e) { return json({ error: String(e.message || e) }, 500); } }
     try {
       if (parts[1] === "world") { const res = await this.world(request, parts.slice(2)); await this.flush(); if (request.method === "POST") await this.armWar(); return res; }
       return json({ error: "not found" }, 404);
@@ -245,6 +253,78 @@ export class Board extends DurableObject {
   nameTaken(town, plot = -1) {
     const key = townNameKey(town);
     return this.sql.exec("SELECT plot, town FROM plots").toArray().some((t) => t.plot !== plot && townNameKey(t.town) === key);
+  }
+  // ---------- the owner's control panel ----------
+  async admin(request, p) {
+    const post = request.method === "POST", body = post ? await request.json().catch(() => ({})) : {};
+    const now = Date.now();
+    if (post && p[0] === "login") {
+      this.adminFails = this.adminFails.filter((t) => now - t < 600000);
+      if (this.adminFails.length >= 10) return json({ error: "محاولات كثير، جرّب بعد ١٠ دقايق" }, 429);
+      if ((await hash(String(body.code || "").trim().toUpperCase())) !== ADMIN_CODE_HASH) { this.adminFails.push(now); return json({ error: "الرمز غلط" }, 403); }
+      const token = makeSecret() + makeSecret();
+      this.sql.exec("INSERT INTO admintokens (token, at) VALUES (?, ?)", await hash(token), now);
+      return json({ token });
+    }
+    const tok = request.headers.get("x-admin") || "";
+    if (!tok || !this.sql.exec("SELECT 1 FROM admintokens WHERE token = ?", await hash(tok)).toArray().length) return json({ error: "سجّل دخول" }, 401);
+    const one = (q, ...a) => this.sql.exec(q, ...a).toArray()[0];
+    if (p[0] === "stats") {
+      return json({
+        players: one("SELECT COUNT(*) n FROM players").n, towns: one("SELECT COUNT(*) n FROM plots").n,
+        newToday: one("SELECT COUNT(*) n FROM players WHERE created > ?", now - 86400000).n,
+        activeToday: one("SELECT COUNT(*) n FROM plots WHERE updated > ?", now - 86400000).n,
+        chatToday: one("SELECT COUNT(*) n FROM chat WHERE at > ?", now - 86400000).n,
+        reports: one("SELECT COUNT(*) n FROM reports").n, banned: one("SELECT COUNT(*) n FROM players WHERE banned = 1").n,
+        pushPhones: one("SELECT COUNT(*) n FROM pushsubs").n,
+        biggest: this.sql.exec("SELECT town, owner, pop, era FROM plots ORDER BY pop DESC LIMIT 5").toArray()
+      });
+    }
+    if (p[0] === "reports") {
+      if (post && body.clear) { this.sql.exec("DELETE FROM reports WHERE id = ?", int(body.clear)); return json({ ok: true }); }
+      return json({ list: this.sql.exec("SELECT r.id, r.plot, r.by, r.reason, r.at, t.town, t.owner FROM reports r LEFT JOIN plots t ON t.plot = r.plot ORDER BY r.id DESC LIMIT 100").toArray() });
+    }
+    if (p[0] === "chat") {
+      if (post && body.del) { this.sql.exec("DELETE FROM chat WHERE id = ?", int(body.del)); this.live({ t: "chatdel", id: int(body.del) }); return json({ ok: true }); }
+      return json({ list: this.sql.exec("SELECT id, name, town, text, at FROM chat ORDER BY id DESC LIMIT 100").toArray() });
+    }
+    if (p[0] === "players") {
+      const q = `%${clean(new URL(request.url).searchParams.get("q"), 20)}%`;
+      return json({ list: this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray() });
+    }
+    if (post && p[0] === "ban") {
+      const nm = clean(body.name, 16);
+      if (!one("SELECT 1 x FROM players WHERE name = ?", nm)) return json({ error: "ما لقيت اللاعب" });
+      this.sql.exec("UPDATE players SET banned = ?, ban_reason = ? WHERE name = ?", body.on ? 1 : 0, clean(body.reason, 100), nm);
+      return json({ ok: true });
+    }
+    if (post && p[0] === "gift") {
+      const plot = int(body.plot), amount = Math.max(1, Math.min(1000000, int(body.amount)));
+      const t = one("SELECT town FROM plots WHERE plot = ?", plot);
+      if (!t) return json({ error: "ما لقيت المدينة" });
+      const msg = clean(body.text, 120);
+      this.war.fine(plot, -amount, "gift", `🎁 هدية من إدارة الجوف: ${amount.toLocaleString("en-US")} ريال${msg ? ` · «${msg}»` : ""}`, "gift", { amount, text: msg });
+      this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", amount, plot);
+      return json({ ok: true, town: t.town });
+    }
+    if (post && p[0] === "rename") {
+      const plot = int(body.plot), town = clean(body.town, 20), t = one("SELECT town FROM plots WHERE plot = ?", plot);
+      if (!t || town.length < 2) return json({ error: "الاسم ما يصلح" });
+      if (this.nameTaken(town, plot)) return json({ error: "الاسم مأخوذ" });
+      this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", town, plot);
+      this.live({ t: "town", plot });
+      return json({ ok: true });
+    }
+    if (post && p[0] === "announce") {
+      const text = clean(body.text, 200);
+      if (!text) return json({ error: "اكتب الإعلان" });
+      this.news("admin", `📢 إعلان من الإدارة: ${text}`);
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", "📢 الإدارة", null, "", text, now);
+      const message = one("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1");
+      this.live({ t: "chat", message });
+      return json({ ok: true });
+    }
+    return json({ error: "not found" }, 404);
   }
   /** Is this the player's key (the first one, or one given to another app by a move code)? */
   async keyOk(name, row, secret) {
@@ -365,6 +445,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     // everything below needs the player's own secret
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
+    if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
     if (p[0] === "claim") {
       const plot = int(body.plot), town = clean(body.town, 20) || "هجرة";
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);

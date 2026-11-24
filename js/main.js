@@ -1440,6 +1440,7 @@ const onlineOk = () => !!globalThis.RAFAYA_PREVIEW || (location.protocol.startsW
 async function api(path, body) {
   if (globalThis.RAFAYA_PREVIEW) return globalThis.RAFAYA_PREVIEW(path, body); // the trial copy answers by itself (js/preview.js)
   const r = await fetch(API + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (r.status === 403 && (await r.clone().json().catch(() => null))?.error === "banned" && !api.bannedSaid) { api.bannedSaid = true; toast("⛔ حسابك بعالم الجوف موقوف من الإدارة", "bad"); }
   if (!r.ok) throw new Error(r.status === 503 ? "maintenance" : String(r.status));
   return r.json();
 }
@@ -1746,7 +1747,8 @@ function liveHint(m) {
     if (!CHAT.msgs.some((x) => x.id === m.message.id)) { CHAT.msgs = [...CHAT.msgs, m.message].slice(-120); CHAT.last = Math.max(CHAT.last || 0, m.message.id); }
     if (sheetFor === "chat") chatSheet(true);
     chatCount();
-  } else if (m.t === "war") warPoll(true);
+  } else if (m.t === "chatdel") { CHAT.msgs = CHAT.msgs.filter((x) => x.id !== m.id); if (sheetFor === "chat") chatSheet(true); chatCount(); }
+  else if (m.t === "war") warPoll(true);
   else if (m.t === "news") { wnewsPoll(true).then(() => { if (sheetFor === "wnews") worldNewsSheet(true); }); }
   else if (m.t === "town") {
     if (m.plot === me()?.plot) return;
@@ -2092,11 +2094,14 @@ function apologyBox(n) {
   document.getElementById("apology")?.remove();
   const el = document.createElement("div");
   el.id = "apology"; el.className = "apology";
-  el.innerHTML = `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>
+  el.innerHTML = n.kind === "gift" ? `<div class="apology-card"><div class="apology-ic">🎁</div><h2>هدية من إدارة الجوف</h2>
+    <div class="apology-back">وصلتك هدية<b>+${money(n.amount || 0)} ريال</b></div>
+    ${n.text ? `<p>«${n.text.replace(/[<>]/g, "")}»</p>` : ""}` : `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>
     <p>صار <b>خطأ من عندنا</b> ببرمجة اللعبة بحساب خصم الغياب، وانخصم من مدينتك مبلغ ما كان المفروض ينخصم.</p>
     <div class="apology-back">رجّعنا لك حقك كامل<b>+${money(n.amount || 0)} ريال</b></div>
-    <p class="hint">السموحة منك، وشكرًا على صبرك 🌹</p>
-    <i class="apology-bar"></i><button class="btn go block" type="button">تمام</button></div>`;
+    <p class="hint">السموحة منك، وشكرًا على صبرك 🌹</p>`;
+  el.innerHTML += `<i class="apology-bar"></i><button class="btn go block" type="button">تمام</button>`;
+  el.querySelector(".apology-card").append(...el.querySelectorAll(":scope > .apology-bar, :scope > button")); // the bar and «تمام» for both kinds
   document.body.append(el);
   sfx.coin?.();
   const close = () => { el.classList.add("out"); setTimeout(() => el.remove(), 300); };
@@ -2143,7 +2148,7 @@ function warApply(st) {
   const fresh = (st.notes || []).filter((n) => n.at > warSeen()).sort((a, b) => a.at - b.at);
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
-    for (const n of fresh) if (n.kind === "apology") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
+    for (const n of fresh) if (n.kind === "apology" || n.kind === "gift") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
     if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
@@ -2844,8 +2849,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-10" },
+  v: { solo: "2027-01-05", world: "2027-01-11" },
   items: [
+    ["world", "🛠️", "الإدارة صارت معكم", "إدارة الجوف تقدر ترسل إعلانات (تطلع بالنشرة والشات) وهدايا للمدن، وتمسح الرسايل المسيئة وتوقف اللي يسيء. بلّغ عن أي إساءة من زر البلاغ والإدارة تشوفه."],
     ["world", "🔔", "زر التنبيهات بالإعدادات", "بالإعدادات صار فيه مفتاح «🔔 التنبيهات على الجوال»: شغّله وقت ما تبي (حتى لو قلت «بعدين» أول مرة)، وطفّه وقت ما تبي."],
     ["world", "📱", "التنبيهات بالآيفون", "بالآيفون: الإعدادات ← «فعّل التنبيهات» تطلع لك الخطوات بالصور: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وتفتح اللعبة من أيقونتها وحسابك ومدينتك ينتقلون لحالهم، وبعدها تفعّل التنبيهات. ولو ما انتقل الحساب فيه رمز احتياط."],
     ["world", "📰", "مواطنينك يبونك", "إذا غبت أكثر من ساعة وعند أهل مدينتك طلب مهم ما رديت عليه (أو قرار ينتظرك)، يوصلك تنبيه على جوالك فيه كلامهم، مرة كل ٨ ساعات بالكثير. وبالإعدادات صار فيه زر «جرّب التنبيه» تتأكد فيه إن التنبيهات توصلك."],

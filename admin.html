@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>لوحة تحكم الجوف</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root { --paper: #fbf3e4; --card: #f3e6cc; --ink: #2a1d12; --muted: #7a6650; --teal: #2c8a7a; --red: #c0412f; --green: #1d6b45; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Tahoma, sans-serif; background: var(--paper); color: var(--ink); }
+  header { position: sticky; top: 0; z-index: 2; background: #2a1d12; color: #f3d9a0; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 18px; }
+  header button { background: none; border: 1px solid #6b5338; color: #f3d9a0; border-radius: 10px; padding: 6px 10px; font: inherit; }
+  nav { display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px; background: var(--card); position: sticky; top: 50px; z-index: 1; }
+  nav button { flex: none; border: 0; border-radius: 999px; padding: 8px 14px; background: #fff7e8; color: var(--ink); font: inherit; font-weight: 700; }
+  nav button.on { background: var(--teal); color: #fff; }
+  main { padding: 16px; max-width: 720px; margin: 0 auto; }
+  .card { background: #fff7e8; border-radius: 14px; padding: 12px; margin: 0 0 10px; box-shadow: 0 2px 0 #e7d6b4; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat b { display: block; font-size: 26px; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  small, .muted { color: var(--muted); }
+  input, textarea { width: 100%; font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #d9c6a3; background: #fffdf7; }
+  textarea { min-height: 80px; }
+  .btn { border: 0; border-radius: 10px; padding: 9px 12px; font: inherit; font-weight: 700; background: var(--card); color: var(--ink); }
+  .btn.go { background: var(--teal); color: #fff; }
+  .btn.bad { background: var(--red); color: #fff; }
+  .btn.block { width: 100%; margin-top: 8px; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #fde8e4; color: var(--red); }
+  .tag.ok { background: #e6f4ec; color: var(--green); }
+  #toast { position: fixed; bottom: 16px; inset-inline: 16px; background: #2a1d12; color: #fff; padding: 12px; border-radius: 12px; text-align: center; display: none; }
+  .login { max-width: 360px; margin: 60px auto; text-align: center; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<script>
+// The owner's control panel for al-Jouf: /api/admin/* with the token from logging in (kept on this phone).
+const $ = (id) => document.getElementById(id);
+const n = (v) => Number(v || 0).toLocaleString("ar-SA");
+const esc = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
+const ago = (at) => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "الحين" : m < 60 ? `قبل ${n(m)} د` : m < 1440 ? `قبل ${n(Math.round(m / 60))} س` : `قبل ${n(Math.round(m / 1440))} يوم`; };
+const ERAS = ["قرية", "بلدة", "مدينة", "محافظة", "حاضرة"];
+let token = localStorage.getItem("rafaya-admin") || "", tab = "home";
+function toast(t) { const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = "none"; }, 2500); }
+async function api(path, body) {
+  const r = await fetch("/api/admin/" + path, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", "x-admin": token }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { token = ""; localStorage.removeItem("rafaya-admin"); login(); throw new Error("login"); }
+  return j;
+}
+function login() {
+  $("app").innerHTML = `<div class="login card"><h2>🛠️ لوحة تحكم الجوف</h2><p class="muted">اكتب الرمز السري حقك</p>
+    <input id="code" placeholder="XXXX-XXXX-XXXX" autocomplete="off" style="text-align:center;letter-spacing:2px;text-transform:uppercase">
+    <button class="btn go block" id="go">دخول</button></div>`;
+  $("go").onclick = async () => {
+    const r = await fetch("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: $("code").value }) }).then((x) => x.json()).catch(() => ({ error: "ما زبط" }));
+    if (!r.token) { toast(r.error || "الرمز غلط"); return; }
+    token = r.token; localStorage.setItem("rafaya-admin", token); show();
+  };
+}
+const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
+function frame(inner) {
+  $("app").innerHTML = `<header><h1>🛠️ لوحة تحكم الجوف</h1><button id="out">خروج</button></header>
+    <nav>${TABS.map(([k, t]) => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</nav><main>${inner}</main>`;
+  $("out").onclick = () => { localStorage.removeItem("rafaya-admin"); token = ""; login(); };
+  document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; show(); }));
+}
+async function show() {
+  if (!token) return login();
+  frame(`<p class="muted">نحمّل…</p>`);
+  try { await ({ home, reports, chat, players, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
+}
+async function home() {
+  const s = await api("stats");
+  frame(`<div class="grid">
+    ${[["اللاعبين", s.players], ["المدن", s.towns], ["جدد اليوم", s.newToday], ["لعبوا اليوم", s.activeToday], ["رسايل الشات اليوم", s.chatToday], ["البلاغات", s.reports], ["محظورين", s.banned], ["جوالات فيها تنبيهات", s.pushPhones]].map(([t, v]) => `<div class="card stat"><b>${n(v)}</b><span>${t}</span></div>`).join("")}
+    </div><h3>🏆 أكبر المدن</h3>${s.biggest.map((t) => `<div class="card row"><span><b>${esc(t.town)}</b> <small>${esc(t.owner)}</small></span><span>${n(t.pop)} ساكن · ${ERAS[t.era] || ""}</span></div>`).join("")}`);
+}
+async function reports() {
+  const { list } = await api("reports");
+  frame(list.length ? list.map((r) => `<div class="card"><div class="row"><b>${esc(r.town || "مدينة محذوفة")}</b><small>${ago(r.at)}</small></div>
+      <div>${esc(r.reason)}</div><small>العمدة: ${esc(r.owner || "-")} · بلّغ: ${esc(r.by)}</small>
+      <div class="acts"><button class="btn" data-clear="${r.id}">✓ تم، شيله</button>${r.owner ? `<button class="btn bad" data-ban="${esc(r.owner)}">⛔ احظر العمدة</button><button class="btn" data-rename="${r.plot}" data-town="${esc(r.town)}">✏️ غيّر اسم المدينة</button>` : ""}</div></div>`).join("") : `<p class="muted">ما فيه بلاغات ✓</p>`);
+  bindActs();
+  document.querySelectorAll("[data-clear]").forEach((b) => (b.onclick = async () => { await api("reports", { clear: b.dataset.clear }); toast("انشال"); show(); }));
+}
+async function chat() {
+  const { list } = await api("chat");
+  frame(list.length ? list.map((m) => `<div class="card"><div class="row"><b>${esc(m.name)}</b><small>${esc(m.town)} · ${ago(m.at)}</small></div><div>${esc(m.text)}</div>
+      <div class="acts"><button class="btn" data-del="${m.id}">🗑️ امسح</button>${m.name.startsWith("📢") ? "" : `<button class="btn bad" data-ban="${esc(m.name)}">⛔ احظر</button>`}</div></div>`).join("") : `<p class="muted">الشات فاضي</p>`);
+  bindActs();
+  document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { await api("chat", { del: b.dataset.del }); toast("انمسحت"); show(); }));
+}
+async function players(q = "") {
+  const { list } = await api("players?q=" + encodeURIComponent(q));
+  frame(`<input id="q" placeholder="دوّر باسم اللاعب أو المدينة" value="${esc(q)}">
+    ${list.map((p) => `<div class="card"><div class="row"><span><b>${esc(p.town || "بدون مدينة")}</b> <small>${esc(p.name)}</small></span>${p.banned ? `<span class="tag">محظور</span>` : ""}</div>
+      <small>${p.town ? `${n(p.pop)} ساكن · ${ERAS[p.era] || ""} · ${n(p.money)} ريال · آخر دخول ${ago(p.updated)}` : "ما أسس مدينة"}${p.banned && p.ban_reason ? ` · السبب: ${esc(p.ban_reason)}` : ""}</small>
+      <div class="acts">${p.banned ? `<button class="btn go" data-unban="${esc(p.name)}">فك الحظر</button>` : `<button class="btn bad" data-ban="${esc(p.name)}">⛔ احظر</button>`}
+      ${p.plot != null ? `<button class="btn" data-gift="${p.plot}" data-town="${esc(p.town)}">🎁 هدية</button><button class="btn" data-rename="${p.plot}" data-town="${esc(p.town)}">✏️ اسم المدينة</button>` : ""}</div></div>`).join("") || `<p class="muted">ما لقيت أحد</p>`}`);
+  $("q").onchange = () => players($("q").value);
+  bindActs();
+}
+async function announce() {
+  frame(`<div class="card"><h3>📢 إعلان للكل</h3><p class="muted">يطلع بنشرة الجوف وبالشات باسم «الإدارة».</p>
+    <textarea id="ann" maxlength="200" placeholder="مثلاً: الليلة الساعة ٩ مسابقة أجمل مدينة 🏆"></textarea><button class="btn go block" id="annGo">أرسل الإعلان</button></div>`);
+  $("annGo").onclick = async () => { const r = await api("announce", { text: $("ann").value }); toast(r.error || "انرسل ✓"); if (!r.error) $("ann").value = ""; };
+}
+async function away() {
+  frame(`<p>الخصومات اللي صارت على اللي كسبوا وهم برا أكثر من الحد، والفلوس اللي رجعت:</p><a class="btn go block" style="display:block;text-align:center;text-decoration:none" href="/api/world/awayfix?view=page" target="_blank">افتح صفحة الخصومات</a>`);
+}
+function bindActs() {
+  document.querySelectorAll("[data-ban]").forEach((b) => (b.onclick = async () => {
+    const reason = prompt(`ليش تحظر «${b.dataset.ban}»؟ (يطلع لك أنت بس)`, "كلام مسيء");
+    if (reason === null) return;
+    const r = await api("ban", { name: b.dataset.ban, on: true, reason }); toast(r.error || "انحظر ⛔"); show();
+  }));
+  document.querySelectorAll("[data-unban]").forEach((b) => (b.onclick = async () => { const r = await api("ban", { name: b.dataset.unban, on: false }); toast(r.error || "انفك الحظر ✓"); show(); }));
+  document.querySelectorAll("[data-gift]").forEach((b) => (b.onclick = async () => {
+    const amount = Number(prompt(`كم تبي تهدي «${b.dataset.town}»؟ (ريال)`, "5000"));
+    if (!amount) return;
+    const text = prompt("رسالة معها (اختياري)", "شكرًا على مشاركتك 🌹") || "";
+    const r = await api("gift", { plot: b.dataset.gift, amount, text }); toast(r.error || `وصلت الهدية لـ«${r.town}» 🎁`);
+  }));
+  document.querySelectorAll("[data-rename]").forEach((b) => (b.onclick = async () => {
+    const town = prompt(`الاسم الجديد بدل «${b.dataset.town}»`, "");
+    if (!town) return;
+    const r = await api("rename", { plot: b.dataset.rename, town }); toast(r.error || "تغيّر الاسم ✓"); show();
+  }));
+}
+show();
+</script>
+</body>
+</html>
