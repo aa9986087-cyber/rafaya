@@ -103,6 +103,8 @@ function noteTown() {
 
 const canvas = $("map");
 const world = new World(canvas, { quality: settings.quality });
+// ?debug: the renderer's numbers for measuring (draw calls, triangles, memory, frame time); nothing changes in the game
+if (new URLSearchParams(location.search).has("debug")) globalThis.RAFAYA_DEBUG = { world, info: () => ({ ...world.renderer.info.render, ...world.renderer.info.memory, programs: world.renderer.info.programs?.length, dpr: world.renderer.getPixelRatio(), size: [world.w, world.h] }) };
 world.fx = new WarFX(world); // «صراع الجوف»: moving military parts, war damage and the war scenes
 watchIcons(document.body); // every emoji in the page's text shows as its icon (js/icons.js)
 world.dayCycle = settings.daynight;
