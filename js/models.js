@@ -408,6 +408,22 @@ function passengerCar(b, suv, trim) {
   b.box(.01,.012,.093,"#6e7978",{x:-.149,y:.025},"metal");
 }
 
+/** A parked car (the new sedan or SUV, js/models.js passengerCar) at x, z, turned ry, painted color. */
+function parkedCar(b, x, z, ry, suv, color) {
+  const tmp = new Builder(b.far);
+  passengerCar(tmp, suv, false); passengerCar(tmp, suv, true);
+  const parts = tmp.done(), m = new THREE.Matrix4().compose(new THREE.Vector3(x, 0.012, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(1, 1, 1));
+  const paint = new THREE.Color(color), white = new THREE.Color("#fffefd"), c = new THREE.Color();
+  for (const [set, g] of Object.entries(parts)) {
+    if (!g) continue;
+    g.applyMatrix4(m);
+    const col = g.attributes.color;
+    for (let i = 0; i < col.count; i++) { c.fromBufferAttribute(col, i); if (Math.abs(c.r - white.r) + Math.abs(c.g - white.g) + Math.abs(c.b - white.b) < 0.02) col.setXYZ(i, paint.r, paint.g, paint.b); }
+    if (!g.attributes.uv && b.sets[set].length && b.sets[set][0].attributes.uv) g.deleteAttribute("uv");
+    b.sets[set].push(g);
+  }
+}
+
 function adobeDoor(b,x,y,z,w,h,paint) {
   b.box(w+.035,h+.033,.031,"#e3c6a2",{x,y:y-.012,z:z-.002});
   b.box(w,h,.017,"#392e28",{x,y,z:z+.015},"wood");
@@ -809,12 +825,25 @@ const MAKERS = {
     b.box(0.03, 0.03, 0.01, "#3fbf5f", { y: 0.35, z: 0.026 }, "lights");
   },
   medianPalm(b) { b.box(0.12, 0.03, 0.12, C.stone); palm(b, 0, 0, 0.45, 0.05); },
-  parking(b) {
-    b.box(0.98, 0.01, 0.98, "#55585e");
-    for (let k = -2; k <= 2; k++) b.box(0.012, 0.004, 0.36, "#f3efe6", { x: k * 0.18, y: 0.01, z: -0.26 });
-    for (let k = -2; k <= 2; k++) b.box(0.012, 0.004, 0.36, "#f3efe6", { x: k * 0.18, y: 0.01, z: 0.26 });
-    for (const [x, z, c] of [[-0.27, -0.26, "#f4f4f2"], [0.09, -0.26, "#a8322a"], [-0.09, 0.26, "#c3c6ca"], [0.27, 0.26, "#2c3e63"]]) { b.box(0.13, 0.07, 0.26, c, { x, y: 0.01, z }); b.box(0.11, 0.05, 0.12, C.glass, { x, y: 0.07, z }, "shiny"); }
-    b.cyl(0.01, 0.01, 0.4, C.dark, { x: 0.46, z: 0.46 }, 5); b.box(0.12, 0.12, 0.02, "#2f5f9e", { x: 0.46, y: 0.38, z: 0.46 });
+  parking(b) { // a Saudi car park: kerbed asphalt, marked bays with wheel stops, a fabric car shade over one row, parked sedans and SUVs
+    b.box(0.98, 0.01, 0.98, "#5a5c5f");
+    for (const [x, z, w, d] of [[0, -0.475, 0.98, 0.03], [0, 0.475, 0.98, 0.03], [-0.475, 0, 0.03, 0.98], [0.475, 0, 0.03, 0.98]]) b.box(w, 0.026, d, "#d4cab6", { x, z }, "stone");
+    b.box(0.86, 0.014, 0.1, "#cbbfa7", { y: 0.01 }, "stone");                                     // the planted median
+    for (const x of [-0.3, 0.3]) b.add(new THREE.IcosahedronGeometry(0.05, 0), "#6f8f4a", { x, y: 0.07, z: 0, sy: 0.8 });
+    palm(b, 0, 0, 0.42);
+    for (const row of [-1, 1]) {
+      const z = row * 0.27;
+      for (let k = 0; k <= 5; k++) b.box(0.008, 0.003, 0.3, "#f1ede4", { x: -0.42 + k * 0.168, y: 0.011, z });
+      for (let k = 0; k < 5; k++) b.box(0.07, 0.012, 0.016, "#c9c3b4", { x: -0.336 + k * 0.168, y: 0.011, z: z + row * 0.13 });
+    }
+    // the shade: steel posts and beams, a sand-coloured fabric pitched over the back row
+    for (let k = 0; k < 4; k++) { const x = -0.38 + k * 0.253; b.cyl(0.009, 0.011, 0.25, "#8d9396", { x, z: -0.43 }, 8, "metal"); b.add(new THREE.BoxGeometry(0.01, 0.01, 0.3), "#8d9396", { x, y: 0.25, z: -0.3, rx: -0.18 }, "metal"); }
+    b.add(new THREE.BoxGeometry(0.84, 0.006, 0.32), "#e9e1cf", { y: 0.235, z: -0.29, rx: -0.18 });
+    b.add(new THREE.BoxGeometry(0.84, 0.004, 0.33), "#cfc4ac", { y: 0.231, z: -0.29, rx: -0.18 });
+    const cars = [[-0.336, -0.27, false, "#f4f4f1"], [-0.168, -0.27, true, "#2b2f33"], [0.168, -0.27, false, "#b9bdc0"], [0.336, -0.27, true, "#f4f4f1"], [-0.336, 0.27, true, "#7d1f26"], [0, 0.27, false, "#1f3354"], [0.336, 0.27, false, "#d9cfb6"]];
+    for (const [x, z, suv, color] of cars) parkedCar(b, x, z, z < 0 ? -Math.PI / 2 : Math.PI / 2, suv, color);
+    b.cyl(0.008, 0.01, 0.42, "#5b6065", { x: 0.44, z: 0.04 }, 6, "metal"); b.box(0.09, 0.012, 0.03, "#5b6065", { x: 0.41, y: 0.42, z: 0.04 }); b.box(0.06, 0.006, 0.022, "#fff2d0", { x: 0.4, y: 0.414, z: 0.04 }, "glow");
+    b.cyl(0.006, 0.006, 0.2, "#5b6065", { x: -0.44, z: 0.44 }, 5); b.box(0.08, 0.08, 0.008, "#1f5fa8", { x: -0.44, y: 0.2, z: 0.445 }); b.box(0.03, 0.05, 0.01, "#f4f4f2", { x: -0.44, y: 0.215, z: 0.45 });
   },
   avenue(b) { b.box(0.98, 0.01, 0.98, "#4d4f55"); b.box(0.98, 0.02, 0.12, "#cdbf9f", { y: 0.01 }); palm(b, 0, 0, 0.45, 0); },
   roundabout(b) { b.box(0.98, 0.01, 0.98, "#4d4f55"); b.cyl(ISLAND_RADIUS-.02, ISLAND_RADIUS, 0.05, C.stone); b.cyl(0.22, 0.22, 0.012, "#7fae4c", { y: 0.05 }, 20); },
