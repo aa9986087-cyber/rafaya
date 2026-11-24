@@ -1637,34 +1637,21 @@ async function pushIosHelp() {
   const v = iosVersion(), old = v && v < 16.04;
   let code = "";
   const id = me();
-  if (!old && id?.secret) {
-    try {
-      const h = await api("/world/handoff", { name: id.name, secret: id.secret });
-      code = (await iosPrepareMove(true)).code || h.code || ""; // the whole game moves; the account-only code is the last resort
-      // the home-screen app opens at this page's address and the manifest's start: both carry the move link,
-      // so the account goes over by itself on its first launch (the code is only the fallback)
-      if (h.token) {
-        history.replaceState(null, "", `/?link=${h.token}`);
-        document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?t=${h.token}`);
-      }
-    } catch { /* shown without */ }
-  }
+  if (!old) code = (await iosPrepareMove(true)).code || ""; // the whole game: by itself through the link, or by this code
   // iOS 26 moved Share into the «⋯» menu and added an «Open as Web App» switch that must stay on
   const v26 = v >= 26;
   const MORE_IC = `<b style="font-size:20px;letter-spacing:1px">⋯</b>`;
   sheet(`<h2>🔔 تنبيهات الآيفون</h2>
-    ${old ? `<div class="need">حدّث الآيفون أول: الإعدادات ← عام ← تحديث البرنامج</div>` : `<p>حطّ اللعبة على شاشة جوالك مثل التطبيق:</p>
+    ${old ? `<div class="need">حدّث الآيفون أول: الإعدادات ← عام ← تحديث البرنامج</div>` : `<p>حطّ اللعبة على شاشة جوالك مثل التطبيق، ولعبتك تنتقل معها:</p>
     <div class="rows">
       ${v26 ? `<div class="row g-step"><b class="g-n">١</b><span>اضغط ${MORE_IC} تحت يمين بسفاري ← <b>«مشاركة»</b> ${SHARE_IC}</span></div>`
         : `<div class="row g-step"><b class="g-n">١</b><span>اضغط ${SHARE_IC} تحت بسفاري <small>(ما تشوفه؟ اضغط ${MORE_IC} تحت يمين)</small></span></div>`}
-      <div class="row g-step"><b class="g-n">٢</b><span>انزل شوي واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b></span></div>
-      <div class="row g-step"><b class="g-n">٣</b><span>${v26 ? "خل <b>«فتح كتطبيق ويب»</b> شغّال ✅ ثم " : ""}اضغط <b>«إضافة»</b> فوق</span></div>
-      <div class="row g-step"><b class="g-n">٤</b><span>سكّر سفاري وافتح <b>الرافعية</b> من الأيقونة الجديدة ← <b>«فعّل التنبيهات»</b></span></div>
+      <div class="row g-step"><b class="g-n">٢</b><span>اختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b>${v26 ? " وخل <b>«فتح كتطبيق ويب»</b> شغّال ✅" : ""} ← <b>«إضافة»</b></span></div>
+      <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>الرافعية</b> من الأيقونة: لعبتك تجيك لحالها، ولو طلب منك رمز اكتب اللي تحت</span></div>
+      <div class="row g-step"><b class="g-n">٤</b><span>الإعدادات ← <b>«التنبيهات على الجوال»</b></span></div>
     </div>
-    <p class="hint">حسابك ومدينتك ينتقلون لحالهم ✓</p>
-    <p class="ios-point">👇 الأزرار تحت الشاشة، تحت هالصفحة</p>
-    ${code ? `<details class="ios-fallback"><summary>🔑 احتياط: لو ما انتقل حسابك</summary><p>بالأيقونة: الجوف ← «احتياط: عندي رمز نقل» واكتب (صالح ٢٤ ساعة):</p>
-      <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}`}`, "push");
+    ${code ? `<div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b><span>رمز لعبتك · لو ما انتقلت لحالها (صالح ٢٤ ساعة)</span></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button>` : ""}
+    <p class="ios-point">👇 الأزرار تحت الشاشة، تحت هالصفحة</p>`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 /** A fresh town on the same land and name (the restart, here or from another phone). */
@@ -1714,13 +1701,8 @@ function handoffSheet(firstOpen) {
     <div class="sheet-actions keep"><button class="btn go block" id="hoGo" type="button">رجّع حسابي</button></div>`, "world");
   $("hoGo").addEventListener("click", async () => {
     const code = ($("hoCode").value || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
-    try { if (await takeMove(code)) return; } catch { /* maybe an older account-only code */ }
-    try {
-      const r = await api("/world/handoff/claim", { code });
-      if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
-      store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
-      toast(`رجع حسابك يا ${r.name} ✓`, "goal"); worldMapSheet();
-    } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
+    try { if (await takeMove(code)) return; toast("الرمز غلط أو انتهى (صالح ٢٤ ساعة): خذ رمز جديد من سفاري ← الإعدادات", "bad"); sfx.deny(); }
+    catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
   });
 }
 /** Once, on entering al-Jouf: offer notifications (they work best when asked at the right time). */
@@ -2967,8 +2949,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-16" },
+  v: { solo: "2027-01-17", world: "2027-01-17" },
   items: [
+    ["both", "🔑", "رمز نقل اللعبة", "بالآيفون لعبتك تنتقل للتطبيق لحالها، ولو ما انتقلت فيه رمز: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق»، وتكتبه بالتطبيق. وبخطوات «تنبيهات الآيفون» يطلع الرمز جاهز تحت الخطوات."],
     ["both", "📲", "لعبتك تنتقل للتطبيق", "بالآيفون: إذا حطيت اللعبة تطبيق بشاشتك (من سفاري: إضافة إلى الشاشة الرئيسية) وفتحتها، تلقى لعبتك كاملة: حساب الجوف ومدنك والإعدادات. ولو فتحت التطبيق ولقيته فاضي: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق» وتكتب الرمز بالتطبيق."],
     ["world", "📱", "الآيفون أسهل", "خطوات الآيفون صارت أوضح وتناسب نسخة جوالك: بالنسخ الجديدة زر المشاركة داخل «⋯» تحت يمين، وخل «فتح كتطبيق ويب» شغّال. ولو فتحت الأيقونة وما انتقل حسابك، يطلب منك رمز الاحتياط على طول (صالح ٢٤ ساعة)."],
     ["world", "💰", "أسعار الخزنة", "الخزنة صارت أغلى شوي: بناؤها ١٬٥٠٠، وكل خزنة زيادة أغلى من اللي قبلها (لين ٣٬٧٥٠ للرابعة)، والتطوير ٦٬٠٠٠ ثم ١٨٬٠٠٠ ثم ٥٠٬٠٠٠ ثم ١٤٠٬٠٠٠. اللي بنيته قبل يبقى لك."],
