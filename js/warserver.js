@@ -73,6 +73,14 @@ export class WarServer {
     this.db.put("charge", `${plot}:${a.seq}`, c, { k1: String(plot), at: c.at });
     return c;
   }
+  /**
+   * The mayor starts the town again: its war account (weapons, bills, damage, hits, notes) goes; its
+   * relations with other towns stay (a fresh start is no way out of a war). Operations in flight still land.
+   */
+  resetTown(plot) {
+    const k = String(plot);
+    for (const tbl of ["acct", "charge", "dmg", "hit", "note"]) this.db.delK1(tbl, k);
+  }
   /** Take back money a town should not have (the game pays it like a war bill, once), with a note saying why. */
   fine(plot, amount, why, text, kind = "fine", extra = {}) {
     const a = this.acct(plot), c = this.charge(plot, a, amount, why);
@@ -481,6 +489,7 @@ export function sqlWarDb(sql) {
     get: (tbl, id) => { const r = sql.exec("SELECT data FROM war WHERE tbl = ? AND id = ?", tbl, id).toArray()[0]; return r ? JSON.parse(r.data) : null; },
     put: (tbl, id, row, k = {}) => { sql.exec("INSERT OR REPLACE INTO war (tbl, id, k1, k2, at, data) VALUES (?, ?, ?, ?, ?, ?)", tbl, id, k.k1 ?? null, k.k2 ?? null, k.at ?? 0, JSON.stringify(row)); },
     del: (tbl, id) => { sql.exec("DELETE FROM war WHERE tbl = ? AND id = ?", tbl, id); },
+    delK1: (tbl, k1) => { sql.exec("DELETE FROM war WHERE tbl = ? AND k1 = ?", tbl, k1); },
     list: (tbl, q = {}) => {
       const where = ["tbl = ?"], args = [tbl];
       if (q.k1 != null) { where.push("k1 = ?"); args.push(q.k1); }
@@ -502,6 +511,7 @@ export function memWarDb(seed) {
     get: (tbl, id) => (key(tbl)[id] ? JSON.parse(JSON.stringify(key(tbl)[id].row)) : null),
     put: (tbl, id, row, k = {}) => { key(tbl)[id] = { row: JSON.parse(JSON.stringify(row)), k1: k.k1 ?? null, k2: k.k2 ?? null, at: k.at ?? 0 }; },
     del: (tbl, id) => { delete key(tbl)[id]; },
+    delK1: (tbl, k1) => { for (const [id, r] of Object.entries(key(tbl))) if (r.k1 === k1) delete key(tbl)[id]; },
     list: (tbl, q = {}) => Object.values(key(tbl))
       .filter((r) => (q.k1 == null || r.k1 === q.k1) && (q.k2 == null || r.k2 === q.k2) && (q.either == null || r.k1 === q.either || r.k2 === q.either)
         && (q.upTo == null || r.at <= q.upTo) && (q.since == null || r.at > q.since))

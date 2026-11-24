@@ -75,6 +75,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
     this.adminFails = []; // the citizens' unanswered requests (for reminders)
@@ -489,6 +490,17 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
+    }
+    if (p[0] === "restart") { // the mayor starts the town again from nothing, on the same land with the same name (once a day)
+      if (me.plot == null) return json({ error: "ما عندك مدينة" });
+      const t = this.sql.exec("SELECT town, restarted FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const wait = (t?.restarted || 0) + 86400000 - Date.now();
+      if (wait > 0) return json({ error: `بدأت من جديد قريب: تقدر مرة ثانية بعد ${Math.ceil(wait / 3600000)} ساعة` });
+      this.war.resetTown(me.plot);
+      this.sql.exec("UPDATE plots SET pop = 9, happy = 55, money = 0, era = 0, snapshot = '', pending = NULL, reminded = 0, restarted = ?, updated = ? WHERE plot = ?", Date.now(), Date.now(), me.plot);
+      this.news("restart", `🔄 «${t.town}» بدأت من جديد. الله يوفقهم`, me.plot);
+      this.live({ t: "town", plot: me.plot });
+      return json({ ok: true });
     }
     if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (30 minutes); each works once
       const now = Date.now();

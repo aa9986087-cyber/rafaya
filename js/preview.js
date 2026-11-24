@@ -160,6 +160,14 @@ function pvRoute(p, body) {
     if (body.snapshot) t.snapshot = body.snapshot;
     return { ok: true, town: t.town };
   }
+  if (p[0] === "restart") {
+    const t = pvState.plots[me.plot];
+    if (!t) return { error: "ما عندك مدينة" };
+    pvWar.resetTown(me.plot);
+    Object.assign(t, { pop: 9, happy: 55, money: 0, era: 0, snapshot: "", updated: Date.now() });
+    pvNews("restart", `🔄 «${t.town}» بدأت من جديد. الله يوفقهم`, me.plot);
+    return { ok: true };
+  }
   if (p[0] === "rename") {
     const t = pvState.plots[me.plot], town = String(body.town || "").trim().slice(0, 20);
     if (!t) throw new Error("400");

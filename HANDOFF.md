@@ -334,6 +334,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `earn()` caps only the hourly income and the deputy's steady income. Loans, rewards, refunds and gifts still come in, and money already above the cap is never taken.
     - Upgrades go through the vault branches in upgradeCost, upgradable, bizBlocker, upgradeEffect, levelName and upgradeMats. Models `vault`/`vault1`/`vault2`.
     - The HUD says «🔒 الخزنة مليانة» and gives one toast when it fills. The budget sheet shows the capacity, and the vault's sheet and card show capacity numbers.
+53. **Start again (owner, 2026-11-24, world only):**
+    - Settings has «🔄 ابدأ مدينتي من جديد» (`restartSheet`); you type the town's name to confirm.
+    - `POST /world/restart` allows once per 24 h (`plots.restarted`). It calls `WarServer.resetTown` (deletes acct, charge, dmg, hit and note rows by k1 via the new `db.delK1`; relations stay), resets the plot's row, and writes a bulletin line.
+    - The game makes a fresh town on the same land and name with `war.seq` 0, and the war notes seen are reset. The trial supports it too.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

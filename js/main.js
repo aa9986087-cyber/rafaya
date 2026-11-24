@@ -1648,6 +1648,31 @@ async function pushIosHelp() {
       <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
+/** Start your al-Jouf town again from nothing: same land, same name; everything else goes (once a day). */
+function restartSheet() {
+  const id = me();
+  sheet(`<h2>🔄 ابدأ من جديد</h2><p>مدينتك بالجوف ترجع <b>قرية صغيرة من الصفر</b> على نفس الأرض وبنفس الاسم.</p>
+    <div class="need">يروح كل شي: المباني والسكان والفلوس والأسلحة والمراحل. وما ترجع.</div>
+    <div class="rows"><div class="row"><span>يبقى</span><b>اسمك واسم مدينتك وأرضك وعلاقاتك</b></div><div class="row"><span>مرة كل</span><b>٢٤ ساعة</b></div></div>
+    <label class="rg-name">اكتب اسم مدينتك عشان تتأكد <input id="rsName" type="text" placeholder="${S.world ? S.name : ""}"></label>
+    <div class="sheet-actions two"><button class="btn" id="rsNo" type="button">لا، خلها</button><button class="btn danger" id="rsYes" type="button">ابدأ من جديد</button></div>`, "world");
+  $("rsNo").addEventListener("click", closeSheet);
+  $("rsYes").addEventListener("click", async () => {
+    const town = worldMode && S.world ? S.name : (() => { try { return unpack(store.get(WORLD_SAVE)).name; } catch { return ""; } })();
+    if (($("rsName").value || "").trim() !== (town || "").trim()) { toast("اكتب اسم مدينتك بالضبط", "bad"); sfx.deny(); return; }
+    let r;
+    try { r = await api("/world/restart", { name: id.name, secret: id.secret }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+    // a fresh town on the same land (like founding it), the world's hour, no old war bills
+    const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(id.plot), name: town, site: "world" });
+    s.day = worldHourNow(); s.world = { plot: id.plot, owner: id.name, start: s.day }; s.war = { seq: 0 };
+    store.set(WORLD_SAVE, pack(s));
+    if (worldMode) { S = s; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
+    store.set(warKey("seen"), "0");
+    closeSheet(); sfx.era(); toast(`🔄 «${town}» بدأت من جديد. بالتوفيق!`, "era");
+    enterWorldTown();
+  });
+}
 /** The new app (iPhone home screen): bring the account over with the move code. */
 function handoffSheet() {
   sheet(`<h2>🔑 رمز النقل (احتياط)</h2><p>عادةً حسابك ينتقل لحاله. لو ما انتقل: اكتب الرمز (٦ أرقام) اللي تحت «احتياط» في «التنبيهات بالآيفون» بسفاري، ويرجع لك اسمك ومدينتك.</p>
@@ -2855,8 +2880,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-12" },
+  v: { solo: "2027-01-05", world: "2027-01-13" },
   items: [
+    ["world", "🔄", "ابدأ من جديد", "بالإعدادات صار فيه «ابدأ مدينتي من جديد»: مدينتك بالجوف ترجع قرية من الصفر على نفس الأرض وبنفس الاسم. مرة كل ٢٤ ساعة، وتكتب اسم مدينتك تتأكد قبل."],
     ["world", "🔒", "الخزنة", "بعالم الجوف صار للفلوس سعة: البلدية تشيل (قرية ٥٬٠٠٠ · بلدة ١٥٬٠٠٠ · مدينة ٥٠٬٠٠٠ · محافظة ١٥٠٬٠٠٠ · حاضرة ٤٠٠٬٠٠٠)، ولما تمتلي يوقف الدخل لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» من «ماء وكهرباء» (لين ٤ خزنات) وطوّرها خمس مستويات: من ٥٬٠٠٠ لين ٣٥٠٬٠٠٠ للخزنة الوحدة. فلوسك اللي معك الحين ما تنلمس، والقروض والمكافآت تدخل حتى لو مليانة."],
     ["world", "🛠️", "الإدارة صارت معكم", "إدارة الجوف تقدر ترسل إعلانات (تطلع بالنشرة والشات) وهدايا للمدن، وتمسح الرسايل المسيئة وتوقف اللي يسيء. بلّغ عن أي إساءة من زر البلاغ والإدارة تشوفه."],
     ["world", "🔔", "زر التنبيهات بالإعدادات", "بالإعدادات صار فيه مفتاح «🔔 التنبيهات على الجوال»: شغّله وقت ما تبي (حتى لو قلت «بعدين» أول مرة)، وطفّه وقت ما تبي."],
@@ -3294,6 +3320,7 @@ function settingsSheet(fromMenu) {
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
     <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
     <textarea id="saveCode" readonly></textarea>
@@ -3304,6 +3331,7 @@ function settingsSheet(fromMenu) {
     store.set("rafaya-quality", b.dataset.q); save();
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
+  $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
   $("pushTest")?.addEventListener("click", async () => {
     const id = me();
