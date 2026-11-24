@@ -1271,11 +1271,19 @@ export function step(s, r = Math.random) {
     if (pool.length) { const d = pool.find((x) => (roll -= w(x)) < 0) || pool[0]; s.decision = { id: d.id }; s.lastDecision = d.id; msgs.push({ kind: "decision", text: d.title }); }
   }
   // Goals.
-  const g = GOALS[s.goal];
-  if (g && g.test(goalView(s, analyze(s)))) {
-    changeMoney(s, g.reward, "goal", g.text);
-    msgs.push({ kind: "goal", text: `أنجزت: ${g.text} (+${g.reward} ريال)` });
-    s.goal++;
+  // The current goal and the two shown after it pay the moment they are done, in any order
+  // (a research finished before the school still pays now); s.goalsEarly keeps the ones paid ahead.
+  if (GOALS[s.goal]) {
+    const view = goalView(s, analyze(s));
+    s.goalsEarly ||= [];
+    for (let k = s.goal; k < Math.min(GOALS.length, s.goal + 3); k++) {
+      const g = GOALS[k];
+      if (s.goalsEarly.includes(k) || !g.test(view)) continue;
+      changeMoney(s, g.reward, "goal", g.text);
+      msgs.push({ kind: "goal", text: `أنجزت: ${g.text} (+${g.reward} ريال)` });
+      s.goalsEarly.push(k);
+    }
+    while (s.goalsEarly.includes(s.goal)) { s.goalsEarly = s.goalsEarly.filter((k) => k !== s.goal); s.goal++; }
   }
   // Achievements, once each.
   s.ach ||= {};

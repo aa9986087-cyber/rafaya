@@ -3075,8 +3075,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-24", world: "2027-01-24" },
+  v: { solo: "2027-01-25", world: "2027-01-25" },
   items: [
+    ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
     ["world", "🌧️", "الشتاء رجع له مطره", "• الشتاء صار موسم المطر بالجوف: ينزل فيه مطر ثلاث مرات على الأقل (أوله ونصه وآخره)، وكل مرة قرابة اليوم. • ومطر الشتاء يخلّي الربيع اللي بعده أخضر."],
     ["both", "🗣️", "طلبات الأهالي على قد مستواك", "• الأهالي يطلبون اللي تقدر تسويه بمرحلتك. • وإذا تمنّوا شي لمرحلة أكبر (مثل السفلتة أو مركز الشرطة وانتم بلدة)، يجي كأمنية لبعدين: ما فيها وعد ينحسب عليك ولا زعل."],
     ["world", "🔔", "التنبيهات تصلّح نفسها", "• زر «جرّب التنبيه» إذا ما وصل التنبيه، يجدّد اشتراك جوالك لحاله ويجرّب مرة ثانية. • وكل ما فتحت الإعدادات نتأكد إن اشتراك جوالك سليم، ونجدده إذا خرب."],
@@ -3588,8 +3589,9 @@ $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true
 
 function goals() {
   const done = GOALS.slice(0, S.goal).map((x) => `<div class="row done"><span>${x.text}</span><b class="plus">✓</b></div>`).join("");
-  const next = GOALS.slice(S.goal, S.goal + 3).map((x, i) => `<div class="row ${i ? "" : "now"}"><span>${x.text}</span><b>${money(x.reward)} ريال</b></div>`).join("");
-  sheet(`<h2>المهام</h2><p>كل مهمة تعطيك مكافأة. أنجزت ${ar(S.goal)} من ${ar(GOALS.length)}.</p><div class="rows">${next}${done}</div>`, "goals");
+  const early = S.goalsEarly || [];
+  const next = GOALS.slice(S.goal, S.goal + 3).map((x, i) => early.includes(S.goal + i) ? `<div class="row done"><span>${x.text}</span><b class="plus">✓ استلمت ${money(x.reward)}</b></div>` : `<div class="row ${i ? "" : "now"}"><span>${x.text}</span><b>${money(x.reward)} ريال</b></div>`).join("");
+  sheet(`<h2>المهام</h2><p>كل مهمة تعطيك مكافأة، ولو خلّصت وحدة من اللي تحت قبل اللي فوقها تستلمها على طول. أنجزت ${ar(S.goal + early.length)} من ${ar(GOALS.length)}.</p><div class="rows">${next}${done}</div>`, "goals");
 }
 $("goal").addEventListener("click", () => { sfx.tap(); goals(); });
 
