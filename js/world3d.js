@@ -20,6 +20,63 @@ function normalTex(name, repeat) {
   return t;
 }
 
+/**
+ * RAFAYA REMASTERED, the realism layer: a tileable detail texture made once in the page.
+ * - R: a fine grain (sand in the plaster, the asphalt's aggregate).
+ * - G: broad stains and sun-bleached patches.
+ * - B: vertical streaks (where rain and dust ran down a wall).
+ * Materials read it in world space (see addDetail), so no two walls repeat the same marks and nothing needs UVs.
+ */
+function detailTexture() {
+  const S = 256, img = new ImageData(S, S);
+  const rnd = (i, j, k) => { const h = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return h - Math.floor(h); };
+  const vnoise = (x, y, f, k) => { // value noise that wraps every f cells (tileable)
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = rnd(xi % f, yi % f, k), b = rnd((xi + 1) % f, yi % f, k), c = rnd(xi % f, (yi + 1) % f, k), d = rnd((xi + 1) % f, (yi + 1) % f, k);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  const fbm = (x, y, f, k, oct) => { let t = 0, amp = 0.5, n = 0; for (let o = 0; o < oct; o++) { t += vnoise(x * (f << o) / S, y * (f << o) / S, f << o, k + o) * amp; n += amp; amp *= 0.5; } return t / n; };
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = (y * S + x) * 4;
+    img.data[i] = Math.round(fbm(x, y, 32, 1, 3) * 255);
+    img.data[i + 1] = Math.round(fbm(x, y, 4, 7, 4) * 255);
+    img.data[i + 2] = Math.round(Math.pow(fbm(x, y * 0.0625, 16, 13, 2), 2.2) * 255); // stretched tall: streaks
+    img.data[i + 3] = 255;
+  }
+  const c = document.createElement("canvas"); c.width = c.height = S; c.getContext("2d").putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4;
+  return t;
+}
+/**
+ * Give a material real surfaces: its colour varies with a grain and with stains, and walls carry faint streaks.
+ * The texture is projected from three sides in world space (triplanar), at "scale" repeats per tile.
+ * One texture, three reads per pixel: on the lowest quality the materials stay as they were.
+ */
+function addDetail(mat, tex, { grain = 0.14, stain = 0.12, streak = 0.1, scale = 1.6, rough = 0.12 } = {}) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.dMap = { value: tex };
+    sh.uniforms.dK = { value: new THREE.Vector4(grain, stain, streak, scale) };
+    sh.uniforms.dRough = { value: rough };
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vDWp; varying vec3 vDWn;").replace("#include <begin_vertex>", `#include <begin_vertex>
+      vec4 dWp = vec4(transformed, 1.0); vec3 dN = objectNormal;
+      #ifdef USE_INSTANCING
+        dWp = instanceMatrix * dWp; dN = mat3(instanceMatrix) * dN;
+      #endif
+      vDWp = (modelMatrix * dWp).xyz; vDWn = normalize(mat3(modelMatrix) * dN);`);
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vDWp; varying vec3 vDWn; uniform sampler2D dMap; uniform vec4 dK; uniform float dRough;").replace("#include <color_fragment>", `#include <color_fragment>
+      vec3 dW = pow(abs(vDWn), vec3(4.0)); dW /= (dW.x + dW.y + dW.z + 1e-5);
+      vec3 dP = vDWp * dK.w;
+      vec4 dT = texture2D(dMap, dP.zy) * dW.x + texture2D(dMap, dP.xz) * dW.y + texture2D(dMap, dP.xy) * dW.z;
+      float dWall = 1.0 - dW.y; // streaks run down walls, not across roofs
+      float dShade = 1.0 + (dT.r - 0.5) * 2.0 * dK.x + (dT.g - 0.5) * 2.0 * dK.y - dT.b * dK.z * dWall;
+      diffuseColor.rgb *= clamp(dShade, 0.6, 1.25);`).replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
+      roughnessFactor = clamp(roughnessFactor + (dT.g - 0.5) * dRough, 0.04, 1.0);`);
+  };
+  mat.customProgramCacheKey = () => "rafaya-detail";
+  mat.needsUpdate = true;
+}
+
 const HALF = N / 2;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
 /** War damage shows in the building's shape: from 25% it sinks (part of it fell in), down to half its height when out of action. */
@@ -110,7 +167,7 @@ export class World {
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 
     // Light: sky and ground fill, plus the sun that casts shadows.
-    this.hemi = new THREE.HemisphereLight("#fff4dd", "#c9a46a", 0.9);
+    this.hemi = new THREE.HemisphereLight("#d6e4f2", "#c4b394", 0.9); // the sky's cool fill above, the pale sand's bounce below
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight("#fff1d6", 2.2);
     this.sun.castShadow = quality !== "low";
@@ -135,7 +192,16 @@ export class World {
       ghostBad: new THREE.MeshStandardMaterial({ color: "#ff7a6a", transparent: true, opacity: 0.55, roughness: 0.6 })
     };
 
-    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.2, shiny: 0.45 };
+    // the realism layer (above): plaster and stone, painted panels, steel; not on the lowest quality
+    if (quality !== "low") {
+      this.detailTex = detailTexture();
+      addDetail(this.mats.matte, this.detailTex, { grain: 0.16, stain: 0.14, streak: 0.14, scale: 1.7 });
+      addDetail(this.mats.paint, this.detailTex, { grain: 0.08, stain: 0.08, streak: 0.08, scale: 2.2, rough: 0.2 });
+      addDetail(this.mats.metal, this.detailTex, { grain: 0.06, stain: 0.1, streak: 0.12, scale: 2.5, rough: 0.25 });
+    }
+    // glass: a clear sky reflection instead of a dark hole (brighter, a touch rougher so it reads at any angle)
+    this.mats.glass.roughness = 0.12; this.mats.glass.metalness = 0.85; this.mats.glass.color.setScalar(2.1); // the old models' window colours were dark: lift them so the sky shows in them
+    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.9, shiny: 0.45 };
     for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v;
     this.loadSky();
     // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
@@ -193,7 +259,7 @@ export class World {
     const uv = outer.attributes.uv;
     for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.3, p.getZ(i) * 0.3);
     this.sand = sandTexture();
-    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#f1d49c", map: this.sand, roughness: 1, normalMap: normalTex("tex/grain-normal.webp", 1), normalScale: new THREE.Vector2(0.5, 0.5) }));
+    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#e6d4ae", map: this.sand, roughness: 1, normalMap: normalTex("tex/grain-normal.webp", 1), normalScale: new THREE.Vector2(0.5, 0.5) }));
     desert.receiveShadow = true;
     this.scene.add(desert);
     this.ground = null;
@@ -266,7 +332,7 @@ export class World {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? (spring ? "#b8b06c" : "#c6ad72") : t.t === "fayda" ? (spring ? "#a9b866" : "#dcc08a") : t.t === "lake" ? "#b3a173" : t.t === "rock" ? "#e2c793" : "#f1d49c");
+      c.set(t.t === "wadi" ? (spring ? "#aeaa72" : "#c2ae86") : t.t === "fayda" ? (spring ? "#a3b06c" : "#d4c095") : t.t === "lake" ? "#ad9f7c" : t.t === "rock" ? "#d6c6a4" : "#e6d4ae");
       c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
       if (!owns(s, x, y)) c.offsetHSL(0, -0.12, -0.06);
       tileCol.set([c.r, c.g, c.b], idx(x, y) * 3);
@@ -524,12 +590,12 @@ export class World {
         if ((x + y) % 2 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
       }
       const w = paved ? 0.42 : 0.36;
-      quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
+      quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
       const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
-      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#4d4f55" : "#a98457");
+      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
+      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
+      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#55575b" : "#b4a07c");
+      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#55575b" : "#b4a07c");
       if (kind === "avenue") {
         // a full-width avenue: two lanes each way and a palm median along the way it runs
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
@@ -564,6 +630,7 @@ export class World {
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     g.computeVertexNormals();
     this.roadMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+    if (this.detailTex) addDetail(this.roadMesh.material, this.detailTex, { grain: 0.22, stain: 0.2, streak: 0, scale: 1.3, rough: 0.15 }); // aggregate, patches and oil stains
     this.roadMesh.receiveShadow = true;
     this.scene.add(this.roadMesh);
   }
@@ -1290,16 +1357,16 @@ export class World {
     const dir = new THREE.Vector3(Math.cos(sunAngle) * 0.8, Math.max(0.25, elev + 0.25), 0.55).normalize();
     this.sun.position.copy(dir.multiplyScalar(40));
     this.sun.intensity = 0.55 + day * 1.8;
-    this.sun.color.set(day < 0.3 ? "#9fb4ff" : golden > 0.2 ? "#ffcf8a" : "#fff1d6");
-    this.hemi.intensity = 0.6 + day * 0.35;
-    const sky = new THREE.Color("#22305a").lerp(new THREE.Color("#f6e2b8"), day);
+    this.sun.color.set(day < 0.3 ? "#9fb4ff" : golden > 0.2 ? "#ffc985" : "#fff3e0");
+    this.hemi.intensity = 0.55 + day * 0.4;
+    const sky = new THREE.Color("#1d2a4d").lerp(new THREE.Color("#e9e4d6"), day); // a pale desert sky, hazy toward the horizon
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
     if (this.raining) { sky.lerp(new THREE.Color("#7d8794"), 0.45); this.sun.intensity *= 0.45; this.hemi.intensity *= 0.75; }
     // a dust storm: the sky goes ochre and the light dims
     if (this.dusty) { sky.lerp(new THREE.Color("#c9a46a"), 0.55); this.sun.intensity *= 0.6; this.sun.color.lerp(new THREE.Color("#e0b070"), 0.6); }
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
-    this.hemi.color.set(day > 0.5 ? "#fff4dd" : "#8fa0d8");
+    this.hemi.color.set(day > 0.5 ? (golden > 0.2 ? "#f2d9bd" : "#d6e4f2") : "#8fa0d8");
     this.mats.lights.opacity = Math.min(1, this.night * 1.4);
     if (this.envNight !== Math.round(this.night * 20)) { this.envNight = Math.round(this.night * 20); for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v * (1 - this.night * 0.8); }
     if (this.glowMesh) this.glowMesh.material.opacity = Math.max(0, this.night * 0.95 - 0.15);
