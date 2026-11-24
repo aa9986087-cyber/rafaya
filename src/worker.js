@@ -27,7 +27,7 @@ import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
-import { AWAY_CAP } from "../js/sim.js";
+import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
@@ -40,6 +40,9 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
 // The world's clock started here; every town's hour is counted from it (50 seconds an hour).
 const WORLD_EPOCH = Date.UTC(2026, 10, 1);
+const CITIZEN_AMOUNT = 100, CITIZEN_LIMIT = 1000, CITIZEN_DAYS = 3;
+const CITIZEN_TITLE = "حساب المواطن";
+const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن في ميزانية مدينتك داخل لعبة الرافعية.";
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game keeps working. Set back to true to reopen.
@@ -84,6 +87,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, town TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`);
     this.sql.exec("CREATE INDEX IF NOT EXISTS feedback_sender ON feedback (name, at DESC)");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support (day INTEGER PRIMARY KEY, due INTEGER NOT NULL, closes INTEGER NOT NULL, paid_at INTEGER, recipients INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support_push (day INTEGER, plot INTEGER, k TEXT, next_at INTEGER NOT NULL, attempts INTEGER DEFAULT 0, PRIMARY KEY (day, k))`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
@@ -264,10 +269,69 @@ export class Board extends DurableObject {
   async armWar() {
     const war = this.war.nextArrival(), subs = this.sql.exec("SELECT 1 FROM pushsubs LIMIT 1").toArray().length;
     const due = this.sql.exec("SELECT MIN(due) d FROM namefix WHERE removed = 0").toArray()[0]?.d; // a name request running out
-    const next = Math.min(war || Infinity, due || Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
+    const support = WORLD_OPEN ? this.sql.exec(`SELECT MIN(at) at FROM (
+      SELECT MIN(due) at FROM citizen_support WHERE paid_at IS NULL
+      UNION ALL SELECT MIN(next_at) at FROM citizen_support_push
+    )`).toArray()[0]?.at : null;
+    const next = Math.min(war || Infinity, due || Infinity, support ?? Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
     if (!Number.isFinite(next)) return;
     const cur = await this.ctx.storage.getAlarm();
     if (!cur || cur > next) await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next + 200));
+  }
+  /** Start one campaign with the current game day, then the next two shared days at sunrise. */
+  startCitizenSupport(clock, now) {
+    this.ctx.storage.transactionSync(() => {
+      if (this.sql.exec("SELECT 1 FROM citizen_support LIMIT 1").toArray().length) return;
+      const first = dayOf(Math.floor(joufHours(now, clock)) + 3);
+      for (let i = 0; i < CITIZEN_DAYS; i++) {
+        const day = first + i;
+        this.sql.exec("INSERT INTO citizen_support (day, due, closes) VALUES (?, ?, ?)",
+          day, i === 0 ? now : Math.ceil(joufDayStart(day, clock)), Math.ceil(joufDayStart(day + 1, clock)));
+      }
+    });
+  }
+  /** Credit balances, save the player notices and queue phone delivery as one SQLite transaction. */
+  payCitizenSupport(now) {
+    const payout = this.ctx.storage.transactionSync(() => {
+      // A delayed alarm never catches up multiple payments in the same game day.
+      this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = 0 WHERE paid_at IS NULL AND closes <= ?", now, now);
+      const round = this.sql.exec("SELECT day FROM citizen_support WHERE paid_at IS NULL AND due <= ? AND closes > ? ORDER BY day LIMIT 1", now, now).toArray()[0];
+      if (!round) return null;
+      const plots = this.sql.exec("SELECT plot FROM plots WHERE money < ? ORDER BY plot", CITIZEN_LIMIT).toArray().map((row) => row.plot);
+      for (const plot of plots) {
+        const account = this.war.acct(plot);
+        this.war.charge(plot, account, -CITIZEN_AMOUNT, "citizenSupport");
+        this.war.saveAcct(plot, account);
+        this.war.note(plot, "citizenSupport", CITIZEN_NOTE, { amount: CITIZEN_AMOUNT, day: round.day }, false);
+        this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", CITIZEN_AMOUNT, plot);
+        this.sql.exec("INSERT OR IGNORE INTO citizen_support_push (day, plot, k, next_at) SELECT ?, plot, k, ? FROM pushsubs WHERE plot = ?", round.day, now, plot);
+      }
+      this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
+      return plots;
+    });
+    if (!payout) return;
+    const paid = new Set(payout);
+    for (const ws of this.ctx.getWebSockets()) if (paid.has(ws.deserializeAttachment()?.plot)) {
+      try { ws.send('{"t":"war"}'); } catch { /* the next poll reads the saved credit */ }
+    }
+    this.news("citizenSupport", payout.length
+      ? "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف."
+      : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.");
+  }
+  async flushCitizenSupport(now) {
+    this.sql.exec(`DELETE FROM citizen_support_push WHERE NOT EXISTS (
+      SELECT 1 FROM pushsubs WHERE pushsubs.k = citizen_support_push.k AND pushsubs.plot = citizen_support_push.plot
+    )`);
+    const rows = this.sql.exec(`SELECT q.day, q.attempts, s.k, s.endpoint, s.p256dh, s.auth
+      FROM citizen_support_push q JOIN pushsubs s ON s.k = q.k
+      WHERE q.next_at <= ? ORDER BY q.next_at, q.k LIMIT 16`, now).toArray();
+    for (const row of rows) this.sql.exec("UPDATE citizen_support_push SET next_at = ?, attempts = attempts + 1 WHERE day = ? AND k = ?", now + 15000, row.day, row.k);
+    await Promise.all(rows.map(async (row) => {
+      const status = await this.sendPush(row, { title: CITIZEN_TITLE, body: CITIZEN_NOTE, tag: `citizen-support-${row.day}` }, "86400");
+      if (row.attempts >= 2 || (status >= 200 && status < 500 && status !== 429)) {
+        this.sql.exec("DELETE FROM citizen_support_push WHERE day = ? AND k = ?", row.day, row.k);
+      }
+    }));
   }
   /** Name requests past their day: the town leaves al-Jouf (the player stays, and must still change the name). */
   namefixSweep() {
@@ -290,6 +354,11 @@ export class Board extends DurableObject {
   }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
+    if (WORLD_OPEN) {
+      const now = Date.now();
+      this.payCitizenSupport(now);
+      await this.flushCitizenSupport(now);
+    }
     try { this.remind(); } catch { /* next time */ }
     try { this.namefixSweep(); } catch { /* next time */ }
     await this.flush();
@@ -523,7 +592,13 @@ export class Board extends DurableObject {
       let slowAt = meta("slow_at"), fastAt = meta("fast_at");
       if (!slowAt) { slowAt = Date.now(); setMeta("slow_at", slowAt); }
       if (!fastAt) { fastAt = Date.now(); setMeta("fast_at", fastAt); }
-      return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN, slowAt, fastAt });
+      const clock = { epoch: WORLD_EPOCH, slowAt, fastAt }, now = Date.now();
+      this.startCitizenSupport(clock, now);
+      if (this.sql.exec("SELECT 1 FROM citizen_support WHERE paid_at IS NULL AND due <= ? LIMIT 1", now).toArray().length) {
+        await this.armWar();
+        this.payCitizenSupport(Date.now());
+      }
+      return json({ ...clock, now, gen: WORLD_GEN });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
@@ -704,8 +779,16 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         const mark = POP_MARKS.filter((m) => pop >= m && (was.pop || 0) < m).pop();
         if (mark) this.news("pop", `👨‍👩‍👧 «${was.town}» وصل عدد سكانها ${mark.toLocaleString("en-US")}`, me.plot, mark);
       }
+      // A sync from a phone that hasn't read the credit yet must keep it in the town's server balance.
+      let seen = body.warSeq;
+      if (!Number.isSafeInteger(seen)) {
+        try { seen = int(JSON.parse(snapshot || "{}").war?.seq); } catch { seen = 0; }
+      }
+      const support = this.sql.exec(`SELECT COALESCE(-SUM(json_extract(data, '$.amount')), 0) total FROM war
+        WHERE tbl = 'charge' AND k1 = ? AND json_extract(data, '$.why') = 'citizenSupport' AND json_extract(data, '$.seq') > ?`,
+        String(me.plot), Math.max(0, seen)).toArray()[0].total;
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
-        int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
+        int(body.pop), int(body.happy), int(body.money) + support, int(body.era), Date.now(), snapshot, snapshot, me.plot);
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (body.ledger && typeof body.ledger === "object") { const lj = JSON.stringify(body.ledger); if (lj.length < 40000) this.sql.exec("UPDATE plots SET ledger = ? WHERE plot = ?", lj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh

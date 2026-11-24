@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, joufHours } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -75,7 +75,6 @@ let openCat = null;
 // light depends on the season (spring and autumn 10 min + 10 min, summer 12 + 8, winter 8 + 12).
 const HOUR_MS = 50000;
 const evBanner = { key: null, at: 0, t: 0 }; // the event banner's 30 seconds
-const SLOW_HOUR_MS = 75000; // the world's hours between slowAt and fastAt (see worldHours)
 /** Where the sun is (0 midnight … 0.5 noon) for how far we are through the day (p: 0 = sunrise). */
 const sunAt = (p, d) => (p < d ? 0.25 + (p / d) * 0.5 : 0.75 + ((p - d) / (1 - d)) * 0.5) % 1;
 /** The part of the day by the prayer times themselves (data.js PRAYERS), so «الظهر» runs from the dhuhr call to the asr call. */
@@ -1018,7 +1017,7 @@ let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
 // sheets that show what players wrote (al-Jouf's map, the chat, war screens): «الرافعية» there is a real name, never your town's
-const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "developer-note", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "share-game", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "developer-note", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
 function here(text) {
   const n = S?.name;
   // a landmark keeps its place's name (بوابة الرافعية is the gate of the place on al-Jouf's map, not of the town)
@@ -1647,17 +1646,7 @@ $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments();
 // ---------- the world of al-Jouf ----------
 const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_KEY = "rafaya-world-gen";
 let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) }, lastSync = 0, soloS = null;
-const worldMsNow = () => Date.now() + worldClock.offset - worldClock.epoch;
-/**
- * The world's hours so far, so the clock never jumps when the day's length changed: 50 s each until the
- * server's slowAt, 75 s each from slowAt to fastAt (the 30-minute days), and 50 s each again after fastAt.
- */
-function worldHours() {
-  const ms = worldMsNow(), a = Math.max(0, worldClock.slowAt - worldClock.epoch), b = Math.max(a, worldClock.fastAt - worldClock.epoch);
-  if (ms <= a) return ms / HOUR_MS;
-  if (ms <= b) return a / HOUR_MS + (ms - a) / SLOW_HOUR_MS;
-  return a / HOUR_MS + (b - a) / SLOW_HOUR_MS + (ms - b) / HOUR_MS;
-}
+const worldHours = () => joufHours(Date.now() + worldClock.offset, worldClock);
 const worldHourNow = () => Math.floor(worldHours()) + 3;
 const me = () => JSON.parse(store.get(WORLD_ID) || "null");
 async function loadClock() {
@@ -2058,7 +2047,7 @@ function worldSync(force) {
   // the money moves too, for the owner's statement of this town (what came in, what went out, and why)
   const ledger = { log: (mine.moneyLog || []).slice(-80), day: mine.day, start: mine.world?.start ?? null,
     hour: visiting ? null : { tax: Math.round(A.tax || 0), shops: Math.round(A.income || 0), farms: Math.round(A.farmIncome || 0), costs: Object.fromEntries(Object.entries(A.costs || {}).map(([k, v]) => [k, Math.round(v || 0)])), net: Math.round(A.net || 0) } };
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0, ledger,
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0, warSeq: mine.war?.seq || 0, ledger,
     snapshot: pack({ ...mine, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
@@ -2423,7 +2412,7 @@ async function warSyncNow() {
   if (!worldMode || !home?.world || id?.plot == null) return;
   const key = warTownKey(home);
   if (key === WARX.syncKey) return;
-  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home), restartAt: home.world?.restartAt || 0,
+  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home), restartAt: home.world?.restartAt || 0, warSeq: home.war?.seq || 0,
     snapshot: pack({ ...home, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
   try {
     const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
@@ -2473,14 +2462,15 @@ async function warPoll(force) {
 function warApply(st) {
   const home = visiting ? visiting.home : S;
   home.war ||= { seq: 0 };
-  let paid = 0, posted = false;
-  const reasons = new Map([["gift", "gift"], ["refund", "refund"], ["away cap", "awayLimit"]]);
+  let paid = 0, supportPaid = 0, posted = false;
+  const reasons = new Map([["gift", "gift"], ["citizenSupport", "citizenSupport"], ["refund", "refund"], ["away cap", "awayLimit"]]);
   for (const c of st.charges || []) {
     if (!(c.seq > home.war.seq)) continue;
     const kind = reasons.get(c.why) || "worldBill";
     changeMoney(home, -c.amount, kind, kind === "worldBill" ? String(c.why || "").slice(0, 120) : "");
     home.war.seq = c.seq;
     paid += c.amount;
+    if (kind === "citizenSupport") supportPaid -= c.amount;
     posted = true;
   }
   if (home === S && paid > 0) idleClamp(); // asleep: a war bill is paid from the income kept aside first (a refund is not)
@@ -2505,10 +2495,11 @@ function warApply(st) {
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
     for (const n of fresh) if (n.kind === "apology" || n.kind === "gift") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
-    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
+    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
   }
+  if (supportPaid > 0) toast(`💰 تم صرف ${money(supportPaid)} ريال من حساب المواطن لمدينتك`, "goal");
   $("warDot").hidden = !(st.rels || []).some((r) => r.offer && r.offer.by !== me()?.plot) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
   if (sheetFor === "war") warSheet(WARX.tab);
 }
@@ -3256,8 +3247,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-24-lighting", world: "2026-11-24-lighting" },
+  v: { solo: "2026-11-24-lighting", world: "2026-11-24-citizen-support" },
   items: [
+    ["world", "💰", "دعم حساب المواطن", "لمدة ٣ أيام متتالية داخل اللعبة، المدن اللي رصيدها أقل من ألف ريال وقت الصرف تستلم ١٠٠ ريال من الدولة. الدعم ينزل في الميزانية مرة واحدة في يوم الجوف، ويوصلك تنبيه عند الصرف."],
+    ["world", "🤝", "شارك الرافعية مع ربعك", "من القائمة الرئيسية اضغط «شارك الرافعية» وأرسل الدعوة من تطبيقات جوالك، أو انسخ الرابط وشاركه مع ربعك. بيض الله وجيهكم على دعمكم!"],
     ["both", "💡", "إنارة الليل الجديدة", "غيّرنا شكل أعمدة الإنارة والفوانيس. ضوها يبان على الشارع والواجهات القريبة، ومصابيح السيارات تنوّر الطريق قدّامها. بعد المطر، يبان أثر الإنارة على البرك."],
     ["both", "🏙️", "المباني أوضح من بعيد", "تفاصيل النوافذ والواجهات تبقى ظاهرة وأنت تبعّد الكاميرا أو تشوف المدينة من فوق. خفّفنا تعقيد المجسّمات عشان يبقى الرسم أخف."],
     ["world", "🔒", "ملاحظة خاصة للمطور", "من شات الجوف اختر «ملاحظة خاصة للمطور» وأرسل اقتراحك أو وصف المشكلة. ملاحظتك تظهر في لوحة المطور فقط."],
@@ -3401,6 +3394,45 @@ function showWhatsNewDot() {
   const dot = $("wnDot"); if (dot) dot.hidden = wnSeen(worldMode ? "world" : "solo"); // (the chip left the game screen; «وش الجديد» is on the main menu)
 }
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
+function shareGameSheet() {
+  // Invite players to the public home page, even if the current URL carries an account move or backup token.
+  const url = "https://rafaya.vamosx.workers.dev/";
+  const canShare = typeof navigator.share === "function";
+  sheet(`<h2>شارك الرافعية</h2>
+    <p>بيض الله وجهك على دعمك! اعزم ربعك يجرّبون الرافعية معك، وخلّ كل واحد يبني مدينته في عالم الجوف.</p>
+    <label for="shareGameUrl">رابط اللعبة</label>
+    <input class="share-url" id="shareGameUrl" type="text" dir="ltr" readonly value="${url}">
+    <div class="sheet-actions">
+      ${canShare ? '<button class="btn go block" id="shareGameSend" type="button">مشاركة اللعبة</button>' : ""}
+      <button class="btn ${canShare ? "" : "go"} block" id="shareGameCopy" type="button">نسخ الرابط</button>
+    </div>
+    <p class="hint" id="shareGameStatus" role="status"></p>`, "share-game");
+  const input = $("shareGameUrl"), status = $("shareGameStatus"), send = $("shareGameSend");
+  if (!input) return;
+  $("shareGameCopy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      status.textContent = "اننسخ الرابط. بيض الله وجهك على دعمك!";
+    } catch {
+      input.focus();
+      input.select();
+      status.textContent = "حددنا الرابط لك. انسخه من خيارات المتصفح.";
+    }
+  });
+  send?.addEventListener("click", async () => {
+    if (send.disabled) return;
+    send.disabled = true;
+    try {
+      await navigator.share({ title: "الرافعية", text: "تعال جرّب الرافعية معي! ابدأ بخيمة وابنِ مدينتك في عالم الجوف.", url });
+      status.textContent = "بيض الله وجهك على دعمك للرافعية!";
+    } catch (error) {
+      if (error.name !== "AbortError") status.textContent = "تقدر تنسخ الرابط وتشاركه.";
+    } finally {
+      send.disabled = false;
+    }
+  });
+}
+$("mShare").addEventListener("click", () => { sfx.tap(); shareGameSheet(); });
 $("mWorld").addEventListener("click", () => { sfx.tap(); if (globalThis.RAFAYA_PREVIEW_SAMPLE) enterWorldTown(); else openWorld(); });
 $("mContinue").addEventListener("click", async (e) => { // straight into your own town: no map, no picking
   sfx.tap();
@@ -3493,7 +3525,7 @@ const MONEY_MOVES = {
   decision: ["📋", "قرار البلدية"], investment: ["💼", "عائد استثمار"], goal: ["🎯", "مكافأة مهمة"],
   election: ["🗳️", "دعم الفوز بالانتخابات"], grant: ["🎉", "دعم من المحافظ"],
   fee: ["🏦", "رسوم المحافظة السنوية"], cleaning: ["🛣️", "تنظيف الطرق"],
-  gift: ["🎁", "هدية من إدارة الجوف"], refund: ["↩", "مبلغ رجّعته إدارة الجوف"],
+  citizenSupport: ["💰", "دعم حساب المواطن"], gift: ["🎁", "هدية من إدارة الجوف"], refund: ["↩", "مبلغ رجّعته إدارة الجوف"],
   worldBill: ["📋", "عملية في عالم الجوف"], transfer: ["↔", "تحويل بين المدن"],
   awayLimit: ["🔒", "خصم كسب الغياب الزايد"], idleLimit: ["🔒", "كسب فوق حدّ الخمول"],
   idleCover: ["🛡️", "تغطية مصروف من كسب الخمول"]

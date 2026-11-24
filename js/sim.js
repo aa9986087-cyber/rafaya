@@ -119,6 +119,23 @@ export const ROCK_CLEAR = 40;
 export const dayOf = (hour) => Math.floor(Math.max(0, hour - 1) / HOURS) + 1;
 export const hourOf = (hour) => Math.max(0, hour - 1) % HOURS;
 
+/** The shared al-Jouf clock keeps its old 75-second hours between slowAt and fastAt. */
+export function joufHours(now, { epoch, slowAt, fastAt }) {
+  const ms = now - epoch, a = Math.max(0, slowAt - epoch), b = Math.max(a, fastAt - epoch);
+  if (ms <= a) return ms / 50000;
+  if (ms <= b) return a / 50000 + (ms - a) / 75000;
+  return a / 50000 + (b - a) / 75000 + (ms - b) / 50000;
+}
+/** Wall-clock time at the start of the numbered game day (the world began on hour 3). */
+export function joufDayStart(day, { epoch, slowAt, fastAt }) {
+  const hours = (day - 1) * HOURS - 2;
+  const a = Math.max(0, slowAt - epoch), b = Math.max(a, fastAt - epoch);
+  const fast = a / 50000, slow = (b - a) / 75000;
+  if (hours <= fast) return epoch + hours * 50000;
+  if (hours <= fast + slow) return epoch + a + (hours - fast) * 75000;
+  return epoch + b + (hours - fast - slow) * 50000;
+}
+
 /** Which season an hour falls in, which day of it, how far through it (0..1), and which year. */
 export function seasonOf(hour) {
   const h = Math.max(0, hour - 1), day = Math.floor(h / HOURS), i = Math.floor(day / SEASON_DAYS) % 4;
