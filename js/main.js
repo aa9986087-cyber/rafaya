@@ -1,4 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
+import { VERSION } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
@@ -954,6 +955,7 @@ function here(text) {
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
 }
 function sheet(html, kind) {
+  if (sheetFor === "update" && kind !== "update") return; // nothing covers the update
   clearTimeout(sheetHide); // a sheet opened while the last one was closing must stay open
   sheetFor = kind; sheetAt = performance.now();
   $("sheetBody").innerHTML = NAME_KEEP.has(kind) ? html : here(html);
@@ -961,7 +963,7 @@ function sheet(html, kind) {
   $("sheet").classList.remove("closing");
 }
 function closeSheet() {
-  if ($("sheet").hidden) return;
+  if ($("sheet").hidden || sheetFor === "update") return; // the update can't be put off
   $("sheet").classList.add("closing");
   sheetHide = setTimeout(() => { $("sheet").hidden = true; $("sheet").classList.remove("closing"); }, 180);
   const was = sheetFor; sheetFor = null;
@@ -1556,6 +1558,33 @@ async function loadClock() {
     }
   } catch { /* keep the local guess */ }
 }
+// ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
+const GAME_FILES = ["./", "index.html", "css/style.css", ...["version", "data", "sim", "people", "models", "world3d", "icons", "warfx", "war", "sound", "news", "main"].map((m) => `js/${m}.js`)];
+async function versionCheck() {
+  if (VERSION === "dev" || globalThis.RAFAYA_PREVIEW || !onlineOk() || sheetFor === "update") return;
+  let v;
+  try { v = (await (await fetch("/api/version", { cache: "no-store" })).json()).version; } catch { return; }
+  if (!v || v === "dev" || v === VERSION) return;
+  updateSheet(v);
+}
+function updateSheet(v) {
+  const tried = sessionStorage.getItem("rafaya-update-tried") === v; // already reloaded for this version once: the browser kept old files
+  sheet(`<h2>⬆️ تحديث جديد</h2><p>نزل تحديث جديد للعبة، ولازم تحدّث عشان تكمل. مدينتك محفوظة وما يضيع منها شي.</p>
+    ${tried ? `<div class="need">المتصفح ما جاب النسخة الجديدة. سكّر المتصفح كامل وافتحه من جديد، أو امسح بيانات الموقع المؤقتة (الكاش).</div>` : ""}
+    <div class="sheet-actions keep"><button class="btn go block" id="updNow" type="button">حدّث الحين</button></div>`, "update");
+  $("sheetClose").hidden = true;
+  $("updNow").addEventListener("click", async () => {
+    $("updNow").disabled = true; $("updNow").textContent = "نحدّث…";
+    try { if (playing) save(); if (worldMode) worldSync(true); } catch { /* the save is on the phone already */ }
+    try { sessionStorage.setItem("rafaya-update-tried", v); } catch { /* fine */ }
+    await Promise.all(GAME_FILES.map((f) => fetch(f, { cache: "reload" }).catch(() => {}))); // fresh copies into the browser's cache
+    location.reload();
+  });
+}
+versionCheck();
+setInterval(versionCheck, 5 * 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) versionCheck(); });
+
 // ---------- live: the server pushes what changed the moment it happens (chat, war, the bulletin, towns) ----------
 const LIVE = { ws: null, ok: false, tries: 0, timer: 0, ping: 0 };
 function liveOpen() {
@@ -2663,8 +2692,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-04", world: "2027-01-04" },
+  v: { solo: "2027-01-05", world: "2027-01-05" },
   items: [
+    ["both", "⬆️", "التحديث صار إجباري", "إذا نزل تحديث جديد واللعبة عندك قديمة، تطلع لك شاشة «تحديث جديد» وتضغط «حدّث الحين»: مدينتك تنحفظ أول، وتنزل النسخة الجديدة. كذا الكل يلعب على نفس النسخة."],
     ["both", "🛣️", "تطوير الطرق", "بقائمة الطرق صار فيه بطاقة «تطوير الطرق» مثل تطوير المباني: الطرق اللي تقدر تطورها تطلع بالذهبي، اضغط أو اسحب عليها ثم ✓ طوّر (ترابي ← مسفلت ← شارع رئيسي). ولو ضغطت على أي طريق فيه زر «طوّره» على طول."],
     ["world", "😴", "اللي ينام والجوال شغال", "إذا ما لمست اللعبة ربع ساعة بعالم الجوف، النائب يمسك البلد وينطبق حد الكسب وانت برا (حسب مرحلة مدينتك)، واللعبة تخفف رسمها عشان الجوال ما يسخن. أول ما تلمس الشاشة يرجع كل شي ويقولك كم كسبت وانت غافي."],
     ["world", "🧾", "حد للكسب وانت برا", "بعالم الجوف، أكثر شي تكسبه مدينتك وانت طالع: قرية ٥٬٠٠٠، بلدة ١٠٬٠٠٠، مدينة ٢٠٬٠٠٠، محافظة ٤٠٬٠٠٠، حاضرة ٨٠٬٠٠٠. فلوسك اللي كانت قبل ما تطلع ما تنلمس أبد، والخسارة ما يزيدها الحد (درع الغياب يحميك). ولو أحد جاه أكثر من الحد ينرجع الزايد بس وتوصله رسالة."],
@@ -3399,7 +3429,7 @@ function frame(now) {
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew"].includes(sheetFor);
+  const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew", "update"].includes(sheetFor);
   if (arrange) { /* the town waits while the mayor rearranges it */ } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();

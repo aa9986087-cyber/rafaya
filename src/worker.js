@@ -24,6 +24,7 @@ import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
 import { AWAY_CAP } from "../js/sim.js";
+import { VERSION } from "../js/version.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -307,6 +308,7 @@ export class Board extends DurableObject {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/version") return new Response(JSON.stringify({ version: VERSION }), { headers: { "content-type": "application/json", "cache-control": "no-store" } }); // the game checks it: an old copy must update
     if (url.pathname.startsWith("/api/")) {
       const board = env.BOARD.get(env.BOARD.idFromName("rafaya"));
       return board.fetch(request);

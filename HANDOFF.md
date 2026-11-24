@@ -276,6 +276,14 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Ready roads show in orange above the road surface. `setOverlay` got opacity and lift arguments.
     - Tap or drag selects, ✓ upgrades. Cost is the next road's price (via `build`, which replaces road kinds).
     - `roadNext`, `roadUpWhy` and `readyRoads` are in main.js. A road's inspect sheet has «⬆ طوّره إلى …».
+46. **Mandatory updates (owner, 2026-11-24, both modes):**
+    - `js/version.js` says "dev" in the repo.
+    - `scripts/copy-site.mjs` writes a fresh stamp on Cloudflare's build (`WORKERS_CI`/`CI`, or `STAMP_VERSION=1` locally) before the Worker is built, so the server and its files share it.
+    - `GET /api/version` answers with no-store.
+    - The game checks at start, every 5 min and when it comes back to the front (`versionCheck`). A different version opens the «update» sheet, which can't be closed or covered. «حدّث الحين» saves, re-fetches the game's files with cache: reload, and reloads.
+    - If the browser still serves old files after one try, it says to close the browser.
+    - "dev" (local, the trial, the single-file bundle) never checks.
+    - **Never commit a stamped js/version.js** (local deploy tests overwrite it: put "dev" back).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
