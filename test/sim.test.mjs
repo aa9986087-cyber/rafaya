@@ -503,3 +503,41 @@ test("vault (al-Jouf): income stops at the cap, vaults raise it, money above it 
   assert.equal(b.lvl, 1); assert.equal(levelName(b), VAULT[1].name);
   assert.equal(moneyCap(s), BASE_VAULT[1] + VAULT[1].cap);
 });
+
+test("a wish about some homes: said by someone living there, an idle service asks for a road, and met once those homes have it", async () => {
+  const news = await import("../js/news.js");
+  const { seasonOf } = await import("../js/sim.js");
+  const s = newGame(5);
+  for (let i = 0; i < 40; i++) step(s, fixedRandom());
+  const put = (x, y, id) => { const t = s.tiles[idx(x, y)]; t.t = "sand"; t.b = id ? { id, lvl: 0, res: id === "house" ? 4 : 0, day: s.day, cond: 100 } : null; return idx(x, y); };
+  // two streets of homes far apart, and a clinic on the first
+  const street = (y) => { const homes = []; for (let x = 2; x <= 15; x++) { put(x, y, "road"); if (x >= 3 && x <= 14) homes.push(put(x, y + 1, "house")); } return homes; };
+  const west = street(50), east = street(8);
+  put(8, 49, "clinic");
+  s.pop = 200;
+  let a = analyze(s);
+  const n = news.needs(s, a), health = n.uncovered.find((u) => u.svc === "health");
+  assert.ok(health && health.list.every((i) => !a.services[i].has("health")), "only the homes the clinic does not reach");
+  assert.ok(west.some((i) => a.services[i].has("health")) && east.every((i) => health.list.includes(i)));
+  // the speaker lives in a home without one
+  s.news = [];
+  let asked = null;
+  for (let k = 0; k < 40 && !asked; k++) { asked = news.writePosts(s, a, seasonOf(s.day), 4).find((q) => q.topic === "health" && q.mood < 0); s.news = []; s.day++; }
+  assert.ok(asked, "someone asks for a clinic");
+  assert.ok(asked.person.home != null && east.includes(asked.person.home), "the one asking lives where there is none");
+  // promised; built at his street: kept, even if another quarter would still like one
+  news.answerPost(s, a, seasonOf(s.day), asked, "promise");
+  assert.ok(s.promises.some((q) => q.topic === "health" && q.near?.length));
+  const far = []; for (let x = 40; x <= 50; x++) { put(x, 30, "road"); far.push(put(x, 31, "house")); }
+  put(8, 7, "clinic"); a = analyze(s);
+  assert.ok(news.needs(s, a).uncovered.some((u) => u.svc === "health"), "another quarter still has none");
+  assert.ok(news.followUps(s, a, seasonOf(s.day)).some((q) => /وفيت بوعدك/.test(q.text)), "the promise counts as kept");
+  // a clinic with no road: they ask for the road, not for another clinic
+  for (let x = 2; x <= 15; x++) put(x, 8, null);
+  for (const i of east) put(i % N, Math.floor(i / N), null);
+  for (let x = 2; x <= 15; x++) { put(x, 12, "road"); east.push(put(x, 11, "house")); }
+  a = analyze(s);
+  const n2 = news.needs(s, a);
+  assert.ok(n2.noRoad.some((u) => u.svc === "health" && u.list.length), "the clinic without a road is named");
+  assert.ok(!n2.uncovered.some((u) => u.svc === "health" && u.list.some((i) => east.includes(i) && Math.abs(i % N - 8) + Math.abs(Math.floor(i / N) - 7) <= 6)), "no 'build a clinic' for homes next to the idle one");
+});

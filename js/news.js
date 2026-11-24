@@ -4,7 +4,7 @@
 // remember what they asked for and what the mayor promised, answer each other and react to decisions.
 import { B, ERAS, DECISIONS, MAP_SIZE } from "./data.js";
 import { districtOf, districtName, springGreen } from "./sim.js";
-import { MEN, WOMEN, jobOf, someFamilies } from "./people.js";
+import { MEN, WOMEN, jobOf, someFamilies, familiesAt } from "./people.js";
 
 // The quarters people live in (by the names the mayor gave them), so a speaker says where they are from.
 let livedIn = [], families = [], townNow = null;
@@ -39,15 +39,23 @@ export const residentById = (id) => RESIDENTS.find((r) => r.id === id);
 
 const pickName = (list, r) => list[Math.floor(r() * list.length)];
 /** A new person of a kind: their name, their job in this town, and where they live. */
-export function makePerson(a, kindId, r = Math.random) {
+export function makePerson(a, kindId, r = Math.random, at = null) {
   const k = residentById(kindId) || RESIDENTS[0];
   const family = `آل ${pickName(MEN, r)}`;
   const first = k.gender === "f" ? pickName(WOMEN, r) : pickName(MEN, r);
   const name = k.gender === "mother" ? `أم ${pickName(MEN, r)}` : k.gender === "father" ? `أبو ${pickName(MEN, r)}` : k.gender === "elder" ? `الشايب أبو ${pickName(MEN, r)}` : k.gender === "uncle" ? `العم ${pickName(MEN, r)}` : `${k.title ? k.title + " " : ""}${first} ${family}`;
   const areas = livedIn.length ? livedIn : ["الحارة الشمالية", "الحارة الجنوبية", "الحارة الشرقية", "الحارة الغربية", "وسط البلد"];
   // a real family of the town when there is one: the speaker's name, house and job are theirs
-  if (families.length && townNow) {
-    const { i, f } = families[Math.floor(r() * families.length)];
+  // a complaint about some homes (no clinic near them, no water…) is said by a family living in one of them,
+  // so «📍 بيته» shows a home that really lacks it
+  let fam = null;
+  if (at?.length && townNow) for (let k = 0, from = Math.floor(r() * at.length); k < at.length && !fam; k++) {
+    const i = at[(from + k) % at.length], f = townNow.tiles[i]?.b?.id === "house" && familiesAt(townNow, i)[0];
+    if (f) fam = { i, f };
+  }
+  if (!fam && families.length && townNow) fam = families[Math.floor(r() * families.length)];
+  if (fam) {
+    const { i, f } = fam;
     const girl = f.kids.find((c) => !c.boy && c.age >= 14), son = f.kids.find((c) => c.boy && c.age >= 16);
     const real = k.gender === "mother" ? f.mother : k.gender === "father" ? `${f.kunya} ${f.surname}` : k.gender === "elder" ? `الشايب ${f.kunya}` : k.gender === "uncle" ? `العم ${f.father} ${f.surname}`
       : k.gender === "f" ? `${k.title ? k.title + " " : ""}${girl ? girl.name : f.mother.replace("أم ", "")} ${f.surname}` : `${k.title ? k.title + " " : ""}${son && k.id === "saud" ? son.name : f.father} ${f.surname}`;
@@ -72,7 +80,7 @@ export function townFacts(s, a, season) {
     money: Math.round(s.money), netPerHour: a.net, tax: s.tax, happy: Math.round(s.happy),
     water: +a.waterRatio.toFixed(2), power: a.grid ? +a.powerRatio.toFixed(2) : null, unemployment: +a.unemployment.toFixed(2),
     jobs: a.jobs, workers: a.workers, unconnectedHomes: a.unconnected,
-    mosques: a.count.mosque + a.count.bigmosque, schools: a.count.school, clinics: a.count.clinic + a.count.hospital,
+    mosques: a.count.mosque + a.count.bigmosque, schools: a.count.school + a.count.library + a.count.university, clinics: a.count.clinic + a.count.hospital,
     police: a.count.police, civil: a.count.civil, parks: a.count.park, palms: a.count.palms, wells: a.count.well,
     shops: a.count.grocery + a.count.cafe + a.count.souq + a.count.mandi, roadsDirt: a.count.road, roadsPaved: a.count.asphalt,
     decorations: ["streetpalm", "flowers", "lantern", "fountain", "dallah", "incense"].reduce((n, k) => n + a.count[k], 0),
@@ -88,7 +96,8 @@ export function townFacts(s, a, season) {
  */
 function topics(s, a, season, f) {
   const out = [];
-  const add = (topic, mood, weight, lines) => out.push({ topic, mood, weight, lines });
+  // near: the homes it is about (the speaker lives in one, and the wish counts as met once most of them have it); svc: the service
+  const add = (topic, mood, weight, lines, at, svc) => out.push({ topic, mood, weight, lines, ...(at?.length ? { near: at.slice(0, AT_MAX) } : {}), ...(svc ? { svc } : {}) });
   // Water
   if (f.water < 0.6) add("water", -1, 10, [`الماء ما يكفي نص الناس! ${num(f.pop)} نفس على ${nAr(f.wells)} بئر. نبي بئر جديد أو خزان اليوم قبل بكرة.`, `umsaad:من الفجر وأنا واقفة عند البئر، والسطل ما يمتلي. يا العمدة الماء ${pct(f.water)} من حاجتنا بس، هذا ما يصير.`, `abukhalid:النخل بدأ يصفار من العطش. إذا ما زاد الماء بنخسر محصول السنة كله.`]);
   else if (f.water < 0.95) add("water", -1, 6, [`الماء صار يخلص العصر. ${pct(1 - f.water)} من حاجتنا ناقصة، بئر واحد زيادة يحلها.`, `قبل الصيف لازم نزيد الماء، الحر جاي والاستهلاك يزيد عشرة بالمية.`]);
@@ -158,7 +167,11 @@ function topics(s, a, season, f) {
   if (a.aquifer < 40) add("aquifer", -1, 8, [`abukhalid:البئر اللي بمزرعتي صار يطلّع نص ماه. الماء الجوفي نزل لـ${nAr(Math.round(a.aquifer))}٪. ${s.era >= 1 ? "نبي سد يجمع المطر قبل لا تنشف الآبار كلها." : "خففوا المزارع اللي تشرب كثير، ولا تحفرون آبار زيادة عن الحاجة."}`, `abuabdullah:كل بئر جديد يسحب من نفس الماء. الماء الجوفي ${nAr(Math.round(a.aquifer))}٪ بس، والحل ${s.era >= 2 ? "سد على الوادي أو تحلية" : s.era >= 1 ? "سد على الوادي" : "نقلل الآبار والمزارع"}.`]);
   if ((s.lake || 0) > 40 && a.lakeTiles) add("lake", 1, 4, [`saud:كشتة على بحيرة السد البارحة، والله ما توقعت نشوف ماء بالرافعية كذا!`, `umsaad:العيال يحبون البحيرة، كل عصر نطلع لها.`]);
   if (a.costs.theft > 1 && s.era < 1) add("dream", 0, 3, [`jawaher:انسرق من المحل البارحة، والسرقات تاخذ ${num(a.costs.theft)} ريال بالساعة. أول ما نصير قرية نبي مركز شرطة.`]);
-  else if (a.costs.theft > 1) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة من محلات البلد. نبي شرطة تغطي الحارات.`]);
+  else if (a.costs.theft > 1) {
+    const unsafe = [];
+    s.tiles.forEach((t, i) => { if (t.b?.id === "house" && t.b.works && !a.services[i].has("safety")) unsafe.push(i); });
+    if (unsafe.length >= 4) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة، و${nAr(unsafe.length)} بيت ${areaOf(s, unsafe)} ما توصلها الشرطة. نبي شرطة تغطي الحارات.`], unsafe, "safety");
+  }
   if (a.costs.health > 2) add("pollution", -1, 6, [`drYousef:المستوصف مليان أمراض صدر من الدخان. علاجهم يكلف البلدية ${num(a.costs.health)} بالساعة. بعدوا المصانع عن البيوت.`]);
   if (a.congestion > 0.05) add("traffic", -1, 5, [`mishal:الزحمة ما تنطاق! الطرق الترابية ضيقة والناس صاروا ما يوصلون للسوق. ${s.era >= 1 ? "سفلتوها." : "سوّوا طريق ثاني يخفف عن هذا."}`]);
   if (s.events.some((e) => e.strike)) add("strike", -1, 8, [`saud:موظفين البلدية مضربين! المدرسة مقفلة والمستوصف مسكّر. أعطوهم حقهم.`]);
@@ -174,12 +187,14 @@ function topics(s, a, season, f) {
   // homes the pipes do not reach, and where they are
   const dryList = [];
   s.tiles.forEach((t, i) => { if (t.b?.id === "house" && t.b.works && !a.watered?.[i]) dryList.push(i); });
-  if (dryList.length) add("water", -1, 8, [`umsaad:${nAr(dryList.length)} بيت ${areaOf(s, dryList)} ما يوصلها ماء أبد، نجيب الماء بالجوالين من بعيد. البئر يوصل لين ٥ مربعات بس، حطوا واحد عندنا.`]);
+  if (dryList.length) add("water", -1, 8, [`umsaad:${nAr(dryList.length)} بيت ${areaOf(s, dryList)} ما يوصلها ماء أبد، نجيب الماء بالجوالين من بعيد. البئر يوصل لين ٥ مربعات بس، حطوا واحد عندنا.`], dryList, "water");
   if (n.wells > 0) add("water", -1, 7, [`abukhalid:حسبتها: الماء ناقص ${num(n.waterGap)} وحدة، والبئر يعطي ٣٠. يعني نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} زيادة${s.era >= 1 ? `، أو خزان واحد يكفي الكل` : ""}.`]);
   if (n.generators > 0) add("power", -1, 7, [`jawaher:الكهرباء ناقصة ${num(n.powerGap)}. مولد واحد يعطي ٧٠، فنحتاج ${nAr(n.generators)}${s.tech.solar ? `، والألواح الشمسية أنظف` : ""}.`]);
   if (n.jobGap >= 8) add("jobs", -1, 8, [`noura:فيه ${num(n.jobGap)} شخص يبي شغل زيادة عن الوظايف. ${n.jobIdea}`]);
-  for (const sv of n.uncovered) add(sv.topic, -1, 4 + Math.min(4, sv.homes / 4), [`${sv.who}:${nAr(sv.homes)} بيت ${sv.area} ما يوصلها ${sv.what}. ${sv.idea}`]);
-  if (n.polluted) add("pollution", -1, 6, [`drYousef:${nAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by} وأهلها يشتكون من الدخان والإزعاج. ${n.polluted.by === "مولد كهرباء" ? "انقلوا المولد بعيد ووصّلوا الكهرب بعمدان." : "الأفضل نبعده عن البيوت أو نحط حديقة بينهم."}`]);
+  for (const sv of n.uncovered) add(sv.topic, -1, 4 + Math.min(4, sv.homes / 4), [`${sv.who}:${nAr(sv.homes)} بيت ${sv.area} ما يوصلها ${sv.what}. ${sv.idea}`], sv.list, sv.svc);
+  // a service is there but stands idle for want of a road: they ask for the road, not for another one
+  for (const sv of n.noRoad) add("svcroad", -1, 6, [`${sv.who}:${sv.name} اللي ${sv.area} واقف وما يخدم أحد لأنه ما عليه طريق، و${nAr(sv.homes)} بيت حوله محرومة منه. وصّلوه بطريق بس.`], sv.list, sv.svc);
+  if (n.polluted) add("pollution", -1, 6, [`drYousef:${nAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by} وأهلها يشتكون من الدخان والإزعاج. ${n.polluted.by === "مولد كهرباء" ? "انقلوا المولد بعيد ووصّلوا الكهرب بعمدان." : "الأفضل نبعده عن البيوت أو نحط حديقة بينهم."}`], n.polluted.list, "smoke");
   if (n.worst && s.happy < 60) add("growth", -1, 5, [`noura:الرضا ${nAr(Math.round(s.happy))}٪. أكبر سبب حسب كلام الناس: ${n.worst}. لو انحل نرتفع كثير.`]);
   if (n.saveFor) add("money", 0, 3, [`abuabdullah:الدخل ${num(a.net)} بالساعة، يعني ${num(a.net * 24)} باليوم. ${n.saveFor}`]);
   if (a.net < 0 && s.money > 0) add("money", -1, 7, [`abuabdullah:البلدية تصرف أكثر من دخلها: ${num(-a.net)} ريال بالساعة خسارة. بعد ${nAr(Math.max(1, Math.floor(s.money / -a.net / 24)))} يوم بتصير ديون. ارفعوا الضريبة شوي أو افتحوا محلات.`]);
@@ -196,7 +211,7 @@ function areaOf(s, list) {
 
 /** The arithmetic behind the complaints: what is missing, how many, where. */
 export function needs(s, a) {
-  const out = { uncovered: [] };
+  const out = { uncovered: [], noRoad: [] };
   out.waterGap = Math.max(0, Math.round(a.waterUse - a.waterSupply));
   out.wells = out.waterGap > 0 ? Math.ceil(out.waterGap / 30) : 0;
   out.powerGap = a.grid ? Math.max(0, Math.round(a.powerUse - a.powerSupply)) : 0;
@@ -208,20 +223,41 @@ export function needs(s, a) {
   s.tiles.forEach((t, i) => { if (t.b?.id === "house" && t.b.works) homes.push(i); });
   const services = [
     { svc: "mosque", topic: "mosque", what: "صوت الأذان", who: "abunasser", has: a.count.mosque + a.count.bigmosque, idea: "مسجد ثاني هناك يغطيهم ويفرّحهم." },
-    { svc: "school", topic: "school", what: "مدرسة", who: "noura", has: a.count.school, idea: "مدرسة ثانية بينهم، والبيوت اللي حولها تتطور أسرع." },
+    { svc: "school", topic: "school", what: "مدرسة", who: "noura", has: a.count.school + a.count.library + a.count.university, idea: "مدرسة ثانية بينهم، والبيوت اللي حولها تتطور أسرع." },
     { svc: "health", topic: "health", what: "مستوصف", who: "drYousef", has: a.count.clinic + a.count.hospital, idea: "مستوصف قريب منهم ينقذ أرواح." },
     { svc: "safety", topic: "safety", what: "دورية أمن", who: "jawaher", has: a.count.police + a.count.civil, idea: "مركز شرطة هناك يطمّنهم." }
   ];
+  // homes next to a service that is there but not working: no road (they ask for the road), or still being built,
+  // in ruins, the council broke or on strike (they wait, or the money, repair and strike posts speak for it)
+  const idle = {}, strike = s.events.some((e) => e.strike);
+  s.tiles.forEach((t, k) => {
+    const b = t.b, d = b && B[b.id];
+    if (!d?.service || !d.radius || b.works) return;
+    const why = b.build > 0 || b.ruin > 0 || s.broke || strike ? "wait" : "road";
+    const x = k % MAP_SIZE, y = Math.floor(k / MAP_SIZE), r = d.radius;
+    const box = (idle[d.service] ||= { road: new Set(), wait: new Set(), name: {} });
+    if (why === "road") box.name.road ||= { name: d.name, at: k };
+    for (let yy = Math.max(0, y - r); yy <= Math.min(MAP_SIZE - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(MAP_SIZE - 1, x + r); xx++)
+      if (Math.abs(xx - x) + Math.abs(yy - y) <= r) box[why].add(yy * MAP_SIZE + xx);
+  });
   for (const sv of services) {
     if (!sv.has) continue;
-    const out2 = homes.filter((i) => !a.services[i].has(sv.svc));
-    if (out2.length >= 4) out.uncovered.push({ ...sv, homes: out2.length, area: areaOf(s, out2) });
+    const box = idle[sv.svc], out2 = homes.filter((i) => !a.services[i].has(sv.svc));
+    const road = box ? out2.filter((i) => box.road.has(i)) : [];
+    const far = box ? out2.filter((i) => !box.road.has(i) && !box.wait.has(i)) : out2;
+    if (far.length >= 4) { // spoken for the quarter with the most of them (another quarter's turn comes in another post)
+      const by = new Map();
+      for (const i of far) { const d = districtOf(i); by.set(d, [...(by.get(d) || []), i]); }
+      const list = [...by.values()].sort((p, q) => q.length - p.length)[0];
+      out.uncovered.push({ ...sv, homes: list.length, area: areaOf(s, list), list });
+    }
+    if (road.length) out.noRoad.push({ ...sv, name: box.name.road.name, homes: road.length, area: areaOf(s, [box.name.road.at]), list: road });
   }
   // nuisances near homes
   const smoky = homes.filter((i) => a.pollution[i] >= 8);
   if (smoky.length >= 2) {
     const polluters = ["generator", "workshop", "factory", "powerplant", "datefactory"].filter((k) => a.count[k]);
-    out.polluted = { homes: smoky.length, area: areaOf(s, smoky), by: polluters.length ? B[polluters[0]].name : "المصانع" };
+    out.polluted = { homes: smoky.length, area: areaOf(s, smoky), list: smoky, by: polluters.length ? B[polluters[0]].name : "المصانع" };
   }
   // what upsets people most
   const reasons = [
@@ -237,7 +273,7 @@ export function needs(s, a) {
 
 // ---------- memory: what people asked for, and what the mayor promised ----------
 
-const TOPIC_NAMES = { season: "أماكن للناس بالصيف", growth: "رضا الناس", farms: "مكافحة الجراد", flood: "الحماية من السيل", shops: "زباين للمحلات", aquifer: "الماء الجوفي", repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
+const TOPIC_NAMES = { season: "أماكن للناس بالصيف", growth: "رضا الناس", farms: "مكافحة الجراد", flood: "الحماية من السيل", shops: "زباين للمحلات", aquifer: "الماء الجوفي", repair: "ترميم المباني", traffic: "حل الزحمة", strike: "علاوة الموظفين", svcroad: "توصيل الخدمة بطريق", water: "الماء", power: "الكهرباء", jobs: "الشغل", mosque: "المسجد", school: "المدرسة", health: "المستوصف", safety: "الأمن", parks: "الحديقة", roads: "الطريق", tax: "تخفيف الضريبة", housing: "البيوت", dust: "سفلتة الطرق", money: "ترتيب الميزانية", pollution: "إبعاد الدخان" };
 /** Is anyone still upset about this topic right now? */
 /** What the mayor has to do to keep each kind of promise. */
 export const FIX_HINT = {
@@ -257,6 +293,7 @@ export const FIX_HINT = {
   safety: "ابنِ مركز شرطة قريب من الحارة",
   parks: "ابنِ حديقة قريبة من البيوت",
   roads: "وصّل البيوت بطريق",
+  svcroad: "وصّل المبنى اللي يتكلمون عنه بطريق: أي خدمة بدون طريق ما تشتغل",
   tax: "نزّل الضريبة من «الأرقام»",
   housing: "انصب خيام جديدة أو طوّر البيوت",
   dust: "سفلت الطرق (بحث «سفلتة الطرق» من المجلس)",
@@ -268,7 +305,25 @@ export const FIX_HINT = {
 };
 export const topicName = (t) => TOPIC_NAMES[t] || "الطلب";
 
-const stillMissing = (s, a, season, topic) => topics(s, a, season, townFacts(s, a, season)).some((t) => t.topic === topic && t.mood < 0);
+const AT_MAX = 40;
+/** Does this home still lack what they asked for? (svc: a service, "water", "smoke") */
+const lacks = (s, a, i, svc) => {
+  const b = s.tiles[i]?.b;
+  if (b?.id !== "house" || !b.works) return false; // gone, or empty: nobody there to wait
+  return svc === "water" ? !a.watered?.[i] : svc === "smoke" ? a.pollution[i] >= 8 : !a.services[i].has(svc);
+};
+/**
+ * Is a wish still waiting? A wish about some homes (rec.near) is met once most of those homes have it, even if
+ * another quarter still lacks it (that is a new wish, from the people there). Any other wish: the whole town.
+ */
+const stillMissing = (s, a, season, topic, rec) => {
+  if (rec?.near?.length && rec.svc) {
+    const left = rec.near.filter((i) => lacks(s, a, i, rec.svc)).length;
+    return left > rec.near.length * 0.3; // seven homes in ten have it: done
+  }
+  return topics(s, a, season, townFacts(s, a, season)).some((t) => t.topic === topic && t.mood < 0);
+};
+const whereOf = (rec) => (rec?.near?.length && rec.svc ? { near: rec.near, svc: rec.svc } : {});
 
 /**
  * Each town hour: thank the mayor for wishes that came true, and remind of the ones still waiting
@@ -282,7 +337,7 @@ export function followUps(s, a, season) {
   const refOf = (p) => ({ asked: p.asked || "", said: p.said || "", day: p.day });
   // Promises first: a kept promise is thanked once (and closes the same wish); a broken one hurts.
   s.promises = s.promises.filter((p) => {
-    if (!stillMissing(s, a, season, p.topic)) { post(p, `وفيت بوعدك يا العمدة. وعدتنا بـ${topicName(p.topic)} وصار. الرجال كلمة 👏`, 1, p.topic, refOf(p)); moodOf(s, p.who, +10); (s.record ||= {}).kept = (s.record.kept || 0) + 1; delete s.demands[p.topic]; return false; }
+    if (!stillMissing(s, a, season, p.topic, p)) { post(p, `وفيت بوعدك يا العمدة. وعدتنا بـ${topicName(p.topic)} وصار. الرجال كلمة 👏`, 1, p.topic, refOf(p)); moodOf(s, p.who, +10); (s.record ||= {}).kept = (s.record.kept || 0) + 1; delete s.demands[p.topic]; return false; }
     if (!p.reminded && s.day - p.day >= 48) {
       post(p, `يا العمدة، قبل يومين طلبنا ${topicName(p.topic)} ووعدتنا. للحين ما صار شي، والوعد دين.`, -1, p.topic, refOf(p));
       posts[posts.length - 1].noCalm = true;
@@ -293,7 +348,7 @@ export function followUps(s, a, season) {
   // People the mayor fobbed off come back for a real answer.
   s.comebacks = (s.comebacks || []).filter((c) => {
     if (s.day < c.at) return true;
-    if (stillMissing(s, a, season, c.topic)) {
+    if (stillMissing(s, a, season, c.topic, c)) {
       post(c, [`قبل يوم قلت لي «نشوف». شفت؟ ${TOPIC_NAMES[c.topic] || "الموضوع"} للحين ناقص، وأبي جواب واضح: نعم ولا لا.`, `يا العمدة، ما أبي «إن شاء الله نشوف» مرة ثانية. ${TOPIC_NAMES[c.topic] || "طلبنا"}: بتسويه ولا لا؟`][s.day % 2], -1, c.topic, { asked: c.asked || "", said: "إن شاء الله، نشوف الموضوع", day: c.day ?? c.at - 24, calm: true });
       posts[posts.length - 1].noCalm = true;
     }
@@ -302,7 +357,7 @@ export function followUps(s, a, season) {
   for (const [topic, d] of Object.entries(s.demands)) {
     const days = Math.round((s.day - d.day) / 24);
     const when = days < 1 ? "بنفس اليوم" : days === 1 ? "بيوم واحد" : days === 2 ? "بيومين" : `بعد ${nAr(days)} أيام`;
-    if (!stillMissing(s, a, season, topic)) {
+    if (!stillMissing(s, a, season, topic, d)) {
       post(d, `الله يعطيك العافية يا العمدة! طلبنا ${TOPIC_NAMES[topic] || "طلبنا"} وتحقق ${when}. هذا اللي نبيه 👏`, 1, topic);
       delete s.demands[topic];
     } else if (!d.reminded && s.day - d.day >= 72) {
@@ -316,7 +371,7 @@ export function followUps(s, a, season) {
 /** Remember the complaints that ask for something (so they can be thanked or followed up). */
 export function rememberDemands(s, posts) {
   s.demands ||= {};
-  for (const p of posts) if (p.mood < 0 && TOPIC_NAMES[p.topic] && !s.demands[p.topic]) s.demands[p.topic] = { day: s.day, who: p.who, person: p.person };
+  for (const p of posts) if (p.mood < 0 && TOPIC_NAMES[p.topic] && !s.demands[p.topic]) s.demands[p.topic] = { day: s.day, who: p.who, person: p.person, ...whereOf(p) };
 }
 
 // ---------- residents answering each other ----------
@@ -399,7 +454,7 @@ export function writePosts(s, a, season, count = 1) {
     const line = fresh[Math.floor(r() * fresh.length)], text = line.text;
     const fans = RESIDENTS.filter((p) => p.cares.includes(t.topic));
     const who = residentById(line.by) || (fans.length ? fans : RESIDENTS)[Math.floor(r() * (fans.length || RESIDENTS.length))];
-    posts.push(maybeAnswer(s, a, { id: `${s.day}-${k}-${Math.floor(r() * 1e6)}`, day: s.day, who: who.id, person: makePerson(a, who.id, r), text, mood: t.mood, topic: t.topic, likes: agreeing(s, t.weight, r) }, r));
+    posts.push(maybeAnswer(s, a, { id: `${s.day}-${k}-${Math.floor(r() * 1e6)}`, day: s.day, who: who.id, person: makePerson(a, who.id, r, t.near), text, mood: t.mood, topic: t.topic, ...whereOf(t), likes: agreeing(s, t.weight, r) }, r));
   }
   rememberDemands(s, posts);
   return posts;
@@ -498,7 +553,7 @@ export function replyOptions(post) {
  */
 export function answerPost(s, a, season, post, kind) {
   const who = residentById(post.who);
-  const missing = TOPIC_NAMES[post.topic] && stillMissing(s, a, season, post.topic);
+  const missing = TOPIC_NAMES[post.topic] && stillMissing(s, a, season, post.topic, post);
   const building = BUILDING_FOR[post.topic] && B[BUILDING_FOR[post.topic]];
   if (post.mood > 0 || post.topic === "dream") {
     const o = GOOD_REPLIES[goodKey(post)][Math.max(0, SLOTS.indexOf(kind))];
@@ -508,7 +563,7 @@ export function answerPost(s, a, season, post, kind) {
   if (kind === "promise") {
     const change = post.noCalm ? 6 : 8;
     moodOf(s, post.who, change);
-    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, person: post.person, topic: post.topic, day: s.day, said: PROMISE_LINE[post.topic] || "معك حق، بنحلها قريب", asked: post.text }); }
+    if (missing) { s.promises ||= []; s.promises = s.promises.filter((p) => p.topic !== post.topic); s.promises.push({ who: post.who, person: post.person, topic: post.topic, ...whereOf(post), day: s.day, said: PROMISE_LINE[post.topic] || "معك حق، بنحلها قريب", asked: post.text }); }
     s.comebacks = (s.comebacks || []).filter((c) => c.topic !== post.topic);
     const n = needs(s, a);
     const detail = post.topic === "water" && n.wells ? ` ترى نحتاج ${nAr(n.wells)} ${n.wells === 1 ? "بئر" : "آبار"} بالضبط.` : post.topic === "power" && n.generators ? ` نحتاج ${nAr(n.generators)} مولد على الأقل.` : post.topic === "jobs" && n.jobGap ? ` ${num(n.jobGap)} شخص ينتظرون.` : "";
@@ -517,7 +572,7 @@ export function answerPost(s, a, season, post, kind) {
   }
   if (kind === "calm") {
     s.comebacks ||= [];
-    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, at: s.day + 24, day: s.day, asked: post.text });
+    if (missing && !s.comebacks.some((c) => c.topic === post.topic)) s.comebacks.push({ who: post.who, person: post.person, topic: post.topic, ...whereOf(post), at: s.day + 24, day: s.day, asked: post.text });
     const text = post.who === "abunasser" ? "إن شاء الله… بس ترى «نشوف» ما تبني بيت. بكرة أرجع لك." : `طيب، بنصبر يوم على ${TOPIC_NAMES[post.topic] || "طلبنا"}. بس بكرة أبي جواب واضح.`;
     return { text, change: 0 };
   }
