@@ -1399,7 +1399,7 @@ export class World {
   }
 
   /** Tint tiles (a service's reach). values: Float32Array(N*N) of strengths, colour: css colour. */
-  setOverlay(values, color, opacity = 0.3) {
+  setOverlay(values, color, opacity = 0.3, lift = 0.015) { // lift: above the roads, for the road tools
     if (this.overlay) { this.scene.remove(this.overlay); this.overlay.dispose(); this.overlay = null; }
     if (!values) return;
     const cells = [];
@@ -1409,7 +1409,7 @@ export class World {
     this.overlay = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: heat ? "#ffffff" : color, transparent: true, opacity: heat ? 0.55 : opacity, depthWrite: false }), Math.max(1, cells.length));
     const m = new THREE.Matrix4(), hc = new THREE.Color();
     cells.forEach((i, k) => {
-      const p = tileCenter(i % N, Math.floor(i / N)); m.makeTranslation(p.x, 0.015, p.z); this.overlay.setMatrixAt(k, m);
+      const p = tileCenter(i % N, Math.floor(i / N)); m.makeTranslation(p.x, lift, p.z); this.overlay.setMatrixAt(k, m);
       if (heat) { const v = Math.min(1, values[i]); hc.setHSL(0.33 * (1 - v), 0.85, 0.5); this.overlay.setColorAt(k, hc); }
     });
     this.overlay.count = cells.length;

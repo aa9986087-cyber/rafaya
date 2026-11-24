@@ -271,6 +271,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - A touch (`idleWake`) ends it and says how much was earned.
     - `idleClamp()` keeps what is above the cap in `S.idle.pool`. Later bills while asleep (fee, repairs, war charges) are paid from the pool first, so the cap only ever removes surplus income, never the mayor's own money.
     - The deputy's catch-up caps once at the end, so its bills come out of the surplus too.
+45. **Road upgrades like building upgrades (owner, 2026-11-24, both modes):**
+    - The roads category has an «تطوير الطرق» card (tool `roadup`, in `UP_CARDS.road`): dirt → asphalt (needs the asphalt research) → main street.
+    - Ready roads show in orange above the road surface. `setOverlay` got opacity and lift arguments.
+    - Tap or drag selects, ✓ upgrades. Cost is the next road's price (via `build`, which replaces road kinds).
+    - `roadNext`, `roadUpWhy` and `readyRoads` are in main.js. A road's inspect sheet has «⬆ طوّره إلى …».
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

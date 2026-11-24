@@ -155,7 +155,7 @@ canvas.addEventListener("pointerdown", (e) => {
     drag = null; return;
   }
   if (arrange) { arrDown(e); return; }
-  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill");
+  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill");
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
   if (painting) paintAt(e.clientX, e.clientY);
 });
@@ -191,7 +191,7 @@ const canTurn = (id) => !!B[id] && B[id].cat !== "road" && !["dam", "pivot"].inc
 const ghostAngle = (x, y, id) => (canTurn(id) ? world.faceAngle(S, x, y) + placeRot * Math.PI / 2 : 0);
 function hoverAt(t) {
   if (!tool || !inMap(t.x, t.y)) { world.setHover(null); world.setGhost(null); return; }
-  if (tool.id === "upgrade" || tool.id === "fill") { world.setHover(t, canDo(t.x, t.y)); return; }
+  if (tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill") { world.setHover(t, canDo(t.x, t.y)); return; }
   if (tool.id === "move") return; // the move tool shows its own preview
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
@@ -206,14 +206,30 @@ function hoverAt(t) {
 // a preview shows it, and the ✓ button builds it.
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
-const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "fill" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill" || B[tool.id].cat === "road");
+const tileCost = (x, y) => (tool.id === "roadup" ? B[roadNext(S.tiles[idx(x, y)].b)]?.cost || 0 : tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : B[tool.id].cost + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
 const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : tool?.cat === "serv" ? "اضغط على مسجد أو مستشفى" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
-const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; if (tool.id === "fill") return owns(S, x, y) && t.t === "wadi" && !t.b; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
-const whyNot = (x, y) => (tool.id === "fill" ? (S.tiles[idx(x, y)].t !== "wadi" ? "الردم على أرض الوادي بس" : "شيل اللي عليها أول") : tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
+const canDo = (x, y) => { const t = S.tiles[idx(x, y)]; if (tool.id === "roadup") return !!roadNext(t.b) && !roadUpWhy(x, y); if (tool.id === "fill") return owns(S, x, y) && t.t === "wadi" && !t.b; return tool.id === "bulldoze" ? !!(t.b || t.t === "rock") : tool.id === "upgrade" ? !upgradeWhy(x, y) : !cantBuild(S, x, y, tool.id); };
+const whyNot = (x, y) => (tool.id === "roadup" ? roadUpWhy(x, y) : tool.id === "fill" ? (S.tiles[idx(x, y)].t !== "wadi" ? "الردم على أرض الوادي بس" : "شيل اللي عليها أول") : tool.id === "upgrade" ? upgradeWhy(x, y) : cantBuild(S, x, y, tool.id));
 /** Buildings ready to move up a level right now (lit up while the upgrade tool is in hand). */
+// ---------- road upgrades: the same as buildings (gold = ready, tap or drag, then ✓) ----------
+/** The next road up from this one: dirt → asphalt (needs the research) → main street. */
+const roadNext = (b) => (b?.id === "road" ? "asphalt" : b?.id === "asphalt" ? "avenue" : null);
+function roadUpWhy(x, y) {
+  const b = S.tiles[idx(x, y)].b, next = roadNext(b);
+  if (!b || !ROAD_IDS.includes(b.id)) return "اضغط على طريق";
+  if (!next) return b.id === "avenue" ? "هذا شارع رئيسي: أعلى مستوى" : "الدوار والإشارة ما تتطور";
+  if (B[next].tech && !S.tech[B[next].tech]) return "تحتاج بحث «السفلتة» من المجلس أول";
+  if (B[next].era > S.era) return `تحتاج البلد تصير ${ERAS[B[next].era].name}`;
+  return cantBuild(S, x, y, next) || "";
+}
+function readyRoads() {
+  const values = new Float32Array(N * N);
+  S.tiles.forEach((t, i) => { if (roadNext(t.b) && !roadUpWhy(i % N, Math.floor(i / N))) values[i] = 1; });
+  return values;
+}
 function readyHouses() {
   const values = new Float32Array(N * N);
   S.tiles.forEach((t, i) => { if (upFits(t.b) && !upgradeBlocker(S, A, i % N, Math.floor(i / N))) values[i] = 1; });
@@ -264,10 +280,11 @@ function showPending() {
   if (!tool) return;
   if (tool.id === "move") { showMove(); return; }
   if (tool.id === "upgrade" && !pending.length) world.setOverlay(readyHouses(), "#e0a44a");
+  else if (tool.id === "roadup" && !pending.length) world.setOverlay(readyRoads(), "#ff9a1f", 0.62, 0.12); // above the road surface (a strong orange: dirt roads are already sandy)
   else if (isMulti()) {
     const values = new Float32Array(N * N);
     for (const p of pending) values[idx(p.x, p.y)] = 1;
-    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : tool.id === "upgrade" ? "#e0a44a" : "#2cb59c");
+    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : tool.id === "upgrade" || tool.id === "roadup" ? "#e0a44a" : "#2cb59c", tool.id === "roadup" ? 0.55 : 0.3, tool.id === "roadup" ? 0.12 : 0.015);
     world.setHover(pending.length ? pending[pending.length - 1] : null, true);
   } else if (pending.length) hoverAt(pending[0]);
   else { world.setHover(null); world.setGhost(null); world.setOverlay(null); }
@@ -276,12 +293,18 @@ function showPending() {
   const cost = ok.reduce((a, p) => a + tileCost(p.x, p.y), 0);
   $("toolOk").hidden = !pending.length;
   $("toolRot").hidden = !canTurn(tool.id);
-  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" ? "✓ طوّر" : tool.id === "fill" ? "✓ اردم" : "✓ ابنِ";
+  $("toolOk").textContent = tool.id === "bulldoze" ? "✓ أزل" : tool.id === "upgrade" || tool.id === "roadup" ? "✓ طوّر" : tool.id === "fill" ? "✓ اردم" : "✓ ابنِ";
   if (tool.id === "fill") {
     $("toolName").textContent = !pending.length ? `ردم الوادي: اسحب على أرض الوادي (${money(FILL_COST)} للمربع). ما يجيها سيل، بس تروح خصوبتها` : !ok.length ? whyNot(pending[0].x, pending[0].y) : `ردم ${ar(ok.length)} مربع · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
     return;
   }
   $("toolOk").disabled = !ok.length || cost > S.money;
+  if (tool.id === "roadup") {
+    const ready = readyRoads().reduce((n, v) => n + v, 0), toA = ok.filter((q) => S.tiles[idx(q.x, q.y)].b?.id === "road").length;
+    $("toolName").textContent = !pending.length ? (ready ? `تطوير الطرق: ${ar(ready)} طريق جاهز (بالذهبي) · اضغط أو اسحب عليها` : `ما فيه طريق يتطور الحين: ${S.tech.asphalt ? "اضغط على طريق تشوف ليش" : "تحتاج بحث «السفلتة» من المجلس أول"}`)
+      : !ok.length ? roadUpWhy(pending[0].x, pending[0].y) : `${toA ? `${ar(toA)} ترابي ← مسفلت` : ""}${toA && ok.length > toA ? " · " : ""}${ok.length > toA ? `${ar(ok.length - toA)} مسفلت ← شارع رئيسي` : ""} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`;
+    return;
+  }
   if (tool.id === "upgrade") {
     const ready = readyHouses().reduce((n, v) => n + v, 0);
     const what = tool.cat === "shop" ? "محل" : tool.cat === "farm" ? "مزرعة وورشة" : tool.cat === "serv" ? "مسجد ومستشفى" : "بيت";
@@ -659,6 +682,12 @@ function apply(x, y, quiet) {
     refresh();
     return;
   }
+  if (tool.id === "roadup") {
+    const next = roadNext(tile.b), why = next ? roadUpWhy(x, y) || build(S, x, y, next) : roadUpWhy(x, y);
+    if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
+    sfx.road(); sync(true); clearPreview(quiet); refresh();
+    return;
+  }
   if (tool.id === "fill") {
     const why = fillWadi(S, x, y);
     if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
@@ -785,7 +814,7 @@ function renderCats() {
 }
 
 function lockReason(id) {
-  if (id === "upgrade" || id === "fill") return "";
+  if (id === "upgrade" || id === "fill" || id === "roadup") return "";
   const d = B[id];
   if (d.worldOnly && !worldMode) return "بعالم الجوف بس";
   if (d.unique && S.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
@@ -808,6 +837,7 @@ function renderCards() {
     farm: { key: modelKey("palms", 2), name: "تطوير المزارع والورش", from: upgradeCost({ id: "palms", lvl: 0 }), path: "مزرعة ← بالري ← كبرى" }
   };
   UP_CARDS.serv = { key: modelKey("mosque", 2), name: "تطوير الخدمات", from: upgradeCost({ id: "mosque", lvl: 0 }), path: "مسجد ← بمنارتين ← جامع · مستشفى ← تخصصي ← مدينة طبية" };
+  UP_CARDS.road = { key: modelKey("avenue", 0), name: "تطوير الطرق", from: B.asphalt.cost, path: "ترابي ← مسفلت ← شارع رئيسي", tool: "roadup" };
   UP_CARDS.util = { key: "dam", name: "ردم الوادي", from: FILL_COST, path: "يحمي من السيل · للمربع", tool: "fill" };
   const uc = UP_CARDS[openCat];
   const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === (uc.tool || "upgrade") && (uc.tool || tool.cat === openCat) ? "on" : ""}" data-build="${uc.tool || "upgrade"}" style="--i:0">
@@ -1296,10 +1326,17 @@ function inspect(x, y) {
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
   if (d.radius && (d.happy || d.pollute)) { const line = reachLine(t.b.id, [{ x, y }], up.radius || 0); if (line) html += d.pollute && line.startsWith("⚠️") ? `<div class="need">${line}. الحل: أبعده عن البيوت، أو حط حديقة أو شجر بينهم.</div>` : row(d.pollute ? "الإزعاج" : "يخدم", line.replace(/^يخدم /, "")); }
   if (d.service === "mosque") { const u = mosqueGaps(); html += u ? `<div class="need">${ar(u)} ${u >= 3 && u <= 10 ? "بيوت" : "بيت"} برا مدى المساجد: ابنِ مسجد قريب منها.</div>` : `<div class="need ok">كل البيوت داخل مدى المساجد ✓</div>`; html += `<button class="btn block" id="showMosques" type="button">🕌 اعرض وين توصل المساجد كلها</button>`; }
-  html += `</div><div class="sheet-actions">${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
+  const rNext = roadNext(t.b), rWhy = rNext ? roadUpWhy(x, y) : "";
+  html += `</div><div class="sheet-actions">${rNext && !visiting ? `<button class="btn go block" id="roadUpOne" type="button" ${rWhy ? "disabled" : ""}>⬆ طوّره إلى ${B[rNext].name} (${money(B[rNext].cost)} ريال)</button>${rWhy ? `<p class="hint">${rWhy}</p>` : ""}` : ""}${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
   $("showMosques")?.addEventListener("click", () => { sfx.tap(); mosqueMap(); });
+  $("roadUpOne")?.addEventListener("click", () => {
+    const why = roadUpWhy(x, y) || build(S, x, y, roadNext(S.tiles[idx(x, y)].b));
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.road(); A = analyze(S); world.sync(S, { tiles: false, roads: true, buildings: true }); refresh(); save();
+    inspect(x, y);
+  });
   $("sheetBody").querySelectorAll("[data-follow]").forEach((btn) => btn.addEventListener("click", () => followFamily(idx(x, y), Number(btn.dataset.follow))));
   $("sheetBody").querySelectorAll("[data-day]").forEach((btn) => btn.addEventListener("click", () => familySheet(idx(x, y), Number(btn.dataset.day))));
   $("upgradeOne")?.addEventListener("click", () => {
@@ -2626,8 +2663,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-31", world: "2027-01-03" },
+  v: { solo: "2027-01-04", world: "2027-01-04" },
   items: [
+    ["both", "🛣️", "تطوير الطرق", "بقائمة الطرق صار فيه بطاقة «تطوير الطرق» مثل تطوير المباني: الطرق اللي تقدر تطورها تطلع بالذهبي، اضغط أو اسحب عليها ثم ✓ طوّر (ترابي ← مسفلت ← شارع رئيسي). ولو ضغطت على أي طريق فيه زر «طوّره» على طول."],
     ["world", "😴", "اللي ينام والجوال شغال", "إذا ما لمست اللعبة ربع ساعة بعالم الجوف، النائب يمسك البلد وينطبق حد الكسب وانت برا (حسب مرحلة مدينتك)، واللعبة تخفف رسمها عشان الجوال ما يسخن. أول ما تلمس الشاشة يرجع كل شي ويقولك كم كسبت وانت غافي."],
     ["world", "🧾", "حد للكسب وانت برا", "بعالم الجوف، أكثر شي تكسبه مدينتك وانت طالع: قرية ٥٬٠٠٠، بلدة ١٠٬٠٠٠، مدينة ٢٠٬٠٠٠، محافظة ٤٠٬٠٠٠، حاضرة ٨٠٬٠٠٠. فلوسك اللي كانت قبل ما تطلع ما تنلمس أبد، والخسارة ما يزيدها الحد (درع الغياب يحميك). ولو أحد جاه أكثر من الحد ينرجع الزايد بس وتوصله رسالة."],
     ["world", "⚡", "الجوف صار مباشر", "كل شي بعالم الجوف يوصلك على طول: رسايل الشات، والإنذارات والضربات والهدن، وأخبار نشرة الجوف، ومدن الناس لما يبنون فيها (تشوفها تتغير وانت تزورها). ومدينتك توصل للناس خلال ثواني من أي بناء. والضربة تنحسب بالضبط وقت وصولها حتى لو محد فاتح."],
