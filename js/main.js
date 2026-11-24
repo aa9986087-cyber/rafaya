@@ -1906,6 +1906,7 @@ function warApply(st) {
   home.war ||= { seq: 0 };
   let paid = 0;
   for (const c of st.charges || []) if (c.seq > home.war.seq) { home.money -= c.amount; home.war.seq = c.seq; paid += c.amount; }
+  if (home === S) idleClamp(); // asleep: a war bill is paid from the income kept aside first
   let changed = false;
   const rows = new Map((st.damage || []).map((r) => [`${r.x}:${r.y}`, r]));
   home.tiles.forEach((t, i) => {
@@ -3274,6 +3275,18 @@ function idleCheck() {
   }
 }
 const idleCap = () => AWAY_CAP[Math.min(AWAY_CAP.length - 1, S.era)] ?? AWAY_CAP[0];
+/**
+ * Asleep: the balance never goes above where it was plus the cap. What is above is kept aside (pool),
+ * and any bill that comes later (the province fee, repairs, war) is paid from it first, so the cap never
+ * makes the mayor pay a bill from his own money that the extra income would have paid.
+ */
+function idleClamp() {
+  if (!S?.idle) return;
+  const top = S.idle.money + idleCap();
+  S.idle.pool ||= 0;
+  if (S.money > top) { S.idle.pool += S.money - top; S.money = top; }
+  else if (S.money < top && S.idle.pool > 0) { const add = Math.min(S.idle.pool, top - S.money); S.money += add; S.idle.pool -= add; }
+}
 function idleWake() {
   lastTouch = Date.now();
   if (!S?.idle) return;
@@ -3285,7 +3298,7 @@ for (const ev of ["pointerdown", "keydown", "wheel"]) addEventListener(ev, idleW
 function runHour() {
   idleCheck();
   const { msgs } = step(S);
-  if (S.idle && S.money > S.idle.money + idleCap()) S.money = S.idle.money + idleCap(); // asleep: the away cap
+  idleClamp();
   for (const m of msgs) {
     if (m.kind === "decision") continue; // its own sheet opens
     if (m.kind === "land") continue; // the ground is redrawn by the sync below
@@ -3355,7 +3368,7 @@ function frame(now) {
     if (!paused && wh - S.day > 3) {
       // the phone was asleep or the game in the background: the deputy ran the town (with the away cap)
       const r = deputyCatchUp(S, wh - S.day);
-      if (S.idle && S.money > S.idle.money + idleCap()) S.money = S.idle.money + idleCap(); // asleep and then hidden: still one cap
+      idleClamp(); // asleep and then hidden: still one cap
       A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); save(); refresh();
       if (r && (r.money || r.pop)) deputyReport(r);
     } else if (!paused && S.day < wh) runHour();

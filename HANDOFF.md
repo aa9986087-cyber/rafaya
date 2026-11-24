@@ -269,6 +269,8 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - After 15 min without a touch (`IDLE_MS`; tests set `globalThis.__idleMs`), `S.idle = { money }` is set and `runHour` caps the gain at `AWAY_CAP` for the stage.
     - A deputy catch-up after a hidden spell is clamped to the same cap. The frame drops to 15 fps.
     - A touch (`idleWake`) ends it and says how much was earned.
+    - `idleClamp()` keeps what is above the cap in `S.idle.pool`. Later bills while asleep (fee, repairs, war charges) are paid from the pool first, so the cap only ever removes surplus income, never the mayor's own money.
+    - The deputy's catch-up caps once at the end, so its bills come out of the surplus too.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
