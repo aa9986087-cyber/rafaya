@@ -1337,9 +1337,10 @@ export function deputyCatchUp(s, hours, r = Math.random) {
   }
   s.day += hours - full; // the town keeps the world's hour
   // away, a town gains at most AWAY_CAP for its stage (the money it had before is never touched)
-  const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, s.era)] ?? AWAY_CAP[0];
-  const capped = Math.max(0, Math.round(s.money - start.money - cap));
-  if (capped) s.money = start.money + cap;
+  // (from zero when the town was in debt: the shield clearing a debt is not income, and is never taken back)
+  const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, s.era)] ?? AWAY_CAP[0], base = Math.max(0, start.money);
+  const capped = Math.max(0, Math.round(s.money - base - cap));
+  if (capped) s.money = base + cap;
   return { hours, full, steady, slept: hours > SLEEP_HOURS, pop: s.pop - start.pop, money: Math.round(s.money - start.money), taxFrom: start.tax, did, msgs, cap, capped };
 }
 

@@ -2035,7 +2035,7 @@ function warApply(st) {
   home.war ||= { seq: 0 };
   let paid = 0;
   for (const c of st.charges || []) if (c.seq > home.war.seq) { home.money -= c.amount; home.war.seq = c.seq; paid += c.amount; }
-  if (home === S) idleClamp(); // asleep: a war bill is paid from the income kept aside first
+  if (home === S && paid > 0) idleClamp(); // asleep: a war bill is paid from the income kept aside first (a refund is not)
   let changed = false;
   const rows = new Map((st.damage || []).map((r) => [`${r.x}:${r.y}`, r]));
   home.tiles.forEach((t, i) => {
@@ -2755,8 +2755,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-06" },
+  v: { solo: "2027-01-05", world: "2027-01-07" },
   items: [
+    ["world", "🧾", "تصحيح خصم الغياب", "اللي كانت مدينته مديونة وطلع، ودرع الغياب سدّد دينه، كان ينخصم منه بالغلط كأنه كسب. صلّحناه، ورجّعنا لكل واحد صار له كذا فلوسه مع رسالة اعتذار."],
     ["world", "🔔", "تنبيهات على جوالك", "بعالم الجوف يوصلك تنبيه حتى واللعبة مسكّرة: إذا صاروخ أو مسيّرة جاية لمدينتك أو انضربت، إذا أحد أعلن عليك حرب أو عرض هدنة أو صلح، وإذا أحد ذكر اسمك أو اسم مدينتك بالشات. فعّلها من الإعدادات. بالآيفون: أضف اللعبة للشاشة الرئيسية أول (زر المشاركة ← إضافة إلى الشاشة الرئيسية)."],
     ["both", "⬆️", "التحديث صار إجباري", "إذا نزل تحديث جديد واللعبة عندك قديمة، تطلع لك شاشة «تحديث جديد» وتضغط «حدّث الحين»: مدينتك تنحفظ أول، وتنزل النسخة الجديدة. كذا الكل يلعب على نفس النسخة."],
     ["both", "🛣️", "تطوير الطرق", "بقائمة الطرق صار فيه بطاقة «تطوير الطرق» مثل تطوير المباني: الطرق اللي تقدر تطورها تطلع بالذهبي، اضغط أو اسحب عليها ثم ✓ طوّر (ترابي ← مسفلت ← شارع رئيسي). ولو ضغطت على أي طريق فيه زر «طوّره» على طول."],

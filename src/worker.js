@@ -97,6 +97,22 @@ export class Board extends DurableObject {
       notify: (plot, kind, text) => this.push(plot, "⚔️ صراع الجوف", text, `war-${kind}`), // and on the phone, if the game isn't open
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
     }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
+    this.refundDebtFix();
+  }
+  /**
+   * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
+   * and was taken back (الصالحية: 5,000 → −2,475). Give back what was taken beyond the right amount.
+   */
+  refundDebtFix() {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'refund_debtfix_v1'").toArray().length) return;
+    for (const r of this.sql.exec("SELECT id, plot, owner, town, before, after, cap, taken FROM awayfix WHERE before < 0 AND taken > 0").toArray()) {
+      const right = Math.max(0, r.after - Math.max(0, r.before) - Math.round(r.cap * 1.1)), back = r.taken - right;
+      if (back <= 0) continue;
+      this.war.fine(r.plot, -back, "refund", `🧾 اعتذار: الخصم اللي جاك كان خطأ (درع الغياب سدّد دينك، وهذا مو كسب). رجّعنا لك ${back.toLocaleString("en-US")} ريال.`);
+      this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", back, r.plot);
+      this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", r.plot, r.owner, r.town, r.before, r.after, r.cap, -back, Date.now());
+    }
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('refund_debtfix_v1', ?)", String(Date.now()));
   }
 
   // ---------- notifications on the phone (Web Push, no payload: the phone asks /push/inbox what it was) ----------
@@ -299,9 +315,11 @@ export class Board extends DurableObject {
       // games on phones without the cap too). Only what is above the cap is taken back; the money it had
       // when it left (the last sync before) is never touched. A little room is left for the minutes played since.
       const awayMs = this.env?.WAR_TEST === "1" ? 10000 : 10 * 60000; // local tests: 10 s
-      if (was && was.updated && Date.now() - was.updated > awayMs && int(body.money) > (was.money || 0)) {
+      // (a town that left in debt is measured from zero: the away shield clears debts, and that is not income)
+      const base = Math.max(0, was?.money || 0);
+      if (was && was.updated && Date.now() - was.updated > awayMs && int(body.money) > base) {
         const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, Math.max(was.era || 0, int(body.era)))] ?? AWAY_CAP[0];
-        const taken = int(body.money) - (was.money || 0) - Math.round(cap * 1.1);
+        const taken = int(body.money) - base - Math.round(cap * 1.1);
         if (taken > 0) {
           this.war.fine(me.plot, taken, "away cap", `🧾 تصحيح: مدينتك كسبت وانت برا أكثر من الحد (${cap.toLocaleString("en-US")} ريال لـ${ERAS[was.era || 0]?.name || "مدينتك"}). رجّعنا الزيادة بس (${taken.toLocaleString("en-US")} ريال)، وفلوسك اللي كانت قبل ما انلمست.`);
           this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", me.plot, was.owner, was.town, was.money || 0, int(body.money), cap, taken, Date.now());

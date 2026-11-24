@@ -295,6 +295,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Not sent while that town's game is open in front: sockets ping every 30 s only when visible, and the attachment keeps `seen`. Sends go out after the answer (`outbox`/`flush`, also after the alarm).
     - Client: `pushOn`/`pushOff`/`pushState`, a one-time `pushOffer` card after entering al-Jouf (it waits for other screens), and a toggle in settings. iPhone outside the home screen gets install steps.
     - Local tests: WAR_TEST allows an http://localhost endpoint (a fake push service).
+48. **Away cap bug with debts (owner, 2026-11-24, world only):**
+    - الصالحية left in debt (−7,975). The away shield cleared it, and the town came back with 5,000. The server counted 12,975 as income and took 7,475, leaving −2,475. Reproduced exactly.
+    - Fixed in both places: the client cap and the server cap now count from `max(0, money before)`.
+    - `Board.refundDebtFix()` (once, meta `refund_debtfix_v1`) gives back what such rows took beyond the right amount, as a negative charge with an apology note. It is recorded in `awayfix` with a negative `taken`.
+    - The client's `idleClamp` after charges now runs only for bills (paid > 0), never for refunds.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

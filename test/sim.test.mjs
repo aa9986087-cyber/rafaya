@@ -465,3 +465,12 @@ test("away: a town gains at most AWAY_CAP for its stage, and the money it had is
   assert.ok(s.money >= 0);
   if (r.capped) assert.equal(s.money, before + r.cap);
 });
+
+test("away cap from debt: the shield clearing a debt is not income and is never taken", async () => {
+  const { deputyCatchUp, AWAY_CAP } = await import("../js/sim.js");
+  const s = autoplay(400, 42);
+  s.world = { plot: 1 }; s.money = -7975;
+  deputyCatchUp(s, 24 * 30, rng(3));
+  assert.ok(s.money >= 0, `left at ${s.money}`);
+  assert.ok(s.money <= AWAY_CAP[s.era], "the gain is counted from zero");
+});
