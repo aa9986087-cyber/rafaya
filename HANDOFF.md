@@ -315,6 +315,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `pushIosHelp` shows the code and five steps with share and add icons, or asks for iOS 16.4+. The join sheet has «📲 عندي رمز نقل».
     - **No-code move (done):** `/world/handoff` also returns a long token (7 days, once). `pushIosHelp` puts it in the address (`/?link=TOKEN`) and points the manifest link at `/api/world/manifest?t=TOKEN` (start_url `/?link=TOKEN`).
     - On the home-screen app's first launch, the startup code claims it by itself and cleans the address. The 6-digit code sits under «ما انتقل حسابك؟» as the fallback.
+    - Short steps for each phone. iPhone in Safari: 3 steps (share → add to home screen → open the icon → enable). The code sits under «🔑 احتياط». Android: the phone's own allow prompt, no steps. Refused once: `pushDeniedHelp` gives one step for this phone (iPhone settings, or 🔒 by the address on Android).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

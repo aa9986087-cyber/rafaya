@@ -1579,7 +1579,7 @@ async function pushOn() {
   if (pushState() === "ios-install") { pushIosHelp(); return false; }
   if (!pushable()) { toast("جوالك أو متصفحك ما يدعم التنبيهات", "bad"); return false; }
   const perm = await Notification.requestPermission();
-  if (perm !== "granted") { toast("ما سمحت بالتنبيهات. تقدر تسمح لها من إعدادات المتصفح", "bad"); return false; }
+  if (perm !== "granted") { if (perm === "denied") pushDeniedHelp(); else toast("ما سمحت بالتنبيهات", "bad"); return false; }
   try {
     const reg = PUSH.reg || await navigator.serviceWorker.ready;
     const { key } = await api("/world/push/key");
@@ -1590,6 +1590,12 @@ async function pushOn() {
     toast("🔔 تمام! بيوصلك تنبيه إذا انضربت مدينتك أو أحد ذكرك بالشات", "goal");
     return true;
   } catch { toast("ما زبط تفعيل التنبيهات، جرّب بعد شوي", "bad"); return false; }
+}
+/** Notifications were refused once: how to allow them again, for this phone. */
+function pushDeniedHelp() {
+  sheet(`<h2>🔔 التنبيهات مقفلة</h2><p>رفضتها مرة، ترجّعها كذا:</p>
+    <div class="rows"><div class="row g-step"><b class="g-n">١</b><span>${isIOS ? "إعدادات الآيفون ← <b>الإشعارات</b> ← <b>الرافعية</b> ← اسمح" : "اضغط 🔒 جنب الرابط فوق ← <b>الإشعارات</b> ← <b>سماح</b>"}</span></div>
+    <div class="row g-step"><b class="g-n">٢</b><span>ارجع هنا واضغط «فعّل التنبيهات»</span></div></div>`, "push");
 }
 async function pushOff() {
   try {
@@ -1623,17 +1629,16 @@ async function pushIosHelp() {
       }
     } catch { /* shown without */ }
   }
-  sheet(`<h2>🔔 التنبيهات بالآيفون</h2>
-    ${old ? `<div class="need">جوالك على نظام قديم. التنبيهات تحتاج iOS 16.4 أو أحدث: الإعدادات ← عام ← تحديث البرنامج.</div>` : `<p>الآيفون يعطي تنبيهات للعبة إذا كانت مضافة للشاشة الرئيسية مثل التطبيق. خمس خطوات:</p>
+  sheet(`<h2>🔔 تنبيهات الآيفون</h2>
+    ${old ? `<div class="need">حدّث الآيفون أول: الإعدادات ← عام ← تحديث البرنامج</div>` : `<p>٣ خطوات بس:</p>
     <div class="rows">
-      <div class="row g-step"><b class="g-n">١</b><span>اضغط زر المشاركة ${SHARE_IC} تحت بسفاري</span></div>
-      <div class="row g-step"><b class="g-n">٢</b><span>انزل واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b> ثم <b>«إضافة»</b></span></div>
-      <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>«الرافعية»</b> من أيقونتها بالشاشة: حسابك ومدينتك ينتقلون <b>لحالهم</b></span></div>
-      <div class="row g-step"><b class="g-n">٤</b><span>الإعدادات ← <b>«فعّل التنبيهات»</b> ← <b>«السماح»</b>، وجرّبها بزر «جرّب التنبيه»</span></div>
+      <div class="row g-step"><b class="g-n">١</b><span>اضغط ${SHARE_IC} تحت بسفاري</span></div>
+      <div class="row g-step"><b class="g-n">٢</b><span>اختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b></span></div>
+      <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>الرافعية</b> من الأيقونة ← <b>«فعّل التنبيهات»</b></span></div>
     </div>
-    ${code ? `<details class="ios-fallback"><summary>🔑 احتياط: لو ما انتقل حسابك لحاله</summary><p>عادةً ما تحتاجه: حسابك ينتقل لحاله. بس لو فتحت الأيقونة ولقيت نفسك لاعب جديد، ادخل الجوف ← «احتياط: عندي رمز نقل» واكتب هالرمز (صالح ٣٠ دقيقة):</p>
-      <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}
-    <p class="hint">مدينتك بالجوف ما تضيع: نفس الاسم ونفس المدينة، وتقدر تلعب من سفاري ومن الأيقونة. اللعب الفردي ما ينتقل لحاله: انسخه من الإعدادات ← نسخة احتياطية.</p>`}`, "push");
+    <p class="hint">حسابك ومدينتك ينتقلون لحالهم ✓</p>
+    ${code ? `<details class="ios-fallback"><summary>🔑 احتياط: لو ما انتقل حسابك</summary><p>بالأيقونة: الجوف ← «احتياط: عندي رمز نقل» واكتب (صالح ٣٠ دقيقة):</p>
+      <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 /** The new app (iPhone home screen): bring the account over with the move code. */
@@ -1657,8 +1662,9 @@ function pushOffer(tries = 0) {
   if (st === "on" || st === "no" || st === "denied" || store.get("rafaya-push-asked") === "1" || !worldMode) return;
   if (sheetFor || visiting || WARX.scene) { if (tries < 20) setTimeout(() => pushOffer(tries + 1), 10000); return; } // after the screen in front closes
   store.set("rafaya-push-asked", "1");
-  sheet(`<h2>🔔 تبي تنبيهات على جوالك؟</h2><p>يوصلك تنبيه حتى واللعبة مسكّرة إذا:</p>
-    <div class="rows"><div class="row"><span>🚨 صاروخ أو مسيّرة جاية لمدينتك، أو انضربت</span></div><div class="row"><span>⚔️ أحد أعلن عليك حرب، أو عرض هدنة أو صلح</span></div><div class="row"><span>💬 أحد ذكر اسمك أو اسم مدينتك بالشات</span></div><div class="row"><span>📰 مواطنينك عندهم طلب مهم ينتظر ردك وانت غايب</span></div></div>
+  sheet(`<h2>🔔 تبي تنبيهات؟</h2><p>يوصلك تنبيه حتى واللعبة مسكّرة:</p>
+    <div class="rows"><div class="row"><span>🚨 هجوم على مدينتك أو حرب</span></div><div class="row"><span>💬 أحد ذكرك بالشات</span></div><div class="row"><span>📰 مواطنينك يبونك وانت غايب</span></div></div>
+    ${st === "ios-install" ? `<p class="hint">بالآيفون: ٣ خطوات سهلة تطلع لك بعد ما تضغط «فعّلها».</p>` : ""}
     <div class="sheet-actions two"><button class="btn" id="pushLater" type="button">بعدين</button><button class="btn go" id="pushYes" type="button">🔔 فعّلها</button></div>`, "push");
   $("pushLater").addEventListener("click", closeSheet);
   $("pushYes").addEventListener("click", async () => { if (await pushOn()) closeSheet(); });
@@ -3269,8 +3275,8 @@ function settingsSheet(fromMenu) {
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
     </div>
-    ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>تنبيه على جوالك حتى واللعبة مسكّرة: الهجوم على مدينتك، والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك عندهم طلب مهم ينتظر ردك وانت غايب.</p>
-    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<div class="need">منعت التنبيهات بالمتصفح. اسمح لها من إعدادات المتصفح للموقع.</div>` : st === "no" ? `<div class="need">متصفحك ما يدعم التنبيهات.</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
+    ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
+    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
     <textarea id="saveCode" readonly></textarea>
@@ -3281,6 +3287,7 @@ function settingsSheet(fromMenu) {
     store.set("rafaya-quality", b.dataset.q); save();
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
+  $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
   $("pushTest")?.addEventListener("click", async () => {
     const id = me();
     try { const r = await api("/world/push/test", { name: id.name, secret: id.secret }); toast(r.error || "📲 أرسلنا تنبيه تجربة: لازم يوصلك خلال ثواني", r.error ? "bad" : "goal"); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
