@@ -435,7 +435,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const raw = String(body.code || ""), long = raw.length > 6;
       const code = long ? raw.replace(/[^a-f0-9]/g, "").slice(0, 32) : raw.replace(/\D/g, "").slice(0, 6);
       const row = this.sql.exec("SELECT name, at FROM handoff WHERE code = ?", code).toArray()[0];
-      if (!row || now - row.at > (long ? 7 * 86400000 : 30 * 60000)) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٣٠ دقيقة)" }); }
+      if (!row || now - row.at > (long ? 7 * 86400000 : 86400000)) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٢٤ ساعة)" }); }
       this.sql.exec("DELETE FROM handoff WHERE code = ?", code);
       const pl = this.sql.exec("SELECT name, plot FROM players WHERE name = ?", row.name).toArray()[0];
       if (!pl) return json({ error: "ما لقيت الحساب" });
@@ -505,9 +505,9 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.live({ t: "town", plot: me.plot });
       return json({ ok: true, restarted: at });
     }
-    if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (30 minutes); each works once
+    if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (24 hours); each works once
       const now = Date.now();
-      this.sql.exec("DELETE FROM handoff WHERE name = ? OR (length(code) = 6 AND at < ?) OR at < ?", name, now - 30 * 60000, now - 7 * 86400000);
+      this.sql.exec("DELETE FROM handoff WHERE name = ? OR (length(code) = 6 AND at < ?) OR at < ?", name, now - 86400000, now - 7 * 86400000);
       let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM handoff WHERE code = ?", code).toArray().length);
       const token = makeSecret();
       this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", code, name, now);

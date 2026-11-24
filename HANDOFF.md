@@ -316,6 +316,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - **No-code move (done):** `/world/handoff` also returns a long token (7 days, once). `pushIosHelp` puts it in the address (`/?link=TOKEN`) and points the manifest link at `/api/world/manifest?t=TOKEN` (start_url `/?link=TOKEN`).
     - On the home-screen app's first launch, the startup code claims it by itself and cleans the address. The 6-digit code sits under «ما انتقل حسابك؟» as the fallback.
     - Short steps for each phone. iPhone in Safari: 3 steps (share → add to home screen → open the icon → enable). The code sits under «🔑 احتياط». Android: the phone's own allow prompt, no steps. Refused once: `pushDeniedHelp` gives one step for this phone (iPhone settings, or 🔒 by the address on Android).
+    - **iPhone steps by version (owner said it was hard):**
+      - iOS 26 put Share inside «⋯» (bottom right) and added an «Open as Web App» switch that must stay on, so the steps say both. Older iOS gets ⬆️ with a «⋯» hint.
+      - The fallback code now lasts 24 h.
+      - A home-screen app with no account asks for the code straight away (once), and also when the link didn't work.
 51. **The owner's control panel (owner, 2026-11-24):**
     - `/admin.html` (copied by copy-site, noindex) talks to `/api/admin/*` with an `x-admin` token.
     - Login checks the owner's code against `ADMIN_CODE_HASH` in worker.js. The code itself is only in the owner's chat, never in the repo. Ten failed logins in 10 minutes lock login for 10 minutes. Tokens are kept hashed in `admintokens`.
@@ -341,6 +345,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The game makes a fresh town on the same land and name with `war.seq` 0, and the war notes seen are reset. The trial supports it too.
     - Two phones: the fresh town keeps `world.restartAt` (the server's `restarted`). /sync refuses a copy whose `restartAt` is older and answers `{restarted, town}`. `syncReply` on the other phone swaps in the fresh town (`freshWorldTown`) and says why.
 54. **Telling players what changed (owner, 2026-11-24, both modes):**
+    - **Owner's rule: every update that goes live gets its own new line (a new title) in WHATS_NEW, even a change to an existing feature (e.g. «💰 أسعار الخزنة»), so the updates tab and «الجديد من آخر مرة» show it.**
     - Each phone keeps the WHATS_NEW titles it has seen, per mode (`rafaya-news-titles-<mode>`).
     - `newSinceSheet` («✨ الجديد من آخر مرة») lists only the unseen lines, with «كل التحديثات» for the whole list. A phone that only had the old date stamp gets the newest 5.
     - `maybeWhatsNew` waits for the screen in front (the away or deputy report) to close. It runs on «كمّل» (solo) and on entering al-Jouf; the notifications offer comes after it.
