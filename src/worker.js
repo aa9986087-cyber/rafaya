@@ -14,6 +14,8 @@
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
+//   GET  /api/world/push/key · POST push/sub { name, secret, endpoint } · POST push/unsub { endpoint } · GET push/inbox?k=
+//        notifications on the phone (Web Push, signed with the server's own VAPID keys; the push carries no data)
 //   GET  /api/world/live  (WebSocket)            → hints pushed the moment something changes: chat, war, news, town
 //   GET  /api/world/chat?after=ID               → { messages: [...] }  (the public chat, newest 50 or those after ID)
 //   POST /api/world/chat     { name, secret, text } → { ok, message }  (one message every 6 s, 200 characters)
@@ -50,6 +52,7 @@ async function hash(text) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
 }
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const makeSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 
 export class Board extends DurableObject {
@@ -66,6 +69,10 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
+    // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
+    this.outbox = [];
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
     // money a town gained while away beyond the cap, taken back (a record, so the owner can see who and how much)
     this.sql.exec(`CREATE TABLE IF NOT EXISTS awayfix (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, owner TEXT, town TEXT, before INTEGER, after INTEGER, cap INTEGER, taken INTEGER, at INTEGER)`);
@@ -80,15 +87,57 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM war");
       this.sql.exec("DELETE FROM chat");
       this.sql.exec("DELETE FROM wnews");
+      this.sql.exec("DELETE FROM pushsubs"); this.sql.exec("DELETE FROM pushq");
       this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
     }
     this.war = new WarServer(warDb, {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
       news: (kind, text, plot) => this.news(kind, text, plot),
       ping: (plot) => this.live({ t: "war" }, plot), // a war note for this town: its game asks for the state now
+      notify: (plot, kind, text) => this.push(plot, "⚔️ صراع الجوف", text, `war-${kind}`), // and on the phone, if the game isn't open
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
     }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
   }
+
+  // ---------- notifications on the phone (Web Push, no payload: the phone asks /push/inbox what it was) ----------
+  /** The server's own signing keys (VAPID), made once and kept: nothing to set up by hand. */
+  async vapid() {
+    if (this.vapidKeys) return this.vapidKeys;
+    const row = this.sql.exec("SELECT value FROM meta WHERE key = 'vapid'").toArray()[0];
+    let v = row ? JSON.parse(row.value) : null;
+    if (!v) {
+      const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+      v = { pub: b64url(await crypto.subtle.exportKey("raw", kp.publicKey)), jwk: await crypto.subtle.exportKey("jwk", kp.privateKey) };
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('vapid', ?)", JSON.stringify(v));
+    }
+    v.key = await crypto.subtle.importKey("jwk", v.jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    return (this.vapidKeys = v);
+  }
+  /** Is this town's game open and in front right now (it pinged in the last 50 s)? Then no phone notification. */
+  watching(plot) {
+    return this.ctx.getWebSockets().some((ws) => { const a = ws.deserializeAttachment(); return a?.plot === plot && Date.now() - (a.seen || 0) < 50000; });
+  }
+  /** Queue a notification for a town's phones and wake them (sent after the answer, see flush). */
+  push(plot, title, body, tag = "jouf") {
+    if (plot == null || this.watching(plot)) return;
+    const subs = this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ?", plot).toArray();
+    for (const sub of subs) {
+      this.sql.exec("INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?)", sub.k, title, String(body).slice(0, 180), tag, Date.now());
+      this.outbox.push(this.wake(sub));
+    }
+    this.sql.exec("DELETE FROM pushq WHERE at < ?", Date.now() - 3600000);
+  }
+  async wake(sub) {
+    try {
+      const v = await this.vapid(), now = Math.floor(Date.now() / 1000);
+      const head = b64url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+      const body = b64url(new TextEncoder().encode(JSON.stringify({ aud: new URL(sub.endpoint).origin, exp: now + 12 * 3600, sub: "https://rafaya.vamosx.workers.dev" })));
+      const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, v.key, new TextEncoder().encode(`${head}.${body}`));
+      const r = await fetch(sub.endpoint, { method: "POST", headers: { TTL: "3600", Urgency: "high", "Content-Length": "0", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
+      if (r.status === 404 || r.status === 410) this.sql.exec("DELETE FROM pushsubs WHERE k = ?", sub.k); // the phone dropped it
+    } catch { /* the next one */ }
+  }
+  async flush() { const out = this.outbox.splice(0); if (out.length) await Promise.allSettled(out); }
 
   // ---------- live: one socket per open game, so news reaches everyone the moment it happens ----------
   // The server pushes small hints ({ t: "chat", message } / { t: "war" } / { t: "news" } / { t: "town", plot });
@@ -101,11 +150,15 @@ export class Board extends DurableObject {
   }
   async webSocketMessage(ws, msg) {
     let m; try { m = JSON.parse(String(msg)); } catch { return; }
-    if (m.t === "ping") { try { ws.send('{"t":"pong"}'); } catch { /* gone */ } return; }
+    if (m.t === "ping") { // the game is open and in front (it only pings while visible)
+      ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), seen: Date.now() });
+      try { ws.send('{"t":"pong"}'); } catch { /* gone */ }
+      return;
+    }
     if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
       const row = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", clean(m.name, 16)).toArray()[0];
       const ok = row && row.secret === (await hash(String(m.secret || "")));
-      ws.serializeAttachment({ plot: ok ? row.plot : null });
+      ws.serializeAttachment({ plot: ok ? row.plot : null, seen: Date.now() });
       try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
     }
   }
@@ -120,6 +173,7 @@ export class Board extends DurableObject {
   }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
+    await this.flush();
     await this.armWar();
   }
   /** Tell every open game (or only the town at plot) that something changed. */
@@ -136,7 +190,7 @@ export class Board extends DurableObject {
     const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
     if (parts[1] === "world" && parts[2] === "live" && (WORLD_OPEN || this.env?.WAR_TEST === "1")) return this.liveSocket(request);
     try {
-      if (parts[1] === "world") return this.world(request, parts.slice(2));
+      if (parts[1] === "world") { const res = await this.world(request, parts.slice(2)); await this.flush(); return res; }
       return json({ error: "not found" }, 404);
     } catch (e) {
       return json({ error: "bad request" }, 400);
@@ -181,6 +235,17 @@ export class Board extends DurableObject {
       const after = int(new URL(request.url).searchParams.get("after"));
       const items = this.sql.exec("SELECT id, kind, plot, text, at FROM wnews WHERE id > ? ORDER BY id DESC LIMIT 60", after).toArray();
       return json({ items, now: Date.now() });
+    }
+    if (!post && p[0] === "push" && p[1] === "key") return json({ key: (await this.vapid()).pub });
+    if (!post && p[0] === "push" && p[1] === "inbox") { // the phone's service worker: what to show (by its endpoint's hash)
+      const k = String(new URL(request.url).searchParams.get("k") || "").slice(0, 64);
+      const items = this.sql.exec("SELECT title, body, tag FROM pushq WHERE k = ? ORDER BY id", k).toArray();
+      this.sql.exec("DELETE FROM pushq WHERE k = ?", k);
+      return json({ items });
+    }
+    if (post && p[0] === "push" && p[1] === "unsub") {
+      this.sql.exec("DELETE FROM pushsubs WHERE k = ?", await hash(String(body.endpoint || "")));
+      return json({ ok: true });
     }
     if (!post && p[0] === "awayfix") { // who had money taken back for gaining too much while away, and how much (newest first)
       return json({ list: this.sql.exec("SELECT owner, town, before, after, cap, taken, at FROM awayfix ORDER BY id DESC LIMIT 200").toArray() });
@@ -255,6 +320,13 @@ export class Board extends DurableObject {
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
     }
+    if (p[0] === "push" && p[1] === "sub") { // this phone wants notifications for the player's town
+      const endpoint = String(body.endpoint || "");
+      const okUrl = /^https:\/\//.test(endpoint) || (this.env?.WAR_TEST === "1" && /^http:\/\/localhost/.test(endpoint)); // local tests: a fake push service
+      if (!okUrl || endpoint.length > 1000 || me.plot == null) return json({ error: "bad" }, 400);
+      this.sql.exec("INSERT OR REPLACE INTO pushsubs (k, plot, endpoint, created) VALUES (?, ?, ?, ?)", await hash(endpoint), me.plot, endpoint, Date.now());
+      return json({ ok: true });
+    }
     if (p[0] === "rename") {
       // the mayor may rename the town once
       if (me.plot == null) return json({ error: "no town" }, 400);
@@ -295,6 +367,12 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
       const message = this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
       this.live({ t: "chat", message });
+      // someone named you or your town: a notification on your phone
+      const low = text.toLowerCase();
+      for (const t of this.sql.exec("SELECT plot, owner, town FROM plots").toArray()) {
+        if (t.plot === me.plot) continue;
+        if ((t.town && t.town.length >= 3 && low.includes(t.town.toLowerCase())) || (t.owner && t.owner.length >= 3 && low.includes(t.owner.toLowerCase()))) this.push(t.plot, "💬 شات الجوف", `${name}: ${text}`, "chat");
+      }
       return json({ ok: true, message });
     }
     if (p[0] === "report") {

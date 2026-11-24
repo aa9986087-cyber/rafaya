@@ -20,6 +20,6 @@ if (closed) {
   await cp(new URL("icon.svg", root), new URL("icon.svg", out));
   console.log("MAINTENANCE: site copied as the maintenance page only");
 } else {
-  for (const item of ["index.html", "icon.svg", "css", "js", "vendor"]) await cp(new URL(item, root), new URL(item, out), { recursive: true });
+  for (const item of ["index.html", "icon.svg", "icons", "manifest.webmanifest", "sw.js", "css", "js", "vendor"]) await cp(new URL(item, root), new URL(item, out), { recursive: true });
   console.log("site copied to dist/site");
 }

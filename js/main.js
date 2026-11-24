@@ -1558,6 +1558,68 @@ async function loadClock() {
     }
   } catch { /* keep the local guess */ }
 }
+// ---------- notifications on the phone (al-Jouf): attacks, war and being named in the chat, even with the game shut ----------
+const PUSH = { reg: null };
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+if ("serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker?.register("/sw.js").then((r) => { PUSH.reg = r; }).catch(() => {});
+}
+function pushState() {
+  if (globalThis.RAFAYA_PREVIEW || !onlineOk()) return "no"; // the trial copy has no server to send them
+  if (!pushable()) return isIOS && !standalone() ? "ios-install" : "no";
+  if (Notification.permission === "denied") return "denied";
+  return store.get("rafaya-push-on") === "1" && Notification.permission === "granted" ? "on" : "off";
+}
+const b64urlBytes = (s) => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
+async function pushOn() {
+  const id = me();
+  if (!id?.secret || id.plot == null) { toast("أسّس مدينتك بالجوف أول", "bad"); return false; }
+  if (pushState() === "ios-install") { pushIosHelp(); return false; }
+  if (!pushable()) { toast("جوالك أو متصفحك ما يدعم التنبيهات", "bad"); return false; }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") { toast("ما سمحت بالتنبيهات. تقدر تسمح لها من إعدادات المتصفح", "bad"); return false; }
+  try {
+    const reg = PUSH.reg || await navigator.serviceWorker.ready;
+    const { key } = await api("/world/push/key");
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlBytes(key) });
+    const r = await api("/world/push/sub", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
+    if (r.error) throw new Error(r.error);
+    store.set("rafaya-push-on", "1");
+    toast("🔔 تمام! بيوصلك تنبيه إذا انضربت مدينتك أو أحد ذكرك بالشات", "goal");
+    return true;
+  } catch { toast("ما زبط تفعيل التنبيهات، جرّب بعد شوي", "bad"); return false; }
+}
+async function pushOff() {
+  try {
+    const reg = PUSH.reg || await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (sub) { await api("/world/push/unsub", { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+  } catch { /* fine */ }
+  store.set("rafaya-push-on", "0");
+  toast("وقفت التنبيهات", "");
+}
+function pushIosHelp() {
+  sheet(`<h2>🔔 التنبيهات بالآيفون</h2><p>الآيفون يعطي تنبيهات للعبة إذا كانت مضافة للشاشة الرئيسية:</p>
+    <div class="rows">
+      <div class="row"><span>١. اضغط زر المشاركة <b>⬆️</b> تحت بسفاري</span></div>
+      <div class="row"><span>٢. اختر <b>«إضافة إلى الشاشة الرئيسية»</b></span></div>
+      <div class="row"><span>٣. افتح اللعبة من أيقونتها، وفعّل التنبيهات من هنا</span></div>
+    </div><p class="hint">مدينتك ما تضيع: نفس الحساب ونفس المدينة.</p>`, "push");
+}
+/** Once, on entering al-Jouf: offer notifications (they work best when asked at the right time). */
+function pushOffer(tries = 0) {
+  const st = pushState();
+  if (st === "on" || st === "no" || st === "denied" || store.get("rafaya-push-asked") === "1" || !worldMode) return;
+  if (sheetFor || visiting || WARX.scene) { if (tries < 20) setTimeout(() => pushOffer(tries + 1), 10000); return; } // after the screen in front closes
+  store.set("rafaya-push-asked", "1");
+  sheet(`<h2>🔔 تبي تنبيهات على جوالك؟</h2><p>يوصلك تنبيه حتى واللعبة مسكّرة إذا:</p>
+    <div class="rows"><div class="row"><span>🚨 صاروخ أو مسيّرة جاية لمدينتك، أو انضربت</span></div><div class="row"><span>⚔️ أحد أعلن عليك حرب، أو عرض هدنة أو صلح</span></div><div class="row"><span>💬 أحد ذكر اسمك أو اسم مدينتك بالشات</span></div></div>
+    <div class="sheet-actions two"><button class="btn" id="pushLater" type="button">بعدين</button><button class="btn go" id="pushYes" type="button">🔔 فعّلها</button></div>`, "push");
+  $("pushLater").addEventListener("click", closeSheet);
+  $("pushYes").addEventListener("click", async () => { if (await pushOn()) closeSheet(); });
+}
+
 // ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
 const GAME_FILES = ["./", "index.html", "css/style.css", ...["version", "data", "sim", "people", "models", "world3d", "icons", "warfx", "war", "sound", "news", "main"].map((m) => `js/${m}.js`)];
 async function versionCheck() {
@@ -1596,7 +1658,7 @@ function liveOpen() {
     LIVE.ok = true; LIVE.tries = 0;
     const id = me();
     if (id) ws.send(JSON.stringify({ t: "hello", name: id.name, secret: id.secret }));
-    clearInterval(LIVE.ping); LIVE.ping = setInterval(() => { try { ws.send('{"t":"ping"}'); } catch { /* closing */ } }, 45000); // phones drop quiet sockets
+    clearInterval(LIVE.ping); LIVE.ping = setInterval(() => { if (!document.hidden) try { ws.send('{"t":"ping"}'); } catch { /* closing */ } }, 30000); // phones drop quiet sockets; only while in front (the server sends no phone notification then)
     warPoll(true); chatPoll(true); wnewsPoll(true); // catch up on what happened while not connected
   };
   ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } liveHint(m); };
@@ -1882,6 +1944,7 @@ async function enterWorldTown() {
   save(); worldSync(true);
   if (report) deputyReport(report);
   warBack(!!report);
+  setTimeout(pushOffer, 4000); // waits for the report or any screen in front to close
 }
 function deputyReport(r) {
   const h = r.hours, d = Math.round(h / 24), span = h < 24 ? `${ar(h)} ساعة` : d === 1 ? "يوم" : d === 2 ? "يومين" : `${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`;
@@ -2692,8 +2755,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-05" },
+  v: { solo: "2027-01-05", world: "2027-01-06" },
   items: [
+    ["world", "🔔", "تنبيهات على جوالك", "بعالم الجوف يوصلك تنبيه حتى واللعبة مسكّرة: إذا صاروخ أو مسيّرة جاية لمدينتك أو انضربت، إذا أحد أعلن عليك حرب أو عرض هدنة أو صلح، وإذا أحد ذكر اسمك أو اسم مدينتك بالشات. فعّلها من الإعدادات. بالآيفون: أضف اللعبة للشاشة الرئيسية أول (زر المشاركة ← إضافة إلى الشاشة الرئيسية)."],
     ["both", "⬆️", "التحديث صار إجباري", "إذا نزل تحديث جديد واللعبة عندك قديمة، تطلع لك شاشة «تحديث جديد» وتضغط «حدّث الحين»: مدينتك تنحفظ أول، وتنزل النسخة الجديدة. كذا الكل يلعب على نفس النسخة."],
     ["both", "🛣️", "تطوير الطرق", "بقائمة الطرق صار فيه بطاقة «تطوير الطرق» مثل تطوير المباني: الطرق اللي تقدر تطورها تطلع بالذهبي، اضغط أو اسحب عليها ثم ✓ طوّر (ترابي ← مسفلت ← شارع رئيسي). ولو ضغطت على أي طريق فيه زر «طوّره» على طول."],
     ["world", "😴", "اللي ينام والجوال شغال", "إذا ما لمست اللعبة ربع ساعة بعالم الجوف، النائب يمسك البلد وينطبق حد الكسب وانت برا (حسب مرحلة مدينتك)، واللعبة تخفف رسمها عشان الجوال ما يسخن. أول ما تلمس الشاشة يرجع كل شي ويقولك كم كسبت وانت غافي."],
@@ -3119,6 +3183,8 @@ function settingsSheet(fromMenu) {
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
     </div>
+    ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>تنبيه على جوالك حتى واللعبة مسكّرة: الهجوم على مدينتك، والحرب، ولما أحد يذكرك بالشات.</p>
+    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<div class="need">منعت التنبيهات بالمتصفح. اسمح لها من إعدادات المتصفح للموقع.</div>` : st === "no" ? `<div class="need">متصفحك ما يدعم التنبيهات.</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
     <textarea id="saveCode" readonly></textarea>
@@ -3129,6 +3195,7 @@ function settingsSheet(fromMenu) {
     store.set("rafaya-quality", b.dataset.q); save();
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
+  $("pushToggle")?.addEventListener("click", async (e) => { const on = e.currentTarget.dataset.on === "1"; if (on) await pushOff(); else await pushOn(); settingsSheet(fromMenu); });
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });

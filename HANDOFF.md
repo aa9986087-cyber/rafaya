@@ -284,6 +284,17 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - If the browser still serves old files after one try, it says to close the browser.
     - "dev" (local, the trial, the single-file bundle) never checks.
     - **Never commit a stamped js/version.js** (local deploy tests overwrite it: put "dev" back).
+47. **Phone notifications (owner, 2026-11-24, world only):**
+    - PWA files: `manifest.webmanifest`, `icons/icon-192|512.png`, `sw.js` (notifications only, no caching). copy-site copies them.
+    - Web Push with **no payload**:
+      - The server makes its own VAPID keys once (meta `vapid`); nothing to set in Cloudflare.
+      - `wake()` POSTs to the endpoint with a signed ES256 JWT.
+      - The service worker then GETs `/api/world/push/inbox?k=sha256(endpoint)` to learn what to show.
+    - Tables `pushsubs` (k, plot, endpoint) and `pushq` (1 h). 404/410 drops a subscription.
+    - Sent for every WarServer note (`world.notify`) and when a chat message names your town or player name.
+    - Not sent while that town's game is open in front: sockets ping every 30 s only when visible, and the attachment keeps `seen`. Sends go out after the answer (`outbox`/`flush`, also after the alarm).
+    - Client: `pushOn`/`pushOff`/`pushState`, a one-time `pushOffer` card after entering al-Jouf (it waits for other screens), and a toggle in settings. iPhone outside the home screen gets install steps.
+    - Local tests: WAR_TEST allows an http://localhost endpoint (a fake push service).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

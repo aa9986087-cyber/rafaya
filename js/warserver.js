@@ -83,7 +83,7 @@ export class WarServer {
   note(plot, kind, text, extra = {}) {
     const at = this.now();
     this.db.put("note", `${plot}:${at}:${(noteN = (noteN + 1) % 1e6)}`, { at, kind, text, ...extra }, { k1: String(plot), at });
-    try { this.world?.ping?.(Number(plot)); } catch { /* live hints never stop the war */ }
+    try { this.world?.ping?.(Number(plot)); this.world?.notify?.(Number(plot), kind, text); } catch { /* live hints never stop the war */ }
   }
   /** A line for the world's bulletin (everyone reads it): only wars, truces, peace and strikes, never who is online. */
   news(kind, text, plot) { try { this.world?.news?.(kind, text, plot); } catch { /* the bulletin never stops the war */ } }
