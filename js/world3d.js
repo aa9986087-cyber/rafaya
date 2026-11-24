@@ -1320,6 +1320,8 @@ export class World {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
     let dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
     if (this.perfLevel >= 1) dpr = Math.max(1, Math.min(dpr, this.perfLevel >= 3 ? 1 : 1.25));
+    if (w === this.w && h === this.h && dpr === this.dpr) return;
+    this.dpr = dpr;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     if (this.composer) { this.composer.setPixelRatio(dpr); this.composer.setSize(w, h); }

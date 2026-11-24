@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee, moneyCap, priceOf } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -106,40 +106,54 @@ else focusTown();
 if (!S.cam) world.view.zoom = 0.9;
 world.updateCamera();
 world.sync(S);
-addEventListener("resize", () => { world.resize(); layoutSide(); });
-/**
- * The side buttons sit between the speed buttons and the build dock, never on top of them: on a short
- * screen they get smaller, lose their labels, and if they still do not fit they go in two columns.
- */
-function layoutSide() {
-  const side = document.querySelector(".side"), speeds = document.querySelector(".speeds"), dock = document.querySelector(".dock");
-  if (!side || !speeds || !dock) return;
-  // the rail sits between whatever is lowest on the left at the top and the build bar at the bottom
-  const tops = [speeds, document.querySelector(".hud .stats")].filter(Boolean).map((e) => e.getBoundingClientRect()).filter((r) => r.height); // in the world the speeds are hidden: start under the numbers
-  const top = Math.max(...tops.map((r) => r.bottom), 0) + 10, bottom = dock.getBoundingClientRect().top - 10;
-  const shown = [...side.children].filter((c) => getComputedStyle(c).display !== "none");
-  const n = shown.length, gap = 6, avail = Math.max(0, bottom - top);
-  const fit = (cols) => { const rows = Math.ceil(n / cols); return Math.floor((avail - gap * (rows - 1)) / rows); };
-  let cols = 1, size = fit(1);
-  if (size < 38) { cols = 2; size = fit(2); }
-  size = Math.max(28, Math.min(50, size));
-  const apply = () => {
-    side.style.top = `${Math.round(top)}px`;
+const hud = document.querySelector(".hud"), side = document.querySelector(".side"), dock = document.querySelector(".dock");
+const view = window.visualViewport;
+let layoutFrame = 0, resizeCanvas = false;
+
+function scheduleLayout() {
+  if (layoutFrame) return;
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = 0;
+    if (resizeCanvas) { resizeCanvas = false; world.resize(); }
+    const visible = view && Math.abs(view.scale - 1) < 0.01;
+    const root = document.documentElement;
+    const height = visible ? Math.round(view.height) : innerHeight;
+    root.style.setProperty("--view-height", `${height}px`);
+    root.style.setProperty("--view-top", `${visible ? Math.round(view.offsetTop) : 0}px`);
+
+    const visit = $("visitBar"), dockHeight = dock.offsetHeight;
+    const top = hud.offsetTop + hud.offsetHeight + 6;
+    const toolHeight = $("toolChip").offsetHeight;
+    const bottom = (dockHeight ? dock.offsetTop : visit.offsetHeight ? visit.offsetTop : innerHeight) - (toolHeight ? toolHeight + 12 : 6);
+    const available = Math.max(0, bottom - top);
+    const count = document.body.classList.contains("world") ? side.children.length : side.querySelectorAll(".side-btn:not(.world-only)").length;
+    const gap = 6;
+    const rows = Math.max(1, Math.floor((available + gap) / (44 + gap)));
+    const shortLandscape = innerWidth > innerHeight && innerHeight <= 500;
+    const padding = getComputedStyle(hud);
+    const horizontalRoom = innerWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight);
+    const maxColumns = shortLandscape ? Math.max(1, Math.floor((horizontalRoom + gap) / (44 + gap))) : 3;
+    const columns = Math.min(maxColumns, Math.ceil(count / rows));
+    const needed = Math.ceil(count / columns);
+    const size = Math.min(50, Math.max(44, Math.floor((available - (needed - 1) * gap) / needed)));
+    side.style.top = `${top}px`;
+    side.style.setProperty("--rail-height", `${available}px`);
+    side.style.setProperty("--rail-columns", columns);
     side.style.setProperty("--sz", `${size}px`);
     side.classList.toggle("compact", size < 50);
-    side.classList.toggle("two", cols === 2);
-  };
-  apply();
-  // check what really happened (fonts, Safari's bars): shrink until the last button clears the bar
-  for (let k = 0; k < 12 && shown.length && Math.max(...shown.map((c) => c.getBoundingClientRect().bottom)) > bottom + 1 && size > 26; k++) { size -= 2; apply(); }
+    root.style.setProperty("--dock-space", `${dockHeight}px`);
+  });
 }
-// iPhone Safari shows and hides its bars without a window resize: lay the rail out again whenever
-// the visible area, the HUD or the build bar change size
-window.visualViewport?.addEventListener("resize", () => layoutSide());
-addEventListener("orientationchange", () => setTimeout(layoutSide, 250));
-if (window.ResizeObserver) { const ro = new ResizeObserver(() => layoutSide()); for (const sel of [".hud", ".dock", ".side"]) { const el = document.querySelector(sel); if (el) ro.observe(el); } }
-new MutationObserver(() => layoutSide()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-document.fonts?.ready.then(() => layoutSide());
+addEventListener("resize", () => { resizeCanvas = true; scheduleLayout(); });
+view?.addEventListener("resize", scheduleLayout);
+view?.addEventListener("scroll", scheduleLayout);
+if (window.ResizeObserver) {
+  const observer = new ResizeObserver(scheduleLayout);
+  for (const target of [hud, dock, $("visitBar"), $("toolChip")]) observer.observe(target);
+}
+new MutationObserver(scheduleLayout).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+document.fonts?.ready.then(scheduleLayout);
+scheduleLayout();
 
 const sync = (roads) => world.sync(S, { tiles: false, roads, buildings: true });
 
@@ -149,26 +163,29 @@ const pointers = new Map();
 let drag = null, pinch = null;
 
 canvas.addEventListener("pointerdown", (e) => {
-  if (!playing) return;
+  if (!playing || pointers.size >= 2) return;
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: world.view.zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
     if (arrange?.held && arrange.dragging) arrDrop(null);
+    restoreTapPreview();
     drag = null; return;
   }
   if (arrange) { arrDown(e); return; }
   const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill");
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
-  if (painting) paintAt(e.clientX, e.clientY);
+  if (painting) { drag.pendingBefore = pending.slice(); paintAt(e.clientX, e.clientY); }
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!pointers.has(e.pointerId)) { if (e.pointerType === "mouse" && tool && playing && !pending.length) hoverAt(world.pick(e.clientX, e.clientY)); return; }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && pointers.size >= 2) {
     const [a, b] = [...pointers.values()];
-    world.view.zoom = pinch.zoom; world.zoomBy(Math.hypot(a.x - b.x, a.y - b.y) / pinch.d);
+    const distance = Math.hypot(a.x - b.x, a.y - b.y);
+    if (distance > 0 && pinch.d > 0) { world.view.zoom = pinch.zoom; world.zoomBy(distance / pinch.d); }
+    else if (distance > 0) { pinch.d = distance; pinch.zoom = world.view.zoom; }
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     world.pan(mid.x - pinch.mid.x, mid.y - pinch.mid.y); pinch.mid = mid;
     return;
@@ -180,13 +197,25 @@ canvas.addEventListener("pointermove", (e) => {
   if (drag.moved) { world.pan(e.clientX - drag.lx, e.clientY - drag.ly); drag.lx = e.clientX; drag.ly = e.clientY; }
 });
 canvas.addEventListener("pointerup", (e) => {
-  pointers.delete(e.pointerId);
+  if (!pointers.delete(e.pointerId)) return;
   if (pointers.size < 2) pinch = null;
   if (arrange && drag && pointers.size === 0) { arrUp(e); drag = null; return; }
   if (drag && !drag.moved && !drag.painting && pointers.size === 0) tap(e.clientX, e.clientY);
   if (pointers.size === 0) drag = null;
 });
-canvas.addEventListener("pointercancel", (e) => { pointers.delete(e.pointerId); drag = null; pinch = null; });
+function restoreTapPreview() {
+  if (!drag?.pendingBefore || drag.moved || !tool) return;
+  pending = drag.pendingBefore;
+  showPending();
+}
+function cancelMapPointer(e) {
+  if (!pointers.delete(e.pointerId)) return;
+  if (arrange?.held && arrange.dragging) arrDrop(null);
+  restoreTapPreview();
+  drag = null; pinch = null;
+}
+canvas.addEventListener("pointercancel", cancelMapPointer);
+canvas.addEventListener("lostpointercapture", cancelMapPointer);
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (playing) world.zoomBy(e.deltaY < 0 ? 1.12 : 0.89); }, { passive: false });
 
 /** Quarter turns for the next building, chosen with ↻ before ✓ (kept for the next one too). */
@@ -830,7 +859,7 @@ function lockReason(id) {
 }
 
 function renderCards() {
-  requestAnimationFrame(layoutSide);
+  scheduleLayout();
   const box = $("cards");
   if (!openCat) { box.hidden = true; return; }
   const ids = Object.keys(B).filter((k) => B[k].cat === openCat);
@@ -898,7 +927,7 @@ function refresh() {
   A = analyze(S);
   $("sMoney").textContent = money(S.money);
   const cap = moneyCap(S), full = A.net > 0 && S.money >= cap;
-  $("sNet").textContent = full ? "🔒 الخزنة مليانة" : `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} بالساعة`;
+  $("sNet").textContent = full ? "🔒 الخزنة مليانة" : `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} تقديري`;
   $("sNet").className = full ? "down" : A.net >= 0 ? "up" : "down";
   // al-Jouf: say it once when the vault fills (income stops until money is spent or a vault is built)
   if (full && !refresh.fullSaid && worldMode && !visiting) { refresh.fullSaid = true; toast(`🔒 الخزنة مليانة (${money(cap)}): الدخل يوقف لين تصرف أو تبني «خزنة» أو تطورها`, "bad"); }
@@ -957,7 +986,7 @@ function toast(text, kind = "") {
 let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
-const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region"]);
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget"]);
 function here(text) {
   const n = S?.name;
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
@@ -1891,7 +1920,7 @@ function worldSync(force) {
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!mine?.world) return;
   const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0,
-    snapshot: pack({ ...mine, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
+    snapshot: pack({ ...mine, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
   else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).then((r) => r.json()).then(syncReply).catch(() => {});
@@ -1981,6 +2010,7 @@ function mapZoom(svg, W, H, onPick) {
   let start = null, moved = false, pinch = null;
   svg.style.touchAction = "none";
   svg.addEventListener("pointerdown", (e) => {
+    if (pts.size >= 2) return;
     try { svg.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ }
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 1) { start = { x: e.clientX, y: e.clientY, vx: v.x, vy: v.y, target: e.target }; moved = false; }
@@ -2001,7 +2031,7 @@ function mapZoom(svg, W, H, onPick) {
     }
   });
   const up = (e) => {
-    pts.delete(e.pointerId);
+    if (!pts.delete(e.pointerId)) return;
     if (pts.size < 2) pinch = null;
     if (pts.size === 0) {
       if (start && !moved && e.type === "pointerup") {
@@ -2013,6 +2043,7 @@ function mapZoom(svg, W, H, onPick) {
   };
   svg.addEventListener("pointerup", up);
   svg.addEventListener("pointercancel", up);
+  svg.addEventListener("lostpointercapture", (e) => { if (pts.has(e.pointerId)) up(e); });
   svg.addEventListener("wheel", (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); }, { passive: false });
   const mid = (k) => { const r = svg.getBoundingClientRect(); zoomAt(k, r.left + r.width / 2, r.top + r.height / 2); };
   $("wmIn")?.addEventListener("click", () => { sfx.tap(); mid(1.6); });
@@ -2199,7 +2230,7 @@ async function warSyncNow() {
   const key = warTownKey(home);
   if (key === WARX.syncKey) return;
   const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home), restartAt: home.world?.restartAt || 0,
-    snapshot: pack({ ...home, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
+    snapshot: pack({ ...home, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
   try {
     const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
     if (syncReply(r)) return;
@@ -2243,8 +2274,16 @@ async function warPoll(force) {
 function warApply(st) {
   const home = visiting ? visiting.home : S;
   home.war ||= { seq: 0 };
-  let paid = 0;
-  for (const c of st.charges || []) if (c.seq > home.war.seq) { home.money -= c.amount; home.war.seq = c.seq; paid += c.amount; }
+  let paid = 0, posted = false;
+  const reasons = new Map([["gift", "gift"], ["refund", "refund"], ["away cap", "awayLimit"]]);
+  for (const c of st.charges || []) {
+    if (!(c.seq > home.war.seq)) continue;
+    const kind = reasons.get(c.why) || "worldBill";
+    changeMoney(home, -c.amount, kind, kind === "worldBill" ? String(c.why || "").slice(0, 120) : "");
+    home.war.seq = c.seq;
+    paid += c.amount;
+    posted = true;
+  }
   if (home === S && paid > 0) idleClamp(); // asleep: a war bill is paid from the income kept aside first (a refund is not)
   let changed = false;
   const rows = new Map((st.damage || []).map((r) => [`${r.x}:${r.y}`, r]));
@@ -2258,8 +2297,9 @@ function warApply(st) {
     const ds = (st.arsenal?.drone || 0) + (st.arsenal?.drone2 || 0), ms = (st.arsenal?.missile || 0) + (st.arsenal?.missile2 || 0);
     if (ds !== world.fx.droneStock || ms !== world.fx.missileStock) { world.fx.droneStock = ds; world.fx.missileStock = ms; changed = true; } // what stands on the pads
   }
-  if (!visiting && (changed || paid)) { A = analyze(S); world.sync(S, { buildings: true }); refresh(); }
-  if (paid || changed) { save(); worldSync(true); }
+  if (!visiting && (changed || posted)) { A = analyze(S); world.sync(S, { buildings: true }); refresh(); }
+  if (posted || changed) { save(); worldSync(true); }
+  if (posted && !visiting && sheetFor === "budget") budget();
   warWatch(st); // a fresh attack on us plays first; its notes then wait in the log
   // notes: the newest few as toasts, the big ones into the town's news
   const fresh = (st.notes || []).filter((n) => n.at > warSeen()).sort((a, b) => a.at - b.at);
@@ -2905,7 +2945,7 @@ function regionSheet(pick) {
   $("rgRoad")?.addEventListener("click", () => {
     const c = roadCost(here, sel);
     if (S.money < c) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
-    S.money -= c; RG.roads.push([here, sel]); noteNeighbours(); save(); sfx.build(); toast(`انفتح الطريق بين ${S.name} و${t.name} 🛣️`, "goal"); refresh(); regionSheet(sel);
+    changeMoney(S, -c, "build", "ربط المدن بطريق"); RG.roads.push([here, sel]); noteNeighbours(); save(); sfx.build(); toast(`انفتح الطريق بين ${S.name} و${t.name} 🛣️`, "goal"); refresh(); regionSheet(sel);
   });
   $("sheetBody").querySelectorAll("[data-send]").forEach((b) => b.addEventListener("click", () => {
     const v = Number(b.dataset.send);
@@ -2913,7 +2953,8 @@ function regionSheet(pick) {
     const raw = store.get(townKey(sel));
     if (!raw) return;
     const other = unpack(raw);
-    other.money += v; S.money -= v;
+    changeMoney(other, v, "transfer", S.name);
+    changeMoney(S, -v, "transfer", other.name);
     store.set(townKey(sel), pack(other));
     RG.towns[sel].money = Math.round(other.money);
     save(); refresh(); sfx.coin(); toast(`حوّلت ${money(v)} ريال لـ${t.name}`, "goal"); regionSheet(sel);
@@ -2921,7 +2962,7 @@ function regionSheet(pick) {
   $("rgFound")?.addEventListener("click", () => {
     if (S.money < price) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
     const name = ($("rgName").value || site.name).trim().slice(0, 20);
-    S.money -= price; save();
+    changeMoney(S, -price, "land", site.name); save();
     const town = newGame(Math.floor(Math.random() * 1e9), { terrain: site.terrain, name, site: site.id, money: REGION.startMoney });
     store.set(townKey(site.id), pack(town));
     RG.towns[site.id] = { name, terrain: site.terrain, pop: town.pop, era: 0, money: town.money, net: 0 };
@@ -2966,8 +3007,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-18" },
+  v: { solo: "2027-01-16", world: "2027-01-20" },
   items: [
+    ["world", "📱", "واجهة الجوال أضبط", "الضغط على الأزرار والكتابة بسفاري ما تكبّر الصفحة بالغلط. القوائم والأدوات تتأقلم مع حجم الشاشة، وتقدر تكبّر الخريطة بإصبعين."],
+    ["world", "🧾", "ميزانية أوضح", "اضغط الميزانية وتشوف رصيدك، وكم تتوقع يدخل ويطلع الساعة الجاية. سجل الحركات يبيّن كل مبلغ وسببه، مثل المكافآت والرسوم والهدايا."],
     ["world", "🌍", "عالم الجوف أول القائمة", "اللعب الحين في عالم الجوف. تلقى زرّه أول شي في القائمة الرئيسية، وتدخل العالم إذا ضغطت عليه."],
     ["both", "📲", "لعبتك تنتقل للتطبيق", "بالآيفون: إذا حطيت اللعبة تطبيق بشاشتك (من سفاري: إضافة إلى الشاشة الرئيسية) وفتحتها، تلقى لعبتك كاملة: حساب الجوف ومدنك والإعدادات. ولو فتحت التطبيق ولقيته فاضي: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق» وتكتب الرمز بالتطبيق."],
     ["world", "📱", "الآيفون أسهل", "خطوات الآيفون صارت أوضح وتناسب نسخة جوالك: بالنسخ الجديدة زر المشاركة داخل «⋯» تحت يمين، وخل «فتح كتطبيق ويب» شغّال. ولو فتحت الأيقونة وما انتقل حسابك، يطلب منك رمز الاحتياط على طول (صالح ٢٤ ساعة)."],
@@ -3125,19 +3168,73 @@ function spark(values, color) {
   return `<svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><polyline points="${pts} 300,70 0,70" fill="${color}22" stroke="none"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 
+const MONEY_MOVES = {
+  hour: ["◷", "تشغيل المدينة"], away: ["◷", "تشغيل المدينة وقت غيابك"],
+  build: ["🏘️", "بناء"], upgrade: ["⬆️", "تطوير"], materials: ["🏘️", "شراء مواد بناء"],
+  land: ["🗺️", "شراء أرض"], fill: ["🛠️", "ردم الوادي"], rock: ["🛠️", "إزالة صخر"],
+  move: ["🏘️", "نقل مبنى"], remove: ["🏘️", "مبلغ رجع من إزالة مبنى"],
+  repair: ["🔧", "ترميم"], insurance: ["🛡️", "تعويض التأمين"], shield: ["🛡️", "درع الغياب سدّد الدين"],
+  loan: ["🏦", "مبلغ القرض"], payoff: ["🏦", "سداد باقي القرض"], research: ["📋", "بحث"],
+  decision: ["📋", "قرار البلدية"], investment: ["💼", "عائد استثمار"], goal: ["🎯", "مكافأة مهمة"],
+  election: ["🗳️", "دعم الفوز بالانتخابات"], grant: ["🎉", "دعم من المحافظ"],
+  fee: ["🏦", "رسوم المحافظة السنوية"], cleaning: ["🛣️", "تنظيف الطرق"],
+  gift: ["🎁", "هدية من إدارة الجوف"], refund: ["↩", "مبلغ رجّعته إدارة الجوف"],
+  worldBill: ["📋", "عملية في عالم الجوف"], transfer: ["↔", "تحويل بين المدن"],
+  awayLimit: ["🔒", "خصم كسب الغياب الزايد"], idleLimit: ["🔒", "كسب فوق حدّ الخمول"],
+  idleCover: ["🛡️", "تغطية مصروف من كسب الخمول"]
+};
+const signedMoney = (value) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${fine(Math.abs(value))}`;
+const BUDGET_INCOME = {
+  tax: "ضريبة الأهالي", shops: "المحلات", farms: "المزارع", industry: "الورش والمصانع", visitors: "الزوار والمشاريع"
+};
+const BUDGET_EXPENSES = {
+  staff: "رواتب البلدية", cleaning: "النظافة", waterNet: "شبكة الماء", roads: "الطرق والإنارة",
+  services: "الخدمات", utilities: "تشغيل الماء والكهرباء", business: "تشغيل المحلات والمزارع والمصانع",
+  military: "تشغيل وصيانة القيادة", sites: "مواقع الإنشاء", loan: "أقساط القروض",
+  insurance: "التأمين", health: "علاج أمراض التلوث", theft: "سرقات المحلات"
+};
+function moneyMoveRow(entry, open) {
+  const { amount, day, detail, operating } = entry;
+  const [icon, title] = Object.hasOwn(MONEY_MOVES, entry.kind) ? MONEY_MOVES[entry.kind] : ["📋", "حركة مالية"];
+  const dayLabel = ar(dayOf(S.world?.start != null ? day - S.world.start + 3 : day));
+  const note = operating
+    ? `دخل ${fine(operating.income)} · صرف ${fine(operating.expenses)}${operating.limited ? ` · الخزنة حدّت الكسب بـ${fine(operating.limited)}` : ""}`
+    : detail.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  const hourKey = `hour-${day}`;
+  const breakdown = (labels, values, sign) => Object.entries(labels)
+    .filter(([key]) => Number.isFinite(values?.[key]) && values[key] > 0)
+    .map(([key, label]) => row(label, `<bdi>${signedMoney(sign * values[key])}</bdi> ريال`, sign > 0 ? "plus" : "minus")).join("");
+  const details = operating?.costs ? `<details class="money-hour-details" data-budget-details="${hourKey}" ${open.has(hourKey) ? "open" : ""}>
+    <summary>تفاصيل هالساعة</summary><div class="rows">${breakdown(BUDGET_INCOME, operating.revenue, 1)}${breakdown(BUDGET_EXPENSES, operating.costs, -1)}</div>
+  </details>` : "";
+  return `<div class="money-move">
+    <span class="money-symbol" aria-hidden="true">${icon}</span>
+    <span class="money-move-info"><b>${title}</b>${note ? `<small>${ar(note)}</small>` : ""}<small>اليوم ${dayLabel}</small></span>
+    <b class="${amount > 0 ? "plus" : amount < 0 ? "minus" : ""}"><bdi>${signedMoney(amount)}</bdi> ريال</b>
+  </div>${details}`;
+}
 function budget() {
   const h = S.history;
-  sheet(`<h2>الأرقام</h2>
-    <div class="rows">
-      ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
-      ${S.world ? (() => { const cap = moneyCap(S); return row("🔒 سعة الخزنة", `${money(Math.max(0, S.money))} من ${money(cap)}`, S.money >= cap ? "minus" : "") + `<div class="hint">بالجوف الدخل يتجمع لين تمتلي الخزنة، وبعدها يوقف لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» (ماء وكهرباء) أو طوّرها.</div>`; })() : ""}
-      ${(() => { const d = dayNet(S, A); return row("اللي دخل فعلاً آخر ٢٤ ساعة", `${d >= 0 ? "+" : "−"}${money(Math.abs(d))}`, d >= 0 ? "plus" : "minus"); })()}
-      <div class="hint">💡 الصافي بالساعة يتغير طول اليوم وهذا طبيعي مو خطأ: ${A.prayer && A.prayer.id !== "fajr" ? "<b>الحين وقت صلاة والمحلات مسكرة</b> فمبيعاتها أقل" : "وقت الصلاة المحلات تسكر فتقل مبيعاتها"}، و${A.congestion > 0.02 ? "<b>الحين فيه زحمة</b> تأخر الموظفين والزبائن" : "وقت الذروة الزحمة تأخر الموظفين والزبائن"}. عشان كذا رقم اليوم محسوب من اللي دخل فعلاً، مو ساعة وحدة × ٢٤.</div>
-      ${A.net < 0 && S.money > 0 ? `<div class="need">تخسر كل ساعة. بعد ${ar(Math.max(1, Math.floor(S.money / -A.net)))} ساعة تصير الميزانية بالسالب.</div>` : ""}
-      ${S.broke ? `<div class="need">البلدية مفلسة: المساجد والمدارس والمستوصفات مقفلة لين ترجع الميزانية فوق الصفر.</div>` : S.money < 0 ? `<div class="need">الميزانية بالسالب: الرواتب متأخرة، والخدمات تشتغل بنص طاقتها، والناس زعلانين. لو زادت الديون عن ${money(1500 + A.upkeep * 12)} تفلس البلدية.</div>` : ""}
+  const open = new Set(sheetFor === "budget" ? [...$("sheetBody").querySelectorAll("details[open]")].map((part) => part.dataset.budgetDetails) : []);
+  const section = (id, title) => `<details class="budget-details" data-budget-details="${id}" ${open.has(id) ? "open" : ""}><summary>${title}</summary>`;
+  const entries = (S.moneyLog || []).slice().reverse();
+  const income = A.income + A.farmIncome + A.tax, cap = moneyCap(S);
+  const nextNet = Math.min(A.net, Math.max(0, cap - S.money));
+  sheet(`<h2>الميزانية</h2>
+    <div class="budget-balance"><span>الرصيد الحالي</span><strong><bdi>${money(S.money)}</bdi> <small>ريال</small></strong></div>
+    <h3>تقدير الساعة الجاية</h3>
+    <div class="budget-totals">
+      <div><span>↓ يدخل</span><b class="plus"><bdi>${signedMoney(income)}</bdi></b></div>
+      <div><span>↑ يطلع</span><b class="minus"><bdi>${signedMoney(-A.upkeep)}</bdi></b></div>
+      <div><span>= الصافي</span><b class="${nextNet < 0 ? "minus" : "plus"}"><bdi>${signedMoney(nextNet)}</bdi></b></div>
     </div>
-    ${provinceFee(S) ? `<div class="rows">${row(`رسوم المحافظة (بعد ${ar(Math.ceil(hoursToElection(S) / 24))} يوم)`, `تقريبًا −${money(provinceFee(S))}`, "minus")}<div class="hint">تندفع مرة بالسنة، على قد الوقت اللي قضيته بكل مرحلة (قرية ببلاش، بلدة، مدينة…). ويوصلك تنبيه قبلها بـ٣ أيام وبيوم.</div></div>` : ""}
-    <h3>الدخل بالساعة</h3>
+    ${nextNet < A.net ? '<p class="hint">سعة الخزنة تحدّ من المبلغ اللي يزيد على رصيدك.</p>' : ""}
+    ${S.broke ? '<p class="need">البلدية مفلسة. بعض الخدمات مقفلة لين يرجع الرصيد فوق الصفر.</p>' : S.money < 0 ? '<p class="need">رصيد البلدية بالسالب. الخدمات تشتغل بنص طاقتها.</p>' : ""}
+    <h3>🧾 آخر الحركات</h3>
+    ${entries.length ? `<div class="rows">${entries.slice(0, 3).map((entry) => moneyMoveRow(entry, open)).join("")}</div>` : '<p class="hint">تظهر هنا أي مبالغ تدخل أو تنخصم من الآن.</p>'}
+    ${entries.length > 3 ? `${section("history", "حركات أقدم")}<div class="rows">${entries.slice(3).map((entry) => moneyMoveRow(entry, open)).join("")}</div></details>` : ""}
+    ${section("income", "↓ من وين يجي الدخل؟")}
+      <p class="hint">الأرقام تقديرية وتتغيّر مع المبيعات والصلاة والزحمة.</p>
     <div class="rows">
       ${row("الضرائب على الأهالي", `+${fine(A.tax)}`, "plus")}
       ${row("مبيعات المحلات", `+${fine(A.shopIncome)}`, "plus")}
@@ -3147,8 +3244,8 @@ function budget() {
       ${A.industryRaw > A.exportDemand * 1.02 ? `<div class="need">التجار يشترون من الورش والمصانع بقيمة ${fine(A.exportDemand)} بالساعة بس. الإنتاج الزايد (${fine(A.industryRaw - A.exportDemand)}) ينباع بثلث السعر. يزيد الطلب كل ما كثر سكان البلد.</div>` : ""}
       ${row("المزارع", `+${fine(A.farmIncome)}`, "plus")}
       ${A.farmRaw > A.farmDemand * 1.02 ? `<div class="need">التجار يشترون من محاصيل المزارع بقيمة ${fine(A.farmDemand)} بالساعة بس. المحصول الزايد (${fine(A.farmRaw - A.farmDemand)}) ينباع بـ٤٠٪ من سعره. يزيد الطلب لما يزيد الناس أو توصّل مدن جارة بطريق.</div>` : ""}
-    </div>
-    <h3>المصاريف بالساعة</h3>
+    </div></details>
+    ${section("expenses", "↑ وين يروح الصرف؟")}
     <div class="rows">
       ${row("رواتب موظفي البلدية", `−${fine(A.costs.staff)}`, "minus")}
       ${row("النظافة وجمع النفايات", `−${fine(A.costs.cleaning)}`, "minus")}
@@ -3163,8 +3260,11 @@ function budget() {
       ${A.costs.insurance ? row("التأمين على المباني", `−${fine(A.costs.insurance)}`, "minus") : ""}
       ${A.costs.health ? row("علاج أمراض التلوث", `−${fine(A.costs.health)}`, "minus") : ""}
       ${A.costs.theft ? row("سرقات من المحلات (حارات بلا شرطة)", `−${fine(A.costs.theft)}`, "minus") : ""}
-      ${row("المجموع", `−${fine(A.upkeep)}`, "minus")}
-    </div>
+      ${row("المجموع بالساعة", `−${fine(A.upkeep)}`, "minus")}
+      ${provinceFee(S) ? row(`رسوم المحافظة بعد ${ar(Math.ceil(hoursToElection(S) / 24))} يوم`, `تقريبًا −${money(provinceFee(S))} ريال`, "minus") : ""}
+    </div></details>
+    ${section("manage", "🏦 الخزنة والبنك وإدارة الميزانية")}
+    ${S.world ? row("🔒 سعة الخزنة", `${money(Math.max(0, S.money))} من ${money(cap)} ريال`) : ""}
     ${S.staffRaise ? `<p>رواتب البلدية زادت ${ar(Math.round(S.staffRaise * 100))}٪ من العلاوات السنوية. وكل سنة تدفع رسوم المحافظة.</p>` : ""}
     <h3>🚦 المرور</h3><div class="rows">
       ${row("مشاوير الدوام وقت الذروة", `${ar(A.trips || 0)} سيارة`)}
@@ -3195,7 +3295,7 @@ function budget() {
       ${A.unconnected ? `<div class="need">${ar(A.unconnected)} بيوت ما عندها طريق، فما أحد يسكنها.</div>` : ""}
     </div>
     <h3>السكان</h3>${spark(h.map((x) => x.p), "#2c8a7a")}
-    <h3>الميزانية</h3>${spark(h.map((x) => x.m), "#c48a24")}`, "budget");
+    <h3>الميزانية</h3>${spark(h.map((x) => x.m), "#c48a24")}</details>`, "budget");
   $("openBank").addEventListener("click", () => { sfx.tap(); bankSheet(); });
   $("showTraffic").addEventListener("click", () => {
     closeSheet();
@@ -3620,8 +3720,7 @@ function startPlaying() {
   document.body.classList.remove("at-menu");
   playing = true;
   refresh();
-  // the top bar slides in when the game starts: place the side buttons once it has settled
-  for (const ms of [0, 300, 700, 1400]) setTimeout(layoutSide, ms);
+  scheduleLayout();
 }
 
 $("mHow").addEventListener("click", () => { sfx.tap(); howTo(true); });
@@ -3654,8 +3753,14 @@ function idleClamp() {
   if (!S?.idle) return;
   const top = S.idle.money + idleCap();
   S.idle.pool ||= 0;
-  if (S.money > top) { S.idle.pool += S.money - top; S.money = top; }
-  else if (S.money < top && S.idle.pool > 0) { const add = Math.min(S.idle.pool, top - S.money); S.money += add; S.idle.pool -= add; }
+  if (S.money > top) {
+    S.idle.pool += S.money - top;
+    changeMoney(S, top - S.money, "idleLimit");
+  } else if (S.money < top && S.idle.pool > 0) {
+    const add = Math.min(S.idle.pool, top - S.money);
+    changeMoney(S, add, "idleCover");
+    S.idle.pool -= add;
+  }
 }
 function idleWake() {
   lastTouch = Date.now();
@@ -3757,7 +3862,7 @@ function frame(now) {
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
   if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
-  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); if (playing) layoutSide(); }
+  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
   const t0 = performance.now();
   world.frame(dt, tod);
   perfWatch(performance.now() - t0, now);
@@ -3771,16 +3876,12 @@ function frame(now) {
 
 // ---------- iPhone Safari and leaving the page ----------
 
-for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
-document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 && e.target !== canvas) e.preventDefault(); }, { passive: false });
-let lastTouchEnd = 0;
-document.addEventListener("touchend", (e) => {
-  const t = Date.now();
-  if (t - lastTouchEnd < 320 && e.target !== canvas && !["TEXTAREA", "INPUT"].includes(e.target.tagName) && e.cancelable) {
-    e.preventDefault(); e.target.closest?.("button:not([disabled])")?.click();
-  }
-  lastTouchEnd = t;
-}, { passive: false });
+// Safari also emits legacy pinch gestures. Only the two game maps own those gestures.
+for (const event of ["gesturestart", "gesturechange"]) {
+  document.addEventListener(event, (e) => {
+    if (pointers.size || e.target.closest?.("#map, .wm-map")) e.preventDefault();
+  }, { passive: false });
+}
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) save();
   else if (playing) refresh();

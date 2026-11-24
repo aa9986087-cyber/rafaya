@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@700&family=Reem+Kufi:wght@600;700&family=Tajawal:wght@500;700;800&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=4">
   <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/jsm/" } }</script>
 </head>
 <body class="at-menu">
@@ -59,15 +59,15 @@
     </header>
 
     <div class="side">
-      <button id="councilBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M3 10h18L12 4 3 10Z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>المجلس</span><i class="dot" id="councilDot" hidden></i></button>
-      <button id="budgetBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الأرقام</span></button>
-      <button id="newsBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 12h7M7 15h4"/></svg><span>النشرة</span><i class="count" id="newsCount" hidden></i></button>
-      <button id="worldBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z"/></svg><span>الجوف</span></button>
-      <button id="warBtn" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>القيادة</span><i class="dot" id="warDot" hidden></i></button>
-      <button id="chatBtn" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span>الشات</span><i class="count" id="chatCount" hidden></i></button>
-      <button id="deputyBtn" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/><path d="M12 13l-1.5 3 1.5 4 1.5-4z"/></svg><span>النائب</span></button>
-      <button id="turnBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>لفّ</span></button>
-      <button id="pauseMenuBtn" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>القائمة</span></button>
+      <button id="councilBtn" aria-label="المجلس" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M3 10h18L12 4 3 10Z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>المجلس</span><i class="dot" id="councilDot" hidden></i></button>
+      <button id="budgetBtn" aria-label="الميزانية" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الأرقام</span></button>
+      <button id="newsBtn" aria-label="النشرة" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 12h7M7 15h4"/></svg><span>النشرة</span><i class="count" id="newsCount" hidden></i></button>
+      <button id="worldBtn" aria-label="خريطة الجوف" class="side-btn" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z"/></svg><span>الجوف</span></button>
+      <button id="warBtn" aria-label="القيادة" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>القيادة</span><i class="dot" id="warDot" hidden></i></button>
+      <button id="chatBtn" aria-label="الشات" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span>الشات</span><i class="count" id="chatCount" hidden></i></button>
+      <button id="deputyBtn" aria-label="نائب العمدة" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/><path d="M12 13l-1.5 3 1.5 4 1.5-4z"/></svg><span>النائب</span></button>
+      <button id="turnBtn" aria-label="لف الكاميرا" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>لفّ</span></button>
+      <button id="pauseMenuBtn" aria-label="القائمة" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>القائمة</span></button>
     </div>
 
     <div id="floaters" class="floaters" aria-hidden="true"></div>
@@ -109,6 +109,6 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="loading" class="loading"><b>الرافعية</b><span>نجهّز الوادي…</span></div>
 
-  <script type="module" src="js/main.js?v=3"></script>
+  <script type="module" src="js/main.js?v=5"></script>
 </body>
 </html>

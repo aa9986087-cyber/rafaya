@@ -33,6 +33,24 @@ export function plotAt(x, y) {
 }
 export const owns = (s, x, y) => { const p = plotAt(x, y); return !p || !!s.owned?.[p]; };
 export const plotPrice = (s) => PLOT_PRICES[Math.min(PLOT_PRICES.length - 1, PLOTS.filter((p) => s.owned?.[p.id]).length)];
+/** Keep a bounded receipt history alongside the town save. */
+function recordMoney(s, amount, kind, detail = "", operating) {
+  if (!Number.isFinite(amount) || (!amount && !operating)) return;
+  const entries = s.moneyLog ||= [];
+  const last = entries[entries.length - 1];
+  if (amount && !operating && last?.day === s.day && last.kind === kind && last.detail === detail && Math.sign(last.amount) === Math.sign(amount)) {
+    last.amount += amount;
+    return;
+  }
+  entries.push({ day: s.day, amount, kind, detail, ...(operating ? { operating } : {}) });
+  if (entries.length > 80) entries.shift();
+}
+
+export function changeMoney(s, amount, kind, detail) {
+  s.money += amount;
+  recordMoney(s, amount, kind, detail);
+}
+
 export function buyPlot(s, id) {
   if (!PLOTS.some((p) => p.id === id)) return "ما فيه أرض كذا";
   if (s.owned[id]) return "الأرض لك من قبل";
@@ -40,7 +58,7 @@ export function buyPlot(s, id) {
   if (need && !s.owned[need]) return `اشترِ «${PLOTS.find((p) => p.id === need).name}» أول`;
   const price = plotPrice(s);
   if (s.money < price) return "ما يكفي المال";
-  s.money -= price;
+  changeMoney(s, -price, "land", PLOTS.find((p) => p.id === id).name);
   s.owned[id] = true;
   return "";
 }
@@ -228,7 +246,8 @@ export function build(s, x, y, id) {
   if (why) return why;
   const t = s.tiles[idx(x, y)];
   const keepRock = B[id].onRock;
-  s.money -= priceOf(s, id) + (t.t === "rock" && !keepRock ? ROCK_CLEAR : 0);
+  changeMoney(s, -priceOf(s, id), "build", B[id].name);
+  if (t.t === "rock" && !keepRock) changeMoney(s, -ROCK_CLEAR, "rock");
   if (t.t === "rock" && !keepRock) t.t = "sand";
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
@@ -448,7 +467,7 @@ export function fillWadi(s, x, y) {
   if (t.t !== "wadi") return "الردم على أرض الوادي بس";
   if (t.b) return "شيل اللي عليها أول";
   if (s.money < FILL_COST) return "ما يكفي المال";
-  s.money -= FILL_COST; t.t = "sand";
+  changeMoney(s, -FILL_COST, "fill"); t.t = "sand";
   return "";
 }
 /** One hour of groundwater: pumping by wells, tanks and pivots; rain, lakes and spring refill it. */
@@ -559,7 +578,8 @@ export function moveBuilding(s, fx, fy, tx, ty) {
   const why = moveBlocker(s, fx, fy, tx, ty);
   if (why) return why;
   const src = s.tiles[idx(fx, fy)], dst = s.tiles[idx(tx, ty)];
-  s.money -= moveCost(src.b) + (dst.t === "rock" && !B[src.b.id].onRock ? ROCK_CLEAR : 0);
+  changeMoney(s, -moveCost(src.b), "move", levelName(src.b));
+  if (dst.t === "rock" && !B[src.b.id].onRock) changeMoney(s, -ROCK_CLEAR, "rock");
   if (dst.t === "rock" && !B[src.b.id].onRock) dst.t = "sand";
   dst.b = src.b; src.b = null;
   return "";
@@ -571,14 +591,14 @@ export function demolish(s, x, y) {
   if (!owns(s, x, y)) return "الأرض هذي مو لك";
   if (t.b) {
     const def = B[t.b.id];
-    s.money += Math.floor(def.cost / 3);
+    changeMoney(s, Math.floor(def.cost / 3), "remove", levelName(t.b));
     s.pop = Math.max(0, s.pop - (t.b.res || 0));
     t.b = null;
     return "";
   }
   if (t.t === "rock") {
     if (s.money < ROCK_CLEAR) return "ما يكفي المال";
-    s.money -= ROCK_CLEAR; t.t = "sand"; return "";
+    changeMoney(s, -ROCK_CLEAR, "rock"); t.t = "sand"; return "";
   }
   return "ما فيه شي هنا";
 }
@@ -597,7 +617,7 @@ export function repair(s, x, y) {
   const b = s.tiles[idx(x, y)].b, cost = repairCost(b);
   if (!cost) return "ما يحتاج ترميم";
   if (s.money < cost) return "ما يكفي المال";
-  s.money -= cost; b.cond = 100; b.ruin = 0;
+  changeMoney(s, -cost, "repair", levelName(b)); b.cond = 100; b.ruin = 0;
   return "";
 }
 /** Repair everything that needs it (worst first) while the money lasts. Returns how many and the cost. */
@@ -605,12 +625,13 @@ export function repairAll(s) {
   const list = s.tiles.filter((t) => repairCost(t.b) > 0).sort((p, q) => (p.b.cond ?? 100) - (q.b.cond ?? 100));
   let n = 0, spent = 0;
   for (const t of list) { const c = repairCost(t.b); if (s.money < c) break; s.money -= c; spent += c; t.b.cond = 100; t.b.ruin = 0; n++; }
+  recordMoney(s, -spent, "repair", s.away ? "ترميمات نائب العمدة" : "ترميم مجموعة مبانٍ");
   return { n, spent };
 }
 /** A building is lost (fire, flood, collapse): insurance pays part of it back. Returns the refund. */
 export function lose(s, t) {
   const refund = s.insured && t.b ? Math.round(B[t.b.id].cost * UPKEEP_RULES.insurePays) : 0;
-  s.money += refund;
+  changeMoney(s, refund, "insurance", t.b ? levelName(t.b) : "");
   t.b = null;
   return refund;
 }
@@ -903,7 +924,8 @@ export function upgradePrice(s, b) {
 function payUpgrade(s, b) {
   const p = upgradePrice(s, b);
   if (s.money < p.total) return "ما يكفي المال";
-  s.money -= p.total;
+  changeMoney(s, -p.money, "upgrade", levelName(b));
+  changeMoney(s, -p.short * MAT.price, "materials");
   s.materials = Math.max(0, (s.materials || 0) - (p.mats - p.short));
   return "";
 }
@@ -1043,7 +1065,7 @@ export function takeLoan(s, id, a = analyze(s)) {
   const o = LOANS.find((l) => l.id === id);
   s.loans ||= [];
   s.loans.push({ id: o.id, name: o.name, amount: o.amount, rate: o.rate, per: loanPer(o), left: o.days * 24, total: o.days * 24 });
-  s.money += o.amount;
+  changeMoney(s, o.amount, "loan", o.name);
   return "";
 }
 /** Paying a loan off early: what is left of the amount, without the interest still to come. */
@@ -1053,7 +1075,7 @@ export function payLoan(s, i) {
   if (!l) return "ما فيه قرض";
   const cost = payoffCost(l);
   if (s.money < cost) return "ما يكفي المال";
-  s.money -= cost;
+  changeMoney(s, -cost, "payoff");
   s.loans.splice(i, 1);
   return "";
 }
@@ -1106,6 +1128,12 @@ export function step(s, r = Math.random) {
   });
   a.moneyCap = moneyCap(s);
   s.capLost = earn(s, a.net, a); // al-Jouf: income stops at a full vault
+  a.appliedNet = a.net - s.capLost;
+  if (!s.away) recordMoney(s, a.appliedNet, "hour", "", {
+    income: a.income + a.farmIncome + a.tax, expenses: a.upkeep, limited: s.capLost,
+    costs: a.costs,
+    revenue: { tax: a.tax, shops: a.shopIncome, farms: a.farmIncome, industry: a.industryIncome, visitors: a.visitorIncome }
+  });
   s.happy = Math.round((s.happy * 0.7 + a.happyTarget * 0.3) * 10) / 10;
   const seasonBefore = seasonOf(s.day).i, yearBefore = Math.floor((s.day - 1) / YEAR_HOURS);
   s.day++;
@@ -1152,7 +1180,7 @@ export function step(s, r = Math.random) {
   // Investments come due: the trader pays double, or the money is gone.
   s.investments = (s.investments || []).filter((v) => {
     if (s.day < v.at) return true;
-    if (r() < v.chance) { s.money += v.back; msgs.push({ kind: "goal", text: `الاستثمار نجح! رجع لك ${v.back} ريال.` }); }
+    if (r() < v.chance) { changeMoney(s, v.back, "investment"); msgs.push({ kind: "goal", text: `الاستثمار نجح! رجع لك ${v.back} ريال.` }); }
     else msgs.push({ kind: "event", title: "خسارة", text: `التاجر خسر في المشروع وراحت الـ${v.amount} ريال.` });
     return false;
   });
@@ -1172,12 +1200,12 @@ export function step(s, r = Math.random) {
   if (Math.floor((s.day - 1) / YEAR_HOURS) > yearBefore) {
     const fee = provinceFee(s);
     s.feeHours = {};
-    if (fee) { s.money -= fee; msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
+    if (fee) { changeMoney(s, -fee, "fee"); msgs.push({ kind: "event", title: "رسوم المحافظة", text: `دفعت الرافعية رسومها السنوية للمحافظة: ${fee} ريال.` }); }
     if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }
     if (s.pop >= 30) {
       const share = voteShare(s), won = share >= 0.5, year = Math.floor((s.day - 1) / YEAR_HOURS);
       const grant = won ? ELECTION_GRANT[s.era] : 0;
-      if (won) { s.money += grant; s.events.push({ id: "boost", name: "فرحة الفوز بالانتخابات", left: 48, hours: 48, happy: 6 }); s.feeX = 1; }
+      if (won) { changeMoney(s, grant, "election"); s.events.push({ id: "boost", name: "فرحة الفوز بالانتخابات", left: 48, hours: 48, happy: 6 }); s.feeX = 1; }
       else { s.events.push({ id: "boost", name: "زعل بعد الانتخابات", left: 48, hours: 48, happy: -5 }); s.feeX = 2; s.trust = Math.max(s.trust ?? 60, 50); }
       s.elections = [...(s.elections || []), { year, share: Math.round(share * 100), won }].slice(-10);
       msgs.push({ kind: "election", share, won, grant, record: { ...(s.record || {}) } });
@@ -1215,8 +1243,8 @@ export function step(s, r = Math.random) {
     const name = ev.id === "rain" ? RAIN_NAMES[sid] || ev.name : ev.name;
     s.events.push({ id: ev.id, left: ev.days, name });
     let text = ev.text;
-    if (ev.id === "dust" && a.count.road) { const clean = a.count.road * 3; s.money -= clean; text += ` (تنظيف الطرق الترابية: ${clean} ريال)`; }
-    if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); s.money += g; text += ` (+${g} ريال)`; }
+    if (ev.id === "dust" && a.count.road) { const clean = a.count.road * 3; changeMoney(s, -clean, "cleaning", "تنظيف الطرق بعد الغبار"); text += ` (تنظيف الطرق الترابية: ${clean} ريال)`; }
+    if (ev.gift) { const g = 200 + Math.round(s.pop * 0.8); changeMoney(s, g, "grant"); text += ` (+${g} ريال)`; }
     msgs.push({ kind: "event", title: name, text });
   }
   // Now and then a choice for the mayor, with at least three days between them.
@@ -1230,7 +1258,7 @@ export function step(s, r = Math.random) {
   // Goals.
   const g = GOALS[s.goal];
   if (g && g.test(goalView(s, analyze(s)))) {
-    s.money += g.reward;
+    changeMoney(s, g.reward, "goal", g.text);
     msgs.push({ kind: "goal", text: `أنجزت: ${g.text} (+${g.reward} ريال)` });
     s.goal++;
   }
@@ -1269,16 +1297,16 @@ export function decide(s, i) {
   const a = analyze(s);
   const cost = optionCost(s, a, o);
   if (cost && s.money < cost) return { error: "ما يكفي المال" };
-  s.money -= cost;
+  changeMoney(s, -cost, "decision", d.title || d.name);
   if (o.popLoss) s.pop = Math.max(0, Math.round(s.pop * (1 - o.popLoss)));
-  if (o.moneyLoss && s.money > 0) s.money = Math.round(s.money * (1 - o.moneyLoss));
+  if (o.moneyLoss && s.money > 0) changeMoney(s, Math.round(s.money * (1 - o.moneyLoss)) - s.money, "decision", d.title || d.name);
   let lost = "";
   if (o.destroy) {
     const spots = [];
     s.tiles.forEach((t) => { if (t.b && o.destroy.includes(t.b.id)) spots.push(t); });
     if (spots.length) { const t = spots[(s.day * 7919 + spots.length) % spots.length]; lost = B[t.b.id].name; lose(s, t); }
   }
-  s.money += (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms;
+  changeMoney(s, (o.money || 0) + (o.moneyPerPalm || 0) * a.count.palms, "decision", d.title || d.name);
   if (o.tax) s.tax = clamp(s.tax + o.tax, 0, 25);
   if (o.raise) s.staffRaise = (s.staffRaise || 0) + o.raise;
   if (o.invest) (s.investments ||= []).push({ ...o.invest, at: s.day + o.invest.hours });
@@ -1311,7 +1339,7 @@ export function startResearch(s, id) {
   if (!t || s.tech[id] || s.research) return "فيه بحث شغّال";
   if (t.era > s.era) return `تحتاج الرافعية تصير ${ERAS[t.era].name}`;
   if (s.money < t.cost) return "ما يكفي المال";
-  s.money -= t.cost;
+  changeMoney(s, -t.cost, "research", t.name);
   s.research = { id, left: t.days };
   return "";
 }
@@ -1350,11 +1378,13 @@ export function deputyCatchUp(s, hours, r = Math.random) {
   const msgs = [], did = { repairs: 0, decisions: 0, shield: 0, taxUp: 0 };
   const full = Math.min(hours, DEPUTY_FULL_HOURS);
   s.away = true;
-  let dayPop = s.pop;
+  let dayPop = s.pop, operating = 0;
   for (let i = 0; i < full; i++) {
-    msgs.push(...step(s, r).msgs);
+    const hour = step(s, r);
+    operating += hour.a.appliedNet;
+    msgs.push(...hour.msgs);
     if (s.decision) { decideDefault(s); did.decisions++; }
-    if (s.money < 0) { s.money = 0; did.shield++; }
+    if (s.money < 0) { changeMoney(s, -s.money, "shield"); did.shield++; }
     if (i % 24 === 23) {
       if (s.pop < Math.ceil(dayPop * 0.95)) { s.pop = Math.ceil(dayPop * 0.95); did.shield++; }
       dayPop = s.pop;
@@ -1370,14 +1400,17 @@ export function deputyCatchUp(s, hours, r = Math.random) {
   if (rest > 0) {
     const net = analyze(s).net;
     steady = Math.round(net > 0 ? net * rest * 0.8 : Math.max(net * rest, -Math.max(0, s.money - orders.floor)));
+    const beforeSteady = s.money;
     if (steady > 0) earn(s, steady); else s.money = Math.max(0, s.money + steady);
+    operating += s.money - beforeSteady;
   }
   s.day += hours - full; // the town keeps the world's hour
+  recordMoney(s, operating, "away");
   // away, a town gains at most AWAY_CAP for its stage (the money it had before is never touched)
   // (from zero when the town was in debt: the shield clearing a debt is not income, and is never taken back)
   const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, s.era)] ?? AWAY_CAP[0], base = Math.max(0, start.money);
   const capped = Math.max(0, Math.round(s.money - base - cap));
-  if (capped) s.money = base + cap;
+  if (capped) changeMoney(s, base + cap - s.money, "awayLimit");
   return { hours, full, steady, slept: hours > SLEEP_HOURS, pop: s.pop - start.pop, money: Math.round(s.money - start.money), taxFrom: start.tax, did, msgs, cap, capped };
 }
 
@@ -1408,6 +1441,10 @@ export function unpack(text) {
     o.tiles = fresh;
     if (o.cam) { o.cam = null; }
   }
+  if (Array.isArray(o.moneyLog)) o.moneyLog = o.moneyLog.filter((x) =>
+    Number.isFinite(x?.amount) && Number.isFinite(x.day) && typeof x.kind === "string" && typeof x.detail === "string"
+  ).slice(-80);
+  else delete o.moneyLog;
   o.size = N;
   o.owned ||= {};
   o.name ||= "الرافعية"; o.site ||= "main"; o.terrain ||= "wadi";
