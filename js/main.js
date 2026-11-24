@@ -36,7 +36,6 @@ const saveRegion = () => store.set(REGION_KEY, JSON.stringify(RG));
 
 let S = null;
 try { const raw = store.get(townKey(RG.active)) || store.get(SAVE); if (raw) S = unpack(raw); } catch { S = null; }
-const hadSave = !!S;
 if (!S) S = newGame();
 let A = analyze(S);
 let playing = false;
@@ -958,7 +957,7 @@ function toast(text, kind = "") {
 let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
-const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "welcome"]);
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region"]);
 function here(text) {
   const n = S?.name;
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
@@ -1905,7 +1904,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) world
 function worldClosedSheet() {
   sheet(`<h2>🛠️ عالم الجوف تحت الصيانة</h2>
     <p>نشتغل على عالم الجوف ونضيف له أشياء جديدة، وبيرجع قريب إن شاء الله.</p>
-    <div class="rows"><div class="row"><span>مدينتك بالعالم</span><b>محفوظة ✓</b></div><div class="row"><span>اللعب الفردي</span><b>شغال عادي</b></div></div>
+    <div class="rows"><div class="row"><span>مدينتك بالعالم</span><b>محفوظة ✓</b></div></div>
     <p class="hint">إذا رجع العالم، يمسك نائب العمدة مدينتك عن الأيام اللي فاتت مثل العادة.</p>`, "world");
 }
 async function worldIsClosed() {
@@ -2967,8 +2966,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-16" },
+  v: { solo: "2027-01-16", world: "2027-01-18" },
   items: [
+    ["world", "🌍", "عالم الجوف أول القائمة", "اللعب الحين في عالم الجوف. تلقى زرّه أول شي في القائمة الرئيسية، وتدخل العالم إذا ضغطت عليه."],
     ["both", "📲", "لعبتك تنتقل للتطبيق", "بالآيفون: إذا حطيت اللعبة تطبيق بشاشتك (من سفاري: إضافة إلى الشاشة الرئيسية) وفتحتها، تلقى لعبتك كاملة: حساب الجوف ومدنك والإعدادات. ولو فتحت التطبيق ولقيته فاضي: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق» وتكتب الرمز بالتطبيق."],
     ["world", "📱", "الآيفون أسهل", "خطوات الآيفون صارت أوضح وتناسب نسخة جوالك: بالنسخ الجديدة زر المشاركة داخل «⋯» تحت يمين، وخل «فتح كتطبيق ويب» شغّال. ولو فتحت الأيقونة وما انتقل حسابك، يطلب منك رمز الاحتياط على طول (صالح ٢٤ ساعة)."],
     ["world", "💰", "أسعار الخزنة", "الخزنة صارت أغلى شوي: بناؤها ١٬٥٠٠، وكل خزنة زيادة أغلى من اللي قبلها (لين ٣٬٧٥٠ للرابعة)، والتطوير ٦٬٠٠٠ ثم ١٨٬٠٠٠ ثم ٥٠٬٠٠٠ ثم ١٤٠٬٠٠٠. اللي بنيته قبل يبقى لك."],
@@ -3067,21 +3067,16 @@ const WHATS_NEW = {
     ["solo", "⏸️", "البلد تنتظرك", "اللعبة توقف وأنت طالع منها، وترجع تلقاها مثل ما تركتها."]
   ]
 };
-const WN_MODES = { solo: "🏠 اللعب الفردي", world: "🌍 عالم الجوف" };
 const wnKey = (m) => `rafaya-news-seen-${m}`;
 const wnSeen = (m) => { try { return localStorage.getItem(wnKey(m)) === WHATS_NEW.v[m]; } catch { return true; } };
 const wnMark = (m) => { try { localStorage.setItem(wnKey(m), WHATS_NEW.v[m]); } catch { /* fine */ } };
-/** "What's new", in two tabs: solo and the world. Opens on the mode being played. */
-function whatsNewSheet(mode) {
-  mode = mode || (worldMode ? "world" : "solo");
-  wnMarkAll(mode);
+function whatsNewSheet() {
+  wnMarkAll("world");
   showWhatsNewDot();
-  const list = WHATS_NEW.items.filter(([m]) => m === mode || m === "both");
+  const list = WHATS_NEW.items.filter(([m]) => m === "world" || m === "both");
   sheet(`<h2>وش الجديد في الرافعية؟</h2>
-    <div class="wn-tabs">${Object.entries(WN_MODES).map(([m, name]) => `<button type="button" class="btn${m === mode ? " go" : ""}" data-wn="${m}">${name}${m !== mode && !wnSeen(m) ? ' <i class="dot"></i>' : ""}</button>`).join("")}</div>
     <div class="rows">${list.map(([, icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
     <div class="sheet-actions"><button class="btn go block" id="wnOk" type="button">يلا نلعب</button></div>`, "whatsnew");
-  $("sheetBody").querySelectorAll("[data-wn]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); whatsNewSheet(b.dataset.wn); }));
   $("wnOk").addEventListener("click", closeSheet);
 }
 /** The "what's new" button on the screen: a red dot until the current mode's update has been read. */
@@ -3113,13 +3108,14 @@ function newSinceSheet(mode) {
     <div class="rows">${list.map(([, icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
     <div class="sheet-actions two"><button class="btn" id="wnAll" type="button">كل التحديثات</button><button class="btn go" id="wnOk" type="button">تمام 👍</button></div>`, "whatsnew");
   $("wnOk").addEventListener("click", closeSheet);
-  $("wnAll").addEventListener("click", () => whatsNewSheet(mode));
+  $("wnAll").addEventListener("click", whatsNewSheet);
   return true;
 }
-/** On continuing or entering al-Jouf: once the screen in front (the deputy's report) is closed. */
+/** Show updates after entering al-Jouf, once the deputy's report is closed. */
 function maybeWhatsNew(tries = 0) {
+  if (!worldMode) return;
   if (sheetFor && sheetFor !== "whatsnew") { if (tries < 30) setTimeout(() => maybeWhatsNew(tries + 1), 1500); return; }
-  newSinceSheet(worldMode ? "world" : "solo");
+  newSinceSheet("world");
 }
 
 function spark(values, color) {
@@ -3611,9 +3607,6 @@ function showMenu() {
   playing = false;
   setTool(null); openCat = null; renderCards();
   document.body.classList.add("at-menu");
-  const has = hadSave || S.day > 3;
-  $("mContinue").hidden = !has;
-  if (has) $("mContinueInfo").textContent = `${ERAS[S.era].name} · ${money(S.pop)} نسمة · اليوم ${ar(dayOf(S.day))}`;
 }
 
 /** Look at the middle of everything built so far. */
@@ -3631,33 +3624,8 @@ function startPlaying() {
   for (const ms of [0, 300, 700, 1400]) setTimeout(layoutSide, ms);
 }
 
-$("mContinue").addEventListener("click", () => { sfx.goal(); leaveWorld(); startPlaying(); const r = away; away = null; if (r) showAway(r); maybeWhatsNew(); }); // the new lines wait for the away report
-$("mNew").addEventListener("click", () => {
-  sfx.tap();
-  const b = $("mNew");
-  if ((hadSave || S.day > 3) && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "مدينتك الحالية بتنمسح. اضغط مرة ثانية للتأكيد"; return; }
-  delete b.dataset.sure;
-  for (const id of Object.keys(RG.towns)) if (id !== "main") { try { localStorage.removeItem(townKey(id)); } catch { /* fine */ } }
-  RG = { towns: {}, roads: [], active: "main" };
-  S = newGame(); save(); world.sync(S); focusTown(); world.view.zoom = 0.9; world.updateCamera();
-  wnMark("solo"); showWhatsNewDot();
-  sfx.goal(); startPlaying();
-  sheet(`<h2>هلا بالعمدة!</h2><p>الرافعية الحين ثلاث خيام بس، وبئر، ونخل على الوادي. مهمتك تكبّرها لين تصير محافظة.</p>
-    <div class="rows"><div class="row"><span>أول خطوة</span><b>اتبع المهمة اللي فوق</b></div><div class="row"><span>البناء</span><b>من الأزرار اللي تحت</b></div></div>
-    <div class="sheet-actions"><button class="btn go block" id="letsGo" type="button">يلا نبدأ</button></div>`, "welcome");
-  $("letsGo").addEventListener("click", closeSheet);
-});
 $("mHow").addEventListener("click", () => { sfx.tap(); howTo(true); });
 $("mSettings").addEventListener("click", () => { sfx.tap(); settingsSheet(true); });
-
-let away = null; // the town waits while you are away (nothing runs until you come back)
-function showAway(r) {
-  sheet(`<h2>وأنت غايب…</h2><p>مرّ على الرافعية ${ar(r.days)} ساعة.</p><div class="rows">
-    ${row("السكان", `${r.pop >= 0 ? "+" : "−"}${money(Math.abs(r.pop))}`, r.pop >= 0 ? "plus" : "minus")}
-    ${row("الميزانية", `${r.money >= 0 ? "+" : "−"}${money(Math.abs(r.money))} ريال`, r.money >= 0 ? "plus" : "minus")}
-    ${r.msgs.filter((m) => m.kind !== "event").slice(-4).map((m) => `<div class="row"><span>${m.text}</span></div>`).join("")}</div>`, "away");
-  world.sync(S);
-}
 
 // ---------- the clock ----------
 
@@ -3763,7 +3731,7 @@ function frame(now) {
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  const paused = ["welcome", "away", "pause", "settings", "how", "decision", "election", "whatsnew", "update"].includes(sheetFor);
+  const paused = ["away", "pause", "settings", "how", "decision", "election", "whatsnew", "update"].includes(sheetFor);
   if (arrange) { /* the town waits while the mayor rearranges it */ } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
