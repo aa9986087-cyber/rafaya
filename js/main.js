@@ -122,16 +122,19 @@ function scheduleLayout() {
     root.style.setProperty("--view-top", `${visible ? Math.round(view.offsetTop) : 0}px`);
 
     const visit = $("visitBar"), dockHeight = dock.offsetHeight;
-    const top = hud.offsetTop + hud.offsetHeight + 6;
+    const stats = hud.querySelector(".stats"), top = hud.offsetTop + stats.offsetTop + stats.offsetHeight + 6; // under the four cards: the time, goal and event banners keep clear of it (--rail-space)
     const toolHeight = $("toolChip").offsetHeight;
     const bottom = (dockHeight ? dock.offsetTop : visit.offsetHeight ? visit.offsetTop : innerHeight) - (toolHeight ? toolHeight + 12 : 6);
     const available = Math.max(0, bottom - top);
     const count = document.body.classList.contains("world") ? side.children.length : side.querySelectorAll(".side-btn:not(.world-only)").length;
-    const gap = 6;
-    const size = Math.min(50, Math.max(44, Math.floor((available - (count - 1) * gap) / count)));
+    // one column, always all of it: on a short screen (a browser with its bars) the buttons and gaps shrink to fit
+    const gap = count * 50 + (count - 1) * 6 > available ? 4 : 6;
+    const size = Math.min(50, Math.max(30, Math.floor((available - (count - 1) * gap) / count)));
+    side.style.setProperty("--gap", `${gap}px`);
     side.style.top = `${top}px`;
     side.style.setProperty("--rail-height", `${available}px`);
     side.style.setProperty("--sz", `${size}px`);
+    root.style.setProperty("--rail-space", `${size + 10}px`);
     root.style.setProperty("--dock-space", `${dockHeight}px`);
   });
 }
@@ -1607,6 +1610,8 @@ async function loadClock() {
 }
 // ---------- notifications on the phone (al-Jouf): attacks, war and being named in the chat, even with the game shut ----------
 const PUSH = { registration: null, key: null, checked: false, enabled: false, checking: null };
+/** Samsung Internet: its web apps show notifications through the browser itself, so both need allowing. */
+const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
 const pushable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const canRegisterWorker = "serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && isSecureContext;
 function registerPushWorker() {
@@ -1697,7 +1702,7 @@ async function pushOn() {
 /** Notifications were refused once: how to allow them again, for this phone. */
 function pushDeniedHelp() {
   sheet(`<h2>🔔 التنبيهات مقفلة</h2><p>رفضتها مرة، ترجّعها كذا:</p>
-    <div class="rows"><div class="row g-step"><b class="g-n">١</b><span>${isIOS ? "إعدادات الآيفون ← <b>الإشعارات</b> ← <b>الرافعية</b> ← اسمح" : "اضغط 🔒 جنب الرابط فوق ← <b>الإشعارات</b> ← <b>سماح</b>"}</span></div>
+    <div class="rows"><div class="row g-step"><b class="g-n">١</b><span>${isIOS ? "إعدادات الآيفون ← <b>الإشعارات</b> ← <b>الرافعية</b> ← اسمح" : isSamsung ? "متصفح سامسونج: <b>☰</b> ← <b>الإعدادات</b> ← <b>المواقع والتنزيلات</b> ← <b>الإشعارات</b> ← اسمح للرافعية" : "اضغط 🔒 جنب الرابط فوق ← <b>الإشعارات</b> ← <b>سماح</b>"}</span></div>
     <div class="row g-step"><b class="g-n">٢</b><span>ارجع هنا واضغط «فعّل التنبيهات»</span></div></div>`, "push");
 }
 async function pushOff() {
@@ -3077,6 +3082,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: { solo: "2027-01-25", world: "2027-01-25" },
   items: [
+    ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل متصفح سامسونج بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد. • وصار فيه شرح خاص لتنبيهات متصفح سامسونج."],
     ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
     ["world", "🌧️", "الشتاء رجع له مطره", "• الشتاء صار موسم المطر بالجوف: ينزل فيه مطر ثلاث مرات على الأقل (أوله ونصه وآخره)، وكل مرة قرابة اليوم. • ومطر الشتاء يخلّي الربيع اللي بعده أخضر."],
     ["both", "🗣️", "طلبات الأهالي على قد مستواك", "• الأهالي يطلبون اللي تقدر تسويه بمرحلتك. • وإذا تمنّوا شي لمرحلة أكبر (مثل السفلتة أو مركز الشرطة وانتم بلدة)، يجي كأمنية لبعدين: ما فيها وعد ينحسب عليك ولا زعل."],
@@ -3633,7 +3639,9 @@ function settingsSheet(fromMenu) {
     const confirmation = new Promise((resolve) => {
       onReceipt = ({ data }) => { if (data?.type === "push-test" && data.receipt === receipt) resolve(data.shown); };
     });
-    const systemHelp = isIOS ? "شيّك إشعارات الرافعية والتركيز في إعدادات الآيفون." : "شيّك إذن الإشعارات للتطبيق أو المتصفح في إعدادات الجهاز.";
+    const systemHelp = isIOS ? "شيّك إشعارات الرافعية والتركيز في إعدادات الآيفون."
+      : isSamsung ? "بمتصفح سامسونج: إعدادات الجوال ← التطبيقات ← «Samsung Internet» ← الإشعارات ← اسمح. وداخل متصفح سامسونج: ☰ ← الإعدادات ← المواقع والتنزيلات ← الإشعارات ← اسمح للرافعية. ولو ما زبط، العب من Chrome: تنبيهاته أضمن."
+      : "شيّك إذن الإشعارات للتطبيق أو المتصفح في إعدادات الجهاز، وخلّ البطارية «غير مقيّد».";
     navigator.serviceWorker.addEventListener("message", onReceipt);
     button.disabled = true;
     status.textContent = "نرسل التجربة وننتظر رد هالجهاز…";

@@ -79,7 +79,7 @@ input { -webkit-user-select: text; user-select: text; }
 .event b { color: #f3cf7a; }
 
 /* Side buttons */
-.side { position: fixed; z-index: 5; left: max(10px, var(--left)); top: calc(var(--top) + 120px); display: grid; gap: 6px;
+.side { position: fixed; z-index: 5; left: max(10px, var(--left)); top: calc(var(--top) + 120px); display: grid; gap: var(--gap, 6px);
   grid-template-columns: var(--sz, 44px);
   grid-auto-rows: var(--sz, 44px); max-height: var(--rail-height, 60vh);
   overflow: hidden auto; scrollbar-width: none; touch-action: pan-y; overscroll-behavior-y: contain;
@@ -464,8 +464,8 @@ body.world .world-time { display: block; }
 .side .world-only { display: none; }
 body.world .side .world-only { display: grid; }
 .side-btn { border-radius: 14px; }
-.side-btn > span { font-size: 10px; }
-.side-btn svg { width: 22px; height: 22px; }
+.side-btn > span { font-size: min(10px, calc(var(--sz, 44px) * .23)); line-height: 1.1; }
+.side-btn svg { width: min(22px, calc(var(--sz, 44px) * .46)); height: min(22px, calc(var(--sz, 44px) * .46)); }
 
 .effect { display: grid; gap: 6px; margin: 6px 0; padding: 8px; border-radius: 12px; background: rgba(44, 138, 122, .08); }
 .row.eff b small { opacity: .75; font-weight: 600; }
@@ -625,3 +625,6 @@ body.world .speeds { display: none !important; }
 .sheet .war-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .money-move { grid-template-columns: 30px minmax(0, 1fr) minmax(0, auto); }
 .money-move > b { white-space: normal; }
+
+/* the side rail runs from under the four cards; the banners below them stay out of its way */
+.hud > .timebar, .hud > .goal, .hud > .event { margin-inline-end: var(--rail-space, 0px); max-width: calc(100% - var(--rail-space, 0px)); }
