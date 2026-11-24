@@ -1621,21 +1621,37 @@ export class World {
       }
       pos.needsUpdate = true;
     }
-    // New buildings rise out of the ground with a little bounce.
+    // RAFAYA REMASTERED: a quick build (looks only; the building works from the first moment, as before), about 2.6 s:
+    // the site goes up (hoarding, scaffolding, a puff of dust), the building rises out of it floor by floor,
+    // then the scaffolding comes down with a last puff. Only for buildings on screen; at most 24 at once.
     if (this.anims?.size && this.where) {
-      const m = new THREE.Matrix4(), sc = new THREE.Matrix4();
+      const m = new THREE.Matrix4(), sc = new THREE.Matrix4(), fx = [];
+      const BUILD = this.buildTime ?? (this.quality === "low" ? 0.55 : 2.6); // (buildTime: the showcase can slow it down)
       for (const [tile, t0] of this.anims) {
         const w = this.where.get(tile), inst = w && this.instances.get(w.k);
-        const t = Math.min(1, (this.clock - t0) / 0.55);
+        const t = Math.min(1, (this.clock - t0) / BUILD);
         if (!inst) { this.anims.delete(tile); continue; }
         if (w.i < 0) { if (t >= 1) this.anims.delete(tile); continue; } // off screen: nothing to animate
-        const e = easeBack(t);
-        sc.makeScale(0.85 + 0.15 * t, Math.max(0.02, e), 0.85 + 0.15 * t);
+        let rise;
+        if (BUILD < 1) rise = easeBack(t);
+        else {
+          const r = Math.min(1, Math.max(0, (t - 0.22) / 0.6)); // the building rises between 22% and 82%, in steps like floors going up
+          rise = r <= 0 ? 0.02 : Math.max(0.02, Math.min(1, (Math.floor(r * 5) + smoothstep01((r * 5) % 1)) / 5));
+          if (t >= 0.82) rise = 1 + Math.sin((t - 0.82) / 0.18 * Math.PI) * 0.025; // a last settle
+          if (fx.length < 24) { // the site's scaffolding: up at the start, down at the end
+            const up = Math.min(1, t / 0.12), down = t > 0.86 ? Math.max(0, 1 - (t - 0.86) / 0.12) : 1;
+            fx.push(new THREE.Matrix4().makeTranslation(w.m.elements[12], 0, w.m.elements[14]).multiply(sc.makeScale(1, Math.max(0.02, up * down), 1)));
+          }
+          if (!w.puffed1 && t > 0.02) { w.puffed1 = true; this.puff(new THREE.Vector3(w.m.elements[12], 0, w.m.elements[14]), 10); }
+          if (!w.puffed2 && t > 0.88) { w.puffed2 = true; this.puff(new THREE.Vector3(w.m.elements[12], 0, w.m.elements[14]), 14); }
+        }
+        sc.makeScale(1, rise, 1);
         m.multiplyMatrices(w.m, sc);
         for (const set of SETS) if (inst[set]) { inst[set].setMatrixAt(w.i, m); inst[set].instanceMatrix.needsUpdate = true; }
-        if (t >= 1) this.anims.delete(tile);
+        if (t >= 1) { this.anims.delete(tile); delete w.puffed1; delete w.puffed2; }
       }
-    }
+      this.drawBuildFx(fx);
+    } else if (this.buildFxOn) this.drawBuildFx([]);
     if (this.clouds) {
       const o = this.clouds.material.map.offset;
       o.x = (o.x + dt * 0.004) % 1; o.y = (o.y + dt * 0.0025) % 1;
@@ -1895,6 +1911,18 @@ export class World {
   }
   degrade(level) { this.setLevel(level); }
 
+  /** The build animation's scaffolding sites (one instanced draw per material, made on first use). */
+  drawBuildFx(list) {
+    if (!this.buildFx) {
+      const geo = model("buildFx");
+      this.buildFx = SETS.filter((set) => geo?.[set]).map((set) => { const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], 24); mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = this.quality !== "low"; this.scene.add(mesh); return mesh; });
+    }
+    for (const mesh of this.buildFx) { list.forEach((mm, i) => mesh.setMatrixAt(i, mm)); mesh.count = list.length; mesh.instanceMatrix.needsUpdate = true; }
+    this.buildFxOn = list.length > 0;
+  }
+  /** Play the build animation on a tile again (the showcase and tests). */
+  playBuild(tile) { if (this.where?.has(tile)) { this.anims ||= new Map(); this.anims.set(tile, this.clock); } }
+
   /**
    * Draw only the buildings the camera can see, with a margin, and the far models when zoomed out.
    * The town used to draw every building of the map every frame, even the ones off screen, at full detail.
@@ -2004,6 +2032,8 @@ export class World {
     if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }
 }
+
+function smoothstep01(x) { return x * x * (3 - 2 * x); }
 
 function mergeTwo(a, b) {
   const x = a.toNonIndexed(), y = b.toNonIndexed();

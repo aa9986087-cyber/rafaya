@@ -1657,6 +1657,18 @@ const MAKERS = {
     oliveTree(b,-.352,.359,.63);
   },
 
+  buildFx(b) { // the quick build animation's site (js/world3d.js): a hoarding, steel scaffolding with planks and green netting around the footprint
+    for (const [x, z, w, d] of [[0, -0.44, 0.88, 0.01], [-0.44, 0, 0.01, 0.88], [0.44, 0, 0.01, 0.88], [-0.25, 0.44, 0.38, 0.01], [0.25, 0.44, 0.38, 0.01]]) { b.box(w, 0.09, d, "#f1eee6", { x, z }); b.box(w + 0.002, 0.022, d + 0.002, "#2f7d5b", { x, y: 0.045, z }); }
+    const H = 0.62, R = 0.37;
+    for (const [x, z] of [[-R, -R], [R, -R], [-R, R], [R, R], [0, -R], [0, R], [-R, 0], [R, 0]]) b.box(0.008, H, 0.008, "#c9a24a", { x, z }, "metal");
+    for (let k = 1; k <= 4; k++) {
+      const y = k * H / 4.3;
+      for (const [x, z, w, d] of [[0, -R, 2 * R, 0.006], [0, R, 2 * R, 0.006], [-R, 0, 0.006, 2 * R], [R, 0, 0.006, 2 * R]]) b.box(w, 0.006, d, "#c9a24a", { x, y, z }, "metal");
+      for (const [x, z, w, d] of [[0, -R - 0.03, 2 * R, 0.05], [0, R + 0.03, 2 * R, 0.05]]) b.box(w, 0.006, d, "#a0783a", { x, y: y - 0.008, z }, "wood");
+    }
+    for (const side of [-1, 1]) b.box(2 * R * 0.9, H * 0.55, 0.004, "#3f7a52", { y: H * 0.35, z: side * (R + 0.006) });   // green safety netting
+    b.box(0.004, H * 0.55, 2 * R * 0.9, "#3f7a52", { x: R + 0.006, y: H * 0.35 });
+  },
   construction(b) { // a building site: a hoarded fence, a slab with rebar and scaffolding, a tower crane, a mixer, pallets of block, the site cabin
     b.box(0.94, 0.008, 0.94, "#bfae8a");
     for (const [x, z, w, d] of [[0, -0.46, 0.94, 0.012], [-0.46, 0, 0.012, 0.94], [0.46, 0, 0.012, 0.94], [-0.28, 0.46, 0.38, 0.012], [0.28, 0.46, 0.38, 0.012]]) { b.box(w, 0.12, d, "#f1eee6", { x, z }); b.box(w + 0.002, 0.03, d + 0.002, "#2f7d5b", { x, y: 0.06, z }); }
