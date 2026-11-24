@@ -259,6 +259,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Client: `LIVE`, `liveOpen` / `liveRetry` (1 s…30 s) / `liveClose` / `liveHint`. When live, polls are only safety nets (war 90 s, chat 120 s, news 5 min).
     - A town's layout goes up 3 s after a change (`warSyncNow` only sends when the layout key changed); its numbers every 2 min. `refreshVisit()` redraws a visited town live.
     - The trial (preview) has no socket and keeps polling.
+43. **Away earnings cap (owner, 2026-11-24, world only):**
+    - The owner came back to 55,000 in a village. `AWAY_CAP` (sim.js) is [5000, 10000, 20000, 40000, 80000] by era. `deputyCatchUp` caps the gain (never the money from before) and returns `cap`/`capped`; the deputy report explains it.
+    - A hidden or asleep tab no longer runs every missed hour in full: in world mode a gap over 3 h goes through `deputyCatchUp`.
+    - Server side, for old cached games too: on /sync after more than 10 min without a sync, a gain above cap·1.1 since the last sync is taken back with `WarServer.fine()`. This is a charge the game applies once, plus a note.
+    - It is recorded in table `awayfix`; `GET /api/world/awayfix` lists who and how much.
+    - The past can't be fixed: the server never kept the money before a return.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

@@ -73,6 +73,13 @@ export class WarServer {
     this.db.put("charge", `${plot}:${a.seq}`, c, { k1: String(plot), at: c.at });
     return c;
   }
+  /** Take back money a town should not have (the game pays it like a war bill, once), with a note saying why. */
+  fine(plot, amount, why, text) {
+    const a = this.acct(plot), c = this.charge(plot, a, amount, why);
+    this.saveAcct(plot, a);
+    this.note(plot, "fine", text);
+    return c;
+  }
   note(plot, kind, text, extra = {}) {
     const at = this.now();
     this.db.put("note", `${plot}:${at}:${(noteN = (noteN + 1) % 1e6)}`, { at, kind, text, ...extra }, { k1: String(plot), at });

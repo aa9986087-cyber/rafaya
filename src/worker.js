@@ -23,6 +23,7 @@ import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
+import { AWAY_CAP } from "../js/sim.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -65,6 +66,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
+    // money a town gained while away beyond the cap, taken back (a record, so the owner can see who and how much)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS awayfix (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, owner TEXT, town TEXT, before INTEGER, after INTEGER, cap INTEGER, taken INTEGER, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS wnews (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, plot INTEGER, n INTEGER, text TEXT, at INTEGER)`);
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
@@ -178,6 +181,9 @@ export class Board extends DurableObject {
       const items = this.sql.exec("SELECT id, kind, plot, text, at FROM wnews WHERE id > ? ORDER BY id DESC LIMIT 60", after).toArray();
       return json({ items, now: Date.now() });
     }
+    if (!post && p[0] === "awayfix") { // who had money taken back for gaining too much while away, and how much (newest first)
+      return json({ list: this.sql.exec("SELECT owner, town, before, after, cap, taken, at FROM awayfix ORDER BY id DESC LIMIT 200").toArray() });
+    }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
@@ -222,7 +228,21 @@ export class Board extends DurableObject {
       if (me.plot == null) return json({ error: "no town" }, 400);
       const snapshot = String(body.snapshot || "");
       if (snapshot.length > MAX_SNAPSHOT) return json({ error: "snapshot too big" }, 413);
-      const was = this.sql.exec("SELECT town, pop, era FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const was = this.sql.exec("SELECT town, owner, pop, era, money, updated FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      // back after a while away: a town gains at most AWAY_CAP for its stage while its mayor is out (old
+      // games on phones without the cap too). Only what is above the cap is taken back; the money it had
+      // when it left (the last sync before) is never touched. A little room is left for the minutes played since.
+      const awayMs = this.env?.WAR_TEST === "1" ? 10000 : 10 * 60000; // local tests: 10 s
+      if (was && was.updated && Date.now() - was.updated > awayMs && int(body.money) > (was.money || 0)) {
+        const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, Math.max(was.era || 0, int(body.era)))] ?? AWAY_CAP[0];
+        const taken = int(body.money) - (was.money || 0) - Math.round(cap * 1.1);
+        if (taken > 0) {
+          this.war.fine(me.plot, taken, "away cap", `🧾 تصحيح: مدينتك كسبت وانت برا أكثر من الحد (${cap.toLocaleString("en-US")} ريال لـ${ERAS[was.era || 0]?.name || "مدينتك"}). رجّعنا الزيادة بس (${taken.toLocaleString("en-US")} ريال)، وفلوسك اللي كانت قبل ما انلمست.`);
+          this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", me.plot, was.owner, was.town, was.money || 0, int(body.money), cap, taken, Date.now());
+          body.money = int(body.money) - taken;
+          this.live({ t: "war" }, me.plot);
+        }
+      }
       if (was) {
         const era = int(body.era), pop = int(body.pop);
         if (era > (was.era || 0) && ERAS[era]) this.news("era", `🏙️ «${was.town}» صارت ${ERAS[era].name}!`, me.plot, era);

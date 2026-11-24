@@ -1293,6 +1293,8 @@ export function catchUp(s, now = Date.now()) {
 // ---------- the world: the deputy mayor while the mayor is away ----------
 /** Standing orders the mayor leaves the deputy. */
 export const DEPUTY = { repair: true, floor: 2000, tax: true };
+/** The most a town can gain while its mayor is away, by its stage (قرية … حاضرة); losses are not capped (the shield guards them). */
+export const AWAY_CAP = [5000, 10000, 20000, 40000, 80000];
 /** How many hours the deputy runs the town in full; after that the town is kept steady. */
 export const DEPUTY_FULL_HOURS = 168;
 /** After this long away (a week of real time, in town hours) the town sleeps: nothing changes. */
@@ -1307,7 +1309,7 @@ export const SLEEP_HOURS = Math.round((7 * 86400) / 50);
 export function deputyCatchUp(s, hours, r = Math.random) {
   if (hours <= 0) return null;
   const orders = { ...DEPUTY, ...(s.deputy || {}) };
-  const start = { pop: s.pop, money: s.money, tax: s.tax };
+  const start = { pop: s.pop, money: s.money, tax: s.tax, era: s.era };
   const msgs = [], did = { repairs: 0, decisions: 0, shield: 0, taxUp: 0 };
   const full = Math.min(hours, DEPUTY_FULL_HOURS);
   s.away = true;
@@ -1334,7 +1336,11 @@ export function deputyCatchUp(s, hours, r = Math.random) {
     s.money = Math.max(0, s.money + steady);
   }
   s.day += hours - full; // the town keeps the world's hour
-  return { hours, full, steady, slept: hours > SLEEP_HOURS, pop: s.pop - start.pop, money: Math.round(s.money - start.money), taxFrom: start.tax, did, msgs };
+  // away, a town gains at most AWAY_CAP for its stage (the money it had before is never touched)
+  const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, s.era)] ?? AWAY_CAP[0];
+  const capped = Math.max(0, Math.round(s.money - start.money - cap));
+  if (capped) s.money = start.money + cap;
+  return { hours, full, steady, slept: hours > SLEEP_HOURS, pop: s.pop - start.pop, money: Math.round(s.money - start.money), taxFrom: start.tax, did, msgs, cap, capped };
 }
 
 // ---------- saving ----------

@@ -1822,6 +1822,7 @@ function deputyReport(r) {
   sheet(`<h2>🧑‍💼 تقرير نائب العمدة</h2><p>غبت ${span} من وقت العالم، والنائب مسك البلد.${r.slept ? " وبعد أسبوع من الغياب دخلت المدينة في سبات لين رجعت." : ""}</p>
     <div class="rows">
       ${row("الميزانية", `${r.money >= 0 ? "+" : "−"}${money(Math.abs(r.money))} ريال`, r.money >= 0 ? "plus" : "minus")}
+      ${r.capped ? `<div class="hint">💡 أكثر شي تكسبه مدينتك وانت برا ${money(r.cap)} ريال (${ERAS[S.era].name})، وكل ما كبرت مدينتك زاد الحد. العب وانت داخل تكسب كامل.</div>` : ""}
       ${row("السكان", `${r.pop >= 0 ? "+" : "−"}${money(Math.abs(r.pop))}`, r.pop >= 0 ? "plus" : "minus")}
       ${r.did.repairs ? row("رمّم المباني", `${ar(r.did.repairs)} مرة`) : ""}
       ${r.did.decisions ? row("قرارات أخذها بالخيار الآمن", ar(r.did.decisions)) : ""}
@@ -2624,8 +2625,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-31", world: "2027-01-01" },
+  v: { solo: "2026-12-31", world: "2027-01-02" },
   items: [
+    ["world", "🧾", "حد للكسب وانت برا", "بعالم الجوف، أكثر شي تكسبه مدينتك وانت طالع: قرية ٥٬٠٠٠، بلدة ١٠٬٠٠٠، مدينة ٢٠٬٠٠٠، محافظة ٤٠٬٠٠٠، حاضرة ٨٠٬٠٠٠. فلوسك اللي كانت قبل ما تطلع ما تنلمس أبد، والخسارة ما يزيدها الحد (درع الغياب يحميك). ولو أحد جاه أكثر من الحد ينرجع الزايد بس وتوصله رسالة."],
     ["world", "⚡", "الجوف صار مباشر", "كل شي بعالم الجوف يوصلك على طول: رسايل الشات، والإنذارات والضربات والهدن، وأخبار نشرة الجوف، ومدن الناس لما يبنون فيها (تشوفها تتغير وانت تزورها). ومدينتك توصل للناس خلال ثواني من أي بناء. والضربة تنحسب بالضبط وقت وصولها حتى لو محد فاتح."],
     ["both", "🔆", "السطوع طبيعي بالنهار", "السيارات والآبار كانت تلمع بقوة بالنهار على الرسوم العالية. الحين التوهّج بالليل بس (المصابيح والأضواء)، وبالنهار الألوان طبيعية."],
     ["both", "🕰️", "اليوم رجع ٢٠ دقيقة", "يوم اللعبة رجع ٢٠ دقيقة (كل ساعة باللعبة ٥٠ ثانية) عشان اللعب ما يبطى. والفصول باقية ٧ أيام."],
@@ -3326,7 +3328,12 @@ function frame(now) {
   if (arrange) { /* the town waits while the mayor rearranges it */ } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
-    if (!paused && S.day < wh) runHour();
+    if (!paused && wh - S.day > 3) {
+      // the phone was asleep or the game in the background: the deputy ran the town (with the away cap)
+      const r = deputyCatchUp(S, wh - S.day);
+      A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); save(); refresh();
+      if (r && (r.money || r.pop)) deputyReport(r);
+    } else if (!paused && S.day < wh) runHour();
     acc = Math.max(0, Math.min(HOUR_MS - 1, (worldHours() % 1) * HOUR_MS));
   } else if (playing && !visiting && speed > 0 && !paused) {
     acc += dt * 1000 * speed;

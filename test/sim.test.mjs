@@ -455,3 +455,13 @@ test("the bigger world map keeps every old plot where it was, under the same num
   assert.equal(Math.max(...seen), WORLD.cols * WORLD.rows - 1);
   assert.ok(["wadi", "bigwadi"].includes(worldTerrain(24 * 10 + 6)));
 });
+
+test("away: a town gains at most AWAY_CAP for its stage, and the money it had is never touched", async () => {
+  const { deputyCatchUp, AWAY_CAP } = await import("../js/sim.js");
+  const s = autoplay(400, 42);
+  s.world = { plot: 1 }; s.money = 1234;
+  const before = s.money, r = deputyCatchUp(s, 24 * 30, rng(3));
+  assert.ok(s.money - before <= AWAY_CAP[s.era], `gained ${s.money - before}, cap ${AWAY_CAP[s.era]}`);
+  assert.ok(s.money >= 0);
+  if (r.capped) assert.equal(s.money, before + r.cap);
+});
