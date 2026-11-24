@@ -24,9 +24,11 @@ export const SETS = ["matte", "shiny", "lights", "paint", "metal", "glass", "glo
 
 /** Collects coloured parts and merges them into one geometry per material. */
 class Builder {
-  constructor() { this.sets = Object.fromEntries(SETS.map((k) => [k, []])); }
+  /** far: the same model for a far-away camera (fewer faces, no tiny parts): see farGeo. */
+  constructor(far = false) { this.sets = Object.fromEntries(SETS.map((k) => [k, []])); this.far = far; }
   add(geo, color, o = {}, set = "matte") {
     if ((set === "matte" || set === "shiny") && GLASS.has(String(color).toLowerCase())) set = "glass"; // windows and solar panels reflect the sky
+    if (this.far) { geo = farGeo(geo, o, set); if (!geo) return this; }
     tmp.position.set(o.x || 0, o.y || 0, o.z || 0);
     tmp.rotation.set(o.rx || 0, o.ry || 0, o.rz || 0);
     tmp.scale.set(o.sx ?? 1, o.sy ?? 1, o.sz ?? 1);
@@ -66,6 +68,34 @@ class Builder {
     for (const [k, list] of Object.entries(this.sets)) out[k] = list.length ? merge(list) : null;
     return out;
   }
+}
+
+/**
+ * The far version of a part. Shapes keep their size and colour, with fewer faces:
+ * - a rounded box becomes a plain box;
+ * - cylinders, cones, spheres, rings and turned shapes take about half their segments.
+ * Parts too small to see from afar go, except the lights that make the town glow at night.
+ */
+const TINY = 0.045;
+function farGeo(geo, o, set) {
+  if (set !== "lights" && set !== "glow") {
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    const scale = Math.max(Math.abs(o.sx ?? 1), Math.abs(o.sy ?? 1), Math.abs(o.sz ?? 1));
+    if (geo.boundingSphere.radius * scale < TINY) { geo.dispose(); return null; }
+  }
+  const p = geo.parameters || {}, half = (n, min) => Math.max(min, Math.ceil((n || min) / 2));
+  let g = null;
+  switch (geo.type) {
+    case "RoundedBoxGeometry": { geo.computeBoundingBox(); const s = new THREE.Vector3(); geo.boundingBox.getSize(s); g = new THREE.BoxGeometry(s.x, s.y, s.z); break; }
+    case "CylinderGeometry": g = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, half(p.radialSegments, 5), 1, p.openEnded, p.thetaStart, p.thetaLength); break;
+    case "ConeGeometry": g = new THREE.ConeGeometry(p.radius, p.height, half(p.radialSegments, 4), 1, p.openEnded, p.thetaStart, p.thetaLength); break;
+    case "SphereGeometry": g = new THREE.SphereGeometry(p.radius, half(p.widthSegments, 5), half(p.heightSegments, 3), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength); break;
+    case "TorusGeometry": g = new THREE.TorusGeometry(p.radius, p.tube, half(p.radialSegments, 3), half(p.tubularSegments, 6), p.arc); break;
+    case "CircleGeometry": g = new THREE.CircleGeometry(p.radius, half(p.segments, 6), p.thetaStart, p.thetaLength); break;
+    case "LatheGeometry": g = new THREE.LatheGeometry(p.points, half(p.segments, 6), p.phiStart, p.phiLength); break;
+  }
+  if (g) { geo.dispose(); return g; }
+  return geo;
 }
 
 function merge(list) {
@@ -132,6 +162,15 @@ export function oliveTree(b, x, z, s = 1) {
   b.add(new THREE.IcosahedronGeometry(0.065 * s, 0), "#6e8a4e", { x: x - 0.05 * s, y: 0.19 * s, z: z - 0.04 * s, sy: 0.8 });
 }
 export function palm(b, x, z, s = 1, lean = 0) {
+  if (b.far) { // from afar: a trunk and a crown of six drooping fronds (the close-up palm has ~600 faces)
+    const h = 0.62 * s, tx = x + lean * 0.2;
+    b.add(new THREE.CylinderGeometry(0.024 * s, 0.034 * s, h, 5), C.trunk, { x: x + lean * 0.1, y: h / 2, z, rz: -lean * 0.15 });
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      b.add(new THREE.BoxGeometry(0.3 * s, 0.006, 0.07 * s), i % 2 ? C.leaf : C.leafDark, { x: tx + Math.cos(a) * 0.12 * s, y: h - 0.02 * s, z: z + Math.sin(a) * 0.12 * s, ry: -a, rz: -0.35 });
+    }
+    return;
+  }
   // a date palm: a ringed trunk (the old frond bases), a crown of arching fronds with leaflets, dates under it
   const segs = 7, h = 0.62 * s;
   for (let i = 0; i < segs; i++) {
@@ -1214,6 +1253,26 @@ export function model(key, ground = "sand") {
     const b = new Builder();
     const maker = MAKERS[key];
     if (!maker) return null;
+    maker(b, ground);
+    cache.set(k, b.done());
+  }
+  return cache.get(k);
+}
+
+/** The far version of a model (fewer faces, same look from afar), built once like model(). */
+export function modelFar(key, ground = "sand") {
+  const k = `far:${key.startsWith("palms") ? `${key}:${ground}` : key}`;
+  if (!cache.has(k)) {
+    const [base, v] = key.split("~");
+    if (v !== undefined) {
+      const src = modelFar(base, ground), swaps = VARIANTS[base]?.[Number(v)];
+      if (!src || !swaps) return src;
+      cache.set(k, { ...src, matte: recolor(src.matte, swaps), shiny: recolor(src.shiny, swaps) });
+      return cache.get(k);
+    }
+    const maker = MAKERS[key];
+    if (!maker) return null;
+    const b = new Builder(true);
     maker(b, ground);
     cache.set(k, b.done());
   }

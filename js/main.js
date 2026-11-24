@@ -22,7 +22,20 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: the game still runs */ } }
 };
-const settings = { quality: store.get("rafaya-quality") || (matchMedia("(pointer: coarse)").matches ? "medium" : "high"), daynight: store.get("rafaya-daynight") !== "0" };
+// Graphics: «auto» (the default) adapts as it plays; the others are fixed (with a safety net for a struggling phone).
+// Old choices (high, medium, low) keep their meaning. RENDER maps each to the renderer's quality, its frame caps
+// and whether the adaptive steps may move both ways.
+const touch = matchMedia("(pointer: coarse)").matches;
+const QUALITY = ["auto", "saver", "low", "medium", "high", "ultra"];
+const settings = { quality: QUALITY.includes(store.get("rafaya-quality")) ? store.get("rafaya-quality") : "auto", daynight: store.get("rafaya-daynight") !== "0" };
+const RENDER = {
+  auto: { world: touch ? "medium" : "high", busy: touch ? 45 : 60, idle: 30, adapt: true },
+  saver: { world: "low", busy: 30, idle: 20, adapt: false },
+  low: { world: "low", busy: 30, idle: 24, adapt: false },
+  medium: { world: "medium", busy: 45, idle: 30, adapt: false },
+  high: { world: "high", busy: 60, idle: 30, adapt: false },
+  ultra: { world: "high", busy: 60, idle: 30, adapt: false, ultra: true }
+}[settings.quality];
 
 // ---------- state ----------
 
@@ -102,9 +115,9 @@ function noteTown() {
 // ---------- the 3D town ----------
 
 const canvas = $("map");
-const world = new World(canvas, { quality: settings.quality });
+const world = new World(canvas, { quality: RENDER.world, ultra: !!RENDER.ultra });
 // ?debug: the renderer's numbers for measuring (draw calls, triangles, memory, frame time); nothing changes in the game
-if (new URLSearchParams(location.search).has("debug")) globalThis.RAFAYA_DEBUG = { world, info: () => ({ ...world.renderer.info.render, ...world.renderer.info.memory, programs: world.renderer.info.programs?.length, dpr: world.renderer.getPixelRatio(), size: [world.w, world.h] }) };
+if (new URLSearchParams(location.search).has("debug")) globalThis.RAFAYA_DEBUG = { world, get perf() { return { ...perf, fpsBusy }; }, info: () => ({ ...world.renderer.info.render, ...world.renderer.info.memory, programs: world.renderer.info.programs?.length, dpr: world.renderer.getPixelRatio(), size: [world.w, world.h] }) };
 world.fx = new WarFX(world); // «صراع الجوف»: moving military parts, war damage and the war scenes
 watchIcons(document.body); // every emoji in the page's text shows as its icon (js/icons.js)
 world.dayCycle = settings.daynight;
@@ -3701,7 +3714,8 @@ function settingsSheet(fromMenu) {
   if (pushStatus === "off" && me()?.plot != null) pushKey().catch(() => {});
   sheet(`<h2>الإعدادات</h2>
     <h3>الرسوم</h3><p>«عالية» فيها توهّج الانفجارات والأضواء وأعلى دقة. لو الجوال يسخن أو البطارية تخلص بسرعة، اختر «متوسطة» أو «خفيفة».</p>
-    <div class="seg">${[["high", "عالية"], ["medium", "متوسطة"], ["low", "خفيفة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
+    <div class="seg seg-wrap">${[["auto", "✨ تلقائي"], ["saver", "🔋 توفير"], ["low", "خفيفة"], ["medium", "متوازنة"], ["high", "عالية"], ["ultra", "فائقة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
+    <p class="hint">${{ auto: "يختار لحاله حسب جوالك، ويخفف إذا الجوال تعب أو سخن، ويرجع يرفع إذا ارتاح.", saver: "أقل استهلاك للبطارية والحرارة: ٣٠ إطار بالكثير، بدون ظلال ولا زحمة سيارات.", low: "للجوالات الضعيفة: بدون ظلال ولا توهج.", medium: "جودة حلوة واستهلاك معتدل.", high: "ظلال ناعمة وتوهج الأضواء بالليل، ٦٠ إطار.", ultra: "أعلى دقة وأنعم ظلال، للجوالات والكمبيوترات القوية." }[q]}</p>
     <div class="rows" style="margin-top:10px">
       <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
       ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
@@ -4058,25 +4072,57 @@ function runHour() {
  * screen, the camera turns, or a war scene or a building's rise is playing.
  */
 let lastDraw = 0;
-// how long drawing takes on this phone: if it stays really slow, the town lightens itself (world.degrade) for this visit only
-// (it used to remember it for good and lower the resolution: the game stayed pixelated on a phone that was slow once)
-const perf = { avg: 8, since: 0, level: 0 };
-try { localStorage.removeItem("rafaya-perf-level"); } catch { /* fine */ }
-function perfWatch(ms, now) {
-  perf.avg = perf.avg * 0.95 + ms * 0.05;
-  if (perf.avg < 28 || perf.level >= 2 || WARX.scene || document.hidden) { perf.since = 0; return; }
-  perf.since ||= now;
-  if (now - perf.since > 8000) { // slow for eight seconds in a row
-    perf.level++; perf.since = 0; perf.avg = 10;
-    world.degrade(perf.level);
-  }
+/**
+ * The adaptive quality. It watches, over seconds and not single frames:
+ * - how long the game takes to draw a frame;
+ * - how late the frames come against the frame rate asked for (a busy GPU or a hot phone shows as late frames).
+ * Phones give no reliable temperature to a web page, so heat is read from sustained slowness.
+ * Steps (world.setLevel): 1 a little less sharp, 2 no shadows, 3 less sharp still, 4 at most 30 frames a second.
+ * Down after 6 s of trouble; up only after 25 s of ease and never within a minute of going down (no flicker).
+ * In «auto» it moves both ways; a fixed choice only takes the first two steps down, as a safety net.
+ */
+const perf = { cpu: 4, late: 1, since: 0, easy: 0, level: 0, downAt: 0, lastAt: 0, warm: performance.now() + 8000 };
+let fpsBusy = RENDER.busy, fpsIdle = RENDER.idle;
+function perfSet(level, now) {
+  const max = RENDER.adapt ? 4 : 2;
+  level = Math.max(0, Math.min(max, level));
+  if (level === perf.level) return;
+  if (level > perf.level) perf.downAt = now;
+  perf.level = level;
+  world.setLevel(Math.min(3, level));
+  fpsBusy = level >= 4 ? Math.min(30, RENDER.busy) : RENDER.busy;
 }
-const fpsBusy = { high: 60, medium: 45, low: 30 }[settings.quality] || 45, fpsIdle = settings.quality === "low" ? 24 : 30;
+function perfWatch(ms, now, wanted, busy) {
+  const gap = perf.lastAt ? now - perf.lastAt : wanted; perf.lastAt = now;
+  if (ms > 150 || gap > 1000) perf.warm = now + 4000; // a town being built or opened (one-off work): a few seconds don't count
+  if (document.hidden || WARX.scene || now < (perf.warm || 0)) { perf.since = perf.easy = 0; return; } // back from the background, or a war scene: not a measure
+  perf.cpu = perf.cpu * 0.95 + ms * 0.05;
+  if (busy) perf.late = perf.late * 0.92 + Math.min(4, gap / wanted) * 0.08; // only frames that were meant to come fast say if they are late
+  else perf.late = perf.late * 0.995 + 0.005; // calm frames are slow on purpose: lateness fades, so the quality may come back
+  const budget = 1000 / RENDER.busy;
+  const trouble = perf.cpu > budget * 0.75 || perf.late > 1.35, ease = perf.cpu < budget * 0.35 && perf.late < 1.1;
+  if (trouble) { perf.easy = 0; perf.since ||= now; if (now - perf.since > 6000 && now - perf.downAt > 6000) { perf.since = 0; perf.late = 1; perfSet(perf.level + 1, now); } return; } // one step at a time, 6 s apart at least
+  perf.since = 0;
+  if (!RENDER.adapt || !ease || !perf.level) { perf.easy = 0; return; }
+  perf.easy ||= now;
+  if (now - perf.easy > 25000 && now - perf.downAt > 60000) { perf.easy = 0; perfSet(perf.level - 1, now); }
+}
+try { localStorage.removeItem("rafaya-perf-level"); localStorage.removeItem("rafaya-perf-quality"); } catch { /* fine */ }
+// the trial copy and ?debug: a small meter in a corner (frames a second, the adaptive step, sharpness, what is drawn)
+const perfHud = (globalThis.RAFAYA_PREVIEW || new URLSearchParams(location.search).has("debug")) ? document.body.appendChild(Object.assign(document.createElement("div"), { id: "perfHud" })) : null;
+if (perfHud) {
+  perfHud.style.cssText = "position:fixed;z-index:50;left:8px;bottom:calc(var(--dock-space,0px) + 8px);padding:4px 8px;border-radius:8px;background:rgba(0,0,0,.62);color:#fff;font:600 11px/1.35 ui-monospace,monospace;direction:ltr;pointer-events:none";
+  let frames = 0, t0 = performance.now();
+  perfHud.tick = () => { frames++; const t = performance.now(); if (t - t0 < 1000) return;
+    const fps = Math.round(frames * 1000 / (t - t0)); frames = 0; t0 = t;
+    perfHud.textContent = `${fps} fps · ${settings.quality} L${perf.level} · ${world.renderer.getPixelRatio().toFixed(2)}x · ${world.renderer.shadowMap.enabled ? "shadows" : "no shadows"} · ${world.drawnBuildings ?? 0} bld${world.lodFar ? " far" : ""}`; };
+}
 function frame(now) {
   const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
   // behind an open sheet, or on the main menu, the town barely needs to move
   const quiet = !busy && (!playing || (!$("sheet").hidden && !WARX.scene));
-  if (now - lastDraw < 1000 / (busy ? fpsBusy : quiet || S?.idle ? 15 : fpsIdle) - 2) { requestAnimationFrame(frame); return; } // nobody watching: slow, cool and kind to the battery
+  const wanted = 1000 / (busy ? fpsBusy : quiet || S?.idle ? 15 : fpsIdle);
+  if (now - lastDraw < wanted - 2) { requestAnimationFrame(frame); return; } // nobody watching: slow, cool and kind to the battery
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -4109,7 +4155,8 @@ function frame(now) {
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
   const t0 = performance.now();
   world.frame(dt, tod);
-  perfWatch(performance.now() - t0, now);
+  perfWatch(performance.now() - t0, now, wanted, busy);
+  perfHud?.tick();
   if (world.follow && world.followPos) {
     const q = world.project(world.followPos), tag = $("followTag");
     tag.style.transform = `translate(${Math.round(q.sx)}px, ${Math.round(q.sy - 70)}px) translate(-50%, -100%)`;

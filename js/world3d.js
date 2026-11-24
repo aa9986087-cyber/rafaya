@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, powerNet } from "./sim.js";
-import { model, modelKey, baseKey, makerSeeded, VARIANTS, SETS } from "./models.js";
+import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS } from "./models.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -91,7 +91,8 @@ function cloudTexture() {
 }
 
 export class World {
-  constructor(canvas, { quality = "high" } = {}) {
+  constructor(canvas, { quality = "high", ultra = false } = {}) {
+    this.ultra = ultra; // «فائقة»: high, with a sharper picture and finer shadows
     this.canvas = canvas;
     this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== "low", powerPreference: "high-performance" });
@@ -113,7 +114,7 @@ export class World {
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight("#fff1d6", 2.2);
     this.sun.castShadow = quality !== "low";
-    const size = quality === "high" ? 2048 : 1024;
+    const size = ultra ? 4096 : quality === "high" ? 2048 : 1024;
     this.sun.shadow.mapSize.set(size, size);
     Object.assign(this.sun.shadow.camera, { left: -HALF - 2, right: HALF + 2, top: HALF + 2, bottom: -HALF - 2, near: 1, far: 80 });
     this.sun.shadow.bias = -0.0006;
@@ -602,7 +603,7 @@ export class World {
   syncBuildings(s) {
     const groups = new Map();
     // tint: war damage darkens a building (1 = as built)
-    const push = (key, ground, m, tint = 1) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [], tints: [] }); groups.get(k).list.push(m); groups.get(k).tints.push(tint); };
+    const push = (key, ground, m, tint = 1, tile = -1) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [], tints: [], tiles: [] }); const g = groups.get(k); g.list.push(m); g.tints.push(tint); g.tiles.push(tile); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
     const seen = new Map(), where = new Map(), glows = [];
@@ -613,7 +614,7 @@ export class World {
       const p = tileCenter(x, y);
       if (this.prevKeys?.has(idx(x, y)) && !t.b) this.puff(p, 12);
       if (!t.b) {
-        if (t.t === "rock") { q.setFromAxisAngle(up, ((x * 7 + y * 13) % 8) * 0.8); m4.compose(p, q, sc); push("rock", "sand", m4.clone()); }
+        if (t.t === "rock") { q.setFromAxisAngle(up, ((x * 7 + y * 13) % 8) * 0.8); m4.compose(p, q, sc); push("rock", "sand", m4.clone(), 1, idx(x, y)); }
         continue;
       }
       if (roadAt(t)) continue;
@@ -630,7 +631,7 @@ export class World {
       const variants = VARIANTS[key];
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
       const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
-      push(key, t.t, m4.clone(), t.b.wd ? 1 - Math.min(0.5, t.b.wd * 0.006) : 1);
+      push(key, t.t, m4.clone(), t.b.wd ? 1 - Math.min(0.5, t.b.wd * 0.006) : 1, idx(x, y));
       const i = idx(x, y);
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
@@ -648,7 +649,7 @@ export class World {
         if (inst) for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); }
         const geo = model(key, ground) || model("construction"); // a missing model must never stop the town from being drawn
         const capacity = Math.max(8, Math.ceil(list.length * 1.5));
-        inst = { capacity };
+        inst = { capacity, key: model(key, ground) ? key : "construction", ground, far: false };
         for (const set of SETS) {
           if (!geo[set]) continue;
           const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], capacity);
@@ -660,22 +661,15 @@ export class World {
         }
         this.instances.set(k, inst);
       }
-      for (const set of SETS) {
-        const mesh = inst[set];
-        if (!mesh) continue;
-        list.forEach((m, i) => mesh.setMatrixAt(i, m));
-        mesh.count = list.length;
-        mesh.instanceMatrix.needsUpdate = true;
-        if (set !== "lights" && set !== "glow" && (mesh.instanceColor || tints.some((v) => v < 1))) {
-          tints.forEach((v, i) => mesh.setColorAt(i, tc.setRGB(v, v * 0.96, v * 0.92)));
-          mesh.instanceColor.needsUpdate = true;
-        }
-      }
+      inst.tinted = tints.some((v) => v < 1) || SETS.some((set) => inst[set]?.instanceColor); // once coloured, always written (a repaired building goes back to white)
+      if (inst.tinted) for (const set of SETS) if (inst[set] && set !== "lights" && set !== "glow") inst[set].setColorAt(0, tc.setRGB(1, 1, 1)); // makes the colour buffer (filled by cull)
     }
+    this.groups = groups;
     this.syncSmoke();
     this.prevKeys = seen;
     this.buildingGlows = glows;
     this.where = where;
+    this.cull(true); // only what the camera sees (and a margin) is drawn
     this.homes = [...where.entries()].filter(([, w]) => w.k === "tent0" || w.k.startsWith("house")).map(([i]) => i);
     this.syncContact(s);
     this.fx?.syncTown(s); // war: moving parts of military buildings, damage smoke and fire
@@ -992,7 +986,7 @@ export class World {
     // buildings the water takes: they lean with the current, sink and break up
     if (this.where) for (const tile of f.lost) {
       const w = this.where.get(tile), inst = w && this.instances.get(w.k);
-      if (!inst) continue;
+      if (!inst || w.i < 0) continue;
       const g = Math.max(0, Math.min(1, (f.t - f.arrive(tile) - 0.25) / 1.4));
       if (g <= 0) continue;
       if (g < 1 && Math.random() < dt * 8) this.puff(tileCenter(tile % N, Math.floor(tile / N)), 2);
@@ -1269,6 +1263,7 @@ export class World {
         const w = this.where.get(tile), inst = w && this.instances.get(w.k);
         const t = Math.min(1, (this.clock - t0) / 0.55);
         if (!inst) { this.anims.delete(tile); continue; }
+        if (w.i < 0) { if (t >= 1) this.anims.delete(tile); continue; } // off screen: nothing to animate
         const e = easeBack(t);
         sc.makeScale(0.85 + 0.15 * t, Math.max(0.02, e), 0.85 + 0.15 * t);
         m.multiplyMatrices(w.m, sc);
@@ -1318,8 +1313,9 @@ export class World {
 
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-    let dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
-    if (this.perfLevel >= 2) dpr = Math.max(1, Math.min(dpr, 1.5)); // never below 1.5 on a sharp screen: lower looks pixelated
+    let dpr = Math.min(this.ultra ? 2.5 : this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
+    // the adaptive steps (see setLevel): a little less sharp first, never below 1
+    if (this.perfLevel >= 3) dpr = Math.max(1, dpr * 0.7); else if (this.perfLevel >= 1) dpr = Math.max(1, dpr * 0.85);
     if (w === this.w && h === this.h && dpr === this.dpr) return;
     this.dpr = dpr;
     this.renderer.setPixelRatio(dpr);
@@ -1422,21 +1418,92 @@ export class World {
   // ---------- frame ----------
 
   /**
-   * When the phone really struggles (slow frames), the town lightens itself for this visit only:
-   * 1: no shadows, 2: a slightly lower resolution (1.5 at least). 0 is as chosen in the settings.
+   * The adaptive quality's steps (js/main.js decides when), up or down, for this visit only:
+   * 0 as chosen in the settings; 1 a slightly lower resolution; 2 no shadows; 3 a lower resolution still.
+   * The buildings and the screen's text are never touched: the costly extras go first.
    */
-  degrade(level) {
+  setLevel(level) {
+    level = Math.max(0, Math.min(3, level));
+    if (level === this.perfLevel) return;
     this.perfLevel = level;
-    if (level >= 1 && this.renderer.shadowMap.enabled) {
-      this.renderer.shadowMap.enabled = false; this.sun.castShadow = false;
+    const shadows = this.quality !== "low" && level < 2;
+    if (shadows !== this.renderer.shadowMap.enabled) {
+      this.renderer.shadowMap.enabled = shadows; this.sun.castShadow = shadows; this.shadowDirty = true;
       this.scene.traverse((o) => { for (const m of [].concat(o.material || [])) m.needsUpdate = true; });
     }
     this.resize();
+  }
+  degrade(level) { this.setLevel(level); }
+
+  /**
+   * Draw only the buildings the camera can see, with a margin, and the far models when zoomed out.
+   * The town used to draw every building of the map every frame, even the ones off screen, at full detail.
+   * Each building's slot in its instanced mesh changes here, so the anims and the flood look it up in where.
+   */
+  cull(force = false) {
+    if (!this.groups) return;
+    const v = this.view;
+    // zoomed out past this, the far models (fewer faces); a gap between the two edges so it doesn't flicker
+    const far = this.lodOff ? false : this.lodFar ? v.zoom < 0.8 : v.zoom < 0.7;
+    const farChanged = far !== this.lodFar;
+    this.lodFar = far;
+    const key = `${v.x.toFixed(1)}|${v.z.toFixed(1)}|${v.zoom.toFixed(2)}|${v.yaw.toFixed(2)}|${this.w}|${this.h}`;
+    if (!force && !farChanged && key === this.cullKey) return;
+    this.cullKey = key;
+    // the ground the camera sees (at the ground and at a tall tower's top), as a box, plus a margin for shadows and pans
+    const cam = this.camera, dir = new THREE.Vector3(), pt = new THREE.Vector3();
+    cam.getWorldDirection(dir);
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [nx, ny] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) for (const h of [0, 3]) {
+      pt.set(nx, ny, -1).unproject(cam);
+      const t = (h - pt.y) / dir.y;
+      const gx = pt.x + dir.x * t, gz = pt.z + dir.z * t;
+      x0 = Math.min(x0, gx); x1 = Math.max(x1, gx); z0 = Math.min(z0, gz); z1 = Math.max(z1, gz);
+    }
+    const M = this.cullMargin ?? 3;
+    x0 -= M; x1 += M; z0 -= M; z1 += M;
+    const tc = new THREE.Color(), pos = new THREE.Vector3();
+    let drawn = 0;
+    for (const [k, g] of this.groups) {
+      const inst = this.instances.get(k);
+      if (!inst) continue;
+      if (inst.far !== far) { // the far or the near model for this key
+        const geo = (far ? modelFar(inst.key, inst.ground) : model(inst.key, inst.ground)) || {};
+        for (const set of SETS) if (inst[set]) { if (geo[set]) { inst[set].geometry = geo[set]; inst[set].visible = true; } else inst[set].visible = false; }
+        inst.far = far;
+      }
+      let n = 0;
+      for (let i = 0; i < g.list.length; i++) {
+        const m = g.list[i], tile = g.tiles[i];
+        pos.setFromMatrixPosition(m);
+        const w = tile >= 0 ? this.where?.get(tile) : null;
+        if (pos.x < x0 || pos.x > x1 || pos.z < z0 || pos.z > z1) { if (w && w.k === k) w.i = -1; continue; }
+        for (const set of SETS) {
+          const mesh = inst[set];
+          if (!mesh) continue;
+          mesh.setMatrixAt(n, m);
+          if (inst.tinted && set !== "lights" && set !== "glow") { const t = g.tints[i]; mesh.setColorAt(n, tc.setRGB(t, t * 0.96, t * 0.92)); }
+        }
+        if (w && w.k === k) w.i = n;
+        n++;
+      }
+      for (const set of SETS) {
+        const mesh = inst[set];
+        if (!mesh) continue;
+        mesh.count = n;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor && inst.tinted) mesh.instanceColor.needsUpdate = true;
+      }
+      drawn += n;
+    }
+    this.drawnBuildings = drawn;
+    this.shadowDirty = true;
   }
 
   frame(dt, todT) {
     this.clock += dt;
     const v = this.view;
+    if (this.groups && this.clock - (this.cullAt || 0) > 0.12) { this.cullAt = this.clock; this.cull(); } // what the camera sees, a few times a second
     if (Math.abs(v.yaw - v.yawTarget) > 1e-3) { v.yaw += (v.yawTarget - v.yaw) * Math.min(1, dt * 8); this.updateCamera(); }
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
     this.stepCars(dt);

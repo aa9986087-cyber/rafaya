@@ -45,3 +45,31 @@ The plan and the measurements for the graphics update. The official game is not 
 - Then the visual stages.
 
 **Measuring tool:** `?debug` in the URL exposes `RAFAYA_DEBUG.info()` (the renderer's counts) without changing the game.
+
+## Stage 2: the performance engine
+
+**What changed:**
+- **Culling:** only the buildings the camera sees, plus a 3-tile margin, are drawn (`World.cull`, a few times a second while the camera moves). The town used to draw every building of the map every frame.
+- **Far models:** zoomed out (zoom < 0.7, back at > 0.8), each building is drawn with its far model (`modelFar`), which keeps the same size and colours:
+  - rounded boxes become plain boxes;
+  - round shapes get about half their segments;
+  - parts under 0.045 tiles go, except night lights;
+  - the date palm becomes a trunk with six fronds (428 faces instead of 6,524 for a palm farm).
+- **Adaptive quality:** «✨ تلقائي», the new default. It reads the CPU time per frame and how late frames come, and moves one step at a time:
+  1. a little less sharp;
+  2. no shadows;
+  3. less sharp still;
+  4. at most 30 frames a second.
+  
+  It steps down after 6 s of trouble, and only one step per 6 s. It steps up after 25 s of ease, never within a minute of a step down. Loading moments are ignored. Fixed choices only take steps 1 and 2, as a safety net.
+- **New choices:** 🔋 توفير (battery saver: 30/20 fps, no shadows, no traffic) and فائقة (ultra: sharper up to 2.5x, 4096 shadow map). The old choices (عالية/متوسطة/خفيفة) keep their meaning.
+- **Meter:** the trial copy and `?debug` show a small meter (fps, step, sharpness, what is drawn).
+
+**Same dense province, same phone viewport (390×800 at 2.75x):**
+
+| | before | after |
+|---|---|---|
+| triangles / frame, normal zoom (high) | 3,227,420 | 674,892 |
+| triangles / frame, zoomed out (high) | 3,227,420 | 833,649 |
+| buildings drawn, normal zoom | 3,600 | 320 |
+| draw calls (high) | 145 | 117 |
