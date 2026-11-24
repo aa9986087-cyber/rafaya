@@ -2844,8 +2844,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-09" },
+  v: { solo: "2027-01-05", world: "2027-01-10" },
   items: [
+    ["world", "🔔", "زر التنبيهات بالإعدادات", "بالإعدادات صار فيه مفتاح «🔔 التنبيهات على الجوال»: شغّله وقت ما تبي (حتى لو قلت «بعدين» أول مرة)، وطفّه وقت ما تبي."],
     ["world", "📱", "التنبيهات بالآيفون", "بالآيفون: الإعدادات ← «فعّل التنبيهات» تطلع لك الخطوات بالصور: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وتفتح اللعبة من أيقونتها وحسابك ومدينتك ينتقلون لحالهم، وبعدها تفعّل التنبيهات. ولو ما انتقل الحساب فيه رمز احتياط."],
     ["world", "📰", "مواطنينك يبونك", "إذا غبت أكثر من ساعة وعند أهل مدينتك طلب مهم ما رديت عليه (أو قرار ينتظرك)، يوصلك تنبيه على جوالك فيه كلامهم، مرة كل ٨ ساعات بالكثير. وبالإعدادات صار فيه زر «جرّب التنبيه» تتأكد فيه إن التنبيهات توصلك."],
     ["world", "🧾", "تصحيح خصم الغياب", "اللي كانت مدينته مديونة وطلع، ودرع الغياب سدّد دينه، كان ينخصم منه بالغلط كأنه كسب. صلّحناه، ورجّعنا لكل واحد صار له كذا فلوسه مع رسالة اعتذار."],
@@ -3274,9 +3275,10 @@ function settingsSheet(fromMenu) {
       <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
+      ${pushState() !== "no" || isIOS ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushState() === "on" ? "checked" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
-    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
+    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
     <textarea id="saveCode" readonly></textarea>
@@ -3292,7 +3294,12 @@ function settingsSheet(fromMenu) {
     const id = me();
     try { const r = await api("/world/push/test", { name: id.name, secret: id.secret }); toast(r.error || "📲 أرسلنا تنبيه تجربة: لازم يوصلك خلال ثواني", r.error ? "bad" : "goal"); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
   });
-  $("pushToggle")?.addEventListener("click", async (e) => { const on = e.currentTarget.dataset.on === "1"; if (on) await pushOff(); else await pushOn(); settingsSheet(fromMenu); });
+  $("setPush")?.addEventListener("change", async (e) => {
+    const want = e.target.checked;
+    if (!want) { await pushOff(); settingsSheet(fromMenu); return; }
+    e.target.checked = false; // on only once it really works (the iPhone and a refusal open their own steps)
+    if (await pushOn()) settingsSheet(fromMenu);
+  });
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
