@@ -101,7 +101,7 @@ export const B = {
 
   // reach: how far (in tiles) its water or power gets; homes and shops farther away get none.
   dam: { cat: "util", name: "سد", cost: 2500, upkeep: 15, era: 1, tech: "dams", onWadi: true, buildHours: 48, jobs: 4, text: "ينبني على الوادي. يحجز السيل عن اللي بعده، ويجمع ماء المطر في بحيرة وراه تفرّح الناس وتغذي الماء الجوفي." },
-  vault: { cat: "util", worldOnly: true, max: 4, name: "خزنة", cost: 200, upkeep: 1, era: 0, text: "تحفظ فلوس البلدية: كل خزنة تزيد كم تقدر تجمع. طوّرها تشيل أكثر." },
+  vault: { cat: "util", worldOnly: true, max: 4, name: "خزنة", cost: 500, upkeep: 1, era: 0, text: "تحفظ فلوس البلدية: كل خزنة تزيد كم تقدر تجمع. طوّرها تشيل أكثر." },
   well: { cat: "util", name: "بئر", cost: 100, upkeep: 2, era: 0, water: 30, reach: 5, text: "ماء ٣٠ وحدة، يوصل للبيوت اللي حوله لين ٥ مربعات." },
   tank: { cat: "util", name: "خزان ماء", cost: 900, upkeep: 12, era: 1, water: 140, reach: 9, power: -2, text: "ماء ١٤٠ وحدة، يوصل لين ٩ مربعات." },
   desal: { cat: "util", name: "محطة تحلية", cost: 4500, upkeep: 50, era: 2, tech: "desal", water: 700, reach: 15, power: -25, text: "ماء ٧٠٠ وحدة، يوصل لين ١٥ مربع." },
@@ -212,13 +212,17 @@ export const bizLevel = (b) => (b?.id === "vault" ? { ...BIZ_UP[0], upkeep: VAUL
  * `up` is the price of reaching that level; upkeepX × the vault's upkeep (2) an hour.
  */
 export const BASE_VAULT = [5000, 15000, 50000, 150000, 400000];
+// Prices (2026-11-24, the owner: "not easy, but fair"): about 40% of the capacity a level adds, roughly a
+// game day of a careful town's net income at that stage, and always less than the stage's own strongroom
+// holds (so nobody is stuck unable to pay). Each extra vault costs half as much again (VAULT_MORE).
 export const VAULT = [
   { name: "خزنة صغيرة", era: 0, cap: 5000, up: 0, upkeepX: 1 },
-  { name: "خزنة حديد", era: 1, cap: 15000, up: 2500, upkeepX: 2 },
-  { name: "خزنة مصفّحة", era: 2, cap: 40000, up: 8000, upkeepX: 4 },
-  { name: "بيت المال", era: 3, cap: 120000, up: 25000, upkeepX: 7.5 },
-  { name: "خزينة الحاضرة", era: 4, cap: 350000, up: 70000, upkeepX: 15 }
+  { name: "خزنة حديد", era: 1, cap: 15000, up: 6000, upkeepX: 2 },
+  { name: "خزنة مصفّحة", era: 2, cap: 40000, up: 18000, upkeepX: 4 },
+  { name: "بيت المال", era: 3, cap: 120000, up: 50000, upkeepX: 7.5 },
+  { name: "خزينة الحاضرة", era: 4, cap: 350000, up: 140000, upkeepX: 15 }
 ];
+export const VAULT_MORE = 0.5;
 
 /**
  * Military buildings (world of al-Jouf only) grow in up to three levels. Each level: its name, the

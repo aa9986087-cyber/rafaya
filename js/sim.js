@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -211,17 +211,24 @@ export function cantBuild(s, x, y, id) {
   if (t.t === "lake") return "هذي بحيرة السد";
   if (def.onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
   if (def.onRock && t.t !== "rock") return "الكسارة تنبني على الصخور";
-  const cost = def.cost + (t.t === "rock" && !def.onRock ? ROCK_CLEAR : 0);
+  const cost = priceOf(s, id) + (t.t === "rock" && !def.onRock ? ROCK_CLEAR : 0);
   if (s.money < cost) return "ما يكفي المال";
   return "";
 }
 
+/** What building this costs now: its price, except a vault, which costs half as much again for each one already built. */
+export function priceOf(s, id) {
+  const d = B[id];
+  if (id !== "vault") return d.cost;
+  const n = s.tiles.reduce((k, t) => k + (t.b?.id === "vault" ? 1 : 0), 0);
+  return Math.round(d.cost * (1 + VAULT_MORE * n));
+}
 export function build(s, x, y, id) {
   const why = cantBuild(s, x, y, id);
   if (why) return why;
   const t = s.tiles[idx(x, y)];
   const keepRock = B[id].onRock;
-  s.money -= B[id].cost + (t.t === "rock" && !keepRock ? ROCK_CLEAR : 0);
+  s.money -= priceOf(s, id) + (t.t === "rock" && !keepRock ? ROCK_CLEAR : 0);
   if (t.t === "rock" && !keepRock) t.t = "sand";
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
