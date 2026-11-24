@@ -1631,14 +1631,14 @@ async function pushIosHelp() {
       <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>«الرافعية»</b> من أيقونتها بالشاشة: حسابك ومدينتك ينتقلون <b>لحالهم</b></span></div>
       <div class="row g-step"><b class="g-n">٤</b><span>الإعدادات ← <b>«فعّل التنبيهات»</b> ← <b>«السماح»</b>، وجرّبها بزر «جرّب التنبيه»</span></div>
     </div>
-    ${code ? `<details class="ios-fallback"><summary>ما انتقل حسابك؟</summary><p>بالأيقونة: ادخل الجوف ← «عندي رمز نقل» واكتب هالرمز (صالح ٣٠ دقيقة):</p>
+    ${code ? `<details class="ios-fallback"><summary>🔑 احتياط: لو ما انتقل حسابك لحاله</summary><p>عادةً ما تحتاجه: حسابك ينتقل لحاله. بس لو فتحت الأيقونة ولقيت نفسك لاعب جديد، ادخل الجوف ← «احتياط: عندي رمز نقل» واكتب هالرمز (صالح ٣٠ دقيقة):</p>
       <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}
     <p class="hint">مدينتك بالجوف ما تضيع: نفس الاسم ونفس المدينة، وتقدر تلعب من سفاري ومن الأيقونة. اللعب الفردي ما ينتقل لحاله: انسخه من الإعدادات ← نسخة احتياطية.</p>`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 /** The new app (iPhone home screen): bring the account over with the move code. */
 function handoffSheet() {
-  sheet(`<h2>📲 رمز النقل</h2><p>اكتب الرمز (٦ أرقام) اللي طلع لك بسفاري في «التنبيهات بالآيفون». يرجع لك اسمك ومدينتك.</p>
+  sheet(`<h2>🔑 رمز النقل (احتياط)</h2><p>عادةً حسابك ينتقل لحاله. لو ما انتقل: اكتب الرمز (٦ أرقام) اللي تحت «احتياط» في «التنبيهات بالآيفون» بسفاري، ويرجع لك اسمك ومدينتك.</p>
     <label class="rg-name">الرمز <input id="hoCode" type="text" inputmode="numeric" maxlength="6" placeholder="١٢٣٤٥٦" style="letter-spacing:6px;text-align:center"></label>
     <div class="sheet-actions keep"><button class="btn go block" id="hoGo" type="button">رجّع حسابي</button></div>`, "world");
   $("hoGo").addEventListener("click", async () => {
@@ -1804,7 +1804,7 @@ function worldJoinSheet(recover) {
       <p class="hint">٣ إلى ١٦ حرف (عربي أو إنجليزي أو أرقام). يطلع للكل فوق مدينتك، فلا تكتب اسمك الكامل.</p>
       <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">ادخل العالم</button></div>
       <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>
-      <button class="btn block" id="wjHandoff" type="button">📲 عندي رمز نقل (من سفاري للأيقونة)</button>`}`, "world");
+      <button class="btn block" id="wjHandoff" type="button">🔑 احتياط: عندي رمز نقل (آيفون)</button>`}`, "world");
   $("wjRecover")?.addEventListener("click", () => worldJoinSheet(true));
   $("wjHandoff")?.addEventListener("click", () => handoffSheet());
   $("wjGo").addEventListener("click", async () => {
