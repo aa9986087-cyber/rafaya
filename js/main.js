@@ -128,19 +128,10 @@ function scheduleLayout() {
     const available = Math.max(0, bottom - top);
     const count = document.body.classList.contains("world") ? side.children.length : side.querySelectorAll(".side-btn:not(.world-only)").length;
     const gap = 6;
-    const rows = Math.max(1, Math.floor((available + gap) / (44 + gap)));
-    const shortLandscape = innerWidth > innerHeight && innerHeight <= 500;
-    const padding = getComputedStyle(hud);
-    const horizontalRoom = innerWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight);
-    const maxColumns = shortLandscape ? Math.max(1, Math.floor((horizontalRoom + gap) / (44 + gap))) : 3;
-    const columns = Math.min(maxColumns, Math.ceil(count / rows));
-    const needed = Math.ceil(count / columns);
-    const size = Math.min(50, Math.max(44, Math.floor((available - (needed - 1) * gap) / needed)));
+    const size = Math.min(50, Math.max(44, Math.floor((available - (count - 1) * gap) / count)));
     side.style.top = `${top}px`;
     side.style.setProperty("--rail-height", `${available}px`);
-    side.style.setProperty("--rail-columns", columns);
     side.style.setProperty("--sz", `${size}px`);
-    side.classList.toggle("compact", size < 50);
     root.style.setProperty("--dock-space", `${dockHeight}px`);
   });
 }
@@ -1183,8 +1174,14 @@ async function wnewsPoll(force) {
 /** The news sheet's tabs: the town's news, al-Jouf's (world only) and the game's updates. */
 function newsTabs(on) {
   const mode = worldMode ? "world" : "solo", n = worldMode ? wnewsUnread() : 0, up = wnUnseen(mode).length;
-  const tabs = [["town", worldMode ? "📰 مدينتي" : "📰 القرية", S.newsUnread], ...(worldMode ? [["world", "🌍 الجوف", n]] : []), ["updates", "✨ التحديثات", up]];
-  return `<div class="wn-tabs" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map(([k, name, dot]) => `<button type="button" class="btn${on === k ? " go" : ""}" data-ntab="${k}">${name}${dot && on !== k ? `<i class="dot"></i>` : ""}</button>`).join("")}</div>`;
+  const tabs = [
+    ["town", "📰", worldMode ? "مدينتي" : "القرية", S.newsUnread],
+    ...(worldMode ? [["world", "🌍", "الجوف", n]] : []),
+    ["updates", "✨", "التحديثات", up],
+  ];
+  return `<div class="wn-tabs" style="--news-tabs:${tabs.length}">${tabs.map(([key, icon, name, unread]) =>
+    `<button type="button" class="btn${on === key ? " go" : ""}" data-ntab="${key}"><span aria-hidden="true">${icon}</span><span class="wn-tab-label">${name}</span>${unread && on !== key ? '<i class="dot"></i>' : ""}</button>`
+  ).join("")}</div>`;
 }
 /** The updates tab: what changed in the game for this mode, newest first (the new ones marked). */
 function updatesNewsSheet() {
@@ -1609,16 +1606,57 @@ async function loadClock() {
   } catch { /* keep the local guess */ }
 }
 // ---------- notifications on the phone (al-Jouf): attacks, war and being named in the chat, even with the game shut ----------
-const PUSH = { reg: null };
+const PUSH = { registration: null, key: null, checked: false, enabled: false, checking: null };
 const pushable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-if ("serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && (location.protocol === "https:" || location.hostname === "localhost")) {
-  navigator.serviceWorker?.register("/sw.js").then((r) => { PUSH.reg = r; }).catch(() => {});
+const canRegisterWorker = "serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && isSecureContext;
+function registerPushWorker() {
+  if (!PUSH.registration) {
+    PUSH.registration = navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
+      .catch(() => { PUSH.registration = null; return null; });
+  }
+  return PUSH.registration;
+}
+if (canRegisterWorker) registerPushWorker();
+async function activePushWorker() {
+  if (!canRegisterWorker || !await registerPushWorker()) throw new Error("worker");
+  let timer;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("worker")), 6500); })
+    ]);
+  } finally { clearTimeout(timer); }
 }
 function pushState() {
-  if (globalThis.RAFAYA_PREVIEW || !onlineOk()) return "no"; // the trial copy has no server to send them
-  if (!pushable()) return isIOS && !standalone() ? "ios-install" : "no";
+  if (globalThis.RAFAYA_PREVIEW || !onlineOk()) return "no";
+  if (isIOS && !standalone()) return "ios-install";
+  if (!pushable()) return "no";
   if (Notification.permission === "denied") return "denied";
-  return store.get("rafaya-push-on") === "1" && Notification.permission === "granted" ? "on" : "off";
+  if (Notification.permission !== "granted" || store.get("rafaya-push-on") !== "1" || me()?.plot == null) return "off";
+  return PUSH.checked ? (PUSH.enabled ? "on" : "off") : "checking";
+}
+function pushKey() {
+  if (!PUSH.key) PUSH.key = api("/world/push/key").catch((e) => { PUSH.key = null; throw e; });
+  return PUSH.key;
+}
+async function registerPushEndpoint(sub, id) {
+  const r = await api("/world/push/sub", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
+  if (!r.ok) throw new Error(r.error || "subscription");
+}
+function checkPush() {
+  const id = me();
+  if (pushState() !== "checking" || !id?.secret || id.plot == null) return;
+  if (PUSH.checking) return PUSH.checking;
+  PUSH.checking = (async () => {
+    try {
+      const reg = await activePushWorker();
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await registerPushEndpoint(sub, id);
+      PUSH.enabled = !!sub;
+    } catch { PUSH.enabled = false; }
+    finally { PUSH.checked = true; PUSH.checking = null; }
+  })();
+  return PUSH.checking;
 }
 const b64urlBytes = (s) => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
 async function pushOn() {
@@ -1626,14 +1664,25 @@ async function pushOn() {
   if (!id?.secret || id.plot == null) { toast("أسّس مدينتك بالجوف أول", "bad"); return false; }
   if (pushState() === "ios-install") { pushIosHelp(); return false; }
   if (!pushable()) { toast("جوالك أو متصفحك ما يدعم التنبيهات", "bad"); return false; }
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") { if (perm === "denied") pushDeniedHelp(); else toast("ما سمحت بالتنبيهات", "bad"); return false; }
   try {
-    const reg = PUSH.reg || await navigator.serviceWorker.ready;
-    const { key } = await api("/world/push/key");
-    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlBytes(key) });
-    const r = await api("/world/push/sub", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
-    if (r.error) throw new Error(r.error);
+    const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (perm !== "granted") {
+      if (perm === "denied") pushDeniedHelp(); else toast("ما سمحت بالتنبيهات", "bad");
+      return false;
+    }
+    const [reg, { key }] = await Promise.all([activePushWorker(), pushKey()]);
+    const serverKey = b64urlBytes(key);
+    let sub = await reg.pushManager.getSubscription();
+    if (sub?.options?.applicationServerKey) {
+      const previous = new Uint8Array(sub.options.applicationServerKey);
+      if (previous.length !== serverKey.length || previous.some((v, i) => v !== serverKey[i])) {
+        await sub.unsubscribe();
+        sub = null;
+      }
+    }
+    sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: serverKey });
+    await registerPushEndpoint(sub, id);
+    PUSH.checked = PUSH.enabled = true;
     store.set("rafaya-push-on", "1");
     toast("🔔 تمام! بيوصلك تنبيه إذا انضربت مدينتك أو أحد ذكرك بالشات", "goal");
     return true;
@@ -1647,9 +1696,10 @@ function pushDeniedHelp() {
 }
 async function pushOff() {
   try {
-    const reg = PUSH.reg || await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    const reg = await activePushWorker(), sub = await reg.pushManager.getSubscription();
     if (sub) { await api("/world/push/unsub", { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
   } catch { /* fine */ }
+  PUSH.checked = true; PUSH.enabled = false;
   store.set("rafaya-push-on", "0");
   toast("وقفت التنبيهات", "");
 }
@@ -1667,13 +1717,15 @@ async function pushIosHelp() {
   const id = me();
   if (!old && id?.secret) {
     try {
-      const h = await api("/world/handoff", { name: id.name, secret: id.secret });
-      code = (await iosPrepareMove(true)).code || h.code || ""; // the whole game moves; the account-only code is the last resort
-      // the home-screen app opens at this page's address and the manifest's start: both carry the move link,
-      // so the account goes over by itself on its first launch (the code is only the fallback)
-      if (h.token) {
-        history.replaceState(null, "", `/?link=${h.token}`);
-        document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?t=${h.token}`);
+      code = (await iosPrepareMove(true)).code || "";
+      if (!code) {
+        const h = await api("/world/handoff", { name: id.name, secret: id.secret });
+        code = h.code || ""; // the account-only transfer is the fallback
+        // The home-screen app can still restore the account from the legacy link.
+        if (h.token) {
+          history.replaceState(null, "", `/?link=${h.token}`);
+          document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?t=${h.token}`);
+        }
       }
     } catch { /* shown without */ }
   }
@@ -1754,8 +1806,10 @@ function handoffSheet(firstOpen) {
 /** Once, on entering al-Jouf: offer notifications (they work best when asked at the right time). */
 function pushOffer(tries = 0) {
   const st = pushState();
+  if (st === "checking") { checkPush()?.then(() => pushOffer(tries)); return; }
   if (st === "on" || st === "no" || st === "denied" || store.get("rafaya-push-asked") === "1" || !worldMode) return;
   if (sheetFor || visiting || WARX.scene) { if (tries < 20) setTimeout(() => pushOffer(tries + 1), 10000); return; } // after the screen in front closes
+  if (st === "off") pushKey().catch(() => {});
   store.set("rafaya-push-asked", "1");
   sheet(`<h2>🔔 تبي تنبيهات؟</h2><p>يوصلك تنبيه حتى واللعبة مسكّرة:</p>
     <div class="rows"><div class="row"><span>🚨 هجوم على مدينتك أو حرب</span></div><div class="row"><span>💬 أحد ذكرك بالشات</span></div><div class="row"><span>📰 مواطنينك يبونك وانت غايب</span></div></div>
@@ -1770,7 +1824,7 @@ function pushOffer(tries = 0) {
 // the page's address and the manifest's start, so the app added to the home screen opens with it and restores
 // everything (the al-Jouf account, the solo towns, the settings). A 6-digit code (24 h) does the same by hand.
 const MOVE = { token: "", code: "", at: 0, sum: "" };
-const moveKeys = () => Object.keys(localStorage).filter((k) => k.startsWith("rafaya-") && !k.startsWith("rafaya-move") && k !== "rafaya-handoff-asked");
+const moveKeys = () => Object.keys(localStorage).filter((k) => k.startsWith("rafaya-") && !k.startsWith("rafaya-move") && k !== "rafaya-handoff-asked" && k !== "rafaya-push-on");
 const b64 = (buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode(...u.subarray(i, i + 32768)); return btoa(s); };
 const unb64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
 async function gzipText(text) { return b64(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); }
@@ -1796,7 +1850,7 @@ async function takeMove(tokenOrCode) {
   const r = await (await fetch(API + "/move/take", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: tokenOrCode }) })).json();
   if (!r.data) return false;
   const all = JSON.parse(await gunzipText(r.data));
-  for (const [k, v] of Object.entries(all)) if (typeof v === "string") localStorage.setItem(k, v);
+  for (const [k, v] of Object.entries(all)) if (k !== "rafaya-push-on" && typeof v === "string") localStorage.setItem(k, v);
   sessionStorage.setItem("rafaya-moved", "1");
   location.replace("/");
   return true;
@@ -1830,31 +1884,51 @@ async function moveCodeSheet() {
 }
 
 // ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
-const GAME_FILES = ["./", "index.html", "css/style.css", ...["version", "data", "sim", "people", "models", "world3d", "icons", "warfx", "war", "sound", "news", "main"].map((m) => `js/${m}.js`)];
+const UPDATE_PARAM = "rafaya-release";
 async function versionCheck() {
   if (VERSION === "dev" || globalThis.RAFAYA_PREVIEW || !onlineOk() || sheetFor === "update") return;
   let v;
   try { v = (await (await fetch("/api/version", { cache: "no-store" })).json()).version; } catch { return; }
-  if (!v || v === "dev" || v === VERSION) return;
+  if (!v || v === "dev") return;
+  if (v === VERSION) {
+    const url = new URL(location.href);
+    if (url.searchParams.has(UPDATE_PARAM)) {
+      url.searchParams.delete(UPDATE_PARAM);
+      url.searchParams.delete("rafaya-retry");
+      history.replaceState(history.state, "", url);
+    }
+    return;
+  }
   updateSheet(v);
 }
 function updateSheet(v) {
   const tried = sessionStorage.getItem("rafaya-update-tried") === v; // already reloaded for this version once: the browser kept old files
   sheet(`<h2>⬆️ تحديث جديد</h2><p>نزل تحديث جديد للعبة، ولازم تحدّث عشان تكمل. مدينتك محفوظة وما يضيع منها شي.</p>
-    ${tried ? `<div class="need">المتصفح ما جاب النسخة الجديدة. سكّر المتصفح كامل وافتحه من جديد، أو امسح بيانات الموقع المؤقتة (الكاش).</div>` : ""}
+    ${tried ? `<div class="need">المتصفح ما جاب النسخة الجديدة. اقفل اللعبة وافتحها من نفس المكان، من الأيقونة أو من المتصفح، وجرّب زر التحديث مرة ثانية.</div>` : ""}
     <div class="sheet-actions keep"><button class="btn go block" id="updNow" type="button">حدّث الحين</button></div>`, "update");
   $("sheetClose").hidden = true;
   $("updNow").addEventListener("click", async () => {
     $("updNow").disabled = true; $("updNow").textContent = "نحدّث…";
     try { if (playing) save(); if (worldMode) worldSync(true); } catch { /* the save is on the phone already */ }
     try { sessionStorage.setItem("rafaya-update-tried", v); } catch { /* fine */ }
-    await Promise.all(GAME_FILES.map((f) => fetch(f, { cache: "reload" }).catch(() => {}))); // fresh copies into the browser's cache
-    location.reload();
+    const url = new URL(location.href);
+    url.searchParams.set(UPDATE_PARAM, v);
+    url.searchParams.set("rafaya-retry", String(Date.now()));
+    location.replace(url);
   });
 }
 versionCheck();
 setInterval(versionCheck, 5 * 60000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) versionCheck(); });
+addEventListener("pageshow", () => { versionCheck(); checkPush(); });
+addEventListener("online", versionCheck);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  versionCheck();
+  if ((sheetFor === "settings" || sheetFor === "settings-menu") && !$("setPush")?.disabled) {
+    PUSH.checked = false;
+    settingsSheet(sheetFor === "settings-menu");
+  }
+});
 
 // ---------- live: the server pushes what changed the moment it happens (chat, war, the bulletin, towns) ----------
 const LIVE = { ws: null, ok: false, tries: 0, timer: 0, ping: 0 };
@@ -3007,9 +3081,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-20" },
+  v: { solo: "2027-01-16", world: "2027-01-21" },
   items: [
-    ["world", "📱", "واجهة الجوال أضبط", "الضغط على الأزرار والكتابة بسفاري ما تكبّر الصفحة بالغلط. القوائم والأدوات تتأقلم مع حجم الشاشة، وتقدر تكبّر الخريطة بإصبعين."],
+    ["world", "🔔", "التحديث والتنبيهات على الجوال", "التحديث يوصل من الأيقونة والمتصفح. الإعدادات تتحقق من اشتراك هالجهاز، وزر تجربة التنبيه يجرّب نفس الجهاز."],
+    ["world", "📱", "واجهة الجوال أضبط", "الضغط على الأزرار والكتابة بسفاري ما تكبّر الصفحة بالغلط. أدوات اليسار بعمود واحد تقدر تمرّره، وكلمة «التحديثات» بالنشرة تظهر كاملة. تقدر تكبّر الخريطة بإصبعين."],
     ["world", "🧾", "ميزانية أوضح", "اضغط الميزانية وتشوف رصيدك، وكم تتوقع يدخل ويطلع الساعة الجاية. سجل الحركات يبيّن كل مبلغ وسببه، مثل المكافآت والرسوم والهدايا."],
     ["world", "🌍", "عالم الجوف أول القائمة", "اللعب الحين في عالم الجوف. تلقى زرّه أول شي في القائمة الرئيسية، وتدخل العالم إذا ضغطت عليه."],
     ["both", "📲", "لعبتك تنتقل للتطبيق", "بالآيفون: إذا حطيت اللعبة تطبيق بشاشتك (من سفاري: إضافة إلى الشاشة الرئيسية) وفتحتها، تلقى لعبتك كاملة: حساب الجوف ومدنك والإعدادات. ولو فتحت التطبيق ولقيته فاضي: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق» وتكتب الرمز بالتطبيق."],
@@ -3522,7 +3597,8 @@ $("goal").addEventListener("click", () => { sfx.tap(); goals(); });
 // ---------- settings, saving, the main menu ----------
 
 function settingsSheet(fromMenu) {
-  const q = settings.quality;
+  const q = settings.quality, pushStatus = pushState();
+  if (pushStatus === "off" && me()?.plot != null) pushKey().catch(() => {});
   sheet(`<h2>الإعدادات</h2>
     <h3>الرسوم</h3><p>«عالية» فيها توهّج الانفجارات والأضواء وأعلى دقة. لو الجوال يسخن أو البطارية تخلص بسرعة، اختر «متوسطة» أو «خفيفة».</p>
     <div class="seg">${[["high", "عالية"], ["medium", "متوسطة"], ["low", "خفيفة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
@@ -3530,10 +3606,10 @@ function settingsSheet(fromMenu) {
       <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
-      ${pushState() !== "no" || isIOS ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushState() === "on" ? "checked" : ""}></label>` : ""}
+      ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
-    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
@@ -3549,15 +3625,34 @@ function settingsSheet(fromMenu) {
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
-  $("pushTest")?.addEventListener("click", async () => {
-    const id = me();
-    try { const r = await api("/world/push/test", { name: id.name, secret: id.secret }); toast(r.error || "📲 أرسلنا تنبيه تجربة: لازم يوصلك خلال ثواني", r.error ? "bad" : "goal"); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
+  $("pushTest")?.addEventListener("click", async (e) => {
+    const button = e.currentTarget, id = me();
+    button.disabled = true;
+    try {
+      const sub = await (await activePushWorker()).pushManager.getSubscription();
+      if (sub) {
+        await registerPushEndpoint(sub, id);
+        const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
+        if (r.ok) { toast("📲 مزوّد الإشعارات قبل التنبيه التجريبي لهالجهاز. تأكد من وصوله.", "goal"); return; }
+        if (!r.expired) { toast(r.error || "ما قدرنا نرسل التجربة، جرّب بعد شوي", "bad"); return; }
+        await sub.unsubscribe();
+      }
+      PUSH.enabled = false;
+      toast("اشتراك هالجهاز انتهى. فعّل التنبيهات مرة ثانية.", "bad");
+      if (button.isConnected) settingsSheet(fromMenu);
+    } catch { toast("ما زبط إرسال التجربة، جرّب بعد شوي", "bad"); }
+    finally { button.disabled = false; }
   });
-  $("setPush")?.addEventListener("change", async (e) => {
+  const pushToggle = $("setPush");
+  if (pushToggle && pushStatus === "checking") checkPush()?.then(() => {
+    if (pushToggle.isConnected) settingsSheet(fromMenu);
+  });
+  pushToggle?.addEventListener("change", async (e) => {
     const want = e.target.checked;
-    if (!want) { await pushOff(); settingsSheet(fromMenu); return; }
-    e.target.checked = false; // on only once it really works (the iPhone and a refusal open their own steps)
-    if (await pushOn()) settingsSheet(fromMenu);
+    e.target.disabled = true;
+    if (!want) await pushOff();
+    else await pushOn();
+    if (e.target.isConnected) settingsSheet(fromMenu);
   });
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });

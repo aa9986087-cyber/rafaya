@@ -171,9 +171,10 @@ export class Board extends DurableObject {
       const head = b64url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
       const body = b64url(new TextEncoder().encode(JSON.stringify({ aud: new URL(sub.endpoint).origin, exp: now + 12 * 3600, sub: "https://rafaya.vamosx.workers.dev" })));
       const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, v.key, new TextEncoder().encode(`${head}.${body}`));
-      const r = await fetch(sub.endpoint, { method: "POST", body: "", headers: { TTL: "3600", Urgency: "high", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
+      const r = await fetch(sub.endpoint, { method: "POST", body: "", redirect: "error", signal: AbortSignal.timeout(8000), headers: { TTL: "3600", Urgency: "high", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
       if (r.status === 404 || r.status === 410) this.sql.exec("DELETE FROM pushsubs WHERE k = ?", sub.k); // the phone dropped it
-    } catch { /* the next one */ }
+      return r.status;
+    } catch { return 0; }
   }
   /**
    * The citizens' important requests: a town whose mayor has been away over an hour, with an unanswered
@@ -550,12 +551,25 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", token, name, now);
       return json({ code, token });
     }
-    if (p[0] === "push" && p[1] === "test") { // «جرّب التنبيه»: one to this town's phones now, even with the game open
+    if (p[0] === "push" && p[1] === "test") {
       if (me.plot == null) return json({ error: "no town" }, 400);
-      const n = this.sql.exec("SELECT COUNT(*) AS n FROM pushsubs WHERE plot = ?", me.plot).toArray()[0].n;
-      if (!n) return json({ error: "ما فيه جوال مسجّل للتنبيهات: فعّلها أول" });
-      this.push(me.plot, "🔔 تجربة", "التنبيهات شغالة! كذا بيوصلك إذا انضربت مدينتك أو أحد ذكرك أو مواطنينك يبونك.", "test", true);
-      return json({ ok: true, phones: n });
+      const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
+      const subs = endpoint
+        ? this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ? AND k = ?", me.plot, await hash(endpoint)).toArray()
+        : this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ?", me.plot).toArray();
+      if (!subs.length) return json({ error: "ما فيه اشتراك مسجّل لهالجهاز. فعّل التنبيهات أول." });
+      const statuses = await Promise.all(subs.map(async (sub) => {
+        const at = Date.now();
+        const queued = this.sql.exec("INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?) RETURNING id",
+          sub.k, "🔔 تجربة التنبيهات", "وصلتك تجربة التنبيه من عالم الجوف.", "test", at).toArray()[0];
+        const status = await this.wake(sub);
+        if (status < 200 || status >= 300) this.sql.exec("DELETE FROM pushq WHERE id = ?", queued.id);
+        return status;
+      }));
+      const phones = statuses.filter((status) => status >= 200 && status < 300).length;
+      if (phones) return json({ ok: true, phones });
+      const expired = !!endpoint && statuses.some((status) => status === 404 || status === 410);
+      return json({ expired, error: expired ? "اشتراك هالجهاز انتهى." : "مزوّد الإشعارات ما قبل التجربة الحين. جرّب بعد شوي." });
     }
     if (p[0] === "push" && p[1] === "sub") { // this phone wants notifications for the player's town
       const endpoint = String(body.endpoint || "");
@@ -628,6 +642,12 @@ export default {
       const board = env.BOARD.get(env.BOARD.idFromName("rafaya"));
       return board.fetch(request);
     }
-    return env.ASSETS.fetch(request);
+    const response = await env.ASSETS.fetch(request);
+    if (url.pathname === "/" || ["/index.html", "/sw.js", "/manifest.webmanifest"].includes(url.pathname)) {
+      const headers = new Headers(response.headers);
+      headers.set("Cache-Control", "no-cache, must-revalidate");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    }
+    return response;
   }
 };

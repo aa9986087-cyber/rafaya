@@ -1,7 +1,7 @@
 // الرافعية: the service worker. It only does notifications (no caching: the game always loads fresh,
 // and updates are checked by the game itself). A push carries no data: the worker asks the server what
 // it was about (/api/world/push/inbox) and shows it.
-self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("install", (e) => e.waitUntil(self.skipWaiting()));
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -9,8 +9,12 @@ async function inbox() {
   const sub = await self.registration.pushManager.getSubscription();
   if (!sub) return [];
   const k = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sub.endpoint)));
-  const r = await fetch(`/api/world/push/inbox?k=${k}`, { cache: "no-store" });
-  return r.ok ? (await r.json()).items || [] : [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  try {
+    const r = await fetch(`/api/world/push/inbox?k=${k}`, { cache: "no-store", signal: controller.signal });
+    return r.ok ? (await r.json()).items || [] : [];
+  } finally { clearTimeout(timer); }
 }
 self.addEventListener("push", (e) => e.waitUntil((async () => {
   let items = [];
