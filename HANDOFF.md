@@ -338,6 +338,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
       - announce: a bulletin line plus a chat message as «📢 الإدارة».
       - away: the awayfix page.
     - To change the code: put the SHA-256 of the new code in `ADMIN_CODE_HASH`.
+    - Gifts checked end to end: an online player, and an away player who comes back. A live hint arriving while a war poll runs now triggers another poll right after (`WARX.again`), so nothing waits up to 90 s.
+    - WarServer.state stores `acct.seenSeq` (the charges the game has applied). The panel's «🎁 الهدايا» tab shows each gift as arrived or not yet. A gift lands only when the player is in al-Jouf.
+    - The players search now stays after an action (`lastQ`); before, the list reset and a button could hit the wrong player.
+    - All 15 panel checks pass through the UI: login, reports, chat delete, ban/unban, rename, gift (arrived), announce, away page.
 52. **Money vaults (owner, 2026-11-24, world only):**
     - The economy was measured first: careful bots' net per hour is about 81 / 417 / 873 / ~0 by stage, and the dearest buildings are 2.1k / 27k / 90k / 210k / 420k.
     - `moneyCap(s)` = `BASE_VAULT[era]` [5k, 15k, 50k, 150k, 400k] + each vault's `VAULT[lvl].cap`. Levels: 5k / 15k / 40k / 120k / 350k, upgrade prices 2.5k / 8k / 25k / 70k, eras 0–4. A vault is worldOnly, max 4, 600 to build, upkeep 2×upkeepX.

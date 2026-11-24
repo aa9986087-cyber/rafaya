@@ -46,7 +46,7 @@ const n = (v) => Number(v || 0).toLocaleString("ar-SA");
 const esc = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
 const ago = (at) => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "الحين" : m < 60 ? `قبل ${n(m)} د` : m < 1440 ? `قبل ${n(Math.round(m / 60))} س` : `قبل ${n(Math.round(m / 1440))} يوم`; };
 const ERAS = ["قرية", "بلدة", "مدينة", "محافظة", "حاضرة"];
-let token = localStorage.getItem("rafaya-admin") || "", tab = "home";
+let token = localStorage.getItem("rafaya-admin") || "", tab = "home", lastQ = ""; // lastQ: the players search stays after an action
 function toast(t) { const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = "none"; }, 2500); }
 async function api(path, body) {
   const r = await fetch("/api/admin/" + path, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", "x-admin": token }, body: body ? JSON.stringify(body) : undefined });
@@ -64,7 +64,7 @@ function login() {
     token = r.token; localStorage.setItem("rafaya-admin", token); show();
   };
 }
-const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
+const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
 function frame(inner) {
   $("app").innerHTML = `<header><h1>🛠️ لوحة تحكم الجوف</h1><button id="out">خروج</button></header>
     <nav>${TABS.map(([k, t]) => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</nav><main>${inner}</main>`;
@@ -74,7 +74,7 @@ function frame(inner) {
 async function show() {
   if (!token) return login();
   frame(`<p class="muted">نحمّل…</p>`);
-  try { await ({ home, reports, chat, players, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
+  try { await ({ home, reports, chat, players, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
 }
 async function home() {
   const s = await api("stats");
@@ -97,7 +97,8 @@ async function chat() {
   bindActs();
   document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { await api("chat", { del: b.dataset.del }); toast("انمسحت"); show(); }));
 }
-async function players(q = "") {
+async function players(q = lastQ) {
+  lastQ = q;
   const { list } = await api("players?q=" + encodeURIComponent(q));
   frame(`<input id="q" placeholder="دوّر باسم اللاعب أو المدينة" value="${esc(q)}">
     ${list.map((p) => `<div class="card"><div class="row"><span><b>${esc(p.town || "بدون مدينة")}</b> <small>${esc(p.name)}</small></span>${p.banned ? `<span class="tag">محظور</span>` : ""}</div>
@@ -106,6 +107,11 @@ async function players(q = "") {
       ${p.plot != null ? `<button class="btn" data-gift="${p.plot}" data-town="${esc(p.town)}">🎁 هدية</button><button class="btn" data-rename="${p.plot}" data-town="${esc(p.town)}">✏️ اسم المدينة</button>` : ""}</div></div>`).join("") || `<p class="muted">ما لقيت أحد</p>`}`);
   $("q").onchange = () => players($("q").value);
   bindActs();
+}
+async function gifts() {
+  const { list } = await api("gifts");
+  frame(`<p class="muted">الهدية تدخل فلوسهم أول ما يكون داخل عالم الجوف (لو كان برا، تدخل أول ما يرجع).</p>
+    ${list.length ? list.map((g) => `<div class="card row"><span><b>${esc(g.town)}</b> <small>${esc(g.owner)}</small><br><small>${ago(g.at)}</small></span><span><b>+${n(g.amount)}</b> ${g.arrived ? `<span class="tag ok">✅ وصلت</span>` : `<span class="tag">⏳ لسه ما دخل الجوف</span>`}</span></div>`).join("") : `<p class="muted">ما أرسلت هدايا للحين. ترسلها من «👥 اللاعبين».</p>`}`);
 }
 async function announce() {
   frame(`<div class="card"><h3>📢 إعلان للكل</h3><p class="muted">يطلع بنشرة الجوف وبالشات باسم «الإدارة».</p>

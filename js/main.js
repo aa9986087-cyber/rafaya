@@ -2333,6 +2333,7 @@ function apologyBox(n) {
 }
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 async function warPoll(force) {
+  if (force && WARX.busy) { WARX.again = true; return WARX.st; } // a hint while a poll runs: ask again right after (a gift or a strike is never left waiting)
   if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < (LIVE.ok ? 90000 : 25000))) return WARX.st; // live: pushed at once, this is only a safety net
   WARX.busy = true; WARX.polled = Date.now();
   if (force) await warSyncNow();
@@ -2343,6 +2344,7 @@ async function warPoll(force) {
   world.fx && (world.fx.clockOffset = WARX.offset);
   WARX.st = st;
   warApply(st);
+  if (WARX.again) { WARX.again = false; setTimeout(() => warPoll(true), 50); }
   return st;
 }
 /** Charges, damage and repairs onto the own town (the server's numbers win over the town's own). */
