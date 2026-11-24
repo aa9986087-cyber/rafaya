@@ -83,6 +83,7 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
@@ -457,6 +458,15 @@ export class Board extends DurableObject {
       }
       return json({ list: this.sql.exec("SELECT f.name, f.what, f.reasons, f.note, f.at, f.due, f.removed, t.town FROM namefix f LEFT JOIN players p ON p.name = f.name LEFT JOIN plots t ON t.plot = p.plot ORDER BY f.at DESC").toArray() });
     }
+    if (!post && p[0] === "statement") { // one town's money: its phone's moves, the server's charges and gifts, the away corrections
+      const plot = int(new URL(request.url).searchParams.get("plot"));
+      const t = one("SELECT plot, town, owner, pop, era, money, updated, ledger FROM plots WHERE plot = ?", plot);
+      if (!t) return json({ error: "ما لقيت المدينة" });
+      let ledger = null; try { ledger = JSON.parse(t.ledger || "null"); } catch { /* none */ }
+      const charges = this.sql.exec("SELECT data FROM war WHERE tbl = 'charge' AND k1 = ? ORDER BY at DESC LIMIT 200", String(plot)).toArray().map((r) => JSON.parse(r.data));
+      const away = this.sql.exec("SELECT before, after, cap, taken, at FROM awayfix WHERE plot = ? ORDER BY id DESC LIMIT 50", plot).toArray();
+      return json({ town: t.town, owner: t.owner, pop: t.pop, era: t.era, money: t.money, updated: t.updated, ledger, charges, away });
+    }
     if (post && p[0] === "say") { // the owner writes in the world's chat, as «المطور»
       const text = clean(body.text, 200);
       if (!text) return json({ error: "اكتب شي" });
@@ -670,6 +680,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
         int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
+      if (body.ledger && typeof body.ledger === "object") { const lj = JSON.stringify(body.ledger); if (lj.length < 40000) this.sql.exec("UPDATE plots SET ledger = ? WHERE plot = ?", lj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
     }

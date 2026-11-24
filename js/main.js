@@ -2015,7 +2015,10 @@ function worldSync(force) {
   if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!mine?.world) return;
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0,
+  // the money moves too, for the owner's statement of this town (what came in, what went out, and why)
+  const ledger = { log: (mine.moneyLog || []).slice(-80), day: mine.day, start: mine.world?.start ?? null,
+    hour: visiting ? null : { tax: Math.round(A.tax || 0), shops: Math.round(A.income || 0), farms: Math.round(A.farmIncome || 0), costs: Object.fromEntries(Object.entries(A.costs || {}).map(([k, v]) => [k, Math.round(v || 0)])), net: Math.round(A.net || 0) } };
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0, ledger,
     snapshot: pack({ ...mine, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));

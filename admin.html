@@ -34,11 +34,19 @@
   #toast { position: fixed; bottom: 16px; inset-inline: 16px; background: #2a1d12; color: #fff; padding: 12px; border-radius: 12px; text-align: center; display: none; }
   .login { max-width: 360px; margin: 60px auto; text-align: center; }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  #stmt { position: fixed; inset: 0; z-index: 9; background: #fff; overflow: auto; padding: 16px; display: none; }
+  #stmt table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 14px; }
+  #stmt th, #stmt td { border-bottom: 1px solid #e3d6bd; padding: 6px 4px; text-align: start; vertical-align: top; }
+  #stmt th { background: #f3e6cc; }
+  #stmt .plus { color: var(--green); font-weight: 700; } #stmt .minus { color: var(--red); font-weight: 700; }
+  #stmt h2 { margin: 0 0 4px; } #stmt h3 { margin: 14px 0 4px; }
+  @media print { body > *:not(#stmt) { display: none !important; } #stmt { position: static; display: block !important; padding: 0; } #stmt .noprint { display: none; } }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+<div id="stmt"></div>
 <script>
 // The owner's control panel for al-Jouf: /api/admin/* with the token from logging in (kept on this phone).
 const $ = (id) => document.getElementById(id);
@@ -108,6 +116,7 @@ async function players(q = lastQ) {
       ${p.town ? `<div><small>🔔 ${(p.phones || []).length ? p.phones.map((x) => `<span dir="ltr">${esc(x.host)}</span> · ${x.status == null ? "ما انرسل له شي للحين" : x.status >= 200 && x.status < 300 ? `✅ آخر تنبيه انقبل (${x.status}) ${ago(x.at)}` : `❌ آخر تنبيه انرفض (${x.status || "ما وصل للمزوّد"}) ${ago(x.at)}`} · اشترك ${ago(x.created)}`).join("<br>🔔 ") : "التنبيهات مو مشغّلة"}</small></div>` : ""}
       <div class="acts">${p.banned ? `<button class="btn go" data-unban="${esc(p.name)}">فك الحظر</button>` : `<button class="btn bad" data-ban="${esc(p.name)}">⛔ احظر</button>`}
       <button class="btn" data-fix="${esc(p.name)}">✏️ اطلب تغيير الاسم</button>
+      ${p.plot != null ? `<button class="btn" data-stmt="${p.plot}">🧾 كشف الحساب</button>` : ""}
       ${p.plot != null ? `<button class="btn" data-gift="${p.plot}" data-town="${esc(p.town)}">🎁 هدية</button><button class="btn" data-rename="${p.plot}" data-town="${esc(p.town)}">✏️ اسم المدينة</button>` : ""}</div></div>`).join("") || `<p class="muted">ما لقيت أحد</p>`}`);
   $("q").onchange = () => players($("q").value);
   bindActs();
@@ -140,6 +149,36 @@ function fixForm(name) {
     toast(r.error || "انرسل الطلب ✓ عنده يوم يغيّر"); if (!r.error) { box.remove(); show(); }
   };
 }
+// the town's money moves, labelled as its game labels them (js/main.js MONEY_MOVES)
+const MOVES = { hour: "تشغيل المدينة (دخل وصرف الساعة)", away: "تشغيل المدينة وقت الغياب", build: "بناء", upgrade: "تطوير", materials: "شراء مواد بناء", land: "شراء أرض", fill: "ردم الوادي", rock: "إزالة صخر", move: "نقل مبنى", remove: "مبلغ رجع من إزالة مبنى", repair: "ترميم", insurance: "تعويض التأمين", shield: "درع الغياب سدّد الدين", loan: "مبلغ قرض", payoff: "سداد قرض", research: "بحث", decision: "قرار البلدية", investment: "عائد استثمار", goal: "مكافأة مهمة", election: "دعم الانتخابات", grant: "دعم المحافظ", fee: "رسوم المحافظة السنوية", cleaning: "تنظيف الطرق", gift: "هدية من الإدارة", refund: "مبلغ رجّعته الإدارة", worldBill: "عملية في عالم الجوف (حرب، إصلاح، شراء)", transfer: "تحويل بين المدن", awayLimit: "خصم كسب الغياب الزايد", idleLimit: "كسب فوق حد الخمول", idleCover: "تغطية مصروف من كسب الخمول" };
+const COSTS = { staff: "رواتب البلدية", cleaning: "النظافة", waterNet: "شبكة الماء", roads: "الطرق والإنارة", services: "الخدمات", utilities: "تشغيل الماء والكهرباء", business: "تشغيل المحلات والمزارع والمصانع", military: "القوة العسكرية", sites: "مواقع الإنشاء", loan: "أقساط القروض", insurance: "التأمين", health: "علاج التلوث", theft: "سرقات" };
+const signed = (v) => `<span class="${v > 0 ? "plus" : v < 0 ? "minus" : ""}" dir="ltr">${v > 0 ? "+" : v < 0 ? "−" : ""}${n(Math.abs(Math.round(v)))}</span>`;
+const when = (at) => new Date(at).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" });
+async function statement(plot) {
+  const d = await api("statement?plot=" + plot);
+  if (d.error) { toast(d.error); return; }
+  const L = d.ledger, log = (L?.log || []).slice().reverse();
+  const dayOf = (h) => Math.max(1, Math.floor((h - (L?.start ?? 0) + 2) / 24) + 1);
+  const sum = (f) => log.filter(f).reduce((t, e) => t + e.amount, 0);
+  const inSum = sum((e) => e.amount > 0), outSum = sum((e) => e.amount < 0);
+  const byKind = {}; for (const e of log) (byKind[e.kind] ||= 0), (byKind[e.kind] += e.amount);
+  const box = $("stmt");
+  box.innerHTML = `<div class="noprint acts"><button class="btn go" onclick="print()">🖨️ اطبع</button><button class="btn" onclick="document.getElementById('stmt').style.display='none'">✕ سكّر</button></div>
+    <h2>🧾 كشف حساب «${esc(d.town)}»</h2><p class="muted">العمدة: ${esc(d.owner)} · ${n(d.pop)} ساكن · آخر دخول ${when(d.updated)} · طُبع ${when(Date.now())}</p>
+    <div class="card"><b>الرصيد الحين: ${signed(d.money)} ريال</b>${d.money < 0 ? `<br><small class="minus">الحساب بالسالب</small>` : ""}</div>
+    ${L?.hour ? `<h3>الساعة الواحدة باللعبة (آخر ما شافه السيرفر)</h3><table><tr><th>البند</th><th>المبلغ</th></tr>
+      <tr><td>ضريبة الأهالي</td><td>${signed(L.hour.tax)}</td></tr><tr><td>المحلات</td><td>${signed(L.hour.shops)}</td></tr><tr><td>المزارع والمصانع</td><td>${signed(L.hour.farms)}</td></tr>
+      ${Object.entries(L.hour.costs || {}).filter(([, v]) => v > 0).map(([k, v]) => `<tr><td>${COSTS[k] || k}</td><td>${signed(-v)}</td></tr>`).join("")}
+      <tr><th>الصافي بالساعة</th><th>${signed(L.hour.net)}</th></tr></table>` : ""}
+    ${log.length ? `<h3>ملخص آخر الحركات</h3><table><tr><th>النوع</th><th>المجموع</th></tr>${Object.entries(byKind).sort((a, b) => a[1] - b[1]).map(([k, v]) => `<tr><td>${MOVES[k] || k}</td><td>${signed(v)}</td></tr>`).join("")}
+      <tr><th>دخل</th><th>${signed(inSum)}</th></tr><tr><th>صرف</th><th>${signed(outSum)}</th></tr></table>
+      <h3>كل الحركات (الأحدث فوق، آخر ${n(log.length)} حركة)</h3><table><tr><th>يوم</th><th>الحركة</th><th>التفصيل</th><th>المبلغ</th></tr>
+      ${log.map((e) => `<tr><td>${n(dayOf(e.day))}</td><td>${MOVES[e.kind] || esc(e.kind)}</td><td>${e.operating ? `دخل ${n(e.operating.income)} · صرف ${n(e.operating.expenses)}${e.operating.limited ? ` · الخزنة حدّت ${n(e.operating.limited)}` : ""}` : esc(e.detail || "")}</td><td>${signed(e.amount)}</td></tr>`).join("")}</table>`
+      : `<div class="card">سجل حركات جواله ما وصل للسيرفر للحين: يوصل أول ما يدخل اللعبة بالتحديث الجديد (خلال دقيقتين من لعبه).</div>`}
+    <h3>اللي سجله السيرفر عليه (حرب، هدايا، تصحيحات)</h3>${d.charges.length ? `<table><tr><th>الوقت</th><th>السبب</th><th>المبلغ</th></tr>${d.charges.map((c) => `<tr><td>${when(c.at)}</td><td>${esc(c.why === "gift" ? "هدية من الإدارة" : c.why === "away cap" ? "تصحيح كسب الغياب" : c.why === "refund" ? "مبلغ رجّعته الإدارة" : c.why)}</td><td>${signed(-c.amount)}</td></tr>`).join("")}</table>` : `<p class="muted">ما فيه شي.</p>`}
+    ${d.away.length ? `<h3>تصحيحات كسب الغياب</h3><table><tr><th>الوقت</th><th>كان</th><th>رجع بـ</th><th>الحد</th><th>انخصم</th></tr>${d.away.map((a) => `<tr><td>${when(a.at)}</td><td>${n(a.before)}</td><td>${n(a.after)}</td><td>${n(a.cap)}</td><td>${signed(-a.taken)}</td></tr>`).join("")}</table>` : ""}`;
+  box.style.display = "block"; box.scrollTop = 0;
+}
 async function gifts() {
   const { list } = await api("gifts");
   frame(`<p class="muted">الهدية تدخل فلوسهم أول ما يكون داخل عالم الجوف (لو كان برا، تدخل أول ما يرجع).</p>
@@ -166,6 +205,7 @@ function bindActs() {
     const text = prompt("رسالة معها (اختياري)", "شكرًا على مشاركتك 🌹") || "";
     const r = await api("gift", { plot: b.dataset.gift, amount, text }); toast(r.error || `وصلت الهدية لـ«${r.town}» 🎁`);
   }));
+  document.querySelectorAll("[data-stmt]").forEach((b) => (b.onclick = () => statement(b.dataset.stmt)));
   document.querySelectorAll("[data-fix]").forEach((b) => (b.onclick = () => fixForm(b.dataset.fix)));
   document.querySelectorAll("[data-rename]").forEach((b) => (b.onclick = async () => {
     const town = prompt(`الاسم الجديد بدل «${b.dataset.town}»`, "");
