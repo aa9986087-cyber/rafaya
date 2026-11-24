@@ -15,8 +15,8 @@
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
 //   POST /api/world/handoff { name, secret } → { code } · POST handoff/claim { code } → { name, secret, plot }  (move to the home-screen app)
-//   GET  /api/world/push/key · POST push/sub { name, secret, endpoint } · POST push/unsub { endpoint } · GET push/inbox?k=
-//        notifications on the phone (Web Push, signed with the server's own VAPID keys; the push carries no data)
+//   GET  /api/world/push/key · POST push/sub { name, secret, endpoint, keys } · POST push/unsub { endpoint } · GET push/inbox?k=
+//        notifications on the phone (encrypted Web Push with VAPID; inbox supports older installations)
 //   GET  /api/world/live  (WebSocket)            → hints pushed the moment something changes: chat, war, news, town
 //   GET  /api/world/chat?after=ID               → { messages: [...] }  (the public chat, newest 50 or those after ID)
 //   POST /api/world/chat     { name, secret, text } → { ok, message }  (one message every 6 s, 200 characters)
@@ -28,6 +28,7 @@ import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
 import { AWAY_CAP } from "../js/sim.js";
 import { VERSION } from "../js/version.js";
+import { encryptPush, pushKeys } from "./web-push.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -91,7 +92,9 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS handoff (code TEXT PRIMARY KEY, name TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS keys (name TEXT, secret TEXT, at INTEGER)`);
     this.handoffFails = [];
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER, p256dh TEXT, auth TEXT)`);
+    try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN p256dh TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE pushsubs ADD COLUMN auth TEXT"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
     this.outbox = [];
     // the world's bulletin: new towns, towns growing up, wars, truces, peace and strikes (newest 300 kept)
@@ -137,7 +140,7 @@ export class Board extends DurableObject {
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('refund_debtfix_v1', ?)", String(Date.now()));
   }
 
-  // ---------- notifications on the phone (Web Push, no payload: the phone asks /push/inbox what it was) ----------
+  // ---------- notifications on the phone ----------
   /** The server's own signing keys (VAPID), made once and kept: nothing to set up by hand. */
   async vapid() {
     if (this.vapidKeys) return this.vapidKeys;
@@ -155,23 +158,38 @@ export class Board extends DurableObject {
   watching(plot) {
     return this.ctx.getWebSockets().some((ws) => { const a = ws.deserializeAttachment(); return a?.plot === plot && Date.now() - (a.seen || 0) < 50000; });
   }
-  /** Queue a notification for a town's phones and wake them (sent after the answer, see flush). */
+  /** Send a notification to a town's phones (see flush). */
   push(plot, title, body, tag = "jouf", force = false) {
     if (plot == null || (!force && this.watching(plot))) return;
-    const subs = this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ?", plot).toArray();
-    for (const sub of subs) {
-      this.sql.exec("INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?)", sub.k, title, String(body).slice(0, 180), tag, Date.now());
-      this.outbox.push(this.wake(sub));
-    }
+    const subs = this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ?", plot).toArray();
+    const message = { title, body: String(body).slice(0, 180), tag };
+    for (const sub of subs) this.outbox.push(this.sendPush(sub, message));
     this.sql.exec("DELETE FROM pushq WHERE at < ?", Date.now() - 3600000);
   }
-  async wake(sub) {
+  async sendPush(sub, message, ttl = "3600") {
+    const keys = pushKeys(sub);
+    // Existing subscriptions acquire encryption keys the next time a player opens the game.
+    const queued = keys ? null : this.sql.exec(
+      "INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?) RETURNING id",
+      sub.k, message.title, message.body, message.tag, Date.now()
+    ).toArray()[0];
+    const status = await this.wake(sub, message, keys, ttl);
+    if (queued && (status < 200 || status >= 300)) this.sql.exec("DELETE FROM pushq WHERE id = ?", queued.id);
+    return status;
+  }
+  async wake(sub, message, keys, ttl) {
     try {
       const v = await this.vapid(), now = Math.floor(Date.now() / 1000);
       const head = b64url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
       const body = b64url(new TextEncoder().encode(JSON.stringify({ aud: new URL(sub.endpoint).origin, exp: now + 12 * 3600, sub: "https://rafaya.vamosx.workers.dev" })));
       const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, v.key, new TextEncoder().encode(`${head}.${body}`));
-      const r = await fetch(sub.endpoint, { method: "POST", body: "", redirect: "error", signal: AbortSignal.timeout(8000), headers: { TTL: "3600", Urgency: "high", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
+      const headers = { TTL: ttl, Urgency: "high", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` };
+      const payload = keys ? await encryptPush(message, keys) : "";
+      if (keys) {
+        headers["Content-Encoding"] = "aes128gcm";
+        headers["Content-Type"] = "application/octet-stream";
+      }
+      const r = await fetch(sub.endpoint, { method: "POST", body: payload, redirect: "error", signal: AbortSignal.timeout(8000), headers });
       if (r.status === 404 || r.status === 410) this.sql.exec("DELETE FROM pushsubs WHERE k = ?", sub.k); // the phone dropped it
       return r.status;
     } catch { return 0; }
@@ -555,17 +573,12 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (me.plot == null) return json({ error: "no town" }, 400);
       const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
       const subs = endpoint
-        ? this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ? AND k = ?", me.plot, await hash(endpoint)).toArray()
-        : this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ?", me.plot).toArray();
+        ? this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ? AND k = ?", me.plot, await hash(endpoint)).toArray()
+        : this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ?", me.plot).toArray();
       if (!subs.length) return json({ error: "ما فيه اشتراك مسجّل لهالجهاز. فعّل التنبيهات أول." });
-      const statuses = await Promise.all(subs.map(async (sub) => {
-        const at = Date.now();
-        const queued = this.sql.exec("INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?) RETURNING id",
-          sub.k, "🔔 تجربة التنبيهات", "وصلتك تجربة التنبيه من عالم الجوف.", "test", at).toArray()[0];
-        const status = await this.wake(sub);
-        if (status < 200 || status >= 300) this.sql.exec("DELETE FROM pushq WHERE id = ?", queued.id);
-        return status;
-      }));
+      const receipt = typeof body.receipt === "string" && /^[a-f0-9-]{36}$/.test(body.receipt) ? body.receipt : undefined;
+      const message = { title: "🔔 تجربة التنبيهات", body: "وصلتك تجربة التنبيه من عالم الجوف.", tag: receipt ? `test-${receipt}` : "test", receipt };
+      const statuses = await Promise.all(subs.map((sub) => this.sendPush(sub, message, "60")));
       const phones = statuses.filter((status) => status >= 200 && status < 300).length;
       if (phones) return json({ ok: true, phones });
       const expired = !!endpoint && statuses.some((status) => status === 404 || status === 410);
@@ -575,7 +588,11 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const endpoint = String(body.endpoint || "");
       const okUrl = /^https:\/\//.test(endpoint) || (this.env?.WAR_TEST === "1" && /^http:\/\/localhost/.test(endpoint)); // local tests: a fake push service
       if (!okUrl || endpoint.length > 1000 || me.plot == null) return json({ error: "bad" }, 400);
-      this.sql.exec("INSERT OR REPLACE INTO pushsubs (k, plot, endpoint, created) VALUES (?, ?, ?, ?)", await hash(endpoint), me.plot, endpoint, Date.now());
+      if (body.keys != null && !pushKeys(body.keys)) return json({ error: "subscription keys" }, 400);
+      this.sql.exec(`INSERT INTO pushsubs (k, plot, endpoint, created, p256dh, auth) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(k) DO UPDATE SET plot = excluded.plot,
+        p256dh = COALESCE(excluded.p256dh, pushsubs.p256dh), auth = COALESCE(excluded.auth, pushsubs.auth)`,
+      await hash(endpoint), me.plot, endpoint, Date.now(), body.keys?.p256dh ?? null, body.keys?.auth ?? null);
       return json({ ok: true });
     }
     if (p[0] === "rename") {

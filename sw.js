@@ -1,6 +1,4 @@
-// الرافعية: the service worker. It only does notifications (no caching: the game always loads fresh,
-// and updates are checked by the game itself). A push carries no data: the worker asks the server what
-// it was about (/api/world/push/inbox) and shows it.
+// الرافعية: the service worker handles notifications. The inbox is for older, empty pushes.
 self.addEventListener("install", (e) => e.waitUntil(self.skipWaiting()));
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
@@ -18,10 +16,26 @@ async function inbox() {
 }
 self.addEventListener("push", (e) => e.waitUntil((async () => {
   let items = [];
-  try { items = await inbox(); } catch { /* show the general one */ }
+  if (e.data) {
+    try {
+      const message = e.data.json();
+      if (typeof message?.title === "string" && typeof message.body === "string") items = [message];
+    } catch { /* show the general one */ }
+  } else {
+    try { items = await inbox(); } catch { /* show the general one */ }
+  }
   if (!items.length) items = [{ title: "عالم الجوف", body: "فيه جديد بمدينتك، ادخل وشوف", tag: "jouf" }];
   for (const it of items.slice(-3)) {
-    await self.registration.showNotification(it.title, { body: it.body, tag: it.tag || "jouf", renotify: true, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", dir: "rtl", lang: "ar", data: { url: "/" } });
+    let shown = false;
+    try {
+      await self.registration.showNotification(it.title, { body: it.body, tag: it.tag || "jouf", renotify: !it.receipt, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", dir: "rtl", lang: "ar", data: { url: "/" } });
+      shown = true;
+    } finally {
+      if (it.receipt) {
+        const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const window of windows) window.postMessage({ type: "push-test", receipt: it.receipt, shown });
+      }
+    }
   }
 })()));
 self.addEventListener("notificationclick", (e) => {

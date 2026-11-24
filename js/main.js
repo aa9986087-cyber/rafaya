@@ -1640,7 +1640,8 @@ function pushKey() {
   return PUSH.key;
 }
 async function registerPushEndpoint(sub, id) {
-  const r = await api("/world/push/sub", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
+  const { keys } = sub.toJSON();
+  const r = await api("/world/push/sub", { name: id.name, secret: id.secret, endpoint: sub.endpoint, keys });
   if (!r.ok) throw new Error(r.error || "subscription");
 }
 function checkPush() {
@@ -1924,7 +1925,7 @@ addEventListener("online", versionCheck);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   versionCheck();
-  if ((sheetFor === "settings" || sheetFor === "settings-menu") && !$("setPush")?.disabled) {
+  if ((sheetFor === "settings" || sheetFor === "settings-menu") && !$("setPush")?.disabled && !$("pushTest")?.disabled) {
     PUSH.checked = false;
     settingsSheet(sheetFor === "settings-menu");
   }
@@ -3081,8 +3082,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-21" },
+  v: { solo: "2027-01-16", world: "2027-01-22" },
   items: [
+    ["world", "🔔", "اختبار التنبيه يوضح النتيجة", "زر «جرّب التنبيه» ينتظر رد جهازك ويبيّن إذا وصل طلب عرض الإشعار. ونص التنبيه يوصل معه مباشرة حتى لو اللعبة مسكّرة."],
     ["world", "🔔", "التحديث والتنبيهات على الجوال", "التحديث يوصل من الأيقونة والمتصفح. الإعدادات تتحقق من اشتراك هالجهاز، وزر تجربة التنبيه يجرّب نفس الجهاز."],
     ["world", "📱", "واجهة الجوال أضبط", "الضغط على الأزرار والكتابة بسفاري ما تكبّر الصفحة بالغلط. أدوات اليسار بعمود واحد تقدر تمرّره، وكلمة «التحديثات» بالنشرة تظهر كاملة. تقدر تكبّر الخريطة بإصبعين."],
     ["world", "🧾", "ميزانية أوضح", "اضغط الميزانية وتشوف رصيدك، وكم تتوقع يدخل ويطلع الساعة الجاية. سجل الحركات يبيّن كل مبلغ وسببه، مثل المكافآت والرسوم والهدايا."],
@@ -3609,7 +3611,7 @@ function settingsSheet(fromMenu) {
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
-    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
@@ -3626,22 +3628,40 @@ function settingsSheet(fromMenu) {
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
   $("pushTest")?.addEventListener("click", async (e) => {
-    const button = e.currentTarget, id = me();
+    const button = e.currentTarget, status = $("pushTestStatus"), id = me();
+    const receipt = crypto.randomUUID();
+    let onReceipt, timer;
+    const confirmation = new Promise((resolve) => {
+      onReceipt = ({ data }) => { if (data?.type === "push-test" && data.receipt === receipt) resolve(data.shown); };
+    });
+    const systemHelp = isIOS ? "شيّك إشعارات الرافعية والتركيز في إعدادات الآيفون." : "شيّك إذن الإشعارات للتطبيق أو المتصفح في إعدادات الجهاز.";
+    navigator.serviceWorker.addEventListener("message", onReceipt);
     button.disabled = true;
+    status.textContent = "نرسل التجربة وننتظر رد هالجهاز…";
     try {
       const sub = await (await activePushWorker()).pushManager.getSubscription();
       if (sub) {
         await registerPushEndpoint(sub, id);
-        const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint });
-        if (r.ok) { toast("📲 مزوّد الإشعارات قبل التنبيه التجريبي لهالجهاز. تأكد من وصوله.", "goal"); return; }
-        if (!r.expired) { toast(r.error || "ما قدرنا نرسل التجربة، جرّب بعد شوي", "bad"); return; }
+        const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, receipt });
+        if (r.ok) {
+          const shown = await Promise.race([confirmation, new Promise((resolve) => { timer = setTimeout(resolve, 12000); })]);
+          status.textContent = shown === true ? `وصل التنبيه لهالجهاز وطلبنا عرضه. إذا ما ظهر لك، ${systemHelp}`
+            : shown === false ? `وصل التنبيه وتعذّر عرضه على الجهاز. ${systemHelp}`
+              : "ما جانا تأكيد من هالجهاز. طفّ «التنبيهات على الجوال» وشغّلها من جديد، ثم جرّب مرة ثانية.";
+          return;
+        }
+        if (!r.expired) { status.textContent = r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي."; return; }
         await sub.unsubscribe();
       }
       PUSH.enabled = false;
       toast("اشتراك هالجهاز انتهى. فعّل التنبيهات مرة ثانية.", "bad");
       if (button.isConnected) settingsSheet(fromMenu);
-    } catch { toast("ما زبط إرسال التجربة، جرّب بعد شوي", "bad"); }
-    finally { button.disabled = false; }
+    } catch { status.textContent = "ما قدرنا نرسل التجربة. جرّب بعد شوي."; }
+    finally {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener("message", onReceipt);
+      button.disabled = false;
+    }
   });
   const pushToggle = $("setPush");
   if (pushToggle && pushStatus === "checking") checkPush()?.then(() => {
