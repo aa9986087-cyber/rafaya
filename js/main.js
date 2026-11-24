@@ -1614,13 +1614,17 @@ const PUSH = { registration: null, key: null, checked: false, enabled: false, ch
 async function laterReport() {
   const box = $("pushLaterStatus");
   let last; try { last = JSON.parse(store.get("rafaya-push-later") || "null"); } catch { last = null; }
-  if (!box || !last?.receipt || Date.now() - last.at < 15000 || Date.now() - last.at > 3600000) return;
-  let r; try { r = await (await fetch(`/api/world/push/ack?r=${last.receipt}`, { cache: "no-store" })).json(); } catch { return; }
-  if (!box.isConnected || r.at == null) return;
+  if (!box || !last?.receipt || Date.now() - last.at > 3600000) return;
+  const again = () => { clearTimeout(laterReport.t); laterReport.t = setTimeout(() => { if (box.isConnected) laterReport(); }, 3000); };
+  let r = null; try { r = await (await fetch(`/api/world/push/ack?r=${last.receipt}`, { cache: "no-store" })).json(); } catch { /* retried below */ }
+  if (!box.isConnected) return;
+  const age = Date.now() - last.at, waiting = !r || r.at == null || (!r.got && (r.sent == null || age < 25000));
+  if (waiting && age < 60000) { if (age > 12000) box.innerHTML = "⏳ ننتظر نتيجة آخر تجربة… (تطلع هنا لحالها)"; again(); return; } // (the first seconds keep «close the game now» showing)
+  if (!r || r.at == null) { box.innerHTML = "ما لقينا نتيجة آخر تجربة. جرّب مرة ثانية."; return; }
   const host = r.host ? ` <small dir="ltr">(${r.host})</small>` : "";
   box.innerHTML = "<b>نتيجة آخر تجربة:</b> " + (r.got ? (r.shown ? "✅ التنبيه وصل جوالك وطلبنا عرضه. إذا ما شفته، الجوال نفسه مخفيه: شيّك إعدادات الإشعارات و«عدم الإزعاج»." : "⚠️ التنبيه وصل جوالك بس الجوال رفض يعرضه. السبب إذن الإشعارات بإعدادات الجوال.")
     : r.sent >= 200 && r.sent < 300 ? `📭 أرسلناه وقبله مزوّد التنبيهات${host}، بس ما وصل جوالك. غالبًا توفير البطارية أو إن المتصفح مقفول بالخلفية.`
-      : r.sent ? `❌ مزوّد التنبيهات رفضه (الرد: ${r.sent})${host}. أرسل هالرقم للمطور.` : "⏳ للحين ما أرسلناه، انتظر شوي وارجع للإعدادات.");
+      : r.sent ? `❌ مزوّد التنبيهات رفضه (الرد: ${r.sent})${host}. أرسل هالرقم للمطور.` : `❌ ما قدرنا نرسله${host}. أرسل صورة للمطور.`);
 }
 /** Samsung Internet: its web apps show notifications through the browser itself, so both need allowing. */
 const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
@@ -3092,8 +3096,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-25", world: "2027-01-27" },
+  v: { solo: "2027-01-25", world: "2027-01-28" },
   items: [
+    ["world", "⏳", "نتيجة التجربة تطلع لحالها", "• بعد «📴 جرّب والتطبيق مسكّر» ارجع للإعدادات: النتيجة تطلع تحت الزر لحالها خلال ثواني، حتى لو رجعت بدري."],
     ["world", "🔍", "نتيجة تجربة التنبيه بالتفصيل", "• بعد «📴 جرّب والتطبيق مسكّر»، ارجع للإعدادات وتلقى وش صار بالضبط: وصل جوالك وانعرض، أو وصل وانرفض، أو ما وصل جوالك أبد. • هذا يساعدنا نعرف سبب التنبيهات اللي ما توصل."],
     ["world", "📴", "جرّب التنبيه والتطبيق مسكّر", "• بالإعدادات تحت «جرّب التنبيه» صار فيه زر «📴 جرّب والتطبيق مسكّر»: تضغطه وتسكّر اللعبة، والتنبيه يجيك بعد ١٠ ثواني. • بعض الجوالات (مثل تطبيقات متصفح سامسونج) ما تعرض التنبيه واللعبة مفتوحة قدامك، بس توصلك وهي مسكّرة، وهذا وقتها الحقيقي."],
     ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل متصفح سامسونج بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد. • وصار فيه شرح خاص لتنبيهات متصفح سامسونج."],
@@ -3705,8 +3710,8 @@ function settingsSheet(fromMenu) {
       await registerPushEndpoint(sub, id);
       const receipt = crypto.randomUUID();
       const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, later: true, receipt });
-      if (r.ok) store.set("rafaya-push-later", JSON.stringify({ receipt, at: Date.now() }));
-      status.innerHTML = r.ok ? "✅ <b>سكّر اللعبة الحين</b> (اطلع للشاشة الرئيسية)، والتنبيه يجيك بعد ١٠ ثواني تقريبًا. وإذا رجعت للإعدادات، نقولك وش صار بالضبط." : (r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.");
+      if (r.ok) { store.set("rafaya-push-later", JSON.stringify({ receipt, at: Date.now() })); setTimeout(laterReport, 3000); }
+      status.innerHTML = r.ok ? "✅ <b>سكّر اللعبة الحين</b> (اطلع للشاشة الرئيسية)، والتنبيه يجيك بعد ١٠ ثواني تقريبًا. ثم ارجع هنا للإعدادات ونقولك وش صار بالضبط." : (r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.");
     } catch { status.textContent = "ما قدرنا نرسل التجربة. طفّ التنبيهات وشغّلها من جديد، ثم جرّب."; }
     finally { button.disabled = false; }
   });
