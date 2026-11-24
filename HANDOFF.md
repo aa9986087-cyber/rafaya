@@ -338,6 +338,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Settings has «🔄 ابدأ مدينتي من جديد» (`restartSheet`); you type the town's name to confirm.
     - `POST /world/restart` allows once per 24 h (`plots.restarted`). It calls `WarServer.resetTown` (deletes acct, charge, dmg, hit and note rows by k1 via the new `db.delK1`; relations stay), resets the plot's row, and writes a bulletin line.
     - The game makes a fresh town on the same land and name with `war.seq` 0, and the war notes seen are reset. The trial supports it too.
+54. **Telling players what changed (owner, 2026-11-24, both modes):**
+    - Each phone keeps the WHATS_NEW titles it has seen, per mode (`rafaya-news-titles-<mode>`).
+    - `newSinceSheet` («✨ الجديد من آخر مرة») lists only the unseen lines, with «كل التحديثات» for the whole list. A phone that only had the old date stamp gets the newest 5.
+    - `maybeWhatsNew` waits for the screen in front (the away or deputy report) to close. It runs on «كمّل» (solo) and on entering al-Jouf; the notifications offer comes after it.
+    - With mandatory updates this reaches everyone: every new item needs a new title in WHATS_NEW.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

@@ -2049,7 +2049,8 @@ async function enterWorldTown() {
   save(); worldSync(true);
   if (report) deputyReport(report);
   warBack(!!report);
-  setTimeout(pushOffer, 4000); // waits for the report or any screen in front to close
+  setTimeout(maybeWhatsNew, 1200); // what changed since last time, after the deputy's report
+  setTimeout(pushOffer, 6000); // waits for the report or any screen in front to close
 }
 function deputyReport(r) {
   const h = r.hours, d = Math.round(h / 24), span = h < 24 ? `${ar(h)} ساعة` : d === 1 ? "يوم" : d === 2 ? "يومين" : `${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`;
@@ -2880,8 +2881,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-13" },
+  v: { solo: "2027-01-14", world: "2027-01-14" },
   items: [
+    ["both", "✨", "الجديد يوصلك", "كل ما تدخل (الفردي أو الجوف) وفيه شي جديد من آخر مرة، يطلع لك «الجديد من آخر مرة» بالأشياء الجديدة بس، وتقدر تشوف «كل التحديثات» من نفس الصفحة."],
     ["world", "🔄", "ابدأ من جديد", "بالإعدادات صار فيه «ابدأ مدينتي من جديد»: مدينتك بالجوف ترجع قرية من الصفر على نفس الأرض وبنفس الاسم. مرة كل ٢٤ ساعة، وتكتب اسم مدينتك تتأكد قبل."],
     ["world", "🔒", "الخزنة", "بعالم الجوف صار للفلوس سعة: البلدية تشيل (قرية ٥٬٠٠٠ · بلدة ١٥٬٠٠٠ · مدينة ٥٠٬٠٠٠ · محافظة ١٥٠٬٠٠٠ · حاضرة ٤٠٠٬٠٠٠)، ولما تمتلي يوقف الدخل لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» من «ماء وكهرباء» (لين ٤ خزنات) وطوّرها خمس مستويات: من ٥٬٠٠٠ لين ٣٥٠٬٠٠٠ للخزنة الوحدة. فلوسك اللي معك الحين ما تنلمس، والقروض والمكافآت تدخل حتى لو مليانة."],
     ["world", "🛠️", "الإدارة صارت معكم", "إدارة الجوف تقدر ترسل إعلانات (تطلع بالنشرة والشات) وهدايا للمدن، وتمسح الرسايل المسيئة وتوقف اللي يسيء. بلّغ عن أي إساءة من زر البلاغ والإدارة تشوفه."],
@@ -2983,7 +2985,7 @@ const wnMark = (m) => { try { localStorage.setItem(wnKey(m), WHATS_NEW.v[m]); } 
 /** "What's new", in two tabs: solo and the world. Opens on the mode being played. */
 function whatsNewSheet(mode) {
   mode = mode || (worldMode ? "world" : "solo");
-  wnMark(mode);
+  wnMarkAll(mode);
   showWhatsNewDot();
   const list = WHATS_NEW.items.filter(([m]) => m === mode || m === "both");
   sheet(`<h2>وش الجديد في الرافعية؟</h2>
@@ -3000,8 +3002,35 @@ function showWhatsNewDot() {
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
 showWhatsNewDot();
-function maybeWhatsNew() {
-  if (!wnSeen(worldMode ? "world" : "solo")) whatsNewSheet();
+// What changed since this phone last looked, per mode: the titles already seen are kept, so only the new
+// lines show (a phone that knew only the old date stamp gets the newest few).
+const wnTitlesKey = (m) => `rafaya-news-titles-${m}`;
+function wnTitles(m) { try { return new Set(JSON.parse(localStorage.getItem(wnTitlesKey(m)) || "null") || []); } catch { return new Set(); } }
+function wnUnseen(m) {
+  const list = WHATS_NEW.items.filter(([x]) => x === m || x === "both"), seen = wnTitles(m);
+  if (!seen.size) return wnSeen(m) ? [] : list.slice(0, 5);
+  return list.filter(([, , title]) => !seen.has(title));
+}
+function wnMarkAll(m) {
+  try { localStorage.setItem(wnTitlesKey(m), JSON.stringify(WHATS_NEW.items.filter(([x]) => x === m || x === "both").map(([, , t]) => t).slice(0, 300))); } catch { /* fine */ }
+  wnMark(m);
+}
+/** Only what is new since last time, for the mode being played; «كل التحديثات» for the whole list. */
+function newSinceSheet(mode) {
+  const list = wnUnseen(mode);
+  if (!list.length) return false;
+  wnMarkAll(mode); showWhatsNewDot();
+  sheet(`<h2>✨ الجديد من آخر مرة</h2><p>${mode === "world" ? "بعالم الجوف" : "باللعب الفردي"} تغيّر ${ar(list.length)} ${list.length === 1 ? "شي" : list.length <= 10 ? "أشياء" : "شي"}:</p>
+    <div class="rows">${list.map(([, icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}</b><small>${text}</small></span></div>`).join("")}</div>
+    <div class="sheet-actions two"><button class="btn" id="wnAll" type="button">كل التحديثات</button><button class="btn go" id="wnOk" type="button">تمام 👍</button></div>`, "whatsnew");
+  $("wnOk").addEventListener("click", closeSheet);
+  $("wnAll").addEventListener("click", () => whatsNewSheet(mode));
+  return true;
+}
+/** On continuing or entering al-Jouf: once the screen in front (the deputy's report) is closed. */
+function maybeWhatsNew(tries = 0) {
+  if (sheetFor && sheetFor !== "whatsnew") { if (tries < 30) setTimeout(() => maybeWhatsNew(tries + 1), 1500); return; }
+  newSinceSheet(worldMode ? "world" : "solo");
 }
 
 function spark(values, color) {
@@ -3511,7 +3540,7 @@ function startPlaying() {
   for (const ms of [0, 300, 700, 1400]) setTimeout(layoutSide, ms);
 }
 
-$("mContinue").addEventListener("click", () => { sfx.goal(); leaveWorld(); startPlaying(); const r = away; away = null; if (r) showAway(r); else maybeWhatsNew(); });
+$("mContinue").addEventListener("click", () => { sfx.goal(); leaveWorld(); startPlaying(); const r = away; away = null; if (r) showAway(r); maybeWhatsNew(); }); // the new lines wait for the away report
 $("mNew").addEventListener("click", () => {
   sfx.tap();
   const b = $("mNew");
