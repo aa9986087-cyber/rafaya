@@ -72,8 +72,12 @@ function clockAt(p, d) {
 let arrange = null; // the layout editor's state while it is open (see enterArrange)
 let visiting = null; // { code, town, comments } while looking at another player's town
 let worldMode = false; // playing a town in the shared world of al-Jouf
+// the iPhone, and the game opened as an app from the home screen (used early: by save and the app's move)
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 function save() {
   if (visiting || arrange) return; // mid-layout the town is saved as it was before (see enterArrange)
+  if (isIOS && Date.now() - (save.moveAt || 0) > 600000) { save.moveAt = Date.now(); setTimeout(() => iosPrepareMove(), 1000); } // the app's copy stays fresh
   S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
   S.savedAt = Date.now();
   if (worldMode) { store.set(WORLD_SAVE, pack(S)); worldSync(); return; }
@@ -1578,8 +1582,6 @@ async function loadClock() {
 }
 // ---------- notifications on the phone (al-Jouf): attacks, war and being named in the chat, even with the game shut ----------
 const PUSH = { reg: null };
-const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const pushable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 if ("serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && (location.protocol === "https:" || location.hostname === "localhost")) {
   navigator.serviceWorker?.register("/sw.js").then((r) => { PUSH.reg = r; }).catch(() => {});
@@ -1638,7 +1640,7 @@ async function pushIosHelp() {
   if (!old && id?.secret) {
     try {
       const h = await api("/world/handoff", { name: id.name, secret: id.secret });
-      code = h.code || "";
+      code = (await iosPrepareMove(true)).code || h.code || ""; // the whole game moves; the account-only code is the last resort
       // the home-screen app opens at this page's address and the manifest's start: both carry the move link,
       // so the account goes over by itself on its first launch (the code is only the fallback)
       if (h.token) {
@@ -1707,11 +1709,12 @@ function restartSheet() {
 }
 /** The new app (iPhone home screen): bring the account over with the move code. */
 function handoffSheet(firstOpen) {
-  sheet(`<h2>🔑 رمز النقل (احتياط)</h2><p>${firstOpen ? "عندك حساب بالجوف من سفاري؟ " : "عادةً حسابك ينتقل لحاله. لو ما انتقل: "}اكتب الرمز (٦ أرقام) اللي تحت «احتياط» في «تنبيهات الآيفون» بسفاري، ويرجع لك اسمك ومدينتك.${firstOpen ? " ما عندك حساب؟ سكّر هالصفحة وكمّل عادي." : ""}</p>
+  sheet(`<h2>📲 جيب لعبتك من سفاري</h2><p>${firstOpen ? "كنت تلعب من سفاري؟ " : ""}افتح اللعبة بسفاري ← الإعدادات ← <b>«انقل لعبتك للتطبيق»</b>، واكتب الرمز هنا: يجيك كل شي (حساب الجوف ومدنك).${firstOpen ? " ما عندك لعبة قبل؟ سكّر هالصفحة وكمّل عادي." : ""}</p>
     <label class="rg-name">الرمز <input id="hoCode" type="text" inputmode="numeric" maxlength="6" placeholder="١٢٣٤٥٦" style="letter-spacing:6px;text-align:center"></label>
     <div class="sheet-actions keep"><button class="btn go block" id="hoGo" type="button">رجّع حسابي</button></div>`, "world");
   $("hoGo").addEventListener("click", async () => {
     const code = ($("hoCode").value || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+    try { if (await takeMove(code)) return; } catch { /* maybe an older account-only code */ }
     try {
       const r = await api("/world/handoff/claim", { code });
       if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
@@ -1734,19 +1737,69 @@ function pushOffer(tries = 0) {
   $("pushYes").addEventListener("click", async () => { if (await pushOn()) closeSheet(); });
 }
 
-// ---------- the home-screen app's first launch: ?link=TOKEN brings the al-Jouf account over by itself ----------
-(async () => {
-  const link = new URLSearchParams(location.search).get("link");
-  if (!link) { if (isIOS && standalone() && !me() && onlineOk() && !globalThis.RAFAYA_PREVIEW && store.get("rafaya-handoff-asked") !== "1") { store.set("rafaya-handoff-asked", "1"); setTimeout(() => { if (!me() && !sheetFor) handoffSheet(true); }, 2500); } return; }
-  history.replaceState(null, "", "/"); // the address stays clean
-  if (me()?.secret || !onlineOk() || globalThis.RAFAYA_PREVIEW) return; // already signed in here
+// ---------- the iPhone's home-screen app keeps its own storage: the game moves over with it ----------
+// In Safari on an iPhone the game keeps a fresh copy of all its saves on the server (gzip) and puts its token in
+// the page's address and the manifest's start, so the app added to the home screen opens with it and restores
+// everything (the al-Jouf account, the solo towns, the settings). A 6-digit code (24 h) does the same by hand.
+const MOVE = { token: "", code: "", at: 0, sum: "" };
+const moveKeys = () => Object.keys(localStorage).filter((k) => k.startsWith("rafaya-") && !k.startsWith("rafaya-move") && k !== "rafaya-handoff-asked");
+const b64 = (buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode(...u.subarray(i, i + 32768)); return btoa(s); };
+const unb64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+async function gzipText(text) { return b64(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); }
+async function gunzipText(data) { return new Response(new Blob([unb64(data)]).stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
+/** Safari on an iPhone: a fresh copy of the saves on the server, its token in the address and the manifest. */
+async function iosPrepareMove(force) {
+  if (!isIOS || standalone() || !onlineOk() || globalThis.RAFAYA_PREVIEW || typeof CompressionStream === "undefined") return MOVE;
   try {
-    const r = await api("/world/handoff/claim", { code: link });
-    if (r.error || !r.secret) { if (standalone()) setTimeout(() => { if (!me()) handoffSheet(); }, 2500); return; } // the fallback code, straight away
-    store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
-    toast(`📲 حيّاك ${r.name}! حسابك بالجوف انتقل هنا ✓`, "goal");
-  } catch { /* the code is the fallback */ }
+    const all = {}; for (const k of moveKeys()) all[k] = localStorage.getItem(k);
+    const text = JSON.stringify(all), sum = `${text.length}:${text.slice(-64)}`;
+    if (!force && MOVE.token && MOVE.sum === sum && Date.now() - MOVE.at < 6 * 3600000) return MOVE;
+    const r = await (await fetch(API + "/move/put", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(text), old: MOVE.token }) })).json();
+    if (!r.token) return MOVE;
+    Object.assign(MOVE, { token: r.token, code: r.code, at: Date.now(), sum });
+    const link = new URLSearchParams(location.search).get("link");
+    history.replaceState(null, "", `/?move=${r.token}${link ? `&link=${link}` : ""}`);
+    document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?m=${r.token}${link ? `&t=${link}` : ""}`);
+  } catch { /* next time */ }
+  return MOVE;
+}
+/** The app: take the copy (by the link or a typed code) and restore it, then start again with it. */
+async function takeMove(tokenOrCode) {
+  const r = await (await fetch(API + "/move/take", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: tokenOrCode }) })).json();
+  if (!r.data) return false;
+  const all = JSON.parse(await gunzipText(r.data));
+  for (const [k, v] of Object.entries(all)) if (typeof v === "string") localStorage.setItem(k, v);
+  sessionStorage.setItem("rafaya-moved", "1");
+  location.replace("/");
+  return true;
+}
+(async () => {
+  const q = new URLSearchParams(location.search), mv = q.get("move"), link = q.get("link");
+  if (sessionStorage.getItem("rafaya-moved")) { sessionStorage.removeItem("rafaya-moved"); setTimeout(() => toast("📲 جبنا لعبتك كاملة من سفاري ✓", "goal"), 1500); }
+  if (!onlineOk() || globalThis.RAFAYA_PREVIEW) return;
+  if (!standalone()) { if (isIOS) setTimeout(() => iosPrepareMove(), 4000); return; } // Safari: keep a copy ready for the app
+  if (mv || link) history.replaceState(null, "", "/"); // the app: a clean address
+  const fresh = !me() && !(S.day > 48 || (S.pop || 0) > 15); // nothing of its own played here yet
+  if (mv && (fresh || confirm("فيه لعبة محفوظة من سفاري. تبي تجيبها هنا بدل اللي بهالتطبيق؟"))) {
+    try { if (await takeMove(mv)) return; } catch { /* the code below */ }
+  }
+  if (link && !me()) { // the older link (the al-Jouf account only)
+    try { const r = await api("/world/handoff/claim", { code: link }); if (r.secret) { store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot })); toast(`📲 حيّاك ${r.name}! حسابك بالجوف انتقل هنا ✓`, "goal"); return; } } catch { /* fine */ }
+  }
+  // the app opened empty (added before this, or iOS dropped the link): ask once for the code from Safari
+  if (isIOS && fresh && store.get("rafaya-handoff-asked") !== "1") { store.set("rafaya-handoff-asked", "1"); setTimeout(() => { if (!me() && !sheetFor) handoffSheet(true); }, 2500); }
 })();
+/** Safari: the code to type in the app (and the steps). */
+async function moveCodeSheet() {
+  sheet(`<h2>📲 انقل لعبتك للتطبيق</h2><p class="hint">نجهّز…</p>`, "push");
+  const m = await iosPrepareMove(true);
+  if (!m.code) { sheet(`<h2>📲 انقل لعبتك للتطبيق</h2><div class="need">ما زبط، جرّب بعد شوي</div>`, "push"); return; }
+  sheet(`<h2>📲 انقل لعبتك للتطبيق</h2><p>بالتطبيق (الأيقونة) اكتب هالرمز ويجيك كل شي: حساب الجوف ومدنك والإعدادات.</p>
+    <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(m.code)}</b><span>صالح ٢٤ ساعة · مرة وحدة</span></div>
+    <button class="btn block" id="mvCopy" type="button">انسخ الرمز</button>
+    <p class="hint">ما عندك التطبيق؟ افتح «تنبيهات الآيفون» من الإعدادات تلقى خطوات الإضافة.</p>`, "push");
+  $("mvCopy").addEventListener("click", () => navigator.clipboard?.writeText(m.code).then(() => toast("نسخت الرمز ✓", "goal")));
+}
 
 // ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
 const GAME_FILES = ["./", "index.html", "css/style.css", ...["version", "data", "sim", "people", "models", "world3d", "icons", "warfx", "war", "sound", "news", "main"].map((m) => `js/${m}.js`)];
@@ -1875,7 +1928,7 @@ function worldJoinSheet(recover) {
       <p class="hint">٣ إلى ١٦ حرف (عربي أو إنجليزي أو أرقام). يطلع للكل فوق مدينتك، فلا تكتب اسمك الكامل.</p>
       <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">ادخل العالم</button></div>
       <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>
-      <button class="btn block" id="wjHandoff" type="button">🔑 احتياط: عندي رمز نقل (آيفون)</button>`}`, "world");
+      <button class="btn block" id="wjHandoff" type="button">📲 كنت ألعب من سفاري (عندي رمز)</button>`}`, "world");
   $("wjRecover")?.addEventListener("click", () => worldJoinSheet(true));
   $("wjHandoff")?.addEventListener("click", () => handoffSheet());
   $("wjGo").addEventListener("click", async () => {
@@ -2914,8 +2967,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-14", world: "2027-01-15" },
+  v: { solo: "2027-01-16", world: "2027-01-16" },
   items: [
+    ["both", "📲", "لعبتك تنتقل للتطبيق", "بالآيفون: إذا حطيت اللعبة تطبيق بشاشتك (من سفاري: إضافة إلى الشاشة الرئيسية) وفتحتها، تلقى لعبتك كاملة: حساب الجوف ومدنك والإعدادات. ولو فتحت التطبيق ولقيته فاضي: بسفاري ← الإعدادات ← «انقل لعبتك للتطبيق» وتكتب الرمز بالتطبيق."],
     ["world", "📱", "الآيفون أسهل", "خطوات الآيفون صارت أوضح وتناسب نسخة جوالك: بالنسخ الجديدة زر المشاركة داخل «⋯» تحت يمين، وخل «فتح كتطبيق ويب» شغّال. ولو فتحت الأيقونة وما انتقل حسابك، يطلب منك رمز الاحتياط على طول (صالح ٢٤ ساعة)."],
     ["world", "💰", "أسعار الخزنة", "الخزنة صارت أغلى شوي: بناؤها ١٬٥٠٠، وكل خزنة زيادة أغلى من اللي قبلها (لين ٣٬٧٥٠ للرابعة)، والتطوير ٦٬٠٠٠ ثم ١٨٬٠٠٠ ثم ٥٠٬٠٠٠ ثم ١٤٠٬٠٠٠. اللي بنيته قبل يبقى لك."],
     ["both", "✨", "الجديد يوصلك", "كل ما تدخل (الفردي أو الجوف) وفيه شي جديد من آخر مرة، يطلع لك «الجديد من آخر مرة» بالأشياء الجديدة بس. وبالنشرة صار فيه تبويب «✨ التحديثات» تلقى فيه كل اللي تغيّر، والجديد عليه علامة."],
@@ -3384,6 +3438,7 @@ function settingsSheet(fromMenu) {
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
     <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "حدّث الآيفون (iOS 16.4 أو أحدث) عشان التنبيهات" : "متصفحك ما يدعم التنبيهات: جرّب كروم"}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
@@ -3395,6 +3450,7 @@ function settingsSheet(fromMenu) {
     store.set("rafaya-quality", b.dataset.q); save();
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
+  $("moveCode")?.addEventListener("click", () => moveCodeSheet());
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
   $("pushTest")?.addEventListener("click", async () => {

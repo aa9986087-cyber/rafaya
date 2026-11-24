@@ -316,6 +316,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - **No-code move (done):** `/world/handoff` also returns a long token (7 days, once). `pushIosHelp` puts it in the address (`/?link=TOKEN`) and points the manifest link at `/api/world/manifest?t=TOKEN` (start_url `/?link=TOKEN`).
     - On the home-screen app's first launch, the startup code claims it by itself and cleans the address. The 6-digit code sits under «ما انتقل حسابك؟» as the fallback.
     - Short steps for each phone. iPhone in Safari: 3 steps (share → add to home screen → open the icon → enable). The code sits under «🔑 احتياط». Android: the phone's own allow prompt, no steps. Refused once: `pushDeniedHelp` gives one step for this phone (iPhone settings, or 🔒 by the address on Android).
+    - **The whole game moves into the home-screen app (owner: the app opened empty in al-Jouf):**
+      - In Safari on an iPhone (not standalone), `iosPrepareMove` gzips every `rafaya-*` localStorage key and stores it with `POST /api/move/put` (table `moves`: 7 days, plus a 6-digit code for 24 h). It puts `?move=TOKEN` in the address and the manifest's start_url (`/api/world/manifest?m=`).
+      - The copy is refreshed at most every 10 min from `save()`, and on load.
+      - The standalone app's startup takes it (`/move/take`, once), restores the keys, and reloads («جبنا لعبتك كاملة»). It asks before overwriting anything played there.
+      - An empty app asks once for the code (`handoffSheet`). Safari's settings have «📲 انقل لعبتك للتطبيق» (`moveCodeSheet`).
+      - The older account-only `?link` and `/world/handoff` stay as the last resort.
     - **iPhone steps by version (owner said it was hard):**
       - iOS 26 put Share inside «⋯» (bottom right) and added an «Open as Web App» switch that must stay on, so the steps say both. Older iOS gets ⬆️ with a «⋯» hint.
       - The fallback code now lasts 24 h.

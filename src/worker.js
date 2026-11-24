@@ -83,6 +83,11 @@ export class Board extends DurableObject {
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
     // moving an account to another app on the same phone (the iPhone's home-screen app keeps its own storage):
     // a 6-digit code made in the old one gives the new one its own key; both keys work
+    // the iPhone's home-screen app keeps its own storage: Safari leaves a copy of the game's saves here (gzip,
+    // base64) under a random token; the app takes it once on its first launch. Kept 7 days at most.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS moves (token TEXT PRIMARY KEY, data TEXT, at INTEGER)`);
+    try { this.sql.exec("ALTER TABLE moves ADD COLUMN code TEXT"); } catch { /* already there */ } // 6 digits to type in the app (24 h)
+    this.moveFails = [];
     this.sql.exec(`CREATE TABLE IF NOT EXISTS handoff (code TEXT PRIMARY KEY, name TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS keys (name TEXT, secret TEXT, at INTEGER)`);
     this.handoffFails = [];
@@ -241,6 +246,7 @@ export class Board extends DurableObject {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
     if (parts[1] === "world" && parts[2] === "live" && (WORLD_OPEN || this.env?.WAR_TEST === "1")) return this.liveSocket(request);
+    if (parts[1] === "move") { try { return await this.move(request, parts[2]); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
     if (parts[1] === "admin") { try { const res = await this.admin(request, parts.slice(2)); await this.flush(); return res; } catch (e) { return json({ error: String(e.message || e) }, 500); } }
     try {
       if (parts[1] === "world") { const res = await this.world(request, parts.slice(2)); await this.flush(); if (request.method === "POST") await this.armWar(); return res; }
@@ -255,6 +261,35 @@ export class Board extends DurableObject {
     const key = townNameKey(town);
     return this.sql.exec("SELECT plot, town FROM plots").toArray().some((t) => t.plot !== plot && townNameKey(t.town) === key);
   }
+  // ---------- moving the game's saves into the iPhone's home-screen app ----------
+  async move(request, action) {
+    if (request.method !== "POST") return json({ error: "post" }, 405);
+    const body = await request.json().catch(() => ({})), now = Date.now();
+    this.sql.exec("DELETE FROM moves WHERE at < ?", now - 7 * 86400000);
+    if (action === "put") { // Safari: a fresh copy (the old token, if given, is replaced)
+      const data = String(body.data || "");
+      if (!data || data.length > 1800000) return json({ error: "كبير" }, 413);
+      if (body.old) this.sql.exec("DELETE FROM moves WHERE token = ?", String(body.old).replace(/[^a-f0-9]/g, "").slice(0, 32));
+      const token = makeSecret();
+      let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM moves WHERE code = ?", code).toArray().length);
+      this.sql.exec("INSERT INTO moves (token, data, at, code) VALUES (?, ?, ?, ?)", token, data, now, code);
+      return json({ token, code });
+    }
+    if (action === "take") { // the home-screen app: the copy, once (by the link's token, or the 6-digit code typed)
+      const raw = String(body.token || body.code || ""), byCode = raw.replace(/\D/g, "").length === 6 && raw.length <= 8;
+      if (byCode) {
+        this.moveFails = this.moveFails.filter((t) => now - t < 60000);
+        if (this.moveFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
+      }
+      const row = byCode ? this.sql.exec("SELECT token, data, at FROM moves WHERE code = ?", raw.replace(/\D/g, "")).toArray()[0]
+        : this.sql.exec("SELECT token, data, at FROM moves WHERE token = ?", raw.replace(/[^a-f0-9]/g, "").slice(0, 32)).toArray()[0];
+      if (!row || (byCode && now - row.at > 86400000)) { if (byCode) this.moveFails.push(now); return json({ error: "gone" }); }
+      this.sql.exec("DELETE FROM moves WHERE token = ?", row.token);
+      return json({ data: row.data });
+    }
+    return json({ error: "not found" }, 404);
+  }
+
   // ---------- the owner's control panel ----------
   async admin(request, p) {
     const post = request.method === "POST", body = post ? await request.json().catch(() => ({})) : {};
@@ -367,8 +402,9 @@ export class Board extends DurableObject {
       return json({ items, now: Date.now() });
     }
     if (!post && p[0] === "manifest") { // the app's manifest, opening at /?link=TOKEN: the home-screen app takes the account over by itself
-      const t = String(new URL(request.url).searchParams.get("t") || "").replace(/[^a-f0-9]/g, "").slice(0, 32);
-      const m = { name: "الرافعية", short_name: "الرافعية", lang: "ar", dir: "rtl", start_url: t ? `/?link=${t}` : "/", scope: "/", display: "standalone", orientation: "portrait", background_color: "#2a1d12", theme_color: "#2a1d12",
+      const q = new URL(request.url).searchParams, t = String(q.get("t") || "").replace(/[^a-f0-9]/g, "").slice(0, 32), mv = String(q.get("m") || "").replace(/[^a-f0-9]/g, "").slice(0, 32);
+      const start = "/" + (t || mv ? "?" + [mv && `move=${mv}`, t && `link=${t}`].filter(Boolean).join("&") : "");
+      const m = { name: "الرافعية", short_name: "الرافعية", lang: "ar", dir: "rtl", start_url: start, scope: "/", display: "standalone", orientation: "portrait", background_color: "#2a1d12", theme_color: "#2a1d12",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
       return new Response(JSON.stringify(m), { headers: { "content-type": "application/manifest+json", "cache-control": "no-store" } });
     }
