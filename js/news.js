@@ -109,14 +109,16 @@ function topics(s, a, season, f) {
   if (f.pop >= 25 && !f.mosques) add("mosque", -1, 8, [`صار عددنا ${num(f.pop)} ولا عندنا مسجد! نصلي بالخيام. أول شي يُبنى بالبلد المسجد.`, `abunasser:يا عيالي، البلد اللي ما فيها مسجد ما فيها بركة. ابنوا مسجد قبل أي شي.`]);
   if (f.pop >= 60 && !f.schools) add("school", -1, 7, [`umsaad:عيالي يمشون ساعة للمدرسة بالقرية الثانية. ${num(f.pop)} نفس وما عندنا مدرسة؟`, `noura:التعليم أساس. مدرسة وحدة تخلي البيوت اللي حولها تتطور أسرع.`]);
   if (f.pop >= 60 && !f.clinics) add("health", -1, 7, [`umsaad:أقرب مستوصف بعيد، وأمس ولد الجيران تعب بالليل وما لقينا طبيب.`, `drYousef:مع هالعدد من الناس لازم مستوصف. الوقاية أرخص من العلاج.`]);
-  if (f.pop >= 150 && !f.police) add("safety", -1, 5, [`jawaher:صارت فيه سرقات بالليل. نبي مركز شرطة يطمّنا.`]);
+  if (f.pop >= 150 && !f.police && s.era < 1) add("dream", 0, 2, [`jawaher:البلد كبرت ما شاء الله. إذا صرنا قرية نبي مركز شرطة، والحين الجيران يعرفون بعض ويحرسون بعض.`]);
+  else if (f.pop >= 150 && !f.police) add("safety", -1, 5, [`jawaher:صارت فيه سرقات بالليل. نبي مركز شرطة يطمّنا.`]);
   if (f.pop >= 40 && !f.parks) add("parks", 0, 4, [`haya:ما فيه مكان نطلع فيه العصر غير الشارع. حديقة صغيرة تكفي العوايل.`, `umsaad:العيال يلعبون بين السيارات. وين الحدائق؟`]);
   // Tax and money
   if (s.tax >= 15) add("tax", -1, 6 + (s.tax - 15), [`abufahad:الضريبة ${nAr(s.tax)}٪ كثيرة! المحل بالكاد يغطي. خففوها شوي والناس بترتاح.`, `كل شهر الضريبة تاكل نص الدخل. الناس بدوا يتذمرون.`]);
   else if (s.tax <= 6 && Math.random() < 0.4) add("tax", 1, 2, [`الضريبة خفيفة الله يجزاهم خير، الناس مرتاحين.`]);
   if (f.inDebt) add("money", -1, 8, [`سمعت إن البلدية مديونة والرواتب متأخرة! وش صاير؟ قللوا المصاريف.`, `الرواتب تأخرت أسبوع. البلدية لازم تشد الحزام.`]);
   // Roads
-  if (f.roadsDirt >= 20 && !s.tech.asphalt) add("dust", -1, 4, [`mishal:الجيب صار لونه لون التراب! الطرق الترابية كثرت، متى السفلتة؟`, `umsaad:كل ما مرت سيارة دخل الغبار البيت. نبي طرق مسفلتة.`]);
+  if (f.roadsDirt >= 20 && !s.tech.asphalt && s.era < 1) add("dream", 0, 2, [`mishal:الطرق الترابية ماشية الحين، بس إذا كبرنا وصرنا قرية ياليت نسفلتها. الغبار تعبنا.`]);
+  else if (f.roadsDirt >= 20 && !s.tech.asphalt) add("dust", -1, 4, [`mishal:الجيب صار لونه لون التراب! الطرق الترابية كثرت، متى السفلتة؟`, `umsaad:كل ما مرت سيارة دخل الغبار البيت. نبي طرق مسفلتة.`]);
   if (f.roadsPaved >= 10 && Math.random() < 0.4) add("asphalt", 1, 2, [`mishal:الطريق المسفلت فرق كبير! وصلت المحل بنص الوقت.`]);
   // Season and weather
   if (season.id === "spring" && f.faydaGreen > 0 && springGreen(s) < 0.6) add("season", -1, 4, [`mubarak:الربيع هالسنة ضعيف، الوسم ما نزل والفيضة ما اخضرت مثل كل سنة. الحلال بيحتاج علف.`]);
@@ -152,12 +154,13 @@ function topics(s, a, season, f) {
   // Wear, floods, thefts, illness, traffic, strikes
   const worn = s.tiles.filter((t) => t.b && ((t.b.cond ?? 100) < 40 || t.b.ruin)).length;
   if (worn) add("repair", -1, 5 + Math.min(5, worn), [`abuabdullah:فيه ${nAr(worn)} مبنى متهالك بالبلد، وكلفة الترميم ${num(a.repairBill)} ريال. كل ما تأخرنا زاد الخراب، والمبنى اللي يخرب يطيح بعد يومين.`, `umsaad:سقف المدرسة يقطّر والجدران مشققة. رمّموها قبل لا تطيح على العيال.`]);
-  if (s.lastFlood !== undefined && s.day - s.lastFlood < 48) add("flood", -1, 9, [`abukhalid:السيل أخذ مزرعتي اللي بالوادي. قلت لهم الوادي خصب بس خطير، والحين ${s.tech.dams ? "حتى السدود ما كفت" : "نحتاج سدود"}.`, `mubarak:الله يعوضنا. السيل جرف كل اللي بقاع الوادي. لا تبنون فيه إلا وأنتم مأمّنين.`]);
-  if (a.aquifer < 40) add("aquifer", -1, 8, [`abukhalid:البئر اللي بمزرعتي صار يطلّع نص ماه. الماء الجوفي نزل لـ${nAr(Math.round(a.aquifer))}٪. نبي سد يجمع المطر قبل لا تنشف الآبار كلها.`, `abuabdullah:كل بئر جديد يسحب من نفس الماء. الماء الجوفي ${nAr(Math.round(a.aquifer))}٪ بس، والحل سد على الوادي أو تحلية.`]);
+  if (s.lastFlood !== undefined && s.day - s.lastFlood < 48) add("flood", -1, 9, [`abukhalid:السيل أخذ مزرعتي اللي بالوادي. قلت لهم الوادي خصب بس خطير، والحين ${s.tech.dams ? "حتى السدود ما كفت" : s.era >= 1 ? "نحتاج سدود (بحث «سدود الأودية» من المجلس)" : "لا تبنون بقاع الوادي"}.`, `mubarak:الله يعوضنا. السيل جرف كل اللي بقاع الوادي. لا تبنون فيه إلا وأنتم مأمّنين.`]);
+  if (a.aquifer < 40) add("aquifer", -1, 8, [`abukhalid:البئر اللي بمزرعتي صار يطلّع نص ماه. الماء الجوفي نزل لـ${nAr(Math.round(a.aquifer))}٪. ${s.era >= 1 ? "نبي سد يجمع المطر قبل لا تنشف الآبار كلها." : "خففوا المزارع اللي تشرب كثير، ولا تحفرون آبار زيادة عن الحاجة."}`, `abuabdullah:كل بئر جديد يسحب من نفس الماء. الماء الجوفي ${nAr(Math.round(a.aquifer))}٪ بس، والحل ${s.era >= 2 ? "سد على الوادي أو تحلية" : s.era >= 1 ? "سد على الوادي" : "نقلل الآبار والمزارع"}.`]);
   if ((s.lake || 0) > 40 && a.lakeTiles) add("lake", 1, 4, [`saud:كشتة على بحيرة السد البارحة، والله ما توقعت نشوف ماء بالرافعية كذا!`, `umsaad:العيال يحبون البحيرة، كل عصر نطلع لها.`]);
-  if (a.costs.theft > 1) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة من محلات البلد. نبي شرطة تغطي الحارات.`]);
+  if (a.costs.theft > 1 && s.era < 1) add("dream", 0, 3, [`jawaher:انسرق من المحل البارحة، والسرقات تاخذ ${num(a.costs.theft)} ريال بالساعة. أول ما نصير قرية نبي مركز شرطة.`]);
+  else if (a.costs.theft > 1) add("safety", -1, 6, [`jawaher:انسرق من المحل البارحة. السرقات تاخذ ${num(a.costs.theft)} ريال بالساعة من محلات البلد. نبي شرطة تغطي الحارات.`]);
   if (a.costs.health > 2) add("pollution", -1, 6, [`drYousef:المستوصف مليان أمراض صدر من الدخان. علاجهم يكلف البلدية ${num(a.costs.health)} بالساعة. بعدوا المصانع عن البيوت.`]);
-  if (a.congestion > 0.05) add("traffic", -1, 5, [`mishal:الزحمة ما تنطاق! الطرق الترابية ضيقة والناس صاروا ما يوصلون للسوق. سفلتوها.`]);
+  if (a.congestion > 0.05) add("traffic", -1, 5, [`mishal:الزحمة ما تنطاق! الطرق الترابية ضيقة والناس صاروا ما يوصلون للسوق. ${s.era >= 1 ? "سفلتوها." : "سوّوا طريق ثاني يخفف عن هذا."}`]);
   if (s.events.some((e) => e.strike)) add("strike", -1, 8, [`saud:موظفين البلدية مضربين! المدرسة مقفلة والمستوصف مسكّر. أعطوهم حقهم.`]);
   if (s.events.some((e) => e.id === "locust")) add("farms", -1, 6, [`abukhalid:الجراد أكل نص الزرع! ${s.tech.pest ? "الحمد لله على المكافحة، خففت الضرر." : "لو عندنا مكافحة آفات كان سلمنا."}`]);
 
@@ -456,6 +459,12 @@ const GOOD_REPLIES = {
     { label: "نبيها كل سنة في الرافعية", back: "إن شاء الله! المزاين تجيب ناس وتحرّك السوق.", change: 3 },
     { label: "لا تتأخرون بالإبل على الطريق", back: "أبشر، بنمشيها بعيد عن الطرق.", change: 1 }
   ],
+  // a wish for when the town grows: no promise to keep, and no one is hurt by a kind answer
+  dream: [
+    { label: "إن شاء الله، لا كبرنا تصير 🤝", back: "الله يسمع منك. نصبر لين نكبر.", change: 3 },
+    { label: "كل شي بوقته، خلونا نكبّر البلد أول", back: "صدقت، الخطوة خطوة. بنساعدك.", change: 2 },
+    { label: "ما أوعدكم بشي الحين", back: "طيب، بس لا تنسانا يوم نكبر.", change: 0 }
+  ],
   // what the mayor did: thanked
   credit: [
     { label: "الله يسعدك، هذا واجبنا 🤝", back: "الله يحفظك يا العمدة، الرافعية بخير دامك فيها.", change: 4 },
@@ -471,7 +480,7 @@ function goodKey(post) {
 }
 const SLOTS = ["promise", "calm", "refuse"];
 export function replyOptions(post) {
-  if (post.mood > 0) {
+  if (post.mood > 0 || post.topic === "dream") {
     const set = GOOD_REPLIES[goodKey(post)], key = goodKey(post);
     return set.map((o, i) => ({ kind: SLOTS[i], label: o.label, tone: key === "credit" ? SLOTS[i] : i === 0 ? "promise" : "calm" }));
   }
@@ -491,7 +500,7 @@ export function answerPost(s, a, season, post, kind) {
   const who = residentById(post.who);
   const missing = TOPIC_NAMES[post.topic] && stillMissing(s, a, season, post.topic);
   const building = BUILDING_FOR[post.topic] && B[BUILDING_FOR[post.topic]];
-  if (post.mood > 0) {
+  if (post.mood > 0 || post.topic === "dream") {
     const o = GOOD_REPLIES[goodKey(post)][Math.max(0, SLOTS.indexOf(kind))];
     moodOf(s, post.who, o.change);
     return { text: typeof o.back === "function" ? o.back(s) : o.back, change: o.change };
