@@ -3362,6 +3362,7 @@ function menuBackdrop() {
   if (id?.plot != null) try { town = unpack(store.get(WORLD_SAVE)); } catch { town = null; }
   MENU.town = town;
   $("mContinue").hidden = !town;
+  if (globalThis.RAFAYA_PREVIEW) $("mWorld").hidden = !!town; // the trial: «continue» is the way in, its second «enter» button goes
   if (!town) return;
   $("mTownName").textContent = `«${town.name}»`;
   nameLandmarks(worldPlace(id.plot));
@@ -4179,7 +4180,8 @@ function frame(now) {
   const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
   // behind an open sheet, or on the main menu, the town barely needs to move
   const quiet = !busy && (!playing || (!$("sheet").hidden && !WARX.scene));
-  const wanted = 1000 / (busy ? fpsBusy : quiet || S?.idle ? 15 : fpsIdle);
+  const flying = !playing && MENU.town; // the menu's flight over your town: smooth, not the 15 frames of a still menu
+  const wanted = 1000 / (busy ? fpsBusy : (quiet && !flying) || S?.idle ? 15 : fpsIdle);
   if (now - lastDraw < wanted - 2) { requestAnimationFrame(frame); return; } // nobody watching: slow, cool and kind to the battery
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);

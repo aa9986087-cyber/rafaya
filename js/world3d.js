@@ -673,7 +673,7 @@ export class World {
         if ((x + y) % 3 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
       }
       const w = paved ? 0.42 : 0.36;
-      quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
+      quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b39b77");
       const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
       if (paved && kind === "asphalt") {
         if (link(1, 0) && link(-1, 0) && !link(0, 1) && !link(0, -1)) {
@@ -683,10 +683,19 @@ export class World {
           for (const side of [-1, 1]) quad(cx + side * 0.352 - 0.007, cz - 0.49, cx + side * 0.352 + 0.007, cz + 0.49, 0.008, "#d1c8b2");
         }
       }
-      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : "#a98457");
-      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#4d4f55" : "#a98457");
+      const dirtCol = "#b39b77"; // compacted earth, one colour for the whole track
+      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#4d4f55" : dirtCol);
+      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : dirtCol);
+      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : dirtCol);
+      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#4d4f55" : dirtCol);
+      if (!paved) { // a dirt track: the tyres' two darker ruts along it, and a paler hump of loose dust between them
+        const ew = link(1, 0) || link(-1, 0), ns = link(0, 1) || link(0, -1);
+        const x0 = link(-1, 0) ? -0.5 : -w, x1 = link(1, 0) ? 0.5 : w, z0 = link(0, -1) ? -0.5 : -w, z1 = link(0, 1) ? 0.5 : w;
+        if (ew || !ns) for (const o of [-0.12, 0.12]) quad(cx + x0, cz + o - 0.03, cx + x1, cz + o + 0.03, 0.0066, "#9a8462");
+        if (ns) for (const o of [-0.12, 0.12]) quad(cx + o - 0.03, cz + z0, cx + o + 0.03, cz + z1, 0.0067, "#9a8462");
+        if (ew && !ns) quad(cx + x0, cz - 0.05, cx + x1, cz + 0.05, 0.0068, "#c2ab86");
+        if (ns && !ew) quad(cx - 0.05, cz + z0, cx + 0.05, cz + z1, 0.0068, "#c2ab86");
+      }
       if (kind === "avenue") {
         // a full-width avenue: two lanes each way and a palm median along the way it runs
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
@@ -1962,7 +1971,7 @@ export class World {
         const geo = (far ? modelFar(inst.key, inst.ground) : model(inst.key, inst.ground)) || {};
         for (const set of SETS) if (inst[set]) {
           if (geo[set]) { inst[set].geometry = geo[set]; inst[set].visible = true; } else inst[set].visible = false;
-          inst[set].castShadow = !far && set !== "lights" && this.quality !== "low"; // a whole town seen from afar: its shadows are specks, and drawing them again doubles the cost
+          inst[set].castShadow = set !== "lights" && this.quality !== "low"; // shadows from up high too (the adaptive quality drops them on a struggling phone)
         }
         inst.far = far;
       }
