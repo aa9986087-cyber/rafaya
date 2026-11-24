@@ -10,8 +10,8 @@
   --teal: #2c8a7a;
   --red: #c63a2f;
   --gold: #d9a540;
-  --title: "Reem Kufi", "Tajawal", serif;
-  --body: "Tajawal", system-ui, sans-serif;
+  --title: "El Messiri", "Almarai", serif;
+  --body: "Almarai", system-ui, sans-serif;
   --top: env(safe-area-inset-top, 0px);
   --bottom: env(safe-area-inset-bottom, 0px);
   --left: env(safe-area-inset-left, 0px);
