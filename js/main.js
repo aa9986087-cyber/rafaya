@@ -2111,6 +2111,7 @@ function mapZoom(svg, W, H, onPick) {
 }
 async function worldMapSheet(pick) {
   worldPick = pick ?? worldPick;
+  if (sheetFor !== "world") sheet(`<h2>🌍 عالم الجوف</h2><p class="hint">نحمّل الخريطة…</p>`, "world"); // something on screen at once (the map comes from the server)
   const id = me();
   let plots = [];
   try { plots = (await api("/world/map")).plots; } catch (e) { if (e.message === "maintenance") worldClosedSheet(); else toast("ما قدرت أوصل للسيرفر", "bad"); return; }
@@ -3069,8 +3070,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-16", world: "2027-01-22" },
+  v: { solo: "2027-01-23", world: "2027-01-23" },
   items: [
+    ["both", "🛠️", "إصلاحات", "• التنبيهات على الجوال ما كانت توصل أبد (لا آيفون ولا أندرويد): انصلحت، وجرّبها من الإعدادات ← «جرّب التنبيه»، ولو ما وصلت يقولك رقم الرد عشان نعرف السبب. • خريطة الجوف تطلع «نحمّل الخريطة…» على طول بدل ما تحس إن الزر ما اشتغل. • نقل اللعبة للتطبيق بالآيفون صار بطريقتين بس: لحالها أو بالرمز. • هدايا الإدارة توصلك على طول حتى لو وصلت وانت داخل اللعبة."],
     ["world", "🔔", "اختبار التنبيه يوضح النتيجة", "زر «جرّب التنبيه» ينتظر رد جهازك ويبيّن إذا وصل طلب عرض الإشعار. ونص التنبيه يوصل معه مباشرة حتى لو اللعبة مسكّرة."],
     ["world", "🔔", "التحديث والتنبيهات على الجوال", "التحديث يوصل من الأيقونة والمتصفح. الإعدادات تتحقق من اشتراك هالجهاز، وزر تجربة التنبيه يجرّب نفس الجهاز."],
     ["world", "📱", "واجهة الجوال أضبط", "الضغط على الأزرار والكتابة بسفاري ما تكبّر الصفحة بالغلط. أدوات اليسار بعمود واحد تقدر تمرّره، وكلمة «التحديثات» بالنشرة تظهر كاملة. تقدر تكبّر الخريطة بإصبعين."],

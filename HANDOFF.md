@@ -540,3 +540,17 @@ node scripts/copy-site.mjs && npx -y wrangler@4 dev --port 8787 --local   # run 
 ## 5. Suggested first message back to the owner
 
 Short Arabic: you have read the handoff, you know the last thing done was building rotation and the wadi water, and ask what they want next. Mention the open ideas in section 0 only briefly.
+
+---
+
+## Fixes (2026-11-24, after the other AI's four updates)
+
+- **Notifications never reached any phone.** `fetch(..., { redirect: "error" })` in `Board.wake` is refused by Workers, so every push threw before leaving.
+  - Removed; a test guards it.
+  - Reproduced and verified against a fake push service, including decrypting the aes128gcm payload with real keys.
+  - The «جرّب التنبيه» error now quotes the provider's status. `pushsubs.last_status`/`last_at` feed the panel (phones reached or failed).
+- My owner's-panel commit (gifts tab, `WARX.again`, the search staying) had not reached main before the other AI's work; it was re-applied.
+- The iPhone guide offers only the owner's two ways again (the automatic move, plus its code under the steps). The account-only handoff fallback was removed from the guide.
+- The al-Jouf map shows «نحمّل الخريطة…» at once (it waits about 1 s for the server).
+- **Full sweep** (`scratchpad/sweep.cjs`): iPhone Safari, iPhone app, Android browser and Android app. Every menu, side button, news tab, menu item, build category and the chat open with no page errors.
+- Also re-checked: the forced update, the iPhone move (link and code), live chat and war hints (~0.3 s), and the owner's panel (15/15).
