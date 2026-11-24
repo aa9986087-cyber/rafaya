@@ -1319,7 +1319,7 @@ export class World {
   resize() {
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
     let dpr = Math.min(this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25, devicePixelRatio || 1);
-    if (this.perfLevel >= 1) dpr = Math.max(1, Math.min(dpr, this.perfLevel >= 3 ? 1 : 1.25));
+    if (this.perfLevel >= 2) dpr = Math.max(1, Math.min(dpr, 1.5)); // never below 1.5 on a sharp screen: lower looks pixelated
     if (w === this.w && h === this.h && dpr === this.dpr) return;
     this.dpr = dpr;
     this.renderer.setPixelRatio(dpr);
@@ -1422,14 +1422,12 @@ export class World {
   // ---------- frame ----------
 
   /**
-   * When the phone struggles (slow frames), the town lightens itself in steps, and stays so on this phone:
-   * 1: a lower resolution, 2: no shadows, 3: the lowest resolution. 0 is as chosen in the settings.
+   * When the phone really struggles (slow frames), the town lightens itself for this visit only:
+   * 1: no shadows, 2: a slightly lower resolution (1.5 at least). 0 is as chosen in the settings.
    */
   degrade(level) {
     this.perfLevel = level;
-    const dpr = this.renderer.getPixelRatio();
-    if (level >= 1) this.renderer.setPixelRatio(Math.max(1, Math.min(dpr, level >= 3 ? 1 : 1.25)));
-    if (level >= 2 && this.renderer.shadowMap.enabled) {
+    if (level >= 1 && this.renderer.shadowMap.enabled) {
       this.renderer.shadowMap.enabled = false; this.sun.castShadow = false;
       this.scene.traverse((o) => { for (const m of [].concat(o.material || [])) m.needsUpdate = true; });
     }

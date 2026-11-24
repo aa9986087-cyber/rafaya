@@ -1610,24 +1610,6 @@ async function loadClock() {
 }
 // ---------- notifications on the phone (al-Jouf): attacks, war and being named in the chat, even with the game shut ----------
 const PUSH = { registration: null, key: null, checked: false, enabled: false, checking: null };
-/** What happened to the last closed-game test, from the server and the phone's own report (under its button in the settings). */
-async function laterReport() {
-  const box = $("pushLaterStatus");
-  let last; try { last = JSON.parse(store.get("rafaya-push-later") || "null"); } catch { last = null; }
-  if (!box || !last?.receipt || Date.now() - last.at > 3600000) return;
-  const again = () => { clearTimeout(laterReport.t); laterReport.t = setTimeout(() => { if (box.isConnected) laterReport(); }, 3000); };
-  let r = null; try { r = await (await fetch(`/api/world/push/ack?r=${last.receipt}`, { cache: "no-store" })).json(); } catch { /* retried below */ }
-  if (!box.isConnected) return;
-  const age = Date.now() - last.at, waiting = !r || r.at == null || (!r.got && (r.sent == null || age < 25000));
-  if (waiting && age < 60000) { if (age > 12000) box.innerHTML = "⏳ ننتظر نتيجة آخر تجربة… (تطلع هنا لحالها)"; again(); return; } // (the first seconds keep «close the game now» showing)
-  if (!r || r.at == null) { box.innerHTML = "ما لقينا نتيجة آخر تجربة. جرّب مرة ثانية."; return; }
-  const host = r.host ? ` <small dir="ltr">(${r.host})</small>` : "";
-  box.innerHTML = "<b>نتيجة آخر تجربة:</b> " + (r.got ? (r.shown ? "✅ التنبيه وصل جوالك وطلبنا عرضه. إذا ما شفته، الجوال نفسه مخفيه: شيّك إعدادات الإشعارات و«عدم الإزعاج»." : "⚠️ التنبيه وصل جوالك بس الجوال رفض يعرضه. السبب إذن الإشعارات بإعدادات الجوال.")
-    : r.sent >= 200 && r.sent < 300 ? `📭 أرسلناه وقبله مزوّد التنبيهات${host}، بس ما وصل جوالك. غالبًا توفير البطارية أو إن المتصفح مقفول بالخلفية.`
-      : r.sent ? `❌ مزوّد التنبيهات رفضه (الرد: ${r.sent})${host}. أرسل هالرقم للمطور.` : `❌ ما قدرنا نرسله${host}. أرسل صورة للمطور.`);
-}
-/** Samsung Internet: its web apps show notifications through the browser itself, so both need allowing. */
-const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
 const pushable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const canRegisterWorker = "serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && isSecureContext;
 function registerPushWorker() {
@@ -1718,7 +1700,7 @@ async function pushOn() {
 /** Notifications were refused once: how to allow them again, for this phone. */
 function pushDeniedHelp() {
   sheet(`<h2>🔔 التنبيهات مقفلة</h2><p>رفضتها مرة، ترجّعها كذا:</p>
-    <div class="rows"><div class="row g-step"><b class="g-n">١</b><span>${isIOS ? "إعدادات الآيفون ← <b>الإشعارات</b> ← <b>الرافعية</b> ← اسمح" : isSamsung ? "متصفح سامسونج: <b>☰</b> ← <b>الإعدادات</b> ← <b>المواقع والتنزيلات</b> ← <b>الإشعارات</b> ← اسمح للرافعية" : "اضغط 🔒 جنب الرابط فوق ← <b>الإشعارات</b> ← <b>سماح</b>"}</span></div>
+    <div class="rows"><div class="row g-step"><b class="g-n">١</b><span>${isIOS ? "إعدادات الآيفون ← <b>الإشعارات</b> ← <b>الرافعية</b> ← اسمح" : "اضغط 🔒 جنب الرابط فوق ← <b>الإشعارات</b> ← <b>سماح</b>"}</span></div>
     <div class="row g-step"><b class="g-n">٢</b><span>ارجع هنا واضغط «فعّل التنبيهات»</span></div></div>`, "push");
 }
 async function pushOff() {
@@ -3096,12 +3078,10 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-25", world: "2027-01-28" },
+  v: { solo: "2027-01-28", world: "2027-01-28" },
   items: [
-    ["world", "⏳", "نتيجة التجربة تطلع لحالها", "• بعد «📴 جرّب والتطبيق مسكّر» ارجع للإعدادات: النتيجة تطلع تحت الزر لحالها خلال ثواني، حتى لو رجعت بدري."],
-    ["world", "🔍", "نتيجة تجربة التنبيه بالتفصيل", "• بعد «📴 جرّب والتطبيق مسكّر»، ارجع للإعدادات وتلقى وش صار بالضبط: وصل جوالك وانعرض، أو وصل وانرفض، أو ما وصل جوالك أبد. • هذا يساعدنا نعرف سبب التنبيهات اللي ما توصل."],
-    ["world", "📴", "جرّب التنبيه والتطبيق مسكّر", "• بالإعدادات تحت «جرّب التنبيه» صار فيه زر «📴 جرّب والتطبيق مسكّر»: تضغطه وتسكّر اللعبة، والتنبيه يجيك بعد ١٠ ثواني. • بعض الجوالات (مثل تطبيقات متصفح سامسونج) ما تعرض التنبيه واللعبة مفتوحة قدامك، بس توصلك وهي مسكّرة، وهذا وقتها الحقيقي."],
-    ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل متصفح سامسونج بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد. • وصار فيه شرح خاص لتنبيهات متصفح سامسونج."],
+    ["both", "🖼️", "الرسوم رجعت واضحة", "• كانت اللعبة إذا حسّت إن الجوال بطيء لحظة، تنزّل الدقة وتحفظها للأبد، فتصير مبكسلة. • الحين ترجع واضحة، وإذا الجوال تعب فعلًا تخفف الظلال بس ولهالمرة، والدقة تبقى حلوة."],
+    ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل المتصفح بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد."],
     ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
     ["world", "🌧️", "الشتاء رجع له مطره", "• الشتاء صار موسم المطر بالجوف: ينزل فيه مطر ثلاث مرات على الأقل (أوله ونصه وآخره)، وكل مرة قرابة اليوم. • ومطر الشتاء يخلّي الربيع اللي بعده أخضر."],
     ["both", "🗣️", "طلبات الأهالي على قد مستواك", "• الأهالي يطلبون اللي تقدر تسويه بمرحلتك. • وإذا تمنّوا شي لمرحلة أكبر (مثل السفلتة أو مركز الشرطة وانتم بلدة)، يجي كأمنية لبعدين: ما فيها وعد ينحسب عليك ولا زعل."],
@@ -3635,7 +3615,7 @@ function settingsSheet(fromMenu) {
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
-    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div><button class="btn block" id="pushLater" type="button">📴 جرّب والتطبيق مسكّر</button><div id="pushLaterStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
@@ -3658,9 +3638,7 @@ function settingsSheet(fromMenu) {
     const confirmation = new Promise((resolve) => {
       onReceipt = ({ data }) => { if (data?.type === "push-test" && data.receipt === receipt) resolve(data.shown); };
     });
-    const systemHelp = isIOS ? "شيّك إشعارات الرافعية والتركيز في إعدادات الآيفون."
-      : isSamsung ? "بمتصفح سامسونج: إعدادات الجوال ← التطبيقات ← «Samsung Internet» ← الإشعارات ← اسمح. وداخل متصفح سامسونج: ☰ ← الإعدادات ← المواقع والتنزيلات ← الإشعارات ← اسمح للرافعية. ولو ما زبط، العب من Chrome: تنبيهاته أضمن."
-      : "شيّك إذن الإشعارات للتطبيق أو المتصفح في إعدادات الجهاز، وخلّ البطارية «غير مقيّد».";
+    const systemHelp = isIOS ? "شيّك إشعارات الرافعية والتركيز في إعدادات الآيفون." : "شيّك إذن الإشعارات للتطبيق أو المتصفح في إعدادات الجهاز.";
     navigator.serviceWorker.addEventListener("message", onReceipt);
     button.disabled = true;
     status.textContent = "نرسل التجربة وننتظر رد هالجهاز…";
@@ -3685,7 +3663,7 @@ function settingsSheet(fromMenu) {
           shown ??= await wait(12000);
           status.textContent = shown === true ? `✅ وصل التنبيه لهالجهاز. إذا ما شفته فوق، ${systemHelp}`
             : shown === false ? `وصل التنبيه وتعذّر عرضه على الجهاز. ${systemHelp}`
-              : `قوقل/أبل استلموا التنبيه بس ما وصل لهالجهاز للحين. ${isIOS ? "" : "شيّك إن «توفير البطارية» ما يقفل التطبيق، و"}جرّب بعد دقيقة.`;
+              : `قوقل/أبل استلموا التنبيه بس ما وصل لهالجهاز للحين. جرّب بعد دقيقة.`;
           return;
         }
         status.textContent = r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.";
@@ -3701,21 +3679,6 @@ function settingsSheet(fromMenu) {
       button.disabled = false;
     }
   });
-  $("pushLater")?.addEventListener("click", async (e) => { // a notification 12 seconds later, with the game closed
-    const button = e.currentTarget, status = $("pushLaterStatus"), id = me();
-    button.disabled = true;
-    try {
-      const sub = await (await activePushWorker()).pushManager.getSubscription();
-      if (!sub) throw new Error("no subscription");
-      await registerPushEndpoint(sub, id);
-      const receipt = crypto.randomUUID();
-      const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, later: true, receipt });
-      if (r.ok) { store.set("rafaya-push-later", JSON.stringify({ receipt, at: Date.now() })); setTimeout(laterReport, 3000); }
-      status.innerHTML = r.ok ? "✅ <b>سكّر اللعبة الحين</b> (اطلع للشاشة الرئيسية)، والتنبيه يجيك بعد ١٠ ثواني تقريبًا. ثم ارجع هنا للإعدادات ونقولك وش صار بالضبط." : (r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.");
-    } catch { status.textContent = "ما قدرنا نرسل التجربة. طفّ التنبيهات وشغّلها من جديد، ثم جرّب."; }
-    finally { button.disabled = false; }
-  });
-  laterReport();
   const pushToggle = $("setPush");
   if (pushToggle && pushStatus === "checking") checkPush()?.then(() => {
     if (pushToggle.isConnected) settingsSheet(fromMenu);
@@ -3982,17 +3945,17 @@ function runHour() {
  * screen, the camera turns, or a war scene or a building's rise is playing.
  */
 let lastDraw = 0;
-// how long drawing takes on this phone: if it stays slow, the town lightens itself (world.degrade), and remembers
-const perf = { avg: 8, since: 0, level: Number(store.get("rafaya-perf-level") || 0) };
-if (store.get("rafaya-perf-quality") !== settings.quality) { perf.level = 0; store.set("rafaya-perf-quality", settings.quality); store.set("rafaya-perf-level", "0"); } // a new choice in the settings starts fresh
-if (perf.level) world.degrade(perf.level);
+// how long drawing takes on this phone: if it stays really slow, the town lightens itself (world.degrade) for this visit only
+// (it used to remember it for good and lower the resolution: the game stayed pixelated on a phone that was slow once)
+const perf = { avg: 8, since: 0, level: 0 };
+try { localStorage.removeItem("rafaya-perf-level"); } catch { /* fine */ }
 function perfWatch(ms, now) {
   perf.avg = perf.avg * 0.95 + ms * 0.05;
-  if (perf.avg < 18 || perf.level >= 3 || WARX.scene) { perf.since = 0; return; }
+  if (perf.avg < 28 || perf.level >= 2 || WARX.scene || document.hidden) { perf.since = 0; return; }
   perf.since ||= now;
-  if (now - perf.since > 4000) { // slow for four seconds in a row
+  if (now - perf.since > 8000) { // slow for eight seconds in a row
     perf.level++; perf.since = 0; perf.avg = 10;
-    world.degrade(perf.level); store.set("rafaya-perf-level", String(perf.level));
+    world.degrade(perf.level);
   }
 }
 const fpsBusy = { high: 60, medium: 45, low: 30 }[settings.quality] || 45, fpsIdle = settings.quality === "low" ? 24 : 30;
