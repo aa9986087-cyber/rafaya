@@ -108,7 +108,8 @@ export class Board extends DurableObject {
     for (const r of this.sql.exec("SELECT id, plot, owner, town, before, after, cap, taken FROM awayfix WHERE before < 0 AND taken > 0").toArray()) {
       const right = Math.max(0, r.after - Math.max(0, r.before) - Math.round(r.cap * 1.1)), back = r.taken - right;
       if (back <= 0) continue;
-      this.war.fine(r.plot, -back, "refund", `🧾 اعتذار: الخصم اللي جاك كان خطأ (درع الغياب سدّد دينك، وهذا مو كسب). رجّعنا لك ${back.toLocaleString("en-US")} ريال.`);
+      // shown in the middle of the player's screen (kind "apology"), and kept in their war log
+      this.war.fine(r.plot, -back, "refund", `🙏 نعتذر منك: صار خطأ من عندنا ببرمجة اللعبة بحساب خصم الغياب، وانخصم منك ${back.toLocaleString("en-US")} ريال ما كان المفروض ينخصم (درع الغياب سدّد دينك، وهذا مو كسب). رجّعنا لك حقك كامل. السموحة منك.`, "apology", { amount: back });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", back, r.plot);
       this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", r.plot, r.owner, r.town, r.before, r.after, r.cap, -back, Date.now());
     }

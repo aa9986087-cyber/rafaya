@@ -74,10 +74,10 @@ export class WarServer {
     return c;
   }
   /** Take back money a town should not have (the game pays it like a war bill, once), with a note saying why. */
-  fine(plot, amount, why, text) {
+  fine(plot, amount, why, text, kind = "fine", extra = {}) {
     const a = this.acct(plot), c = this.charge(plot, a, amount, why);
     this.saveAcct(plot, a);
-    this.note(plot, "fine", text);
+    this.note(plot, kind, text, extra);
     return c;
   }
   note(plot, kind, text, extra = {}) {

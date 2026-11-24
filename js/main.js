@@ -2015,6 +2015,22 @@ async function warSyncNow() {
     if (r?.town && worldMode && S.world && r.town !== S.name) { S.name = r.town; refresh(); } // renamed (maybe from another phone)
   } catch { /* the next try */ }
 }
+/** An apology in the middle of the screen: what went wrong (our mistake) and what was given back. 30 seconds, or «تمام». */
+function apologyBox(n) {
+  document.getElementById("apology")?.remove();
+  const el = document.createElement("div");
+  el.id = "apology"; el.className = "apology";
+  el.innerHTML = `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>
+    <p>صار <b>خطأ من عندنا</b> ببرمجة اللعبة بحساب خصم الغياب، وانخصم من مدينتك مبلغ ما كان المفروض ينخصم.</p>
+    <div class="apology-back">رجّعنا لك حقك كامل<b>+${money(n.amount || 0)} ريال</b></div>
+    <p class="hint">السموحة منك، وشكرًا على صبرك 🌹</p>
+    <i class="apology-bar"></i><button class="btn go block" type="button">تمام</button></div>`;
+  document.body.append(el);
+  sfx.coin?.();
+  const close = () => { el.classList.add("out"); setTimeout(() => el.remove(), 300); };
+  el.querySelector("button").addEventListener("click", close);
+  setTimeout(close, 30000);
+}
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 async function warPoll(force) {
   if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < (LIVE.ok ? 90000 : 25000))) return WARX.st; // live: pushed at once, this is only a safety net
@@ -2055,7 +2071,8 @@ function warApply(st) {
   const fresh = (st.notes || []).filter((n) => n.at > warSeen()).sort((a, b) => a.at - b.at);
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
-    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
+    for (const n of fresh) if (n.kind === "apology") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
+    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
   }

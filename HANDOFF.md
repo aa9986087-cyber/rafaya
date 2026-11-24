@@ -300,6 +300,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Fixed in both places: the client cap and the server cap now count from `max(0, money before)`.
     - `Board.refundDebtFix()` (once, meta `refund_debtfix_v1`) gives back what such rows took beyond the right amount, as a negative charge with an apology note. It is recorded in `awayfix` with a negative `taken`.
     - The client's `idleClamp` after charges now runs only for bills (paid > 0), never for refunds.
+    - The refund note has kind "apology" (`WarServer.fine(..., kind, extra)`). The game shows it as a centred box (`apologyBox`): our mistake, the amount given back, 30 s with a shrinking bar, or «تمام».
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
