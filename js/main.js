@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { VERSION } from "./version.js";
+import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
@@ -1884,9 +1884,9 @@ const UPDATE_PARAM = "rafaya-release";
 async function versionCheck() {
   if (VERSION === "dev" || globalThis.RAFAYA_PREVIEW || !onlineOk() || sheetFor === "update") return;
   let v;
-  try { v = (await (await fetch("/api/version", { cache: "no-store" })).json()).version; } catch { return; }
+  try { v = (await (await fetch("/api/version", { cache: "no-store" })).json()).version; } catch { return; } // the oldest release that may carry on
   if (!v || v === "dev") return;
-  if (v === VERSION) {
+  if (v === VERSION || v === REQUIRED) { // this copy is that release or a later one (an optional update came after it)
     const url = new URL(location.href);
     if (url.searchParams.has(UPDATE_PARAM)) {
       url.searchParams.delete(UPDATE_PARAM);

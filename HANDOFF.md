@@ -554,3 +554,9 @@ Short Arabic: you have read the handoff, you know the last thing done was buildi
 - The al-Jouf map shows «نحمّل الخريطة…» at once (it waits about 1 s for the server).
 - **Full sweep** (`scratchpad/sweep.cjs`): iPhone Safari, iPhone app, Android browser and Android app. Every menu, side button, news tab, menu item, build category and the chat open with no page errors.
 - Also re-checked: the forced update, the iPhone move (link and code), live chat and war hints (~0.3 s), and the owner's panel (15/15).
+
+## Optional updates (UPDATE.json)
+- Every deploy is a must-update unless `UPDATE.json` at the root says `{ "optional": true, "keep": "<stamp>" }`.
+- Then `/api/version` answers `{ version: <stamp>, latest: <new> }`: copies from release `<stamp>` on carry on, older ones update.
+- `<stamp>` is the first 10 characters of the commit SHA of the last must-update release (Workers CI stamps with it).
+- For the next must-update release, delete `UPDATE.json` (or set `optional` to false).

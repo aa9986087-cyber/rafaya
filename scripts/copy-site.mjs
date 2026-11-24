@@ -11,8 +11,12 @@ const closed = await access(new URL("MAINTENANCE", root)).then(() => true, () =>
 let stamp;
 if (process.env.WORKERS_CI || process.env.CI || process.env.STAMP_VERSION) {
   stamp = process.env.WORKERS_CI_COMMIT_SHA?.slice(0, 10) || new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
-  await writeFile(new URL("js/version.js", root), `// written by scripts/copy-site.mjs at deploy\nexport const VERSION = "${stamp}";\n`);
-  console.log("version", stamp);
+  // UPDATE.json { "optional": true, "keep": "<stamp>" }: a release nobody has to update for: the server keeps asking
+  // for <stamp>, so every copy from that release on carries on; without the file each release is a must.
+  const rule = await readFile(new URL("UPDATE.json", root), "utf8").then(JSON.parse, () => null);
+  const required = rule?.optional && /^[\w-]{4,40}$/.test(rule.keep || "") ? rule.keep : stamp;
+  await writeFile(new URL("js/version.js", root), `// written by scripts/copy-site.mjs at deploy\nexport const VERSION = "${stamp}";\nexport const REQUIRED = "${required}";\n`);
+  console.log("version", stamp, "required", required);
 }
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
