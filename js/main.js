@@ -1658,28 +1658,13 @@ function checkPush() {
   PUSH.checking = (async () => {
     try {
       const reg = await activePushWorker();
-      let sub = await reg.pushManager.getSubscription();
-      if (sub && Notification.permission === "granted") sub = await pushSubscription(reg).catch(() => sub); // same key as the server, or a new one
+      const sub = await reg.pushManager.getSubscription();
       if (sub) await registerPushEndpoint(sub, id);
       PUSH.enabled = !!sub;
     } catch { PUSH.enabled = false; }
     finally { PUSH.checked = true; PUSH.checking = null; }
   })();
   return PUSH.checking;
-}
-/**
- * This phone's subscription, made for the server's current key. A subscription made for another key
- * is refused by Google/Apple (403) and nothing arrives, so it is replaced (fresh = always a new one).
- */
-async function pushSubscription(reg, fresh = false) {
-  const serverKey = b64urlBytes((await pushKey()).key);
-  let sub = await reg.pushManager.getSubscription();
-  const previous = sub?.options?.applicationServerKey ? new Uint8Array(sub.options.applicationServerKey) : null;
-  if (sub && (fresh || !previous || previous.length !== serverKey.length || previous.some((v, i) => v !== serverKey[i]))) {
-    await sub.unsubscribe().catch(() => {});
-    sub = null;
-  }
-  return sub || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: serverKey });
 }
 const b64urlBytes = (s) => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
 async function pushOn() {
@@ -1693,7 +1678,17 @@ async function pushOn() {
       if (perm === "denied") pushDeniedHelp(); else toast("ما سمحت بالتنبيهات", "bad");
       return false;
     }
-    const sub = await pushSubscription(await activePushWorker());
+    const [reg, { key }] = await Promise.all([activePushWorker(), pushKey()]);
+    const serverKey = b64urlBytes(key);
+    let sub = await reg.pushManager.getSubscription();
+    if (sub?.options?.applicationServerKey) {
+      const previous = new Uint8Array(sub.options.applicationServerKey);
+      if (previous.length !== serverKey.length || previous.some((v, i) => v !== serverKey[i])) {
+        await sub.unsubscribe();
+        sub = null;
+      }
+    }
+    sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: serverKey });
     await registerPushEndpoint(sub, id);
     PUSH.checked = PUSH.enabled = true;
     store.set("rafaya-push-on", "1");
@@ -3136,15 +3131,15 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-28", world: "2027-01-29" },
+  v: { solo: "2027-01-28", world: "2027-01-30" },
   items: [
+    ["world", "🔔", "التنبيهات رجعت مثل أول", "• رجّعنا طريقة اشتراك جوالك بالتنبيهات مثل ما كانت لما كانت توصل. • إذا ما وصلتك: الإعدادات ← طفّ «التنبيهات على الجوال» وشغّلها من جديد."],
     ["world", "✏️", "قوانين الأسماء بالجوف", "• ممنوع تكتب باسمك أو اسم مدينتك اسم شخص حقيقي غير اسمك، أو اسم أو رمز عائلة أو فخذ أو قبيلة. • إذا الإدارة طلبت منك تغيّر الاسم، يطلع لك السبب ومعك يوم كامل تغيّره، وإذا ما غيّرته تنحذف مدينتك من عالم الجوف. • والمطور صار يكتب معكم بالشات باسم «🛠️ المطور»."],
     ["both", "🖼️", "الرسوم رجعت واضحة", "• كانت اللعبة إذا حسّت إن الجوال بطيء لحظة، تنزّل الدقة وتحفظها للأبد، فتصير مبكسلة. • الحين ترجع واضحة، وإذا الجوال تعب فعلًا تخفف الظلال بس ولهالمرة، والدقة تبقى حلوة."],
     ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل المتصفح بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد."],
     ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
     ["world", "🌧️", "الشتاء رجع له مطره", "• الشتاء صار موسم المطر بالجوف: ينزل فيه مطر ثلاث مرات على الأقل (أوله ونصه وآخره)، وكل مرة قرابة اليوم. • ومطر الشتاء يخلّي الربيع اللي بعده أخضر."],
     ["both", "🗣️", "طلبات الأهالي على قد مستواك", "• الأهالي يطلبون اللي تقدر تسويه بمرحلتك. • وإذا تمنّوا شي لمرحلة أكبر (مثل السفلتة أو مركز الشرطة وانتم بلدة)، يجي كأمنية لبعدين: ما فيها وعد ينحسب عليك ولا زعل."],
-    ["world", "🔔", "التنبيهات تصلّح نفسها", "• زر «جرّب التنبيه» إذا ما وصل التنبيه، يجدّد اشتراك جوالك لحاله ويجرّب مرة ثانية. • وكل ما فتحت الإعدادات نتأكد إن اشتراك جوالك سليم، ونجدده إذا خرب."],
     ["both", "🛠️", "إصلاحات", "• التنبيهات على الجوال ما كانت توصل أبد (لا آيفون ولا أندرويد): انصلحت، وجرّبها من الإعدادات ← «جرّب التنبيه»، ولو ما وصلت يقولك رقم الرد عشان نعرف السبب. • خريطة الجوف تطلع «نحمّل الخريطة…» على طول بدل ما تحس إن الزر ما اشتغل. • نقل اللعبة للتطبيق بالآيفون صار بطريقتين بس: لحالها أو بالرمز. • هدايا الإدارة توصلك على طول حتى لو وصلت وانت داخل اللعبة."],
     ["world", "🔔", "اختبار التنبيه يوضح النتيجة", "زر «جرّب التنبيه» ينتظر رد جهازك ويبيّن إذا وصل طلب عرض الإشعار. ونص التنبيه يوصل معه مباشرة حتى لو اللعبة مسكّرة."],
     ["world", "🔔", "التحديث والتنبيهات على الجوال", "التحديث يوصل من الأيقونة والمتصفح. الإعدادات تتحقق من اشتراك هالجهاز، وزر تجربة التنبيه يجرّب نفس الجهاز."],
@@ -3702,31 +3697,19 @@ function settingsSheet(fromMenu) {
     button.disabled = true;
     status.textContent = "نرسل التجربة وننتظر رد هالجهاز…";
     try {
-      const reg = await activePushWorker();
-      let sub = await reg.pushManager.getSubscription();
+      const sub = await (await activePushWorker()).pushManager.getSubscription();
       if (sub) {
-        sub = await pushSubscription(reg);
         await registerPushEndpoint(sub, id);
-        const send = () => api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, receipt });
-        const wait = (ms) => Promise.race([confirmation, new Promise((resolve) => { clearTimeout(timer); timer = setTimeout(resolve, ms); })]);
-        const renew = async () => { // a new subscription for this phone (the old one was refused, expired or went quiet)
-          status.textContent = "نجدّد اشتراك هالجهاز ونجرّب مرة ثانية…";
-          sub = await pushSubscription(reg, true);
-          await registerPushEndpoint(sub, id);
-          return send();
-        };
-        let r = await send(), shown;
-        if (!r.ok) r = await renew();
-        else if ((shown = await wait(10000)) === undefined && (r = await renew()).ok) shown = await wait(12000);
+        const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, receipt });
         if (r.ok) {
-          shown ??= await wait(12000);
-          status.textContent = shown === true ? `✅ وصل التنبيه لهالجهاز. إذا ما شفته فوق، ${systemHelp}`
+          const shown = await Promise.race([confirmation, new Promise((resolve) => { timer = setTimeout(resolve, 12000); })]);
+          status.textContent = shown === true ? `وصل التنبيه لهالجهاز وطلبنا عرضه. إذا ما ظهر لك، ${systemHelp}`
             : shown === false ? `وصل التنبيه وتعذّر عرضه على الجهاز. ${systemHelp}`
-              : `قوقل/أبل استلموا التنبيه بس ما وصل لهالجهاز للحين. جرّب بعد دقيقة.`;
+              : "ما جانا تأكيد من هالجهاز. طفّ «التنبيهات على الجوال» وشغّلها من جديد، ثم جرّب مرة ثانية.";
           return;
         }
-        status.textContent = r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.";
-        return;
+        if (!r.expired) { status.textContent = r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي."; return; }
+        await sub.unsubscribe();
       }
       PUSH.enabled = false;
       toast("اشتراك هالجهاز انتهى. فعّل التنبيهات مرة ثانية.", "bad");
