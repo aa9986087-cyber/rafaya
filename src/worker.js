@@ -265,7 +265,23 @@ export class Board extends DurableObject {
       return json({ ok: true });
     }
     if (!post && p[0] === "awayfix") { // who had money taken back for gaining too much while away, and how much (newest first)
-      return json({ list: this.sql.exec("SELECT owner, town, before, after, cap, taken, at FROM awayfix ORDER BY id DESC LIMIT 200").toArray() });
+      const list = this.sql.exec("SELECT owner, town, before, after, cap, taken, at FROM awayfix ORDER BY id DESC LIMIT 200").toArray();
+      if (new URL(request.url).searchParams.get("view") !== "page") return json({ list });
+      // the same as a page in Arabic, for the owner to read on the phone
+      const n = (v) => Number(v).toLocaleString("ar-SA"), esc = (t) => String(t ?? "").replace(/[<>&]/g, "");
+      const rows = list.map((r) => {
+        const refund = r.taken < 0, wrong = !refund && r.before < 0;
+        return `<tr class="${refund ? "back" : wrong ? "bad" : ""}"><td><b>${esc(r.town)}</b><br><small>${esc(r.owner)}</small></td>
+          <td>${refund ? `رجّعنا له <b>${n(-r.taken)}</b>` : `انخصم <b>${n(r.taken)}</b>`}</td>
+          <td><small>قبل: ${n(r.before)}<br>رجع بـ: ${n(r.after)}<br>الحد: ${n(r.cap)}</small></td>
+          <td>${refund ? "✅ رجعت فلوسه" : wrong ? "❌ خصم بالغلط (كان مديون)" : "✔️ خصم صحيح"}</td>
+          <td><small>${new Date(r.at).toLocaleString("ar-SA", { timeZone: "Asia/Riyadh" })}</small></td></tr>`;
+      }).join("");
+      const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>خصم الغياب</title>
+<style>body{font-family:system-ui,sans-serif;background:#fbf3e4;color:#2a1d12;margin:0;padding:16px}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:14px}td{padding:8px;border-bottom:1px solid #e5d6bb;vertical-align:top}tr.bad{background:#fde8e4}tr.back{background:#e6f4ec}small{color:#6b5a45}</style></head>
+<body><h1>🧾 خصم الكسب وهم برا</h1><p>كل سطر: مدينة انخصم منها لأنها كسبت وصاحبها برا أكثر من الحد، أو رجعت لها فلوس. الأحمر خصم بالغلط، والأخضر الفلوس اللي رجعت.</p>
+${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p>"}</body></html>`;
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
