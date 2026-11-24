@@ -97,3 +97,26 @@ The plan and the measurements for the graphics update. The official game is not 
 | far | ~0.97M |
 
 The baseline was 3.2M, and this test town is a worst case: it has 120 hotels and 120 malls.
+
+## The owner's update from another assistant, merged
+
+**What came in:** the owner brought two zips made with another assistant:
+- `js/models.js`: 83 models redesigned. It adds stone, plaster and timber surfaces with projected textures, new cars and people, and leaves that move in the wind.
+- `js/world3d.js`: dunes and gravel in the sand, the breeze, wet ground and puddles in the rain, a water shader, cars on lanes, scenery in chunks.
+- `js/preview.js`.
+- `js/building-surfaces.js`, `js/traffic-path.js` and `js/world-weather.js`: these three were in the second zip.
+
+**How it was merged:**
+- **models.js:** their file, plus this update's far models (`Builder(far)`, `farGeo`, `modelFar`). The stage 3 batch 1 kit is gone: their buildings replace it.
+- **world3d.js:** a three-way merge (base: the live main) of their renderer and this update's.
+  - **Theirs:** ground, roads, water, weather, lighting colours, cars and people.
+  - **This update's:** culling, far models, adaptive steps, ultra mode, and the realism layer on plain walls, panels and steel. Their surfaces carry their own textures.
+  - The breeze and the realism layer share the wall shader: `addDetail` chains the earlier `onBeforeCompile`.
+- **Plaster bump** turned down (.005 → .0018): at the game's camera it read as crumpled paper.
+
+**Measured** on the same dense province, high quality, triangles per frame averaged over 6 frames:
+
+| | normal zoom | far |
+|---|---|---|
+| their models with this update's engine | ~0.99M | ~0.97M |
+| their models without the engine (everything drawn at full detail) | 4.16M | 4.16M |

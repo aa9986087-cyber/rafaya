@@ -2,7 +2,10 @@
 import * as THREE from "three";
 import { MAP_SIZE as N, B, ROAD_IDS } from "./data.js";
 import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, powerNet } from "./sim.js";
-import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS } from "./models.js";
+import { buildingMaterials } from "./building-surfaces.js";
+import { tileLane, lanePosition, ISLAND_RADIUS } from "./traffic-path.js";
+import { worldWater, rainField, wetSurface } from "./world-weather.js";
+import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS, FAIR_WHEEL } from "./models.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -54,7 +57,9 @@ function detailTexture() {
  * One texture, three reads per pixel: on the lowest quality the materials stay as they were.
  */
 function addDetail(mat, tex, { grain = 0.14, stain = 0.12, streak = 0.1, scale = 1.6, rough = 0.12 } = {}) {
-  mat.onBeforeCompile = (sh) => {
+  const before = mat.onBeforeCompile; // another change to the shader (the breeze on leaves) comes first
+  mat.onBeforeCompile = (sh, r) => {
+    before?.call(mat, sh, r);
     sh.uniforms.dMap = { value: tex };
     sh.uniforms.dK = { value: new THREE.Vector4(grain, stain, streak, scale) };
     sh.uniforms.dRough = { value: rough };
@@ -78,6 +83,8 @@ function addDetail(mat, tex, { grain = 0.14, stain = 0.12, streak = 0.1, scale =
 }
 
 const HALF = N / 2;
+const CAR_LIMIT = { low: 8, medium: 18, high: 32 };
+const TRUCK_LIMIT = 24;
 export const tileCenter = (x, y) => new THREE.Vector3(x - HALF + 0.5, 0, y - HALF + 0.5);
 /** War damage shows in the building's shape: from 25% it sinks (part of it fell in), down to half its height when out of action. */
 export const warSquash = (wd) => (!wd || wd < 25 ? 1 : Math.max(0.5, 1 - (wd - 20) * 0.0063));
@@ -93,18 +100,22 @@ const hash = (x, y, k = 0) => {
 const easeBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
 /** Sand with soft wind ripples and grain, drawn once into a small repeating texture. */
-function sandTexture() {
+function sandTexture(gravel = false) {
   const S = 256, c = document.createElement("canvas");
   c.width = c.height = S;
   const g = c.getContext("2d"), img = g.createImageData(S, S), TAU = Math.PI * 2;
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const warp = Math.sin(TAU * y * 2 / S) * 0.05 + Math.sin(TAU * (y * 5 + x) / S) * 0.012;
-    const ripple = Math.sin(TAU * (x * 7 / S + warp)) * 0.5 + 0.5;
-    const v = 0.92 + ripple * ripple * 0.05 + (rnd() - 0.5) * 0.06;
+    const a = x / S * TAU, b = y / S * TAU;
+    const dune = Math.sin(a + b * 2 + Math.sin(b) * 1.6) * Math.sin(b - a * 2);
+    const warp = Math.sin(b * 2 + a) * 1.4 + Math.sin(b * 3 - a * 2) * 0.43;
+    const ripple = Math.sin(a * 9 + b * 5 + warp + dune * 1.8) * 0.5 + 0.5;
+    const grain = rnd(), stone = Math.sin(a * 24 + b * 16) * Math.cos(b * 23 - a * 14);
+    const v = gravel ? 0.89 + dune * 0.017 + stone * 0.032 + (grain - 0.5) * 0.12
+      : 0.9 + ripple ** 3 * 0.054 + dune * 0.043 + stone * 0.011 + (grain - 0.5) * 0.075;
     const i = (y * S + x) * 4;
-    img.data[i] = Math.min(255, 255 * v); img.data[i + 1] = Math.min(255, 250 * v); img.data[i + 2] = Math.min(255, 240 * v); img.data[i + 3] = 255;
+    img.data[i] = Math.min(255, 255 * v); img.data[i + 1] = Math.min(255, (gravel ? 254 : 251) * v); img.data[i + 2] = Math.min(255, (gravel ? 252 : 246) * v); img.data[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
@@ -155,7 +166,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== "low", powerPreference: "high-performance" });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.shadowMap.enabled = quality !== "low";
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false; // shadows are redrawn every third frame (see frame), not every frame: a big saving on phones
@@ -163,7 +174,7 @@ export class World {
     this.scene.fog = new THREE.Fog("#f3dcae", 40, 90);
 
     // Camera: an isometric-style orthographic view that pans, zooms and turns by quarter turns.
-    this.view = { x: 0, z: 2, zoom: 1, yaw: Math.PI / 4, yawTarget: Math.PI / 4, pitch: 0.62 };
+    this.view = { x: 0, z: 2, zoom: 1, yaw: Math.PI / 4, yawTarget: Math.PI / 4, pitch: 0.60 };
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 
     // Light: sky and ground fill, plus the sun that casts shadows.
@@ -178,32 +189,50 @@ export class World {
     this.sun.shadow.normalBias = 0.02;
     this.scene.add(this.sun, this.sun.target);
 
+    const plasterNormal = quality === "high" ? normalTex("tex/concrete-normal.webp", 1) : null;
     this.mats = {
+      ...buildingMaterials(quality),
       // the town's walls: a fine plaster grain (CC0 normal map) so they read as real surfaces
-      matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, normalMap: normalTex("tex/concrete-normal.webp", 1), normalScale: new THREE.Vector2(0.22, 0.22) }),
+      matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.22, 0.22) }),
       shiny: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.28, metalness: 0.35 }),
       lights: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 }),
       ghost: new THREE.MeshStandardMaterial({ color: "#7ee0b8", transparent: true, opacity: 0.55, roughness: 0.6 }),
       // the realistic sets (military first): painted steel, bare steel, tinted glass, lamps that bloom
-      paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.18, normalMap: normalTex("tex/concrete-normal.webp", 1), normalScale: new THREE.Vector2(0.35, 0.35) }),
-      metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.75, normalMap: normalTex("tex/grain-normal.webp", 2), normalScale: new THREE.Vector2(0.25, 0.25) }),
-      glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.9 }),
+      paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.18, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.35, 0.35) }),
+      carPaint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.27, metalness: 0.28 }),
+      metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.75, normalMap: quality === "high" ? normalTex("tex/grain-normal.webp", 2) : null, normalScale: new THREE.Vector2(0.25, 0.25) }),
+      glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: quality === "low" ? .28 : .14, metalness: quality === "low" ? .23 : .64 }),
       glow: new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(7, 7, 7), toneMapped: false }),
       ghostBad: new THREE.MeshStandardMaterial({ color: "#ff7a6a", transparent: true, opacity: 0.55, roughness: 0.6 })
     };
 
-    // the realism layer (above): plaster and stone, painted panels, steel; not on the lowest quality
+    this.envLevel = { paint: 0.55, carPaint: 0.83, metal: 0.9, glass: 1.2, shiny: 0.45 };
+    this.breeze = { value: 0 };
+    this.breezeStrength = { value: quality === "low" ? 0 : 0.025 };
+    if (quality !== "low") this.mats.matte.onBeforeCompile = (shader) => {
+      shader.uniforms.rafayaWind = this.breeze;
+      shader.uniforms.rafayaWindStrength = this.breezeStrength;
+      shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
+        attribute float leafWind;
+        uniform float rafayaWind, rafayaWindStrength;`).replace("#include <begin_vertex>", `#include <begin_vertex>
+        if (leafWind > 0.0) {
+          float phase = position.x * 2.0 + position.z * 1.8;
+          #ifdef USE_INSTANCING
+            phase += dot(instanceMatrix[3].xz, vec2(0.9, 1.15));
+          #endif
+          transformed.xz += vec2(1.0, 0.48) * sin(rafayaWind * 1.65 + phase) * leafWind * rafayaWindStrength;
+        }`);
+    };
+    // the realism layer (above): grain, stains and streaks on the plain walls, painted panels and steel (the remodelled
+    // buildings' stone, plaster and timber carry their own textures). It wraps the breeze above. Not on the lowest quality.
     if (quality !== "low") {
       this.detailTex = detailTexture();
-      addDetail(this.mats.matte, this.detailTex, { grain: 0.16, stain: 0.14, streak: 0.14, scale: 1.7 });
-      addDetail(this.mats.paint, this.detailTex, { grain: 0.08, stain: 0.08, streak: 0.08, scale: 2.2, rough: 0.2 });
-      addDetail(this.mats.metal, this.detailTex, { grain: 0.06, stain: 0.1, streak: 0.12, scale: 2.5, rough: 0.25 });
+      addDetail(this.mats.matte, this.detailTex, { grain: 0.12, stain: 0.12, streak: 0.1, scale: 1.7 });
+      addDetail(this.mats.paint, this.detailTex, { grain: 0.06, stain: 0.07, streak: 0.06, scale: 2.2, rough: 0.2 });
+      addDetail(this.mats.metal, this.detailTex, { grain: 0.05, stain: 0.08, streak: 0.1, scale: 2.5, rough: 0.25 });
     }
-    // glass: a clear sky reflection instead of a dark hole (brighter, a touch rougher so it reads at any angle)
-    this.mats.glass.roughness = 0.12; this.mats.glass.metalness = 0.85; this.mats.glass.color.setScalar(2.1); // the old models' window colours were dark: lift them so the sky shows in them
-    this.envLevel = { paint: 0.55, metal: 0.9, glass: 1.9, shiny: 0.45 };
     for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v;
-    this.loadSky();
+    if (quality !== "low") this.loadSky();
     // bloom: only what is really bright glows (lamps, fire, flashes); none on the lowest quality
     if (quality === "high") { // bloom costs several extra passes a frame: only on high (phones default to medium)
       // a multisampled target keeps edges smooth (the bloom pass would otherwise lose the antialiasing)
@@ -213,6 +242,7 @@ export class World {
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
     }
+    this.waterWeather = { time: { value: 0 }, rain: { value: 0 }, wet: { value: 0 }, day: { value: 1 } };
     this.buildGround();
     this.instances = new Map(); // key -> { matte, shiny, lights }
     this.roadMesh = null;
@@ -238,7 +268,7 @@ export class World {
       const pm = new THREE.PMREMGenerator(this.renderer);
       // only the realistic materials reflect it; the rest of the town keeps its own warm light
       const env = pm.fromEquirectangular(dt).texture;
-      for (const k of ["paint", "metal", "glass", "shiny"]) { this.mats[k].envMap = env; this.mats[k].needsUpdate = true; }
+      for (const k of Object.keys(this.envLevel)) { this.mats[k].envMap = env; this.mats[k].needsUpdate = true; }
       pm.dispose(); dt.dispose();
     } catch (e) { console.warn("sky", e); }
   }
@@ -259,7 +289,9 @@ export class World {
     const uv = outer.attributes.uv;
     for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 0.3, p.getZ(i) * 0.3);
     this.sand = sandTexture();
-    const desert = new THREE.Mesh(outer, new THREE.MeshStandardMaterial({ color: "#e6d4ae", map: this.sand, roughness: 1, normalMap: normalTex("tex/grain-normal.webp", 1), normalScale: new THREE.Vector2(0.5, 0.5) }));
+    this.aggregate = sandTexture(true);
+    this.groundNormal = this.quality !== "low" ? normalTex("tex/grain-normal.webp", 1) : null;
+    const desert = new THREE.Mesh(outer, wetSurface(new THREE.MeshStandardMaterial({ color: "#d3a577", map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.25, 0.25) }), this.waterWeather, 0.32));
     desert.receiveShadow = true;
     this.scene.add(desert);
     this.ground = null;
@@ -276,15 +308,17 @@ export class World {
     }
 
     // Desert plants all around the town (outside the buildable land).
-    const out = { shrub: [], grassTuft: [], acacia: [], rock: [] };
-    for (let i = 0; i < (this.quality === "low" ? 500 : 1100); i++) {
+    const out = new Map();
+    for (let i = 0; i < (this.quality === "low" ? 360 : 760); i++) {
       const x = (hash(i, 11) - 0.5) * (N + 40), z = (hash(i, 12) - 0.5) * (N + 40);
       if (Math.max(Math.abs(x), Math.abs(z)) < HALF + 0.6) continue;
       const pick = hash(i, 13);
       const key = pick < 0.45 ? "grassTuft" : pick < 0.85 ? "shrub" : pick < 0.92 ? "acacia" : "rock";
-      out[key].push(this.place(x, z, hash(i, 14) * 6, key === "acacia" ? 0.8 + hash(i, 15) * 0.4 : 0.7 + hash(i, 15) * 0.6));
+      const chunk = `${Math.floor(x / 14)}:${Math.floor(z / 14)}:${key}`;
+      if (!out.has(chunk)) out.set(chunk, { key, list: [] });
+      out.get(chunk).list.push(this.place(x, z, hash(i, 14) * 6, key === "acacia" ? 0.8 + hash(i, 15) * 0.4 : 0.7 + hash(i, 15) * 0.6));
     }
-    for (const [key, list] of Object.entries(out)) this.addInstances(model(key), list, key === "acacia");
+    for (const { key, list } of out.values()) this.addInstances(model(key), list);
 
     // Drifting cloud shadows.
     if (this.quality !== "low") {
@@ -314,7 +348,8 @@ export class World {
       list.forEach((m, i) => mesh.setMatrixAt(i, m));
       mesh.castShadow = shadow && set !== "lights" && this.quality !== "low";
       mesh.receiveShadow = set !== "lights";
-      mesh.frustumCulled = false;
+      mesh.computeBoundingSphere();
+      mesh.boundingSphere.radius += 0.1; // allow the fronds to bend outside their rest bounds
       this.scene.add(mesh);
       meshes.push(mesh);
     }
@@ -323,17 +358,35 @@ export class World {
 
   removeAll(list) { for (const m of list || []) { this.scene.remove(m); m.dispose(); } }
 
+  sceneryInstances(lists) {
+    const meshes = [];
+    for (const [key, list] of Object.entries(lists)) {
+      const chunks = new Map();
+      for (const matrix of list) {
+        const tile = `${Math.floor(matrix.elements[12] / 12)}:${Math.floor(matrix.elements[14] / 12)}`;
+        if (!chunks.has(tile)) chunks.set(tile, []);
+        chunks.get(tile).push(matrix);
+      }
+      const geometry = model(key);
+      for (const chunk of chunks.values()) {
+        meshes.push(...this.addInstances(geometry, chunk, key === "acacia" && this.quality === "high"));
+      }
+    }
+    return meshes;
+  }
+
   /** The town's own tiles: sand, wadi, with a little colour noise. Rebuilt when the land changes. */
   syncTiles(s) {
-    if (this.ground) { this.scene.remove(this.ground); this.ground.geometry.dispose(); }
+    if (this.ground) { this.scene.remove(this.ground); this.ground.geometry.dispose(); this.ground.material.dispose(); }
     const spring = seasonOf(s.day).id === "spring", c = new THREE.Color();
     // each tile's colour (and how dark it is outside the land the town owns)
     const tileCol = new Float32Array(N * N * 3);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      c.set(t.t === "wadi" ? (spring ? "#aeaa72" : "#c2ae86") : t.t === "fayda" ? (spring ? "#a3b06c" : "#d4c095") : t.t === "lake" ? "#ad9f7c" : t.t === "rock" ? "#d6c6a4" : "#e6d4ae");
-      c.offsetHSL(0, 0, ((n % 7) - 3) * 0.006);
+      c.set(t.t === "wadi" ? (spring ? "#8f895c" : "#a27c53") : t.t === "fayda" ? (spring ? "#92935f" : "#c6a373") : t.t === "lake" ? "#786f52" : t.t === "rock" ? "#bc8d69" : "#d8ad7e");
+      const broadDunes = Math.sin(x * 0.45 + y * 0.16) * Math.sin(y * 0.29 - x * 0.1);
+      c.offsetHSL(broadDunes * 0.006, 0, ((n % 7) - 3) * 0.004 + broadDunes * 0.053);
       if (!owns(s, x, y)) c.offsetHSL(0, -0.12, -0.06);
       tileCol.set([c.r, c.g, c.b], idx(x, y) * 3);
     }
@@ -362,8 +415,7 @@ export class World {
     g.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
     g.setIndex(index);
     g.computeVertexNormals();
-    this.groundNormal ||= normalTex("tex/grain-normal.webp", 1);
-    this.ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.45, 0.45) }));
+    this.ground = new THREE.Mesh(g, wetSurface(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.29, 0.29) }), this.waterWeather, 0.38));
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
     // A fence along the edge of the land the town owns, and a "for sale" sign on each plot.
@@ -388,11 +440,10 @@ export class World {
 
     // After rain the wadi runs: wet dark sand along the bed, and a stream of water with ragged
     // banks and pools that flows (drawn into a soft mask, not tile squares).
-    if (this.flood) { this.scene.remove(this.flood); this.flood.traverse((m) => { m.geometry?.dispose(); m.material?.alphaMap?.dispose(); m.material?.map?.dispose(); m.material?.dispose(); }); }
+    if (this.flood) { this.scene.remove(this.flood); this.flood.traverse((m) => { m.geometry?.dispose(); m.material?.alphaMap?.dispose(); m.material?.uniforms?.shapeMap?.value?.dispose(); m.material?.dispose(); }); }
     this.flood = new THREE.Group();
     this.flood.visible = false;
     this.scene.add(this.flood);
-    this.streamTex = null;
     const wadi = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "wadi") wadi.push([x, y]);
     if (wadi.length) {
@@ -430,17 +481,16 @@ export class World {
       plane(0.008, new THREE.MeshStandardMaterial({ color: "#7d6a48", alphaMap: mask(() => 0.75, 10, 0), transparent: true, opacity: 0.5, roughness: 1, depthWrite: false }));
       // the stream: wide in the middle of the bed, pools here and there, nothing on the edges
       const stream = (d, h) => (d > 0.85 ? 0.55 + h * 0.25 : d > 0.6 ? 0.25 + h * 0.35 : h > 0.8 ? 0.3 : 0);
-      plane(0.016, new THREE.MeshStandardMaterial({ color: "#4fa3c8", alphaMap: mask(stream, 8, 0.3), transparent: true, opacity: 0.85, roughness: 0.12, metalness: 0.2, depthWrite: false }));
-      // the current: light streaks sliding along
-      const rc = document.createElement("canvas"); rc.width = rc.height = 128;
-      const rx = rc.getContext("2d");
-      rx.strokeStyle = "rgba(255,255,255,.55)"; rx.lineWidth = 1.4;
-      for (let k = 0; k < 18; k++) { const y0 = (k * 29) % 128, x0 = (k * 47) % 128; rx.beginPath(); rx.moveTo(x0, y0); rx.quadraticCurveTo(x0 + 10, y0 - 3, x0 + 22, y0); rx.stroke(); }
-      this.streamTex = new THREE.CanvasTexture(rc); this.streamTex.wrapS = this.streamTex.wrapT = THREE.RepeatWrapping; this.streamTex.repeat.set(W / 2, H / 2);
-      plane(0.022, new THREE.MeshBasicMaterial({ map: this.streamTex, alphaMap: mask((d, h) => stream(d, h) * 0.85, 8, 0.3), transparent: true, opacity: 0.4, depthWrite: false }));
+      plane(0.018, worldWater(this.waterWeather, { mask: mask(stream, 8, 0.3), current: 0.32 }));
     }
     // The dam lake: one body of water with an uneven shore, a band of wet sand around it, and ripples.
-    this.removeAll(this.lakeMeshes || []);
+    for (const mesh of this.lakeMeshes || []) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.alphaMap?.dispose();
+      mesh.material.uniforms?.shapeMap?.value?.dispose();
+      mesh.material.dispose();
+    }
     this.lakeMeshes = [];
     const lakeTiles = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (s.tiles[idx(x, y)].t === "lake") lakeTiles.push([x, y]);
@@ -475,19 +525,40 @@ export class World {
       };
       // wet, darker sand where the water reaches (also when the lake is low: the mud shows)
       plane(0.006, new THREE.MeshStandardMaterial({ color: "#8f7c55", alphaMap: mask(0.28, 14, 0.9), transparent: true, opacity: 0.55, roughness: 1, depthWrite: false }));
-      if (full) {
-        // the water itself: deep blue in the middle, light at the shore (two layers)
-        plane(0.02, new THREE.MeshStandardMaterial({ color: "#5fa8c4", alphaMap: mask(0.12 * level, 10, 1), transparent: true, opacity: 0.85, roughness: 0.12, metalness: 0.2, depthWrite: false }));
-        plane(0.024, new THREE.MeshStandardMaterial({ color: "#2f7fa3", alphaMap: mask(-0.12 + 0.1 * level, 16, 1), transparent: true, opacity: 0.75, roughness: 0.08, metalness: 0.25, depthWrite: false }));
-        // ripples: light streaks that drift across the water
-        const rc = document.createElement("canvas"); rc.width = rc.height = 128;
-        const rx = rc.getContext("2d");
-        rx.strokeStyle = "rgba(255,255,255,0.5)"; rx.lineWidth = 1.5;
-        for (let k = 0; k < 26; k++) { const x0 = (k * 37) % 128, y0 = (k * 53) % 128; rx.beginPath(); rx.arc(x0, y0, 6 + (k % 5) * 3, 0.2, 1.4); rx.stroke(); }
-        const rt = new THREE.CanvasTexture(rc); rt.wrapS = rt.wrapT = THREE.RepeatWrapping; rt.repeat.set(W / 2, H / 2);
-        this.ripples = plane(0.03, new THREE.MeshBasicMaterial({ map: rt, alphaMap: mask(0.05, 12, 1), transparent: true, opacity: 0.35, depthWrite: false }));
-      } else this.ripples = null;
-    } else this.ripples = null;
+      if (full) plane(0.024, worldWater(this.waterWeather, { mask: mask(0.10 * level, 9, 1), current: 0.045 }));
+    }
+  }
+
+  /** Pool locations depend on surfaces; a single batched geometry covers all of them. */
+  syncRainPools(s) {
+    this.rainPoolsDirty = false;
+    if (this.rainPools) { this.scene.remove(this.rainPools); this.rainPools.geometry.dispose(); this.rainPools.material.dispose(); }
+    const pos = [], uv = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const tile = s.tiles[idx(x,y)], kind = tile.b?.id, h = hash(x,y,88);
+      const dirt = kind === "road", paved = kind === "asphalt" || kind === "avenue";
+      if (!owns(s,x,y) || tile.t === "rock" || tile.t === "lake" || (!dirt && !paved && tile.b)) continue;
+      const limit = paved ? 0.47 : dirt ? 0.33 : tile.t === "wadi" ? 0.6 : 0.029;
+      if (h > limit) continue;
+      const p = tileCenter(x,y);
+      const ew = (x > 0 && roadAt(s.tiles[idx(x - 1,y)])) || (x + 1 < N && roadAt(s.tiles[idx(x + 1,y)]));
+      const side = (h < limit * 0.5 ? -1 : 1) * (paved ? 0.28 : 0.15);
+      if (paved || dirt) { if (ew) p.z += side; else p.x += side; }
+      else { p.x += (hash(x,y,90) - 0.5) * 0.25; p.z += (hash(x,y,92) - 0.5) * 0.25; }
+      const long = (paved ? 0.31 : 0.35) + h * 0.13, short = paved ? 0.14 : 0.23;
+      const rx = !paved || ew ? long : short, rz = !paved || ew ? short : long;
+      for (const [u,v] of [[0,0],[0,1],[1,1],[0,0],[1,1],[1,0]]) {
+        pos.push(p.x + (2*u-1)*rx,0.017,p.z + (2*v-1)*rz);
+        uv.push(u,v);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos,3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv,2));
+    this.rainPools = new THREE.Mesh(geometry, worldWater(this.waterWeather, { puddle: true }));
+    this.rainPools.renderOrder = 2;
+    this.rainPools.visible = this.waterWeather.wet.value > 0.1;
+    this.scene.add(this.rainPools);
   }
 
   /** Plants and pebbles on land nobody has built on yet. */
@@ -513,17 +584,18 @@ export class World {
         else if (h < 0.3) lists.grassTuft.push(this.place(p.x + j(6), p.z + j(7), h * 30, 0.8));
       }
     }
-    this.sceneryMeshes = Object.entries(lists).flatMap(([k, l]) => this.addInstances(model(k), l, k === "acacia"));
+    this.sceneryMeshes = this.sceneryInstances(lists);
   }
 
   // ---------- roads ----------
 
   /** Kerbs: a raised concrete edge wherever a road meets land that is not road (one draw for all). */
   syncKerbs(s) {
-    if (this.kerbs) { this.scene.remove(this.kerbs); this.kerbs.dispose(); this.kerbs = null; }
+    if (this.kerbs) { this.scene.remove(this.kerbs); this.kerbs.geometry.dispose(); this.kerbs.material.dispose(); this.kerbs.dispose(); this.kerbs = null; }
     const list = [], m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      if (!roadAt(s.tiles[idx(x, y)])) continue;
+      const t = s.tiles[idx(x, y)];
+      if (!roadAt(t) || t.b.id === "road") continue;
       const p = tileCenter(x, y);
       for (const [dx, dy, a] of [[0, 1, 0], [0, -1, 0], [1, 0, Math.PI / 2], [-1, 0, Math.PI / 2]]) {
         if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) continue;
@@ -533,7 +605,7 @@ export class World {
     }
     if (!list.length) return;
     const g = new THREE.BoxGeometry(1, 0.024, 0.06);
-    this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: "#d6d0c2", roughness: 0.85, normalMap: this.mats.matte.normalMap, normalScale: new THREE.Vector2(0.3, 0.3) }), list.length);
+    this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: "#ded2b7", roughness: 0.95 }), list.length);
     list.forEach((mm, i) => this.kerbs.setMatrixAt(i, mm));
     this.kerbs.receiveShadow = true; this.kerbs.frustumCulled = false;
     this.scene.add(this.kerbs);
@@ -541,7 +613,7 @@ export class World {
 
   /** A soft dark patch under every building where it meets the ground (fake ambient occlusion: buildings sit, not float). */
   syncContact(s) {
-    if (this.contact) { this.scene.remove(this.contact); this.contact.dispose(); this.contact = null; }
+    if (this.contact) { this.scene.remove(this.contact); this.contact.geometry.dispose(); this.contact.material.dispose(); this.contact.dispose(); this.contact = null; }
     const list = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const b = s.tiles[idx(x, y)].b;
@@ -569,8 +641,11 @@ export class World {
   }
 
   syncRoads(s) {
+    const topology = s.tiles.map((tile) => roadAt(tile) ? "1" : "0").join("");
+    if (this.roadTopology !== topology) this.truckKey = null;
+    this.roadTopology = topology;
     this.syncKerbs(s);
-    if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); }
+    if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); this.roadMesh.material.dispose(); }
     this.removeAll(this.lampMeshes);
     const lamps = [], medians = [], islands = [], lights = [];
     this.lampGlows = [];
@@ -585,17 +660,25 @@ export class World {
       const kind = t.b.id, paved = kind !== "road";
       const cx = x - HALF + 0.5, cz = y - HALF + 0.5;
       if (paved) {
-        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.004, (x + y) % 2 ? "#d9cfbb" : "#d2c7b1");
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.004, (x + y) % 2 ? "#d9c7a8" : "#cfb896");
         // a street lamp on every other tile, at a corner without a road
-        if ((x + y) % 2 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
+        if ((x + y) % 3 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
       }
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
       const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
-      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
-      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#55575b" : "#b4a07c");
-      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#55575b" : "#b4a07c");
-      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#55575b" : "#b4a07c");
+      if (paved && kind === "asphalt") {
+        if (link(1, 0) && link(-1, 0) && !link(0, 1) && !link(0, -1)) {
+          for (const side of [-1, 1]) quad(cx - 0.49, cz + side * 0.352 - 0.007, cx + 0.49, cz + side * 0.352 + 0.007, 0.008, "#d1c8b2");
+        }
+        if (link(0, 1) && link(0, -1) && !link(1, 0) && !link(-1, 0)) {
+          for (const side of [-1, 1]) quad(cx + side * 0.352 - 0.007, cz - 0.49, cx + side * 0.352 + 0.007, cz + 0.49, 0.008, "#d1c8b2");
+        }
+      }
+      if (link(1, 0)) quad(cx + w, cz - w, cx + 0.5, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
+      if (link(-1, 0)) quad(cx - 0.5, cz - w, cx - w, cz + w, 0.006, paved ? "#4d4f55" : "#a98457");
+      if (link(0, 1)) quad(cx - w, cz + w, cx + w, cz + 0.5, 0.006, paved ? "#4d4f55" : "#a98457");
+      if (link(0, -1)) quad(cx - w, cz - 0.5, cx + w, cz - w, 0.006, paved ? "#4d4f55" : "#a98457");
       if (kind === "avenue") {
         // a full-width avenue: two lanes each way and a palm median along the way it runs
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
@@ -605,6 +688,21 @@ export class World {
       } else if (kind === "roundabout") {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
         islands.push(this.place(cx, cz, 0));
+        const ringPoint = (r,a) => [cx + Math.cos(a)*r, cz + Math.sin(a)*r];
+        const mark = (a,b,d) => {
+          c.set("#ded5bb");
+          for (const [x,z] of [a,b,d]) { pos.push(x,0.009,z); col.push(c.r,c.g,c.b); }
+        };
+        for (let i = 0; i < 32; i++) {
+          const a = i*Math.PI/16, b = (i+1)*Math.PI/16;
+          const inner = ISLAND_RADIUS + .008, outer = inner + .012;
+          mark(ringPoint(inner,a),ringPoint(inner,b),ringPoint(outer,b));
+          mark(ringPoint(inner,a),ringPoint(outer,b),ringPoint(outer,a));
+        }
+        for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) if (link(dx,dy)) {
+          const at = (along,across) => [cx + dx*along - dy*across, cz + dy*along + dx*across];
+          for (const o of [-.234,-.168,-.102]) mark(at(.461,o-.022),at(.408,o),at(.461,o+.022));
+        }
       } else if (kind === "signal") {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
         // zebra crossings on each arm and a light on two corners
@@ -619,8 +717,8 @@ export class World {
         if (link(0, 1) || link(0, -1)) for (const o of [-0.3, 0.05, 0.3]) quad(cx - 0.012, cz + o - 0.06, cx + 0.012, cz + o + 0.06, 0.008, "#f3d77a");
       } else {
         // wheel ruts
-        if (link(1, 0) || link(-1, 0)) for (const o of [-0.12, 0.12]) quad(cx - 0.5, cz + o - 0.015, cx + 0.5, cz + o + 0.015, 0.007, "#8a6842");
-        if (link(0, 1) || link(0, -1)) for (const o of [-0.12, 0.12]) quad(cx + o - 0.015, cz - 0.5, cx + o + 0.015, cz + 0.5, 0.007, "#8a6842");
+        if (link(1, 0) || link(-1, 0)) for (const o of [-0.16, 0.16]) quad(cx - 0.5, cz + o - 0.035, cx + 0.5, cz + o + 0.035, 0.007, "#99724f");
+        if (link(0, 1) || link(0, -1)) for (const o of [-0.16, 0.16]) quad(cx + o - 0.035, cz - 0.5, cx + o + 0.035, cz + 0.5, 0.007, "#99724f");
       }
     }
     this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true)];
@@ -628,9 +726,14 @@ export class World {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    const uv = new Float32Array(pos.length / 3 * 2);
+    for (let i = 0; i < pos.length / 3; i++) {
+      uv[i * 2] = pos[i * 3] * 0.55;
+      uv[i * 2 + 1] = pos[i * 3 + 2] * 0.55;
+    }
+    g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     g.computeVertexNormals();
-    this.roadMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
-    if (this.detailTex) addDetail(this.roadMesh.material, this.detailTex, { grain: 0.22, stain: 0.2, streak: 0, scale: 1.3, rough: 0.15 }); // aggregate, patches and oil stains
+    this.roadMesh = new THREE.Mesh(g, wetSurface(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.aggregate, roughness: 0.92 }), this.waterWeather, 0.48));
     this.roadMesh.receiveShadow = true;
     this.scene.add(this.roadMesh);
   }
@@ -673,6 +776,8 @@ export class World {
     const push = (key, ground, m, tint = 1, tile = -1) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [], tints: [], tiles: [] }); const g = groups.get(k); g.list.push(m); g.tints.push(tint); g.tiles.push(tile); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
+    this.fountains = [];
+    this.siteMotion = { pivot_b: [], themepark_b: [] };
     const seen = new Map(), where = new Map(), glows = [];
     this.anims ||= new Map();
     const feeder = new Map(powerNet(s).wires.map(([from, to]) => [to, from]));
@@ -694,7 +799,7 @@ export class World {
       m4.compose(p, q, sc);
       sc.set(1, 1, 1);
       // Building sites, and a colour variant per house so streets do not look copied.
-      let key = t.b.build > 0 ? "construction" : baseKey(modelKey(t.b.id, t.b.lvl)); // military moving parts are drawn by js/warfx.js
+      let key = t.b.build > 0 ? "construction" : baseKey(modelKey(t.b.id, t.b.lvl));
       const variants = VARIANTS[key];
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
       const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
@@ -702,10 +807,15 @@ export class World {
       const i = idx(x, y);
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
+      this.siteMotion[key]?.push({ pose: m4.clone(), x: p.x, z: p.z, phase: hash(x, y, 63) * Math.PI * 2 });
       if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
       else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk.replace(/[12]$/, ""))) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
       if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
+      if (!t.b.build && !(t.b.wd >= 80) && ["fountain", "bigfountain", "park"].includes(t.b.id)) {
+        const height = { fountain: 0.34, bigfountain: 0.43, park: 0.08 }[t.b.id];
+        this.fountains.push({ x: p.x, z: p.z, height, ring: t.b.id === "bigfountain" });
+      }
     }
     // Reuse or rebuild the instanced meshes.
     for (const [k, inst] of this.instances) if (!groups.has(k)) { for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); } this.instances.delete(k); }
@@ -722,7 +832,6 @@ export class World {
           const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], capacity);
           mesh.castShadow = set !== "lights" && this.quality !== "low";
           mesh.receiveShadow = set !== "lights";
-          mesh.frustumCulled = false;
           this.scene.add(mesh);
           inst[set] = mesh;
         }
@@ -755,6 +864,8 @@ export class World {
     if (landKey !== this.landKey) { this.landKey = landKey; what = { ...what, tiles: true }; }
     if (what.tiles) this.syncTiles(s);
     if (what.roads) this.syncRoads(s);
+    if (this.waterWeather.wet.value > 0.1 && (what.roads || what.tiles || what.buildings)) this.syncRainPools(s);
+    else if (what.roads || what.tiles || what.buildings) this.rainPoolsDirty = true;
     if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); this.syncWires(s); }
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
@@ -771,14 +882,50 @@ export class World {
 
   // ---------- life: cars and smoke ----------
 
+  /** A single soft contact shadow per vehicle, updated with its pose every rendered frame. */
+  initVehicleShadows() {
+    const size = 32, data = new Uint8Array(size * size * 4).fill(255);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const u = Math.abs(x * 2 / (size - 1) - 1), v = Math.abs(y * 2 / (size - 1) - 1);
+      const t = 1 - THREE.MathUtils.smoothstep(u ** 4 + v ** 4, .1, .94);
+      data[(y * size + x) * 4 + 3] = Math.round(t * 255);
+    }
+    const map = new THREE.DataTexture(data, size, size);
+    map.minFilter = map.magFilter = THREE.LinearFilter;
+    map.needsUpdate = true;
+    const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({ map, color: "#251d1a", transparent: true, depthWrite: false });
+    const capacity = (CAR_LIMIT[this.quality] || CAR_LIMIT.medium) + (this.quality === "low" ? 0 : TRUCK_LIMIT);
+    const mesh = this.vehicleShadows = new THREE.InstancedMesh(geo, material, capacity);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 3; // blend over road puddles without writing to the depth buffer
+    this.vehicleShadowPose = new THREE.Matrix4();
+    this.scene.add(mesh);
+  }
+
+  putVehicleShadow(pose, length, width) {
+    const mesh = this.vehicleShadows;
+    if (mesh.count >= mesh.instanceMatrix.count) return;
+    const matrix = this.vehicleShadowPose.copy(pose), m = matrix.elements;
+    // Use the vehicle's heading and position, but keep the shadow flat on the road.
+    m[0] *= length; m[2] *= length;
+    m[8] *= width; m[10] *= width;
+    m[12] -= this.sun.position.x * .0008;
+    m[13] = .019;
+    m[14] -= this.sun.position.z * .0008;
+    mesh.setMatrixAt(mesh.count++, matrix);
+  }
+
   /** Trucks carry goods along the roads from each farm to its factory, and come back empty. */
   syncTrucks(s) {
     if (this.quality === "low") return;
     if (!this.truckMesh) {
-      this.truckMesh = new THREE.InstancedMesh(model("truckBody").matte, this.mats.matte, 24);
-      this.truckGlass = model("truckBody").shiny ? new THREE.InstancedMesh(model("truckBody").shiny, this.mats.shiny, 24) : null;
-      this.cargoMesh = new THREE.InstancedMesh(model("truckCargo").matte, this.mats.matte, 24);
-      for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) { m.count = 0; m.frustumCulled = false; m.castShadow = this.quality === "high"; this.scene.add(m); }
+      this.truckMesh = new THREE.InstancedMesh(model("truckBody").matte, this.mats.matte, TRUCK_LIMIT);
+      this.truckGlass = new THREE.InstancedMesh(model("truckBody").glass, this.mats.glass, TRUCK_LIMIT);
+      this.cargoMesh = new THREE.InstancedMesh(model("truckCargo").matte, this.mats.matte, TRUCK_LIMIT);
+      for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
       this.trucks = [];
     }
     const net = roadNets(s), { links } = chainLinks(s, net);
@@ -798,7 +945,7 @@ export class World {
       const out = []; for (let j = b; j !== -1; j = prev[j]) out.push(j); return out.reverse();
     };
     this.trucks = [];
-    for (const l of links.slice(0, 24)) {
+    for (const l of links.slice(0, TRUCK_LIMIT)) {
       const a = door(l.from), b = door(l.to);
       if (a < 0 || b < 0) continue;
       const p = path(a, b);
@@ -811,26 +958,32 @@ export class World {
   stepTrucks(dt) {
     if (!this.trucks?.length) { if (this.truckMesh) for (const m of [this.truckMesh, this.truckGlass, this.cargoMesh].filter(Boolean)) m.count = 0; return; }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1), hide = new THREE.Vector3(0, 0, 0);
-    const night = this.nightTime;
+    const night = this.previewNight ?? this.nightTime;
     this.trucks.forEach((t, i) => {
       if (t.wait > 0) t.wait -= dt;
       else {
-        t.k += dt * 0.9 * t.dir;
+        const j = Math.round(t.k), nextTile = t.path[j+t.dir], tile = t.path[j];
+        const round = this.isRoundabout(nextTile), advance = dt*0.9;
+        const blocked = round && !this.isRoundabout(tile) && this.roundTraffic.has(nextTile);
+        t.k += t.dir * (blocked ? Math.min(advance, Math.max(0,.34-(t.k-j)*t.dir)) : advance);
+        if (round && Math.round(t.k) !== j) this.roundTraffic.add(nextTile);
         const end = t.path.length - 1;
         if (t.k >= end) { t.k = end; t.dir = -1; t.wait = 1.5; }
         if (t.k <= 0) { t.k = 0; t.dir = 1; t.wait = 1.5; }
       }
-      const j = Math.min(t.path.length - 2, Math.floor(t.k)), f = t.k - j;
-      const a = tileCenter(t.path[j] % N, Math.floor(t.path[j] / N)), b = tileCenter(t.path[j + 1] % N, Math.floor(t.path[j + 1] / N));
-      v.lerpVectors(a, b, f);
-      let dx = b.x - a.x, dz = b.z - a.z;
-      if (t.dir < 0) { dx = -dx; dz = -dz; }
-      v.x += -dz * 0.14; v.z += dx * 0.14; // drive on the right
-      q.setFromAxisAngle(up, Math.atan2(-dz, dx));
+      const j = Math.round(t.k), i0 = t.path[j];
+      const previous = t.path[j-t.dir] ?? t.path[j+t.dir], next = t.path[j+t.dir] ?? previous;
+      const x = i0 % N, y = Math.floor(i0 / N);
+      const lane = tileLane(x-previous%N,y-Math.floor(previous/N),next%N-x,Math.floor(next/N)-y,
+        this.state.tiles[i0]?.b?.id === "roundabout");
+      const pose = lanePosition(lane, 0.5+(t.k-j)*t.dir, this.truckLanePose ||= {});
+      v.set(x-HALF+0.5+pose.x,0,y-HALF+0.5+pose.z);
+      q.setFromAxisAngle(up,Math.atan2(-pose.dz,pose.dx));
       sc.setScalar(night ? 0.0001 : 1); // trucks rest at night
       m4.compose(v, q, sc);
       this.truckMesh.setMatrixAt(i, m4);
       this.truckGlass?.setMatrixAt(i, m4);
+      if (!night) this.putVehicleShadow(m4, .51, .24);
       // loaded on the way to the factory, empty on the way back
       if (t.dir < 0 || night) m4.compose(hide, q, new THREE.Vector3(0.0001, 0.0001, 0.0001));
       this.cargoMesh.setMatrixAt(i, m4);
@@ -840,51 +993,138 @@ export class World {
     if (this.cargoMesh.instanceColor) this.cargoMesh.instanceColor.needsUpdate = true;
   }
 
-  syncCars() {
-    const want = this.quality === "low" ? 0 : Math.min(40, Math.floor((this.roads.length / 5) * (this.rush ? 1.8 : 1)));
-    if (!this.carMesh) {
-      // Pickups (جيب حوض): mostly white, some beige, silver, red and navy. Paint per car, trim shared.
-      this.carMesh = new THREE.InstancedMesh(model("pickupBody").matte, this.mats.shiny, 40);
-      const colors = ["#f4f4f2", "#f4f4f2", "#e9e1cf", "#c3c6ca", "#f4f4f2", "#a8322a", "#2c3e63", "#d9c39a"];
-      for (let i = 0; i < 40; i++) this.carMesh.setColorAt(i, new THREE.Color(colors[i % colors.length]));
-      const trim = model("pickupTrim");
-      this.carTrim = SETS.filter((k) => trim[k]).map((k) => new THREE.InstancedMesh(trim[k], this.mats[k], 40));
-      for (const m of [this.carMesh, ...this.carTrim]) { m.castShadow = m.material !== this.mats.lights && m.material !== this.mats.glow && this.quality !== "low"; m.frustumCulled = false; m.count = 0; this.scene.add(m); }
+  routeCar(car) {
+    const choices = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = car.x + dx, y = car.y + dy;
+      if (inMap(x, y) && roadAt(this.state.tiles[idx(x, y)]) && (x !== car.px || y !== car.py)) choices.push([x, y]);
     }
-    this.carsWanted = want;
+    [car.tx, car.ty] = choices[Math.floor(Math.random() * choices.length)] || [car.px, car.py];
+  }
+
+  isRoundabout(i) { return this.state.tiles[i]?.b?.id === "roundabout"; }
+
+  carLane(car, round) { return tileLane(car.x-car.px,car.y-car.py,car.tx-car.x,car.ty-car.y,round); }
+
+  syncCars() {
+    const limit = CAR_LIMIT[this.quality] || CAR_LIMIT.medium;
+    const want = Math.min(limit, Math.floor((this.roads.length / 4) * (this.rush ? 1.45 : 1)));
+    if (!this.carFleet) {
+      const batch = (geometry, material, capacity) => {
+        const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.count = 0;
+        mesh.frustumCulled = false;
+        this.scene.add(mesh);
+        return mesh;
+      };
+      this.carFleet = ["pickup", "suv", "sedan"].map((key) => {
+        const paint = batch(model(`${key}Body`).matte, this.mats.carPaint, limit);
+        const trim = model(`${key}Trim`);
+        return [paint, ...SETS.filter((set) => trim[set]).map((set) => batch(trim[set], this.mats[set], limit))];
+      });
+      this.carWheels = batch(model("carWheel").matte, this.mats.matte, limit * 4);
+      this.initVehicleShadows();
+      this.carPose = { matrix: new THREE.Matrix4(), child: new THREE.Matrix4(), wheel: new THREE.Matrix4(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0), point: new THREE.Vector3(), scale: new THREE.Vector3(1, 1, 1) };
+      this.carColors = ["#e5e4d9", "#275e61", "#a84a3f", "#d5b16c", "#879397", "#334052", "#f4e4cb"].map((color) => new THREE.Color(color));
+    }
+    const isRoad = (x, y) => inMap(x, y) && roadAt(this.state.tiles[idx(x, y)]);
+    this.cars = this.cars.filter((c) => isRoad(c.x, c.y) && isRoad(c.tx, c.ty) && isRoad(c.px, c.py));
     while (this.cars.length < want && this.roads.length) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
-      this.cars.push({ x, y, tx: x, ty: y, t: 1, speed: 0.6 + Math.random() * 0.6 });
+      const i = this.cars.length;
+      const car = { x, y, px: x, py: y, t: Math.random(), speed: 0.55 + Math.random() * 0.47, kind: i % 3, color: i % this.carColors.length, spin: 0 };
+      this.routeCar(car);
+      const oppositeX = 2 * x - car.tx, oppositeY = 2 * y - car.ty;
+      [car.px, car.py] = isRoad(oppositeX, oppositeY) ? [oppositeX, oppositeY] : [car.tx, car.ty];
+      this.cars.push(car);
     }
     this.cars.length = Math.min(this.cars.length, want);
-    for (const m of [this.carMesh, ...this.carTrim]) m.count = this.cars.length;
   }
 
   stepCars(dt) {
-    if (!this.carMesh || !this.cars.length) return;
-    const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-    this.cars.forEach((c, i) => {
-      const jam = this.trafficCong ? this.trafficCong[idx(c.x, c.y)] || 0 : 0;
-      c.t += (dt * c.speed) / (1 + jam * 2.5);
-      if (c.t >= 1) {
-        c.x = c.tx; c.y = c.ty; c.t = 0;
-        const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inMap(c.x + dx, c.y + dy) && roadAt(s.tiles[idx(c.x + dx, c.y + dy)]) && !(c.x + dx === c.px && c.y + dy === c.py));
-        const pick = opts.length ? opts[Math.floor(Math.random() * opts.length)] : [c.px - c.x || 0, c.py - c.y || 0];
-        c.px = c.x; c.py = c.y; c.tx = c.x + (pick[0] || 0); c.ty = c.y + (pick[1] || 0);
-        if (!inMap(c.tx, c.ty) || !roadAt(s.tiles[idx(c.tx, c.ty)])) { c.tx = c.x; c.ty = c.y; }
+    if (!this.carFleet) return;
+    const { matrix, child, wheel, q, up, point, scale } = this.carPose;
+    const counts = [0, 0, 0], shown = (this.previewNight ?? this.nightTime) ? Math.ceil(this.cars.length / 3) : this.cars.length;
+    this.roundTraffic ||= new Set();
+    const occupied = this.roundTraffic;
+    occupied.clear();
+    for (let i = 0; i < shown; i++) {
+      const car = this.cars[i], tile = idx(car.x,car.y);
+      if (this.isRoundabout(tile)) occupied.add(tile);
+    }
+    if (!(this.previewNight ?? this.nightTime)) for (const truck of this.trucks || []) {
+      const tile = truck.path[Math.round(truck.k)];
+      if (this.isRoundabout(tile)) occupied.add(tile);
+    }
+    const wet = this.waterWeather.wet.value;
+    if (wet > 0.32 && !this.tyreMist && this.quality !== "low") {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(32 * 4 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      this.tyreMist = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.023, color: "#bdc9c9", depthWrite: false, transparent: true, opacity: 0 }));
+      this.tyreMist.frustumCulled = false;
+      this.scene.add(this.tyreMist);
+    }
+    const spray = this.tyreMist?.geometry.attributes.position;
+    let sprayCount = 0;
+    let wheels = 0;
+    for (let i = 0; i < shown; i++) {
+      const car = this.cars[i];
+      const jam = this.trafficCong?.[idx(car.x, car.y)] || 0;
+      const tileIndex = idx(car.x,car.y);
+      const round = this.isRoundabout(tileIndex), nextTile = idx(car.tx,car.ty);
+      let lane = this.carLane(car,round);
+      let travel = dt * car.speed / (1 + jam * 2.5 + (round ? 0.4 : 0));
+      if (!round && this.isRoundabout(nextTile) && occupied.has(nextTile)) {
+        travel = Math.min(travel,Math.max(0,(.835-car.t)*lane.length));
       }
-      const a = tileCenter(c.x, c.y), b = tileCenter(c.tx, c.ty);
-      v.lerpVectors(a, b, c.t);
-      const dx = b.x - a.x, dz = b.z - a.z;
-      // keep to the right-hand side of the road
-      if (dx || dz) { v.x += -dz * 0.13; v.z += dx * 0.13; }
-      q.setFromAxisAngle(up, Math.atan2(-dz, dx));
-      m4.compose(v, q, sc);
-      this.carMesh.setMatrixAt(i, m4);
-      for (const t of this.carTrim) t.setMatrixAt(i, m4);
-    });
-    const shown = this.nightTime ? Math.ceil(this.cars.length / 4) : this.cars.length;
-    for (const m of [this.carMesh, ...this.carTrim]) { m.count = shown; m.instanceMatrix.needsUpdate = true; }
+      car.t += travel / Math.max(0.45,lane.length);
+      if (car.t >= 1) {
+        car.t -= 1;
+        car.px = car.x; car.py = car.y;
+        car.x = car.tx; car.y = car.ty;
+        this.routeCar(car);
+        lane = this.carLane(car,this.isRoundabout(nextTile));
+        if (this.isRoundabout(nextTile)) occupied.add(nextTile);
+      }
+      const pose = lanePosition(lane,car.t,this.carLanePose ||= {});
+      point.set(car.x-HALF+0.5+pose.x,0.012,car.y-HALF+0.5+pose.z);
+      const tx = pose.dx, tz = pose.dz;
+      q.setFromAxisAngle(up, Math.atan2(-tz, tx));
+      matrix.compose(point, q, scale);
+      this.putVehicleShadow(matrix, car.kind === 0 ? .35 : .33, .206);
+      const fleet = this.carFleet[car.kind], slot = counts[car.kind]++;
+      fleet[0].setColorAt(slot, this.carColors[car.color]);
+      for (const mesh of fleet) mesh.setMatrixAt(slot, matrix);
+      car.spin = (car.spin - travel * 39) % (Math.PI * 2);
+      for (const x of [-0.081, 0.085]) for (const z of [-0.059, 0.059]) {
+        child.makeRotationZ(car.spin).setPosition(x, 0.024, z);
+        wheel.multiplyMatrices(matrix, child);
+        this.carWheels.setMatrixAt(wheels++, wheel);
+      }
+      if (spray && wet > 0.32 && Math.abs(point.x - this.view.x) + Math.abs(point.z - this.view.z) < 12) {
+        const d = Math.hypot(tx,tz) || 1, ux = tx / d, uz = tz / d;
+        for (let k = 0; k < 4; k++) {
+          const age = (this.clock * 7.5 + (i * 7 + k * 13) * 0.073) % 1;
+          const side = (k % 2 ? -1 : 1) * (0.06 + age * 0.043), trail = 0.078 + age * 0.19;
+          spray.setXYZ(sprayCount++, point.x - ux * trail - uz * side,
+            0.015 + Math.sin(age * Math.PI) * 0.043, point.z - uz * trail + ux * side);
+        }
+      }
+    }
+    for (let i = 0; i < this.carFleet.length; i++) for (const mesh of this.carFleet[i]) {
+      mesh.count = counts[i];
+      mesh.instanceMatrix.needsUpdate = !!counts[i];
+      if (mesh.instanceColor && counts[i]) mesh.instanceColor.needsUpdate = true;
+    }
+    this.carWheels.count = wheels;
+    if (wheels) this.carWheels.instanceMatrix.needsUpdate = true;
+    if (spray) {
+      this.tyreMist.visible = sprayCount > 0;
+      this.tyreMist.geometry.setDrawRange(0, sprayCount);
+      this.tyreMist.material.opacity = 0.54 * wet;
+      if (sprayCount) spray.needsUpdate = true;
+    }
   }
 
   syncSmoke() {
@@ -926,26 +1166,22 @@ export class World {
   }
 
   stepWeather(dt) {
-    // Rain: streaks falling around the middle of the view.
-    if (this.raining && this.quality !== "low") {
-      if (!this.rain) {
-        const n = 1400, g = new THREE.BufferGeometry(), pos = new Float32Array(n * 6);
-        g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        this.rainDrops = Array.from({ length: n }, () => ({ x: (Math.random() - 0.5) * 30, y: Math.random() * 8, z: (Math.random() - 0.5) * 30 }));
-        this.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#e4f0fa", transparent: true, opacity: 0.75 }));
-        this.rain.frustumCulled = false;
-        this.scene.add(this.rain);
-      }
-      this.rain.visible = true;
-      const pos = this.rain.geometry.attributes.position, v = this.view;
-      this.rainDrops.forEach((d, i) => {
-        d.y -= dt * 9; d.x -= dt * 1.2;
-        if (d.y < 0) { d.y = 7 + Math.random() * 2; d.x = (Math.random() - 0.5) * 30; d.z = (Math.random() - 0.5) * 30; }
-        pos.setXYZ(i * 2, v.x + d.x, d.y, v.z + d.z);
-        pos.setXYZ(i * 2 + 1, v.x + d.x + 0.05, d.y + 0.35, v.z + d.z);
-      });
-      pos.needsUpdate = true;
-    } else if (this.rain) this.rain.visible = false;
+    const { rain, wet } = this.waterWeather;
+    if (rain.value > 0.014 && !this.rain) {
+      this.rain = rainField(this.waterWeather, this.quality === "high" ? 850 : this.quality === "medium" ? 480 : 235);
+      this.rain.renderOrder = 4;
+      this.scene.add(this.rain);
+    }
+    if (this.rain) {
+      this.rain.visible = rain.value > 0.014;
+      this.rain.position.set(this.view.x,0,this.view.z);
+      this.rain.material.uniforms.fieldSize.value = Math.max(15,Math.min(37, 13 * this.aspect / this.view.zoom));
+    }
+    if (wet.value > 0.1 && (!this.rainPools || this.rainPoolsDirty) && this.state) {
+      this.syncRainPools(this.state);
+    }
+    if (this.rainPools) this.rainPools.visible = wet.value > 0.1;
+    if (this.flood && this.previewStorm != null) this.flood.visible = rain.value > 0.3;
 
     // Eid nights: fireworks over the town.
     if (this.eid && this.night > 0.5 && this.quality !== "low") {
@@ -1107,15 +1343,25 @@ export class World {
       this.people = [];
       // men: thobe (coloured per person) + head (red or white shemagh); women in abayas.
       const mk = (k) => { const mesh = new THREE.InstancedMesh(model(k).matte, this.mats.matte, 120); mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = this.quality === "high"; this.scene.add(mesh); return mesh; };
-      this.peopleMesh = { body: mk("manBody"), red: mk("manHeadRed"), white: mk("manHeadWhite"), woman: mk("woman") };
+      this.peopleMesh = { body: mk("citizenThobe"), red: mk("manHeadRed"), white: mk("manHeadWhite"), woman: mk("woman") };
       this.camels = [];
       const cg = model("camel").matte;
       this.camelMesh = new THREE.InstancedMesh(cg, this.mats.matte, 16);
       this.camelMesh.count = 0; this.camelMesh.frustumCulled = false; this.camelMesh.castShadow = this.quality !== "low";
       this.scene.add(this.camelMesh);
+      this.camelLegs = new THREE.InstancedMesh(model("camelLeg").matte, this.mats.matte, 64);
+      this.sandals = new THREE.InstancedMesh(model("walkingSandal").matte, this.mats.matte, 144);
+      this.sleeves = new THREE.InstancedMesh(model("citizenSleeve").matte, this.mats.matte, 144);
+      this.canopies = new THREE.InstancedMesh(model("rainUmbrella").matte, this.mats.matte, 30);
+      for (const mesh of [this.camelLegs, this.sandals, this.sleeves, this.canopies]) {
+        mesh.count = 0;
+        mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.scene.add(mesh);
+      }
     }
     // People: more as the town grows, only where there are roads.
-    const want = this.quality === "low" || !this.roads.length ? 0 : Math.min(120, Math.round(4 + s.pop / 6));
+    const want = this.quality === "low" || !this.roads.length ? 0 : Math.min(this.quality === "high" ? 72 : 48, Math.round(4 + s.pop / 6));
     while (this.people.length < want) {
       const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
       const n = this.people.length, kind = n % 3 === 2 ? "woman" : n % 5 === 3 ? "kid" : n % 2 ? "red" : "white";
@@ -1220,9 +1466,13 @@ export class World {
   stepLife(dt) {
     if (!this.people) return;
     const s = this.state, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = (!!this.nightTime || !!this.siesta) && !this.festive;
+    const counts = { body: 0, red: 0, white: 0, woman: 0 }, night = (this.previewNight ?? (!!this.nightTime || !!this.siesta)) && !this.festive;
     const M = this.peopleMesh, col = new THREE.Color();
+    const part = new THREE.Matrix4(), pose = new THREE.Matrix4();
+    let shoes = 0, legs = 0, hands = 0, umbrellas = 0;
+    const coat = new THREE.Color(), storm = this.waterWeather.rain.value > .52;
     const winter = seasonOf(this.state.day).id === "winter";
+    const canopyColors = this.canopyColors ||= ["#344c55","#a0654f","#716249","#4e7565"].map((c) => new THREE.Color(c));
     const thobes = winter ? ["#f2efe6", "#c9b79a", "#8a8f94", "#6b5a48", "#ece6d8"] : ["#f6f5f0", "#f1ede2", "#ebe7dc", "#f6f5f0"];
     const pray = !!this.prayer && !night && this.mosqueRoads?.length > 0;
     for (const p of this.people) {
@@ -1258,11 +1508,35 @@ export class World {
       v.lerpVectors(a, b, p.t);
       const dx = b.x - a.x, dz = b.z - a.z;
       if (dx || dz) { v.x += -dz * 0.4 * p.side; v.z += dx * 0.4 * p.side; } else { v.x += 0.4 * p.side; }
-      v.y = Math.abs(Math.sin(this.clock * 9 + p.speed * 50)) * 0.01;
-      q.setFromAxisAngle(up, Math.atan2(-dz, dx) + Math.sin(this.clock * 9 + p.speed * 50) * 0.06);
+      const stride = Math.sin(this.clock * (7 + p.speed * 14) + p.shade * 35);
+      v.y = Math.abs(stride) * 0.011 + 0.008;
+      const bearing = Math.atan2(-dz,dx);
+      p.yaw ??= bearing;
+      p.yaw += Math.atan2(Math.sin(bearing - p.yaw),Math.cos(bearing - p.yaw)) * Math.min(1,dt*6);
+      q.setFromAxisAngle(up,p.yaw + stride*.044);
+      const umbrella = storm && p.shade < .67 && umbrellas < 30;
       const s2 = p.kind === "kid" ? 0.72 : 0.95 + p.shade * 0.12;
       sc.set(s2, s2, s2);
       m4.compose(v, q, sc);
+      for (const side of [-1, 1]) {
+        part.makeTranslation(stride * side * 0.027, Math.max(0, stride * side) * 0.012 - 0.007, side * 0.014);
+        pose.multiplyMatrices(m4, part);
+        this.sandals.setMatrixAt(shoes++, pose);
+      }
+      coat.set(p.kind === "woman" ? "#39323c" : thobes[Math.floor(p.shade * thobes.length)]);
+      for (const side of [-1, 1]) {
+        const swing = umbrella && side > 0 ? .92 : stride * side * .33;
+        part.makeRotationZ(swing).setPosition(.001,.124,side*.035);
+        pose.multiplyMatrices(m4,part);
+        this.sleeves.setMatrixAt(hands,pose);
+        this.sleeves.setColorAt(hands++,coat);
+      }
+      if (umbrella) {
+        part.makeRotationX(.105 + stride*.045).setPosition(.025,.198,.019);
+        pose.multiplyMatrices(m4,part);
+        this.canopies.setMatrixAt(umbrellas,pose);
+        this.canopies.setColorAt(umbrellas++,canopyColors[Math.floor(p.shade*21)%canopyColors.length]);
+      }
       if (p.kind === "woman") M.woman.setMatrixAt(counts.woman++, m4);
       else {
         const head = p.kind === "red" ? "red" : "white";
@@ -1275,6 +1549,12 @@ export class World {
     sc.set(1, 1, 1);
     for (const [k, m] of Object.entries(M)) { m.count = counts[k]; m.instanceMatrix.needsUpdate = true; }
     if (M.body.instanceColor) M.body.instanceColor.needsUpdate = true;
+    this.sleeves.count = hands; this.canopies.count = umbrellas;
+    for (const mesh of [this.sleeves,this.canopies]) if (mesh.count) {
+      mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
+    }
+    this.sandals.count = shoes;
+    if (shoes) this.sandals.instanceMatrix.needsUpdate = true;
 
     if (this.camels.length && this.herdHome) {
       const home = tileCenter(this.herdHome[0], this.herdHome[1]);
@@ -1288,9 +1568,17 @@ export class World {
         q.setFromAxisAngle(up, c.ry);
         m4.compose(v, q, sc);
         this.camelMesh.setMatrixAt(i, m4);
+        for (const x of [-0.089, 0.089]) for (const z of [-0.047, 0.047]) {
+          const swing = walking ? Math.sin(this.clock * 5 + i + (z < 0 ? Math.PI : 0) + (x < 0 ? 0.63 : 0)) * 0.25 : 0;
+          part.makeRotationZ(swing).setPosition(x, 0.204, z);
+          pose.multiplyMatrices(m4, part);
+          this.camelLegs.setMatrixAt(legs++, pose);
+        }
       });
       this.camelMesh.instanceMatrix.needsUpdate = true;
     }
+    this.camelLegs.count = legs;
+    if (legs) this.camelLegs.instanceMatrix.needsUpdate = true;
   }
 
   /** A burst of dust where something was built or knocked down. */
@@ -1312,6 +1600,8 @@ export class World {
   }
 
   stepEffects(dt) {
+    this.stepFountains();
+    this.stepSiteMotion();
     if (this.dust) {
       const pos = this.dust.geometry.attributes.position;
       this.dustParts = this.dustParts.filter((d) => (d.life -= dt) > 0);
@@ -1345,6 +1635,95 @@ export class World {
     }
   }
 
+  /** Shared, shadow-free batches for the moving parts of the amusement park and farm. */
+  stepSiteMotion() {
+    const sites = this.siteMotion;
+    if (!sites) return;
+    const cap = this.quality === "low" ? 16 : 24;
+    const { x, y, z, radius, cabins } = FAIR_WHEEL;
+    if (!this.siteParts) {
+      if (!sites.pivot_b.length && !sites.themepark_b.length) return;
+      const makeBatch = (key, capacity) => Object.entries(model(key)).flatMap(([set, geo]) => {
+        if (!geo) return [];
+        const mesh = new THREE.InstancedMesh(geo, this.mats[set], capacity);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.frustumCulled = false;
+        mesh.count = 0;
+        this.scene.add(mesh);
+        return [mesh];
+      });
+      this.siteParts = {
+        arm: makeBatch("irrigationArm", cap),
+        wheel: makeBatch("fairWheel", 1),
+        cabin: makeBatch("fairCabin", cabins)
+      };
+      this.siteLocal = new THREE.Matrix4();
+      this.sitePose = new THREE.Matrix4();
+    }
+    const { arm, wheel, cabin } = this.siteParts;
+    const local = this.siteLocal, pose = this.sitePose;
+    const range = 5 / this.view.zoom * Math.max(1, this.aspect) + 2;
+    const inView = (s) => Math.abs(s.x - this.view.x) <= range && Math.abs(s.z - this.view.z) <= range;
+    let arms = 0, wheels = 0, seats = 0;
+    for (const s of sites.pivot_b) {
+      if (!inView(s)) continue;
+      pose.multiplyMatrices(s.pose, local.makeRotationY(this.clock * .19 + s.phase));
+      for (const mesh of arm) mesh.setMatrixAt(arms, pose);
+      if (++arms === cap) break;
+    }
+    const park = sites.themepark_b.find(inView);
+    if (park) {
+      const turn = this.clock * .32 + park.phase;
+      pose.multiplyMatrices(park.pose, local.makeRotationZ(turn).setPosition(x, y, z));
+      for (const mesh of wheel) mesh.setMatrixAt(wheels, pose);
+      wheels++;
+      for (let i = 0; i < cabins; i++) {
+        const a = turn + i * Math.PI * 2 / cabins;
+        pose.multiplyMatrices(park.pose, local.makeTranslation(x + Math.cos(a) * radius, y + Math.sin(a) * radius, z));
+        for (const mesh of cabin) mesh.setMatrixAt(seats, pose);
+        seats++;
+      }
+    }
+    for (const [parts, count] of [[arm, arms], [wheel, wheels], [cabin, seats]]) for (const mesh of parts) {
+      mesh.count = count;
+      if (count) mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  stepFountains() {
+    if (this.quality === "low" || !this.fountains?.length) {
+      if (this.waterDrops) this.waterDrops.count = 0;
+      return;
+    }
+    const cap = this.quality === "high" ? 12 : 6, perJet = 12;
+    if (!this.waterDrops) {
+      this.waterDrops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.015, 0),
+        new THREE.MeshBasicMaterial({ color: "#b8e6da" }), cap * perJet);
+      this.waterDrops.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.waterDrops.frustumCulled = false;
+      this.scene.add(this.waterDrops);
+      this.dropMatrix = new THREE.Matrix4();
+    }
+    let count = 0;
+    const range = 7 / this.view.zoom + 3;
+    for (const { x, z, height, ring } of this.fountains) {
+      if (Math.abs(x - this.view.x) + Math.abs(z - this.view.z) > range * 1.8) continue;
+      for (let i = 0; i < perJet; i++) {
+        const sideJet = ring && i >= 4;
+        const t = (this.clock * 1.25 + i / perJet) % 1;
+        const angle = sideJet ? (i - 4) * Math.PI / 4 : i * 2.39996;
+        const radius = sideJet ? .289 - t * .155 : t * (height > .1 ? .23 : .08);
+        const y = sideJet ? .108 + t * (1 - t) * (.7 + Math.sin(this.clock * 3 + i) * .25)
+          : Math.max(.075, height + t * (.66 - t * .91));
+        this.dropMatrix.makeTranslation(x + Math.cos(angle) * radius, y, z + Math.sin(angle) * radius);
+        this.waterDrops.setMatrixAt(count++, this.dropMatrix);
+      }
+      if (count >= cap * perJet) break;
+    }
+    this.waterDrops.count = count;
+    if (count) this.waterDrops.instanceMatrix.needsUpdate = true;
+  }
+
   // ---------- day and night ----------
 
   /** t in 0..1 over a full day (0 = midnight, 0.5 = noon). */
@@ -1354,14 +1733,20 @@ export class World {
     const day = Math.max(0, Math.min(1, elev * 3 + 0.25));
     const golden = Math.max(0, 1 - Math.abs(elev) * 4) * (elev > -0.1 ? 1 : 0);
     this.night = 1 - day;
-    const dir = new THREE.Vector3(Math.cos(sunAngle) * 0.8, Math.max(0.25, elev + 0.25), 0.55).normalize();
-    this.sun.position.copy(dir.multiplyScalar(40));
-    this.sun.intensity = 0.55 + day * 1.8;
-    this.sun.color.set(day < 0.3 ? "#9fb4ff" : golden > 0.2 ? "#ffc985" : "#fff3e0");
-    this.hemi.intensity = 0.55 + day * 0.4;
-    const sky = new THREE.Color("#1d2a4d").lerp(new THREE.Color("#e9e4d6"), day); // a pale desert sky, hazy toward the horizon
+    this.waterWeather.day.value = day;
+    this.sun.position.set(Math.cos(sunAngle) * 0.86, Math.max(0.22, elev * 0.8 + 0.23), 0.61).normalize().multiplyScalar(40);
+    this.sun.intensity = 0.35 + day * 1.88;
+    this.sun.color.set(day < 0.3 ? "#92b5ee" : golden > 0.2 ? "#ffc17c" : "#fff2db");
+    this.hemi.intensity = 0.48 + day * 0.42;
+    const sky = (this.skyColor ||= new THREE.Color()).set("#1b2c43").lerp(this.daySky ||= new THREE.Color("#ecd2ad"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
-    if (this.raining) { sky.lerp(new THREE.Color("#7d8794"), 0.45); this.sun.intensity *= 0.45; this.hemi.intensity *= 0.75; }
+    const storm = this.waterWeather.rain.value;
+    if (storm > 0.01) {
+      sky.lerp(this.stormSky ||= new THREE.Color("#798c9b"), 0.65 * storm);
+      this.sun.intensity *= 1 - 0.73 * storm;
+      this.hemi.intensity *= 1 - 0.21 * storm;
+      this.sun.color.lerp(this.stormLight ||= new THREE.Color("#d1e2ef"),storm);
+    }
     // a dust storm: the sky goes ochre and the light dims
     if (this.dusty) { sky.lerp(new THREE.Color("#c9a46a"), 0.55); this.sun.intensity *= 0.6; this.sun.color.lerp(new THREE.Color("#e0b070"), 0.6); }
     this.scene.background = sky;
@@ -1572,14 +1957,25 @@ export class World {
 
   frame(dt, todT) {
     this.clock += dt;
+    this.breeze.value = this.clock;
+    const weather = this.waterWeather, rain = this.previewStorm ?? Number(!!this.raining);
+    weather.time.value = this.clock;
+    weather.rain.value += (rain - weather.rain.value) * (1 - Math.exp(-dt * 1.9));
+    const wet = this.previewWet ?? rain;
+    weather.wet.value += (wet - weather.wet.value) * (1 - Math.exp(-dt * (wet > weather.wet.value ? 0.29 : 0.043)));
+    this.breezeStrength.value = this.quality === "low" ? 0 : 0.026 + weather.rain.value * 0.036;
     const v = this.view;
     if (this.groups && this.clock - (this.cullAt || 0) > 0.12) { this.cullAt = this.clock; this.cull(); } // what the camera sees, a few times a second
     if (Math.abs(v.yaw - v.yawTarget) > 1e-3) { v.yaw += (v.yawTarget - v.yaw) * Math.min(1, dt * 8); this.updateCamera(); }
     this.setTimeOfDay(this.dayCycle ? todT : 0.42);
+    const shadows = this.vehicleShadows;
+    if (shadows) shadows.count = 0;
     this.stepCars(dt);
     this.stepTrucks(dt);
-    if (this.streamTex && this.flood?.visible) { this.streamTex.offset.x = (this.streamTex.offset.x - dt * 0.25) % 1; }
-    if (this.ripples) { const m = this.ripples.material.map; m.offset.x = (m.offset.x + dt * 0.02) % 1; m.offset.y = (m.offset.y + dt * 0.012) % 1; }
+    if (shadows?.count) {
+      shadows.material.opacity = .52 - this.night * .31;
+      shadows.instanceMatrix.needsUpdate = true;
+    }
     this.stepFollow(dt);
     this.stepSmoke(dt);
     this.stepLife(dt);
@@ -1589,8 +1985,14 @@ export class World {
     this.fx?.step(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
-    this.shadowTick = ((this.shadowTick || 0) + 1) % (this.quality === "high" ? 2 : 3);
-    if (!this.shadowTick || this.shadowDirty) { this.renderer.shadowMap.needsUpdate = true; this.shadowDirty = false; }
+    if (this.renderer.shadowMap.enabled && (this.shadowDirty || this.clock >= (this.nextShadow || 0))) {
+      const r = Math.max(13, 9 / v.zoom * Math.max(1.6, this.aspect * 0.85));
+      const camera = this.sun.shadow.camera;
+      if (camera.right !== r) { Object.assign(camera, { left: -r, right: r, top: r, bottom: -r }); camera.updateProjectionMatrix(); }
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+      this.nextShadow = this.clock + (this.quality === "high" ? 0.12 : 0.22);
+    }
     if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }
 }
@@ -1626,9 +2028,10 @@ export function thumbnail(key, ground = "sand") {
   const geo = model(key, ground);
   let top = 0.5;
   thumbMats ||= {
+    ...buildingMaterials("medium"),
     matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), shiny: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.3 }),
     paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 }), metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.6 }),
-    glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.5 }), glow: new THREE.MeshBasicMaterial({ vertexColors: true })
+    glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.5 }), glow: new THREE.MeshBasicMaterial({ vertexColors: true }), ...buildingMaterials("medium")
   };
   if (geo) for (const [set, mat] of Object.entries(thumbMats)) {
     if (!geo[set]) continue;

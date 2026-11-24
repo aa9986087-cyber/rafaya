@@ -2,7 +2,8 @@
 // page, so the owner can try «صراع الجوف» from one file before anything goes live. It answers the
 // game's /api/world/* calls itself, with the same war server (js/warserver.js) the live site runs,
 // shorter waits, and three rival towns played by simple bots. Nothing here is ever sent anywhere.
-const PV_KEY = "rafaya-trial-world";
+const PV_KEY = "rafaya-visual-preview-v4";
+globalThis.RAFAYA_PREVIEW_STORAGE = "rafaya-visual-preview-v4:";
 const PV_CFG = fastWar(20);
 Object.assign(WAR, PV_CFG); // the game shows the same short waits the trial server uses
 const pvLoad = () => { try { return JSON.parse(localStorage.getItem(PV_KEY) || "null"); } catch { return null; } };
@@ -193,31 +194,171 @@ function pvRoute(p, body) {
   throw new Error("404");
 }
 
-/** The trial's town: already a city (مدينة) with streets, homes, power and factories, and money to build a base. */
+/** A playable sample with an old quarter, a planted avenue, an oasis and a newer district. */
+const PV_SCENES = [
+  { title: "الواحة", x: 37, y: 37, zoom: .88 },
+  { title: "الدوار", x: 40, y: 35, zoom: 1.54 },
+  { title: "السوق والجامع", x: 36, y: 35, zoom: 1.42 },
+  { title: "البيوت الأولى", x: 31, y: 37, zoom: 1.47 },
+  { title: "الفلل والأبراج", x: 36.5, y: 30, zoom: 1.37 },
+  { title: "الخدمات العامة", x: 36, y: 24, zoom: 1.27 },
+  { title: "المزارع والحلال", x: 24, y: 33, zoom: 1.21 },
+  { title: "المصانع والطاقة", x: 48, y: 35, zoom: 1.22 },
+  { title: "المطار والمعالم", x: 26, y: 44, zoom: 1.18 },
+  { title: "الأبراج والترفيه", x: 38, y: 48, zoom: 1.16 },
+  { title: "الساحة والنوافير", x: 44, y: 27, zoom: 1.28 },
+  { title: "المنشآت العسكرية", x: 49, y: 44, zoom: 1.23 },
+];
+
 function pvReadyTown(s) {
-  const put = (x, y, id, lvl = 0) => { const t = s.tiles[idx(x, y)]; t.t = t.t === "wadi" || t.t === "lake" ? "sand" : t.t === "rock" ? "sand" : t.t; t.b = { id, lvl, res: id === "house" ? 8 : 0, cond: 100 }; };
-  for (let x = 19; x < 53; x++) { put(x, 27, "asphalt"); put(x, 35, "road"); }
-  for (let y = 27; y < 36; y++) { put(26, y, "road"); put(44, y, "road"); }
-  for (let x = 20; x < 52; x += 2) { if ([26, 44].includes(x)) continue; put(x, 28, "house", x % 3 ? 3 : 2); put(x, 34, "house", 2); }
-  put(21, 26, "mosque"); put(24, 26, "school"); put(28, 26, "clinic"); put(31, 26, "park"); put(34, 26, "bigmosque");
-  put(47, 26, "factory"); put(50, 26, "workshop"); put(29, 36, "datefactory"); put(33, 36, "mall"); put(37, 36, "souq");
-  // water and power for everyone: a desalination plant and two wind farms between the streets
-  put(36, 31, "desal"); put(29, 31, "windfarm"); put(41, 31, "windfarm"); put(40, 26, "generator"); put(22, 31, "tank"); put(50, 31, "tank");
-  s.era = 2; s.money = 300000; s.pop = 0; s.tech = { ...(s.tech || {}), asphalt: true, wind: true, desal: true };
+  for (let y = 25; y <= 45; y++) for (let x = 26; x <= 47; x++) {
+    const t = s.tiles[idx(x, y)];
+    t.b = null;
+    if (t.t === "rock" || t.t === "wadi") t.t = "sand";
+  }
+  const put = (x, y, id, lvl = 0) => {
+    const t = s.tiles[idx(x, y)];
+    t.t = "sand";
+    const res = id === "house" ? [3, 6, 10, 16, 42, 92][lvl] : 0;
+    t.b = { id, lvl, res, cond: 100 };
+  };
+  for (let x = 29; x <= 44; x++) {
+    put(x, 35, x > 31 && x < 41 ? "avenue" : "asphalt");
+    if (x <= 42) put(x, 30, "asphalt");
+    if (x <= 36) put(x, 39, "road");
+  }
+  for (const x of [32, 40]) for (let y = 30; y <= 39; y++) put(x, y, x === 32 && y > 35 ? "road" : "asphalt");
+  put(32, 35, "signal"); put(40, 35, "roundabout"); put(40, 30, "signal");
+  [
+    [34,34,"heritage"], [35,34,"souq"], [36,34,"bigmosque"], [37,34,"cafe",1], [38,34,"grocery",1],
+    [33,36,"lantern"], [34,36,"cafe"], [35,36,"streetpalm"], [36,36,"bigfountain"], [37,36,"streetpalm"], [38,36,"park"],
+    [34,37,"house",1], [35,37,"flowers"], [36,37,"olivetree"], [37,37,"flowers"], [38,37,"house",3],
+    [29,36,"house",0], [30,36,"house",0], [31,36,"mosque"], [31,37,"house",1], [31,38,"house",0],
+    [33,38,"house",1], [34,38,"house",2], [35,38,"well"],
+    [33,31,"house",3], [34,31,"house",4], [35,31,"library"], [36,31,"house",4], [37,31,"school"], [38,31,"clinic"], [39,31,"house",3],
+    [34,32,"park"], [36,32,"streetpalm"], [38,32,"park"], [35,33,"flowers"], [37,33,"streetpalm"],
+    [30,29,"tank"], [31,29,"windfarm"], [33,29,"desal"], [35,29,"mall"], [37,29,"house",5], [39,29,"hotel"],
+    [41,31,"oilpress"], [42,31,"olive"], [41,33,"house",2], [42,34,"palms"], [43,34,"palms"], [44,34,"datefactory"],
+    [41,36,"fountain"], [42,36,"house",3], [43,36,"house",4], [44,36,"workshop"], [41,37,"park"], [42,37,"desal"], [43,32,"powerplant"],
+    [41,34,"gate"], [43,33,"tower"], [38,38,"house",3], [37,38,"house",2], [28,32,"generator"], [28,33,"windfarm"], [28,35,"marid"], [30,40,"pen"], [32,40,"palms"], [33,41,"palms"],
+  ].forEach((args) => put(...args));
+  for (let y = 38; y <= 47; y++) for (let x = 36; x <= 47; x++) {
+    const t = s.tiles[idx(x, y)];
+    if (t.b) continue;
+    const d = ((x - 41.0 + (y - 42) * 0.69) / 3.8) ** 2 + ((y - 42) / 2.75) ** 2;
+    if (d < 1) t.t = "lake";
+    else if (d < 2.1) t.t = "wadi";
+  }
+  put(44, 40, "dam"); put(40, 39, "palms"); put(39, 39, "olive"); put(43, 38, "palms");
+  for (const [x,y] of [[35,41],[36,42],[35,43],[36,43],[37,44],[38,45],[31,42],[32,43],[33,43],[33,45],[45,41],[46,40],[46,41]]) {
+    s.tiles[idx(x,y)].t = "rock";
+  }
+  for (let x = 30; x <= 46; x++) put(x, 24, "asphalt");
+  for (let y = 24; y < 30; y++) put(40, y, "asphalt");
+  for (let x = 20; x <= 29; x++) put(x, 34, "road");
+  put(29, 33, "road");
+  for (let x = 45; x <= 51; x++) put(x, 35, "asphalt");
+  for (let y = 35; y <= 45; y++) put(47, y, "asphalt");
+  for (let y = 39; y <= 48; y++) put(32, y, "asphalt");
+  for (let x = 21; x <= 32; x++) put(x, 44, "asphalt");
+  for (let x = 32; x <= 42; x++) put(x, 48, x < 35 ? "asphalt" : "avenue");
+  for (let x = 47; x <= 52; x++) put(x, 45, "asphalt");
+  [
+    [32,23,"stadium"], [34,23,"university"], [36,23,"hospital"], [38,23,"library"], [39,25,"civil"],
+    [35,25,"police"], [37,25,"parking"], [38,26,"school"], [35,27,"bank",2], [37,27,"clinic"],
+    [33,25,"mall",2], [34,27,"mandi",2], [31,25,"vault",3],
+    [42,23,"streetpalm"], [43,23,"lantern"], [41,26,"dallah"], [43,26,"fountain"],
+    [45,26,"incense"], [42,28,"olivetree"], [44,28,"bigfountain"], [46,28,"flowers"],
+    [21,32,"olive"], [23,32,"pivot"], [25,32,"veg"], [27,32,"palms"],
+    [21,35,"pen"], [23,35,"livestock"], [25,35,"veg"], [27,35,"well"], [23,36,"olive"],
+    [47,34,"quarry"], [49,34,"blockfactory"], [51,34,"mill"], [46,36,"generator"],
+    [48,36,"factory"], [49,37,"dairy"], [50,36,"solar"], [51,37,"windfarm"], [46,37,"pole"],
+    [48,38,"powerplant"], [51,33,"tank"], [52,35,"desal"],
+    [22,43,"airport"], [25,43,"station"], [28,43,"bigstadium"], [26,45,"parking"], [28,45,"mazayen"],
+    [34,47,"lantern"], [37,47,"themepark"], [40,47,"skyline"], [35,49,"mandi"], [37,49,"hotel",2],
+    [38,49,"streetpalm"], [40,49,"fountain"],
+    [48,44,"milhq",2], [50,44,"dronebase",2], [52,44,"radar",2],
+    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2]
+  ].forEach((args) => put(...args));
+  s.tiles[idx(47,34)].t = "rock";
+  s.tiles[idx(44,40)].t = "wadi";
+  s.lake = 84;
+  s.era = 4; s.money = 44000; s.pop = s.tiles.reduce((sum, t) => sum + (t.b?.res || 0), 0);
+  s.tech = { ...s.tech, asphalt: true, wind: true, desal: true };
+  s.cam = { x: 1.15, z: 1.1, zoom: innerWidth < 560 ? 0.84 : 0.96, yawTarget: 0.79 };
   return s;
+}
+
+function pvSample() {
+  const name = "عمدة_التجربة", town = "واحة الرافعية", plot = worldPlot(19, 14), secret = "trial";
+  const state = pvReadyTown(newGame(89213, { name: town, site: "world", terrain: "plain" }));
+  state.day = pvHour();
+  state.world = { plot, owner: name, start: state.day };
+  pvState.players[name] = { name, plot, secret, created: Date.now() };
+  pvState.plots[plot] = { plot, owner: name, town, terrain: state.terrain, pop: state.pop, happy: state.happy, money: state.money, era: state.era, updated: Date.now(), snapshot: pack(state) };
+  pvSave();
+  return { id: { name, secret, plot }, town: state };
 }
 
 globalThis.RAFAYA_PREVIEW = pvApi;
 globalThis.RAFAYA_PREVIEW_TOWN = pvReadyTown;
+globalThis.RAFAYA_PREVIEW_SAMPLE = pvSample;
+let pvLight = 0;
+let pvWeather = 2;
+const pvWeatherModes = [
+  { label: "مطر", rain: 1, wet: 1 },
+  { label: "بعد المطر", rain: 0, wet: 0.7 },
+  { label: "صحو", rain: 0, wet: 0 },
+];
+const pvLighting = [{ label: "العصر", time: 0.62 }, { label: "الغروب", time: 0.735 }, { label: "الليل", time: 0.9 }];
+globalThis.RAFAYA_PREVIEW_LIGHT = () => pvLighting[pvLight].time;
+globalThis.RAFAYA_PREVIEW_WEATHER = () => pvWeatherModes[pvWeather];
 setInterval(() => { try { pvWar.settle(); pvBots(); } catch (e) { console.warn(e); } }, 8000);
-/** Start the trial world again from nothing (from the menu note). */
-globalThis.RAFAYA_PREVIEW_RESET = () => { for (const k of [PV_KEY, "rafaya-world-id", "rafaya-world-town"]) localStorage.removeItem(k); for (const k of Object.keys(localStorage)) if (k.startsWith("rafaya-war-")) localStorage.removeItem(k); location.reload(); };
-
-// a note on the menu: this is the trial, and a way to start it again
+/** Start the trial world again without touching other game saves. */
+globalThis.RAFAYA_PREVIEW_RESET = () => {
+  try { for (const k of Object.keys(localStorage)) if (k === PV_KEY || k.startsWith(globalThis.RAFAYA_PREVIEW_STORAGE)) localStorage.removeItem(k); } catch { /* storage can be disabled */ }
+  location.reload();
+};
 {
-  const pvNote = document.createElement("div");
-  pvNote.className = "pv-note";
-  pvNote.innerHTML = `<b>🧪 نسخة تجريبية لـ«صراع الجوف»</b><small>عالم الجوف هنا تجريبي داخل الملف، فيه ٣ مدن خصوم، والأوقات أقصر عشان تجرب بسرعة. ما ينرسل شي للموقع.</small><button type="button" class="btn" id="pvReset">ابدأ العالم التجريبي من جديد</button>`;
-  document.getElementById("menu")?.prepend(pvNote);
-  document.getElementById("pvReset")?.addEventListener("click", (e) => { if (!e.target.dataset.sure) { e.target.dataset.sure = "1"; e.target.textContent = "متأكد؟ اضغط مرة ثانية"; return; } globalThis.RAFAYA_PREVIEW_RESET(); });
+  document.body.classList.add("visual-preview");
+  document.querySelector(".menu-eyebrow").textContent = "تجربة الرافعية الجديدة";
+  document.querySelector(".menu-sub").textContent = "من بيوت الطين إلى أبراج المدينة";
+  const entry = document.getElementById("mWorld");
+  entry.querySelector("b").textContent = "ادخل واحة الرافعية";
+  entry.querySelector("small").textContent = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
+  const reset = document.createElement("button");
+  reset.type = "button"; reset.className = "pv-reset"; reset.textContent = "أعد التجربة من البداية";
+  reset.addEventListener("click", () => { if (confirm("ترجع المدينة التجريبية لبدايتها؟")) globalThis.RAFAYA_PREVIEW_RESET(); });
+  document.querySelector(".menu-actions").append(reset);
+  const lighting = document.createElement("button");
+  lighting.type = "button"; lighting.className = "pv-light";
+  lighting.textContent = "الإضاءة · العصر";
+  lighting.addEventListener("click", () => {
+    pvLight = (pvLight + 1) % pvLighting.length;
+    lighting.textContent = `الإضاءة · ${pvLighting[pvLight].label}`;
+  });
+  const weather = document.createElement("button");
+  weather.type = "button"; weather.className = "pv-light";
+  weather.textContent = `الجو · ${pvWeatherModes[pvWeather].label}`;
+  weather.addEventListener("click", () => {
+    pvWeather = (pvWeather + 1) % pvWeatherModes.length;
+    weather.textContent = `الجو · ${pvWeatherModes[pvWeather].label}`;
+  });
+  const angle = document.createElement("select");
+  angle.className = "pv-light pv-scenes";
+  angle.setAttribute("aria-label", "مشاهد المدينة");
+  angle.append(new Option("المشاهد", "", true, true));
+  angle.options[0].disabled = true;
+  PV_SCENES.forEach((scene, i) => angle.append(new Option(scene.title, i)));
+  angle.addEventListener("change", () => {
+    const next = PV_SCENES[Number(angle.value)], world = globalThis.__world;
+    if (!world || !next) return;
+    world.view.zoom = next.zoom;
+    world.focus(next.x, next.y);
+    angle.value = "";
+  });
+  const controls = document.createElement("div");
+  controls.className = "pv-controls";
+  controls.append(weather, lighting, angle);
+  document.body.append(controls);
 }
