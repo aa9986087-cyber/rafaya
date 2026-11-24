@@ -1460,7 +1460,7 @@ export class World {
       const gx = pt.x + dir.x * t, gz = pt.z + dir.z * t;
       x0 = Math.min(x0, gx); x1 = Math.max(x1, gx); z0 = Math.min(z0, gz); z1 = Math.max(z1, gz);
     }
-    const M = this.cullMargin ?? 3;
+    const M = this.cullMargin ?? 2;
     x0 -= M; x1 += M; z0 -= M; z1 += M;
     const tc = new THREE.Color(), pos = new THREE.Vector3();
     let drawn = 0;
@@ -1469,7 +1469,10 @@ export class World {
       if (!inst) continue;
       if (inst.far !== far) { // the far or the near model for this key
         const geo = (far ? modelFar(inst.key, inst.ground) : model(inst.key, inst.ground)) || {};
-        for (const set of SETS) if (inst[set]) { if (geo[set]) { inst[set].geometry = geo[set]; inst[set].visible = true; } else inst[set].visible = false; }
+        for (const set of SETS) if (inst[set]) {
+          if (geo[set]) { inst[set].geometry = geo[set]; inst[set].visible = true; } else inst[set].visible = false;
+          inst[set].castShadow = !far && set !== "lights" && this.quality !== "low"; // a whole town seen from afar: its shadows are specks, and drawing them again doubles the cost
+        }
         inst.far = far;
       }
       let n = 0;

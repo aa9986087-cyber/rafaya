@@ -37,7 +37,18 @@ class Builder {
     g.applyMatrix4(tmp.matrix);
     const c = new THREE.Color(color);
     const n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    // baked ambient occlusion: walls darken toward the ground they stand on, and faces turned down are in shade
+    // (no cost while playing: it is in the vertex colours, once). Lights and glass keep their colour.
+    const ao = set !== "lights" && set !== "glow" && set !== "glass", P = g.attributes.position.array, Nn = g.attributes.normal?.array;
+    for (let i = 0; i < n; i++) {
+      let k = 1;
+      if (ao) {
+        const y = P[i * 3 + 1], t = Math.min(1, Math.max(0, y / 0.14));
+        k = 0.8 + 0.2 * t * t * (3 - 2 * t);
+        if (Nn && Nn[i * 3 + 1] < -0.5) k *= 0.82;
+      }
+      col[i * 3] = c.r * k; col[i * 3 + 1] = c.g * k; col[i * 3 + 2] = c.b * k;
+    }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     for (const k of Object.keys(g.attributes)) if (!["position", "normal", "color", "uv"].includes(k)) g.deleteAttribute(k);
     this.sets[set].push(g);
@@ -162,7 +173,7 @@ export function oliveTree(b, x, z, s = 1) {
   b.add(new THREE.IcosahedronGeometry(0.065 * s, 0), "#6e8a4e", { x: x - 0.05 * s, y: 0.19 * s, z: z - 0.04 * s, sy: 0.8 });
 }
 export function palm(b, x, z, s = 1, lean = 0) {
-  if (b.far) { // from afar: a trunk and a crown of six drooping fronds (the close-up palm has ~600 faces)
+  if (b.far || s < 0.6) { // from afar, and the small decorative palms by doors and in planters: a trunk and six drooping fronds (the full palm has ~600 faces)
     const h = 0.62 * s, tx = x + lean * 0.2;
     b.add(new THREE.CylinderGeometry(0.024 * s, 0.034 * s, h, 5), C.trunk, { x: x + lean * 0.1, y: h / 2, z, rz: -lean * 0.15 });
     for (let i = 0; i < 6; i++) {
@@ -1695,6 +1706,374 @@ function vaultParts(b, k) {
   if (k >= 2) { b.dome(0.16, "#d9b55a", { y: h + 0.04, z: -0.04 }, "metal"); b.cyl(0.012, 0.012, 0.12, C.gold, { y: h + 0.2, z: -0.04 }, 6, "metal"); }
   b.box(0.16, 0.04, 0.02, "#1f6f5c", { y: h - 0.03, z: -0.04 + d / 2 + 0.006 });
 }
+// ---------- RAFAYA REMASTERED: civic buildings (stage 3) ----------
+// A kit of Saudi civic architecture: a stone plinth, a block with a parapet and a trim band, framed windows
+// with sills, an entrance canopy, mashrabiya screens, roof units, planters. The buildings keep their place on
+// the tile, their colours and what they are; they gain the details a real building has.
+const K = { stone: "#d8c7a6", stoneDark: "#bfae8c", plaster: "#eee6d6", trim: "#cdbb98", frame: "#4b4037", glass: "#4f7f99", dark: "#3a332c", roof: "#d9d1c0", unit: "#c9ccce", shade: "#8a7a64" };
+/** A building block: body, a darker plinth band, a parapet cap and a thin cornice line. Returns its top. */
+function kBlock(b, w, h, d, color, o = {}) {
+  const { x = 0, z = 0, y = 0, cap = K.trim, parapet = 0.05 } = o;
+  b.box(w, h, d, color, { x, y, z });
+  b.box(w + 0.012, 0.035, d + 0.012, K.stoneDark, { x, y, z });                         // plinth band
+  b.box(w + 0.02, 0.022, d + 0.02, cap, { x, y: y + h - 0.012, z });                    // cornice
+  b.box(w + 0.01, parapet, 0.02, color, { x, y: y + h, z: z + d / 2 - 0.005 });         // parapet walls
+  b.box(w + 0.01, parapet, 0.02, color, { x, y: y + h, z: z - d / 2 + 0.005 });
+  b.box(0.02, parapet, d, color, { x: x + w / 2 - 0.005, y: y + h, z });
+  b.box(0.02, parapet, d, color, { x: x - w / 2 + 0.005, y: y + h, z });
+  b.box(w - 0.03, 0.006, d - 0.03, K.roof, { x, y: y + h + 0.01, z });                  // roof deck, inside the cornice
+  return y + h;
+}
+/** A row of framed windows on a face. face: "front" (+z), "side" (+x). */
+function kWindows(b, w, y, n, at, o = {}) {
+  const { face = "front", x0 = 0, h = 0.085, lit = true, glass = K.glass, frame = K.frame } = o;
+  for (let i = 0; i < n; i++) {
+    const u = x0 - w / 2 + (i + 0.5) * w / n, ww = Math.min(0.09, w / n * 0.55);
+    const at3 = (dx, dz) => (face === "front" ? { x: u + dx, z: at + dz } : { x: at + dz, z: u + dx, ry: Math.PI / 2 });
+    if (!b.far) { // from afar a window is just its glass
+      b.box(ww + 0.016, h + 0.016, 0.01, frame, { y: y - 0.008, ...at3(0, 0.002) });
+      b.box(ww + 0.03, 0.01, 0.022, K.stone, { y: y - 0.014, ...at3(0, 0.01) });        // sill
+    }
+    b.box(ww, h, 0.012, glass, { y, ...at3(0, 0.006) }, "shiny");
+    if (lit && i % 2 === 0) b.box(ww * 0.8, h * 0.7, 0.013, C.light, { y: y + h * 0.15, ...at3(0, 0.0065) }, "lights");
+  }
+}
+/** An entrance: steps, a flat canopy on two posts, glass doors with a light over them. */
+function kEntrance(b, x, z, w = 0.22, color = K.trim, y = 0) {
+  b.box(w + 0.08, 0.02, 0.08, K.stone, { x, y, z: z + 0.04 });
+  b.box(w + 0.06, 0.018, 0.14, color, { x, y: y + 0.2, z: z + 0.06 });
+  for (const s of [-1, 1]) b.cyl(0.008, 0.008, 0.2, K.frame, { x: x + s * (w / 2 + 0.01), y, z: z + 0.12 }, 6);
+  b.box(w * 0.8, 0.16, 0.012, K.glass, { x, y: y + 0.02, z: z + 0.004 }, "shiny");
+  b.box(0.006, 0.16, 0.014, K.frame, { x, y: y + 0.02, z: z + 0.006 });
+  b.box(w * 0.6, 0.012, 0.012, C.light, { x, y: y + 0.19, z: z + 0.12 }, "lights");
+}
+/** A mashrabiya: a wooden lattice screen over a window. */
+function kMashrabiya(b, x, y, z, w = 0.12, h = 0.12, face = "front") {
+  const P = (dx, dy) => (face === "front" ? { x: x + dx, y: y + dy, z } : { x: z, y: y + dy, z: x + dx, ry: Math.PI / 2 });
+  b.box(w + 0.02, h + 0.02, 0.016, "#6b4a2e", P(0, -0.01));
+  for (let i = 1; i < 4; i++) b.box(0.006, h, 0.02, "#8a6440", P(-w / 2 + i * w / 4, 0));
+  for (let j = 1; j < 4; j++) b.box(w, 0.006, 0.02, "#8a6440", P(0, j * h / 4 - 0.003));
+}
+/** Roof gear: split-AC units, a water tank or two, a satellite dish. */
+function kRoof(b, w, d, top, o = {}) {
+  const { tanks = 1, acs = 2, dish = false, x = 0, z = 0 } = o;
+  for (let i = 0; i < acs; i++) { b.box(0.07, 0.045, 0.05, K.unit, { x: x - w / 2 + 0.08 + i * 0.1, y: top, z: z - d / 2 + 0.07 }); b.cyl(0.016, 0.016, 0.004, K.shade, { x: x - w / 2 + 0.08 + i * 0.1, y: top + 0.045, z: z - d / 2 + 0.07 }, 8); }
+  for (let i = 0; i < tanks; i++) b.cyl(0.035, 0.035, 0.07, "#e8e8e4", { x: x + w / 2 - 0.08 - i * 0.09, y: top, z: z - d / 2 + 0.08 }, 10);
+  if (dish) { b.add(new THREE.SphereGeometry(0.04, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2.4), "#f2f2f0", { x: x + w / 2 - 0.08, y: top + 0.06, z: z + d / 2 - 0.08, rx: -0.9 }); b.cyl(0.006, 0.006, 0.06, K.shade, { x: x + w / 2 - 0.08, y: top, z: z + d / 2 - 0.08 }, 5); }
+}
+/** A planter box with a shrub, or a young palm. */
+function kPlanter(b, x, z, kind = "shrub") {
+  b.box(0.07, 0.04, 0.07, K.stoneDark, { x, z });
+  if (kind === "palm") palm(b, x, z, 0.45);
+  else b.add(new THREE.IcosahedronGeometry(0.04, 0), C.leaf, { x, y: 0.07, z });
+}
+/** A paved forecourt with parking bays. */
+function kParking(b, x, z, w, d, bays = 3) {
+  b.box(w, 0.008, d, "#9a9890", { x, z });
+  for (let i = 0; i <= bays; i++) b.box(0.006, 0.009, d * 0.7, "#f2f2ee", { x: x - w / 2 + i * w / bays, z });
+}
+/** A ground slab for the whole tile, a touch lighter at the edge (a kerb). */
+function kGround(b, color = "#d9cba8") { b.box(0.96, 0.012, 0.96, color); b.box(0.98, 0.006, 0.98, "#c7b894"); }
+
+Object.assign(MAKERS, {
+  school(b) { // green roof line, the flag, the gate: a two-storey school with a shaded courtyard
+    kGround(b, "#d6c9a3");
+    const top = kBlock(b, 0.84, 0.4, 0.36, "#eadfc0", { z: -0.22, cap: C.green });
+    for (const y of [0.1, 0.27]) kWindows(b, 0.76, y, 6, -0.04, {});
+    kWindows(b, 0.3, 0.27, 2, 0.42, { face: "side", x0: -0.22 });
+    b.box(0.86, 0.035, 0.02, C.green, { y: 0.375, z: -0.035 });                          // the school's green band
+    kEntrance(b, 0, -0.04, 0.2, C.green);
+    kRoof(b, 0.84, 0.36, top, { tanks: 2, acs: 3, x: 0, z: -0.22 });
+    // the yard: a shade sail over benches, a basketball hoop, the fence and gate
+    b.box(0.86, 0.008, 0.4, "#c9b98f", { z: 0.22 });
+    b.add(new THREE.PlaneGeometry(0.3, 0.2), "#f4f1ea", { x: 0.22, y: 0.2, z: 0.24, rx: -Math.PI / 2 + 0.12 });
+    for (const [px, pz] of [[0.08, 0.15], [0.36, 0.15], [0.08, 0.34], [0.36, 0.34]]) b.cyl(0.006, 0.006, 0.2, K.frame, { x: px, z: pz }, 5);
+    for (const z of [0.18, 0.3]) b.box(0.18, 0.03, 0.04, "#8a6440", { x: 0.22, z });
+    b.cyl(0.006, 0.006, 0.22, K.shade, { x: -0.34, z: 0.38 }, 5); b.box(0.06, 0.04, 0.006, "#f2f2ee", { x: -0.34, y: 0.22, z: 0.37 });
+    flag(b, -0.4, 0.06, 0.55);
+    wallAround(b, 0.92, 0.07, "#e2d6b6", true);
+    for (const x of [-0.1, 0.1]) b.box(0.03, 0.12, 0.03, C.white, { x, z: 0.46 });
+    kPlanter(b, -0.2, 0.02); kPlanter(b, 0.2, 0.02);
+  },
+  clinic(b) { // white walls, the green band and the red crescent
+    kGround(b);
+    kParking(b, 0.2, 0.34, 0.46, 0.18, 3);
+    const top = kBlock(b, 0.7, 0.34, 0.46, C.white, { z: -0.12, cap: C.green });
+    b.box(0.72, 0.03, 0.02, C.green, { y: 0.3, z: 0.115 });
+    kWindows(b, 0.66, 0.14, 5, 0.112, { x0: 0 });
+    kWindows(b, 0.36, 0.14, 3, 0.352, { face: "side", x0: -0.12 });
+    kEntrance(b, -0.18, 0.112, 0.18, C.green);
+    b.box(0.14, 0.14, 0.012, C.white, { x: 0.2, y: 0.36, z: 0.11 });
+    crescent(b, 0.2, 0.43, 0.12);
+    kRoof(b, 0.7, 0.46, top, { tanks: 1, acs: 3, z: -0.12 });
+    b.box(0.16, 0.08, 0.1, "#e8e2d8", { x: -0.32, z: 0.3 }); b.box(0.15, 0.02, 0.022, C.red, { x: -0.32, y: 0.05, z: 0.35 }); // the ambulance bay sign
+    kPlanter(b, -0.04, 0.2); kPlanter(b, 0.4, 0.15, "palm");
+  },
+  police(b) { // white and blue, the patrol car at the door
+    kGround(b);
+    kParking(b, 0.12, 0.33, 0.6, 0.2, 3);
+    const top = kBlock(b, 0.72, 0.42, 0.48, C.white, { z: -0.12, cap: C.blue });
+    b.box(0.74, 0.06, 0.02, C.blue, { y: 0.2, z: 0.125 });
+    b.box(0.02, 0.06, 0.5, C.blue, { x: 0.365, y: 0.2, z: -0.12 });
+    for (const y of [0.08, 0.28]) kWindows(b, 0.68, y, 5, 0.122, {});
+    kWindows(b, 0.4, 0.28, 3, 0.362, { face: "side", x0: -0.12 });
+    kEntrance(b, 0, 0.122, 0.18, C.blue);
+    b.box(0.28, 0.05, 0.014, C.blue, { y: 0.34, z: 0.127 }); b.box(0.06, 0.06, 0.016, C.gold, { x: -0.18, y: 0.335, z: 0.128 });
+    kRoof(b, 0.72, 0.48, top, { tanks: 1, acs: 2, dish: true, z: -0.12 });
+    b.cyl(0.006, 0.006, 0.3, K.shade, { x: 0.3, y: top, z: -0.3 }, 5);                     // the radio mast
+    b.box(0.05, 0.03, 0.04, C.blue, { x: -0.3, y: top, z: 0 }, "lights");
+    car(b, 0.22, 0.34, 0, C.white); b.box(0.06, 0.015, 0.03, C.blue, { x: 0.22, y: 0.14, z: 0.34 }, "lights");
+    flag(b, -0.42, 0.3, 0.5);
+  },
+  civil(b) { // red trim and the big garage doors of the fire station
+    kGround(b);
+    b.box(0.6, 0.008, 0.26, "#a8a49a", { x: 0.06, z: 0.32 });
+    const top = kBlock(b, 0.76, 0.42, 0.5, "#efe7da", { z: -0.12, cap: "#d1421f" });
+    for (const x of [-0.12, 0.2]) { b.box(0.24, 0.26, 0.014, "#b3261e", { x, z: 0.132 }); for (let i = 1; i < 5; i++) b.box(0.24, 0.004, 0.016, "#8f1f18", { x, y: i * 0.052, z: 0.133 }); b.box(0.26, 0.02, 0.02, K.trim, { x, y: 0.26, z: 0.134 }); }
+    kWindows(b, 0.2, 0.32, 2, 0.13, { x0: -0.26 });
+    kWindows(b, 0.4, 0.32, 3, 0.382, { face: "side", x0: -0.12 });
+    b.box(0.78, 0.04, 0.02, "#d1421f", { y: 0.38, z: 0.135 });
+    b.box(0.1, 0.42, 0.1, "#efe7da", { x: -0.38, y: top - 0.42, z: -0.32 }); b.box(0.1, 0.18, 0.1, "#efe7da", { x: -0.38, y: top, z: -0.32 }); // the drill tower
+    b.box(0.12, 0.02, 0.12, "#d1421f", { x: -0.38, y: top + 0.18, z: -0.32 });
+    b.box(0.08, 0.04, 0.04, "#ff5a2a", { y: top + 0.01 }, "lights");
+    b.box(0.22, 0.08, 0.1, "#c8281e", { x: 0.2, z: 0.34 }); b.box(0.08, 0.05, 0.096, K.glass, { x: 0.28, y: 0.08, z: 0.34 }, "shiny"); // a fire engine at the door
+    b.box(0.18, 0.012, 0.012, "#e8e8e8", { x: 0.18, y: 0.09, z: 0.39 });
+  },
+  bank(b) { // stone, columns, the gold line: a dignified bank with a mashrabiya upper floor
+    kGround(b, "#d9c9a6");
+    const top = kBlock(b, 0.74, 0.48, 0.52, "#ebe3d3", { z: -0.08, cap: K.stone });
+    b.box(0.66, 0.05, 0.16, K.stone, { y: 0.44, z: 0.26 });
+    b.box(0.62, 0.03, 0.14, K.stone, { y: 0.0, z: 0.26 });
+    for (const x of [-0.24, -0.08, 0.08, 0.24]) { b.cyl(0.026, 0.03, 0.42, C.white, { x, y: 0.03, z: 0.31 }, 10); b.box(0.07, 0.02, 0.07, K.stone, { x, y: 0.42, z: 0.31 }); }
+    b.box(0.16, 0.24, 0.014, K.glass, { z: 0.183, y: 0.03 }, "shiny");
+    b.box(0.4, 0.06, 0.016, "#1f6f5c", { y: 0.36, z: 0.185 }); b.box(0.2, 0.022, 0.018, C.gold, { y: 0.375, z: 0.194 });
+    for (const x of [-0.26, 0.26]) kMashrabiya(b, x, 0.3, 0.19, 0.1, 0.1);
+    kWindows(b, 0.44, 0.3, 3, 0.372, { face: "side", x0: -0.08 });
+    kRoof(b, 0.74, 0.52, top, { tanks: 1, acs: 2, z: -0.08 });
+    b.box(0.03, 0.1, 0.03, C.gold, { x: -0.3, y: top, z: -0.26 });
+    b.box(0.08, 0.14, 0.05, "#3c4a52", { x: 0.38, z: 0.32 }); b.box(0.05, 0.04, 0.052, C.light, { x: 0.38, y: 0.08, z: 0.32 }, "lights"); // the ATM
+  },
+  grocery(b) { // the corner shop: plaster, the green awning, crates of fruit out front
+    kGround(b);
+    const top = kBlock(b, 0.68, 0.34, 0.5, C.plaster, { z: -0.06, cap: K.stone });
+    b.box(0.5, 0.2, 0.014, K.glass, { z: 0.193, y: 0.02 }, "shiny");
+    b.box(0.46, 0.15, 0.016, C.light, { z: 0.194, y: 0.04 }, "lights");
+    for (const x of [-0.25, 0, 0.25]) b.box(0.012, 0.22, 0.016, K.frame, { x, z: 0.195 });
+    awning(b, 0.68, 0.25, 0.2, C.green);
+    for (let i = 0; i < 8; i++) b.box(0.085, 0.004, 0.17, i % 2 ? "#f2f2ea" : C.green, { x: -0.3 + i * 0.085, y: 0.265, z: 0.3, rx: 0.35 });
+    b.box(0.5, 0.07, 0.02, C.green, { y: 0.29, z: 0.2 }); b.box(0.3, 0.03, 0.022, "#f4f1e6", { y: 0.31, z: 0.206 });
+    for (let i = 0; i < 4; i++) { b.box(0.08, 0.05, 0.08, "#8a6440", { x: -0.24 + i * 0.1, z: 0.36 }); b.box(0.07, 0.02, 0.07, [C.orange, C.red, "#e8c43a", C.leaf][i], { x: -0.24 + i * 0.1, y: 0.05, z: 0.36 }); }
+    kRoof(b, 0.68, 0.5, top, { tanks: 1, acs: 1, z: -0.06 });
+    b.box(0.07, 0.11, 0.06, "#c43c3c", { x: 0.3, z: 0.34 }); b.box(0.05, 0.06, 0.062, "#eaf2f4", { x: 0.3, y: 0.03, z: 0.34 }, "shiny"); // a drinks fridge
+  },
+  mall(b) { // glass front, the teal band, the glass dome
+    kGround(b, "#d5d2c8");
+    kParking(b, 0, 0.42, 0.9, 0.12, 6);
+    const top = kBlock(b, 0.9, 0.56, 0.72, "#dfe6e7", { z: -0.1, cap: K.stone });
+    b.box(0.9, 0.34, 0.014, K.glass, { y: 0.05, z: 0.263 }, "shiny");
+    for (let i = 0; i < 9; i++) b.box(0.01, 0.34, 0.018, "#9aa4a8", { x: -0.44 + i * 0.11, y: 0.05, z: 0.266 });
+    b.box(0.86, 0.26, 0.016, C.light, { y: 0.08, z: 0.264 }, "lights");
+    b.box(0.92, 0.03, 0.03, "#9aa4a8", { y: 0.39, z: 0.27 });
+    b.box(0.52, 0.1, 0.03, C.teal, { y: 0.44, z: 0.27 }); b.box(0.3, 0.035, 0.032, "#f4f1e6", { y: 0.47, z: 0.276 });
+    b.add(new THREE.BoxGeometry(0.44, 0.02, 0.16), C.white, { y: 0.3, z: 0.34 });
+    for (const x of [-0.2, 0.2]) b.cyl(0.01, 0.01, 0.3, "#9aa4a8", { x, z: 0.41 }, 6);
+    kWindows(b, 0.6, 0.38, 5, 0.452, { face: "side", x0: -0.1 });
+    b.dome(0.16, K.glass, { y: top, z: -0.1 }, "shiny"); b.cyl(0.17, 0.17, 0.02, K.stone, { y: top - 0.005, z: -0.1 }, 16);
+    kRoof(b, 0.9, 0.72, top, { tanks: 2, acs: 4, z: -0.1 });
+    for (const x of [-0.42, 0.42]) kPlanter(b, x, 0.3, "palm");
+  },
+  library(b) { // a reading house: stone, tall arched windows, a lantern on top
+    kGround(b);
+    const top = kBlock(b, 0.76, 0.46, 0.52, "#e6dcc6", { z: -0.08, cap: K.stone });
+    for (let i = 0; i < 4; i++) { const x = -0.27 + i * 0.18; b.box(0.08, 0.2, 0.012, K.glass, { x, y: 0.12, z: 0.183 }, "shiny"); b.add(new THREE.CircleGeometry(0.04, 10, 0, Math.PI), K.glass, { x, y: 0.32, z: 0.184 }); b.box(0.06, 0.14, 0.013, C.light, { x, y: 0.15, z: 0.183 }, "lights"); }
+    kEntrance(b, 0, 0.183, 0.14, K.stone);
+    b.box(0.3, 0.05, 0.016, "#3f5f7a", { y: 0.38, z: 0.186 });
+    b.box(0.18, 0.1, 0.18, "#e6dcc6", { y: top, z: -0.08 }); b.add(new THREE.ConeGeometry(0.14, 0.1, 4), K.stoneDark, { y: top + 0.15, z: -0.08, ry: Math.PI / 4 });
+    b.box(0.1, 0.05, 0.19, C.light, { y: top + 0.03, z: -0.08 }, "lights");
+    kWindows(b, 0.4, 0.28, 3, 0.382, { face: "side", x0: -0.08 });
+    for (const x of [-0.38, 0.38]) kPlanter(b, x, 0.32);
+    for (let i = 0; i < 2; i++) b.box(0.16, 0.025, 0.05, "#8a6440", { x: -0.2 + i * 0.4, y: 0.04, z: 0.36 });
+  },
+  hospital(b) { // the tall white block, the green H on the roof, the emergency canopy
+    kGround(b, "#d6d2c6");
+    kParking(b, 0.24, 0.38, 0.42, 0.16, 4);
+    const top = kBlock(b, 0.62, 1.0, 0.5, "#f2f0ea", { x: -0.1, z: -0.14, cap: C.green });
+    for (let f = 0; f < 5; f++) kWindows(b, 0.56, 0.1 + f * 0.18, 5, 0.112, { x0: -0.1, lit: f % 2 === 0 });
+    for (let f = 0; f < 5; f++) kWindows(b, 0.44, 0.1 + f * 0.18, 4, 0.212, { face: "side", x0: -0.14, lit: f % 2 === 1 });
+    for (let f = 1; f < 5; f++) b.box(0.64, 0.01, 0.02, C.green, { x: -0.1, y: f * 0.18, z: 0.115 });
+    const wing = kBlock(b, 0.3, 0.3, 0.3, "#f2f0ea", { x: 0.3, z: -0.04, cap: C.green });
+    kWindows(b, 0.24, 0.16, 2, 0.112, { x0: 0.3 });
+    b.box(0.34, 0.02, 0.18, "#e8e4da", { x: 0.3, y: 0.18, z: 0.2 }); b.box(0.3, 0.03, 0.02, C.red, { x: 0.3, y: 0.2, z: 0.29 }); // the emergency canopy
+    for (const x of [0.16, 0.44]) b.cyl(0.008, 0.008, 0.18, K.frame, { x, z: 0.28 }, 5);
+    b.cyl(0.13, 0.13, 0.012, C.green, { x: -0.1, y: top, z: -0.14 }, 16); b.box(0.12, 0.014, 0.025, C.white, { x: -0.1, y: top + 0.004, z: -0.14 }); b.box(0.025, 0.014, 0.12, C.white, { x: -0.13, y: top + 0.004, z: -0.14 }); b.box(0.025, 0.014, 0.12, C.white, { x: -0.07, y: top + 0.004, z: -0.14 });
+    b.box(0.2, 0.2, 0.014, C.white, { x: -0.1, y: 0.8, z: 0.118 }); b.box(0.14, 0.04, 0.016, C.red, { x: -0.1, y: 0.88, z: 0.12 }); b.box(0.04, 0.14, 0.016, C.red, { x: -0.1, y: 0.83, z: 0.12 });
+    kRoof(b, 0.3, 0.3, wing, { tanks: 1, acs: 2, x: 0.3, z: -0.04 });
+  },
+  hotel(b) { // a tall stone hotel: a lit crown, balconies, the porte-cochère and its palms
+    kGround(b, "#d9cdb2");
+    const top = kBlock(b, 0.5, 1.3, 0.46, "#e4d7bd", { z: -0.12, cap: K.stone });
+    for (let f = 0; f < 7; f++) { kWindows(b, 0.44, 0.14 + f * 0.17, 4, 0.112, { lit: (f + 1) % 3 !== 0 }); b.box(0.46, 0.012, 0.05, K.stone, { y: 0.12 + f * 0.17, z: 0.13 }); }
+    for (let f = 0; f < 7; f++) kWindows(b, 0.4, 0.14 + f * 0.17, 3, 0.252, { face: "side", x0: -0.12, lit: f % 3 === 0 });
+    b.box(0.54, 0.08, 0.5, "#cdbb98", { y: top, z: -0.12 }); b.box(0.5, 0.03, 0.47, C.light, { y: top + 0.02, z: -0.12 }, "lights");
+    b.box(0.4, 0.02, 0.2, K.stone, { y: 0.2, z: 0.24 }); for (const x of [-0.18, 0.18]) b.cyl(0.012, 0.012, 0.2, K.stone, { x, z: 0.32 }, 6);
+    b.box(0.3, 0.05, 0.016, "#7a1e2a", { y: 0.3, z: 0.115 }); b.box(0.18, 0.02, 0.018, C.gold, { y: 0.31, z: 0.12 });
+    for (const x of [-0.4, 0.4]) palm(b, x, 0.34, 0.55);
+  }
+});
+
+// ---------- RAFAYA REMASTERED: industry, power and water (stage 3) ----------
+const MT = { steel: "#9aa1a6", steelDark: "#6e757b", panel: "#b9bcbd", rust: "#a0623a", pipe: "#7d8288", warn: "#e6b422", conc: "#c9c4b8" };
+/** A metal-clad industrial shed with a ridged roof, ribbed walls and a roller door at the front. */
+function kShed(b, w, h, d, o = {}) {
+  const { x = 0, z = 0, color = MT.panel, roof = MT.steel } = o;
+  b.box(w, h, d, color, { x, z });
+  for (let i = 0; i <= Math.round(w / 0.05); i++) b.box(0.006, h - 0.02, 0.008, MT.steelDark, { x: x - w / 2 + i * w / Math.round(w / 0.05), y: 0.01, z: z + d / 2 + 0.003 });
+  b.add(new THREE.BoxGeometry(w + 0.04, 0.02, d / 2 + 0.03), roof, { x, y: h + 0.04, z: z - d / 4, rx: 0.3 });
+  b.add(new THREE.BoxGeometry(w + 0.04, 0.02, d / 2 + 0.03), roof, { x, y: h + 0.04, z: z + d / 4, rx: -0.3 });
+  b.box(w + 0.02, 0.03, 0.02, MT.steelDark, { x, y: h + 0.07, z });
+  b.box(w, 0.012, 0.012, MT.warn, { x, y: 0.02, z: z + d / 2 + 0.01 });
+}
+function kRollerDoor(b, x, z, w = 0.2, h = 0.2) {
+  b.box(w, h, 0.012, "#8b9095", { x, z });
+  for (let i = 1; i < 8; i++) b.box(w, 0.004, 0.014, "#6e757b", { x, y: i * h / 8, z });
+  b.box(w + 0.02, 0.02, 0.02, MT.warn, { x, y: h, z: z + 0.002 });
+}
+function kPipe(b, x0, z0, x1, z1, y = 0.1, r = 0.014, color = MT.pipe) {
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  b.add(new THREE.CylinderGeometry(r, r, len, 8), color, { x: (x0 + x1) / 2, y, z: (z0 + z1) / 2, rz: Math.PI / 2, ry: -Math.atan2(z1 - z0, x1 - x0) }, "metal");
+}
+function kStack(b, x, z, h, r = 0.05, color = "#b8bdc1") {
+  b.cyl(r * 0.85, r, h, color, { x, z }, 12, "metal");
+  for (const y of [h * 0.3, h * 0.65]) b.cyl(r * 0.95, r * 0.95, 0.02, MT.steelDark, { x, y, z }, 12, "metal");
+  b.cyl(r * 0.9, r * 0.9, 0.04, C.red, { x, y: h - 0.08, z }, 12); b.cyl(r * 0.9, r * 0.9, 0.04, "#f2f2ee", { x, y: h - 0.04, z }, 12);
+  b.box(0.02, 0.02, 0.02, C.red, { x, y: h + 0.01, z }, "lights");
+}
+function kFence(b, w, d, h = 0.08) {
+  for (const [x, z, ww, dd] of [[0, -d / 2, w, 0.006], [-w / 2, 0, 0.006, d], [w / 2, 0, 0.006, d]]) b.box(ww, h, dd, "#b7bcbf", { x, z }, "paint");
+  for (let i = 0; i <= 6; i++) { b.box(0.008, h + 0.01, 0.008, MT.steelDark, { x: -w / 2 + i * w / 6, z: -d / 2 }); }
+}
+
+Object.assign(MAKERS, {
+  generator(b) { // a diesel generator yard: the grey enclosure with louvres, the exhaust, a fuel tank, a fence
+    b.box(0.94, 0.012, 0.94, MT.conc);
+    b.box(0.66, 0.03, 0.4, "#b3aea2", { z: -0.04 });
+    b.rbox(0.6, 0.26, 0.34, 0.015, "#7d8288", { y: 0.03, z: -0.04 }, "paint");
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) b.box(0.07, 0.012, 0.012, "#5a5f64", { x: -0.22 + i * 0.09, y: 0.08 + j * 0.05, z: 0.135 });
+    b.box(0.6, 0.02, 0.36, "#6e757b", { y: 0.29, z: -0.04 });
+    kStack(b, 0.2, -0.14, 0.62, 0.035, "#55595d");
+    b.box(0.12, 0.05, 0.02, C.gold, { x: -0.22, y: 0.24, z: 0.136 });
+    b.add(new THREE.CylinderGeometry(0.06, 0.06, 0.26, 12), "#d9d4c4", { x: -0.2, y: 0.08, z: 0.3, rz: Math.PI / 2 }, "paint");
+    for (const x of [-0.3, -0.1]) b.box(0.02, 0.05, 0.1, MT.steelDark, { x, z: 0.3 });
+    kFence(b, 0.9, 0.9);
+    b.box(0.08, 0.08, 0.008, MT.warn, { x: 0.36, y: 0.04, z: 0.452 });
+  },
+  factory(b) { // a factory hall: saw-tooth roof with skylights, a tall stack, a loading dock and a forklift
+    b.box(0.96, 0.012, 0.96, MT.conc);
+    b.box(0.88, 0.4, 0.62, "#a6a9a8", { z: -0.1 });
+    for (let i = 0; i < 4; i++) { b.add(new THREE.BoxGeometry(0.22, 0.14, 0.62), "#7d838a", { x: -0.33 + i * 0.22, y: 0.46, z: -0.1, rz: 0.55 }); b.add(new THREE.BoxGeometry(0.008, 0.11, 0.6), "#a8c8d8", { x: -0.27 + i * 0.22, y: 0.46, z: -0.1 }, "shiny"); }
+    for (let i = 0; i < 9; i++) b.box(0.006, 0.38, 0.008, "#7d838a", { x: -0.43 + i * 0.107, y: 0.01, z: 0.214 });
+    kRollerDoor(b, -0.18, 0.214, 0.24, 0.26); kRollerDoor(b, 0.16, 0.214, 0.2, 0.22);
+    b.box(0.6, 0.05, 0.022, C.light, { x: -0.05, y: 0.34, z: 0.216 }, "lights");
+    kStack(b, 0.34, 0.32, 0.95, 0.06); kStack(b, 0.2, 0.36, 0.72, 0.045);
+    b.box(0.5, 0.05, 0.16, "#8f8a80", { x: -0.15, z: 0.3 });
+    b.box(0.07, 0.06, 0.1, MT.warn, { x: -0.36, y: 0.05, z: 0.3 }); b.box(0.008, 0.1, 0.008, MT.steelDark, { x: -0.36, y: 0.11, z: 0.35 }); // a forklift
+    for (let i = 0; i < 3; i++) b.box(0.08, 0.05, 0.08, "#8a6440", { x: -0.12 + i * 0.1, y: 0.05, z: 0.3 });
+    kPipe(b, -0.44, -0.4, 0.44, -0.4, 0.3, 0.018);
+  },
+  workshop(b) { // a workshop: the vaulted shed, a car up on the lift, tyres and crates
+    b.box(0.94, 0.012, 0.94, "#bdb7a8");
+    b.box(0.74, 0.3, 0.6, "#b7b2a6", { z: -0.06 });
+    b.add(new THREE.CylinderGeometry(0.31, 0.31, 0.76, 14, 1, false, 0, Math.PI), "#8d8a82", { y: 0.3, z: -0.06, rz: Math.PI / 2 }, "metal");
+    for (let i = 0; i < 8; i++) b.add(new THREE.TorusGeometry(0.31, 0.006, 4, 14, Math.PI), "#6e6b64", { x: -0.35 + i * 0.1, y: 0.3, z: -0.06, ry: Math.PI / 2 });
+    kRollerDoor(b, -0.12, 0.242, 0.3, 0.26);
+    b.box(0.3, 0.06, 0.016, "#c43c3c", { x: 0.2, y: 0.22, z: 0.244 });
+    b.box(0.22, 0.06, 0.1, "#3f6fa0", { x: 0.22, y: 0.1, z: 0.36 }); for (const x of [0.14, 0.3]) b.box(0.012, 0.1, 0.012, MT.steelDark, { x, z: 0.36 });
+    for (let i = 0; i < 3; i++) b.add(new THREE.TorusGeometry(0.035, 0.016, 5, 10), "#222", { x: -0.36, y: 0.02 + i * 0.03, z: 0.34, rx: Math.PI / 2 });
+    for (let i = 0; i < 2; i++) b.box(0.1, 0.08, 0.1, C.wood, { x: -0.22 + i * 0.12, z: 0.38 });
+  },
+  solar(b) { // a solar field: tilted panels in rows on steel frames, an inverter box, gravel
+    b.box(0.94, 0.012, 0.94, "#d4c59c");
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+      const x = -0.22 + c * 0.44, z = -0.33 + r * 0.22;
+      for (const dx of [-0.15, 0.15]) b.box(0.012, 0.08, 0.012, MT.steel, { x: x + dx, z: z + 0.02 }, "metal");
+      b.add(new THREE.BoxGeometry(0.42, 0.014, 0.16), "#1f3f6b", { x, y: 0.1, z, rx: -0.5 }, "shiny");
+      b.add(new THREE.BoxGeometry(0.43, 0.004, 0.17), "#c9ccce", { x, y: 0.093, z: z + 0.004, rx: -0.5 }, "metal");
+      for (let k = 1; k < 4; k++) b.add(new THREE.BoxGeometry(0.004, 0.016, 0.155), "#8aa0b8", { x: x - 0.21 + k * 0.105, y: 0.101, z, rx: -0.5 });
+    }
+    b.rbox(0.1, 0.1, 0.06, 0.01, "#e2e2de", { x: 0.4, z: 0.42 }); b.box(0.03, 0.02, 0.062, "#2c8a7a", { x: 0.4, y: 0.06, z: 0.42 }, "lights");
+  },
+  tank(b) { // the mushroom water tower: a fluted shaft, a ringed bowl, a railing, the beacon
+    b.box(0.6, 0.012, 0.6, MT.conc);
+    b.cyl(0.07, 0.1, 0.9, "#f2f0ea", {}, 16);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; b.box(0.012, 0.86, 0.012, "#dcd8cc", { x: Math.cos(a) * 0.085, z: Math.sin(a) * 0.085 }); }
+    b.cyl(0.33, 0.09, 0.22, "#d6e7ea", { y: 0.88 }, 24);
+    b.cyl(0.335, 0.335, 0.08, "#c4dbe0", { y: 1.1 }, 24);
+    b.add(new THREE.TorusGeometry(0.335, 0.008, 4, 24), "#8aa6ae", { y: 1.19, rx: Math.PI / 2 }, "metal");
+    b.dome(0.33, "#e8f2f4", { y: 1.18 });
+    b.cyl(0.03, 0.03, 0.06, "#c4dbe0", { y: 1.5 }, 8);
+    b.box(0.03, 0.02, 0.03, C.red, { y: 1.56 }, "lights");
+    b.box(0.08, 0.14, 0.012, "#7d8288", { y: 0.0, z: 0.1 });
+  },
+  powerplant(b) { // a power station: the turbine hall, two cooling towers with steam caps, the red-white stack, the switchyard
+    b.box(0.96, 0.012, 0.96, MT.conc);
+    b.box(0.56, 0.36, 0.4, "#a9aeb1", { x: -0.18, z: 0.18 });
+    for (let i = 0; i < 6; i++) b.box(0.5, 0.008, 0.012, "#8e9397", { x: -0.18, y: 0.06 + i * 0.05, z: 0.385 });
+    kRollerDoor(b, -0.3, 0.386, 0.14, 0.18);
+    b.box(0.4, 0.05, 0.016, C.light, { x: -0.12, y: 0.28, z: 0.387 }, "lights");
+    for (const [x, z, r] of [[0.26, -0.24, 0.17], [-0.22, -0.28, 0.15]]) {
+      b.add(new THREE.LatheGeometry([[r * 1.15, 0], [r * 0.85, 0.35], [r * 0.95, 0.68], [r * 0.9, 0.7]].map(([a, y]) => new THREE.Vector2(a, y)), 18), "#d3d8db", { x, z });
+      b.cyl(r * 0.92, r * 0.92, 0.025, "#b9bfc3", { x, y: 0.66, z }, 18);
+    }
+    kStack(b, 0.38, 0.3, 1.0, 0.045);
+    for (let i = 0; i < 3; i++) { b.box(0.012, 0.18, 0.012, MT.steelDark, { x: 0.14 + i * 0.1, z: 0.12 }); b.box(0.1, 0.008, 0.008, MT.steelDark, { x: 0.14 + i * 0.1, y: 0.17, z: 0.12 }); b.cyl(0.015, 0.015, 0.04, "#8a5a3a", { x: 0.14 + i * 0.1, y: 0.18, z: 0.12 }, 6); }
+    kFence(b, 0.94, 0.94);
+  },
+  datefactory(b) { // the date packing plant: a mud-coloured hall with crenellations, silos, palms painted on the sign, pallets of boxes
+    b.box(0.96, 0.012, 0.96, "#d2bc90");
+    const top = kBlock(b, 0.84, 0.38, 0.56, "#d9b884", { z: -0.12, cap: C.mudDark });
+    crenels(b, 0.84, 0.56, top + 0.04, C.mud, 0.03);
+    kRollerDoor(b, -0.2, 0.162, 0.26, 0.24);
+    b.box(0.3, 0.1, 0.016, "#7a4a1f", { x: 0.2, y: 0.24, z: 0.164 }); b.box(0.06, 0.06, 0.018, C.leaf, { x: 0.12, y: 0.26, z: 0.166 });
+    b.box(0.46, 0.04, 0.018, C.light, { x: 0.02, y: 0.32, z: 0.165 }, "lights");
+    for (const x of [0.3, 0.42]) { b.cyl(0.06, 0.06, 0.46, "#f2efe6", { x, z: 0.32 }, 12, "paint"); b.cone(0.06, 0.06, "#e2ded4", { x, y: 0.46, z: 0.32 }, 12); }
+    for (let i = 0; i < 6; i++) b.box(0.09, 0.06, 0.09, i % 2 ? C.orange : "#c46a1c", { x: -0.38 + (i % 3) * 0.1, y: Math.floor(i / 3) * 0.06 + 0.02, z: 0.34 });
+    b.box(0.32, 0.02, 0.1, "#8a6440", { x: -0.28, z: 0.34 });
+    palm(b, 0.0, 0.38, 0.45);
+  },
+  dairy(b) { // the dairy: white halls with a blue band, two steel milk silos with ladders, a tanker truck
+    b.box(0.96, 0.012, 0.96, MT.conc);
+    const top = kBlock(b, 0.74, 0.32, 0.44, C.white, { z: -0.2, cap: "#2f6f9e" });
+    b.box(0.76, 0.04, 0.02, "#2f6f9e", { y: 0.24, z: 0.025 });
+    kRollerDoor(b, -0.18, 0.024, 0.22, 0.2);
+    kWindows(b, 0.3, 0.16, 3, 0.022, { x0: 0.18 });
+    for (const x of [-0.26, -0.06]) { b.cyl(0.08, 0.08, 0.5, "#e9eef0", { x, z: 0.26 }, 16, "paint"); b.dome(0.08, "#dfe6e9", { x, y: 0.5, z: 0.26 }, "paint"); b.box(0.01, 0.5, 0.012, MT.steelDark, { x: x + 0.08, z: 0.26 }); }
+    b.box(0.26, 0.09, 0.1, "#f2f2ee", { x: 0.28, y: 0.04, z: 0.3 }); b.add(new THREE.CylinderGeometry(0.045, 0.045, 0.18, 12), "#d9dde0", { x: 0.26, y: 0.12, z: 0.3, rz: Math.PI / 2 }, "metal");
+    kRoof(b, 0.74, 0.44, top, { tanks: 0, acs: 3, z: -0.2 });
+  },
+  desal(b) { // desalination: membrane halls, big white storage tanks, blue pipe racks
+    b.box(0.96, 0.012, 0.96, MT.conc);
+    const top = kBlock(b, 0.5, 0.32, 0.4, C.white, { x: -0.2, z: -0.22, cap: "#2f6f9e" });
+    kWindows(b, 0.44, 0.16, 4, -0.018, { x0: -0.2 });
+    for (const [x, z] of [[0.25, -0.22], [0.25, 0.2], [-0.22, 0.24]]) { b.cyl(0.14, 0.14, 0.26, "#e6f0f3", { x, z }, 20, "paint"); b.cyl(0.145, 0.145, 0.02, "#8aa6ae", { x, y: 0.12, z }, 20); b.dome(0.14, "#d6e7ec", { x, y: 0.26, z }, "paint"); }
+    kPipe(b, -0.4, 0.0, 0.42, 0.0, 0.14, 0.016, "#2f6f9e"); kPipe(b, -0.4, 0.05, 0.42, 0.05, 0.1, 0.016, "#2f6f9e");
+    for (const x of [-0.3, 0, 0.3]) b.box(0.012, 0.15, 0.08, MT.steelDark, { x, z: 0.025 });
+    kRoof(b, 0.5, 0.4, top, { tanks: 0, acs: 2, x: -0.2, z: -0.22 });
+  },
+  mandi(b) { // the mandi house: plaster and red trim, a big menu board, the smoking tannour chimney, family seating
+    kGround(b);
+    const top = kBlock(b, 0.7, 0.36, 0.5, C.plaster, { z: -0.08, cap: "#9c3b22" });
+    b.box(0.5, 0.2, 0.014, K.glass, { z: 0.173, y: 0.02 }, "shiny");
+    b.box(0.46, 0.16, 0.016, C.light, { z: 0.174, y: 0.03 }, "lights");
+    for (const x of [-0.25, 0, 0.25]) b.box(0.012, 0.22, 0.016, K.frame, { x, z: 0.175 });
+    awning(b, 0.7, 0.27, 0.18, C.red);
+    b.box(0.52, 0.08, 0.02, "#9c3b22", { y: 0.3, z: 0.18 }); b.box(0.3, 0.03, 0.022, "#f4e3b8", { y: 0.325, z: 0.186 });
+    for (const x of [-0.26, 0.26]) kMashrabiya(b, x, 0.26, 0.178, 0.08, 0.06);
+    b.box(0.1, 0.1, 0.1, "#d8cbb2", { x: 0.24, y: top, z: -0.24 }); kStack(b, 0.24, -0.24, top + 0.22, 0.03, "#8e8a82");
+    for (const x of [-0.24, 0.12]) { b.box(0.16, 0.02, 0.1, "#b5332a", { x, y: 0.03, z: 0.36 }); b.box(0.16, 0.06, 0.01, "#8a6440", { x, y: 0.03, z: 0.31 }); }
+    kRoof(b, 0.7, 0.5, top, { tanks: 1, acs: 2, z: -0.08 });
+  }
+});
+
 // ---------- each place of al-Jouf builds its landmarks in its own way ----------
 // The gate, the TV tower, the skyline and the airport of a town take the style of the place it stands by on
 // al-Jouf's map (js/main.js sets it when the town opens): الرافعية keeps the models above.

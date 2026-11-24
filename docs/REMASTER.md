@@ -73,3 +73,27 @@ The plan and the measurements for the graphics update. The official game is not 
 | triangles / frame, zoomed out (high) | 3,227,420 | 833,649 |
 | buildings drawn, normal zoom | 3,600 | 320 |
 | draw calls (high) | 145 | 117 |
+
+## Stage 3: the buildings (batch 1)
+
+**Remodelled: 20 buildings, the ones that were plain boxes.** Each keeps its tile, its colours and what it is.
+- **Civic and trade:** school, clinic, police, civil defence, bank, grocery, mall, library, hospital, hotel, mandi house.
+- **Industry, power and water:** generator yard, factory, workshop, solar field, water tower, power station, date factory, dairy, desalination.
+
+**Shared kits:**
+- **Civic** (`kBlock`, `kWindows`, `kEntrance`, `kMashrabiya`, `kRoof`, `kPlanter`, `kParking`, `kGround`): stone plinths, parapets and cornices, framed windows with sills (just the glass when far), entrance canopies, mashrabiya screens, roof AC units and water tanks, planters, parking bays.
+- **Industry** (`kShed`, `kRollerDoor`, `kPipe`, `kStack`, `kFence`): ribbed metal, roller doors, pipe racks, red and white stacks, fences.
+
+**Every model:**
+- **Baked ambient occlusion:** walls darken toward the ground, and faces turned down are in shade. It is in the vertex colours, so it costs nothing while playing.
+- **Small decorative palms** (scale under 0.6) use the light palm.
+- **Zoomed out**, buildings cast no shadows: specks on screen, and a second drawing of the town.
+
+**Measured** on the same dense province, high quality, triangles per frame averaged over 6 frames:
+
+| zoom | triangles per frame |
+|---|---|
+| normal | ~0.95M |
+| far | ~0.97M |
+
+The baseline was 3.2M, and this test town is a worst case: it has 120 hotels and 120 malls.
