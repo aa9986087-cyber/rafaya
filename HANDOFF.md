@@ -265,6 +265,10 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Server side, for old cached games too: on /sync after more than 10 min without a sync, a gain above cap·1.1 since the last sync is taken back with `WarServer.fine()`. This is a charge the game applies once, plus a note.
     - It is recorded in table `awayfix`; `GET /api/world/awayfix` lists who and how much.
     - The past can't be fixed: the server never kept the money before a return.
+44. **Asleep with the game open (owner, 2026-11-24, world only):**
+    - After 15 min without a touch (`IDLE_MS`; tests set `globalThis.__idleMs`), `S.idle = { money }` is set and `runHour` caps the gain at `AWAY_CAP` for the stage.
+    - A deputy catch-up after a hidden spell is clamped to the same cap. The frame drops to 15 fps.
+    - A touch (`idleWake`) ends it and says how much was earned.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

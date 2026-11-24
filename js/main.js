@@ -1,6 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -1803,8 +1803,8 @@ async function enterWorldTown() {
   try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   if (!worldMode) { if (playing) save(); soloS = S; }
   worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
-  liveOpen();
-  S = town;
+  liveOpen(); lastTouch = Date.now();
+  S = town; S.idle = null;
   const gap = worldHourNow() - S.day;
   const report = gap > 1 ? deputyCatchUp(S, gap) : null;
   if (gap > 0 && !report) S.day = worldHourNow();
@@ -2625,8 +2625,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-12-31", world: "2027-01-02" },
+  v: { solo: "2026-12-31", world: "2027-01-03" },
   items: [
+    ["world", "😴", "اللي ينام والجوال شغال", "إذا ما لمست اللعبة ربع ساعة بعالم الجوف، النائب يمسك البلد وينطبق حد الكسب وانت برا (حسب مرحلة مدينتك)، واللعبة تخفف رسمها عشان الجوال ما يسخن. أول ما تلمس الشاشة يرجع كل شي ويقولك كم كسبت وانت غافي."],
     ["world", "🧾", "حد للكسب وانت برا", "بعالم الجوف، أكثر شي تكسبه مدينتك وانت طالع: قرية ٥٬٠٠٠، بلدة ١٠٬٠٠٠، مدينة ٢٠٬٠٠٠، محافظة ٤٠٬٠٠٠، حاضرة ٨٠٬٠٠٠. فلوسك اللي كانت قبل ما تطلع ما تنلمس أبد، والخسارة ما يزيدها الحد (درع الغياب يحميك). ولو أحد جاه أكثر من الحد ينرجع الزايد بس وتوصله رسالة."],
     ["world", "⚡", "الجوف صار مباشر", "كل شي بعالم الجوف يوصلك على طول: رسايل الشات، والإنذارات والضربات والهدن، وأخبار نشرة الجوف، ومدن الناس لما يبنون فيها (تشوفها تتغير وانت تزورها). ومدينتك توصل للناس خلال ثواني من أي بناء. والضربة تنحسب بالضبط وقت وصولها حتى لو محد فاتح."],
     ["both", "🔆", "السطوع طبيعي بالنهار", "السيارات والآبار كانت تلمع بقوة بالنهار على الرسوم العالية. الحين التوهّج بالليل بس (المصابيح والأضواء)، وبالنهار الألوان طبيعية."],
@@ -3260,8 +3261,31 @@ function showAway(r) {
 let ambT = 0;
 let last = performance.now(), acc = 0, tod = 0.36, shownTime = "";
 /** One town hour: the simulation moves on, and the screen shows what happened. */
+// ---------- asleep with the game open (al-Jouf): after 15 minutes untouched the deputy takes over ----------
+// The phone left on all night is "away" too: from the last touch the town gains at most AWAY_CAP for its
+// stage, like a mayor who left the game. The money from before is never touched. A touch ends it.
+const IDLE_MS = () => globalThis.__idleMs || 15 * 60000; // (tests shorten it)
+let lastTouch = Date.now();
+function idleCheck() {
+  if (!worldMode || visiting || !S.world) return;
+  if (!S.idle && Date.now() - lastTouch > IDLE_MS()) {
+    S.idle = { money: Math.round(S.money) };
+    toast(`😴 ما لمست اللعبة من ربع ساعة: النائب ماسك البلد. أكثر شي تكسبه لين ترجع ${money(idleCap())} ريال`, "season");
+  }
+}
+const idleCap = () => AWAY_CAP[Math.min(AWAY_CAP.length - 1, S.era)] ?? AWAY_CAP[0];
+function idleWake() {
+  lastTouch = Date.now();
+  if (!S?.idle) return;
+  const gained = Math.round(S.money - S.idle.money);
+  S.idle = null;
+  if (worldMode) toast(`☀️ هلا بك! وانت غافي ${gained >= 0 ? "كسبت" : "صرفت"} ${money(Math.abs(gained))} ريال`, "goal");
+}
+for (const ev of ["pointerdown", "keydown", "wheel"]) addEventListener(ev, idleWake, { capture: true, passive: true });
 function runHour() {
+  idleCheck();
   const { msgs } = step(S);
+  if (S.idle && S.money > S.idle.money + idleCap()) S.money = S.idle.money + idleCap(); // asleep: the away cap
   for (const m of msgs) {
     if (m.kind === "decision") continue; // its own sheet opens
     if (m.kind === "land") continue; // the ground is redrawn by the sync below
@@ -3320,7 +3344,7 @@ function frame(now) {
   const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
   // behind an open sheet, or on the main menu, the town barely needs to move
   const quiet = !busy && (!playing || (!$("sheet").hidden && !WARX.scene));
-  if (now - lastDraw < 1000 / (busy ? fpsBusy : quiet ? 15 : fpsIdle) - 2) { requestAnimationFrame(frame); return; }
+  if (now - lastDraw < 1000 / (busy ? fpsBusy : quiet || S?.idle ? 15 : fpsIdle) - 2) { requestAnimationFrame(frame); return; } // nobody watching: slow, cool and kind to the battery
   lastDraw = now;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -3331,6 +3355,7 @@ function frame(now) {
     if (!paused && wh - S.day > 3) {
       // the phone was asleep or the game in the background: the deputy ran the town (with the away cap)
       const r = deputyCatchUp(S, wh - S.day);
+      if (S.idle && S.money > S.idle.money + idleCap()) S.money = S.idle.money + idleCap(); // asleep and then hidden: still one cap
       A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); save(); refresh();
       if (r && (r.money || r.pop)) deputyReport(r);
     } else if (!paused && S.day < wh) runHour();
