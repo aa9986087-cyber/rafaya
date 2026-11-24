@@ -992,7 +992,23 @@ let sheetHide = 0;
 const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
 function here(text) {
   const n = S?.name;
-  return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
+  // a landmark keeps its place's name (بوابة الرافعية is the gate of the place on al-Jouf's map, not of the town)
+  return n && n !== "الرافعية" && typeof text === "string" ? text.replace(/(?<!(?:بوابة|برج|أبراج|مطار|مهرجان|جامعة) )الرافعية/g, n) : text;
+}
+/**
+ * The landmarks carry the name of the place the town stands by on al-Jouf's map: a town by Sakaka builds
+ * «بوابة سكاكا» and «أبراج سكاكا». Alone, the game is in الرافعية. Names only: nothing saved changes.
+ */
+const LANDMARKS = { b: ["gate", "tower", "skyline", "airport"], events: ["festival"] };
+const placeNames = { from: null };
+function nameLandmarks(place) {
+  if (!placeNames.from) { // the names as written, once
+    placeNames.from = { b: Object.fromEntries(LANDMARKS.b.map((id) => [id, B[id].name])), goals: GOALS.map((g) => g.text), events: Object.fromEntries(EVENTS.filter((e) => LANDMARKS.events.includes(e.id)).map((e) => [e.id, e.name])) };
+  }
+  const swap = (t) => t.replace(/الرافعية/g, place);
+  for (const id of LANDMARKS.b) B[id].name = swap(placeNames.from.b[id]);
+  GOALS.forEach((g, i) => { if (/^ابنِ .*الرافعية$/.test(placeNames.from.goals[i])) g.text = swap(placeNames.from.goals[i]); });
+  for (const e of EVENTS) if (placeNames.from.events[e.id]) e.name = swap(placeNames.from.events[e.id]);
 }
 const FIX = { ask: null }; // the owner's name request while it waits (see namefixSheet)
 function sheet(html, kind) {
@@ -2279,6 +2295,7 @@ async function enterWorldTown() {
   let town;
   try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   if (!worldMode) { if (playing) save(); soloS = S; }
+  if (id?.plot != null) nameLandmarks(worldPlace(id.plot));
   worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
   liveOpen(); lastTouch = Date.now();
   S = town; S.idle = null;
@@ -3023,6 +3040,7 @@ function leaveWorld() {
   if (visiting) leaveVisit(); // never save or send a visited town as yours
   save(); worldSync(true);
   worldMode = false; document.body.classList.remove("world"); showWhatsNewDot();
+  nameLandmarks("الرافعية");
   liveClose();
   if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
 }
@@ -3141,8 +3159,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-02-02", world: "2027-02-02" },
+  v: { solo: "2027-02-02", world: "2027-02-03" },
   items: [
+    ["world", "🏛️", "المشاريع الكبرى باسم مكانك", "• البوابة والبرج والأبراج والمطار والمهرجان صارت تاخذ اسم المكان اللي مدينتك فيه على خريطة الجوف: اللي قرب سكاكا يبني «بوابة سكاكا» و«أبراج سكاكا»، واللي قرب دومة الجندل «بوابة دومة الجندل»، وهكذا."],
     ["both", "📱", "شاشة كاملة بالأندرويد", "• بالأندرويد اللعبة صارت تاخذ الشاشة كلها أول ما تلمسها، وتختفي أشرطة المتصفح. • ما تبيها؟ طفّها من الإعدادات ← «📱 شاشة كاملة»."],
     ["both", "🔑", "كود النسخة الاحتياطية صار قصير", "• بالإعدادات ← «نسخة احتياطية» ← «🔑 اطلع كود»: يطلع لك كود قصير مثل K7PM-2QXA بدل الكود الطويل. • تكتبه بالجهاز الثاني من «استرجع من كود»، ويبقى ٦٠ يوم."],
     ["world", "🛠️", "إصلاحات الخريطة والشات", "• اسم «الرافعية» على خريطة الجوف وبالشات صار يطلع مثل ما هو، بدل ما يتبدل باسم مدينتك. • ولما تكتب بالشات ما تطلع لك قائمة كتاباتك القديمة فوق الكيبورد."],
