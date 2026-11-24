@@ -1636,7 +1636,183 @@ function vaultParts(b, k) {
   if (k >= 2) { b.dome(0.16, "#d9b55a", { y: h + 0.04, z: -0.04 }, "metal"); b.cyl(0.012, 0.012, 0.12, C.gold, { y: h + 0.2, z: -0.04 }, 6, "metal"); }
   b.box(0.16, 0.04, 0.02, "#1f6f5c", { y: h - 0.03, z: -0.04 + d / 2 + 0.006 });
 }
+// ---------- each place of al-Jouf builds its landmarks in its own way ----------
+// The gate, the TV tower, the skyline and the airport of a town take the style of the place it stands by on
+// al-Jouf's map (js/main.js sets it when the town opens): الرافعية keeps the models above.
+//   jandal: دومة الجندل, the golden stone of Marid castle, round towers with leaning walls
+//   zabal:  سكاكا and ميقوع, red mud like Za'bal castle on its hill, square towers and Najdi teeth
+//   kaf:    القريات, الحديثة, العيساوية, الحماد, الشويحطية, زلوم: black basalt of the harra, arched doors (Qasr Kaf)
+//   rawda:  طبرجل, روضات الجوف, صوير: white limestone arcades among olive groves
+//   nafud:  النفود الكبير, أبو عجرم: sand pillars under a black goat-hair tent with Sadu stripes
+export const PLACE_STYLE = { "دومة الجندل": "jandal", "سكاكا": "zabal", "ميقوع": "zabal", "القريات": "kaf", "الحديثة": "kaf", "العيساوية": "kaf", "الحماد": "kaf", "الشويحطية": "kaf", "زلوم": "kaf", "طبرجل": "rawda", "روضات الجوف": "rawda", "صوير": "rawda", "النفود الكبير": "nafud", "أبو عجرم": "nafud" };
+const STYLED = ["gate", "tower", "skyline", "airport"];
+let landStyle = "";
+/** The style of the landmarks being drawn: a PLACE_STYLE value, or "" for الرافعية's own. */
+export function setLandStyle(style) { landStyle = MAKERS[`gate_${style}`] ? style : ""; }
+const ST = {
+  jandal: { wall: "#c4a271", dark: "#9f8158", trim: "#8d7049", glass: "#9c7a4e", ground: "#d6c29c", accent: "#2f7d5b" },
+  zabal: { wall: "#c98f5e", dark: "#a9744a", trim: "#8e5d38", glass: "#a8694a", ground: "#dcb98d", accent: "#b3261e" },
+  kaf: { wall: "#4a4845", dark: "#363431", trim: "#8a857c", glass: "#3f4a52", ground: "#8f8a80", accent: "#c9a14a" },
+  rawda: { wall: "#efe9dc", dark: "#d9d0bd", trim: "#6e8a4e", glass: "#5f8f6a", ground: "#d9d4c2", accent: "#3f7a46" },
+  nafud: { wall: "#e2c28c", dark: "#c9a46a", trim: "#2d2620", glass: "#c9a46a", ground: "#ead6ad", accent: "#b3261e" }
+};
+/** A Sadu band: red, white and black stripes along a face (the Bedouin weave). */
+function saduBand(b, w, y, z, h = 0.03, x0 = 0) {
+  const cols = ["#b3261e", "#f2ece0", "#2a221d", "#f2ece0"];
+  const n = Math.max(4, Math.round(w / 0.04));
+  for (let i = 0; i < n; i++) b.box(w / n, h, 0.012, cols[i % cols.length], { x: x0 - w / 2 + (i + 0.5) * w / n, y, z });
+}
+const GATES = {
+  jandal(b, k) { // Marid: two round, leaning stone towers on a rocky base, an arch between, battlements
+    b.box(0.98, 0.012, 0.6, k.ground);
+    b.add(new THREE.CylinderGeometry(0.5, 0.52, 0.08, 10), "#b99a6c", { y: 0.04, sz: 0.45 });
+    for (const x of [-0.34, 0.34]) {
+      b.cyl(0.11, 0.15, 0.78, k.wall, { x, y: 0.06 }, 12);
+      b.cyl(0.12, 0.12, 0.04, k.trim, { x, y: 0.84 }, 12);
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; b.box(0.035, 0.05, 0.035, k.dark, { x: x + Math.cos(a) * 0.1, y: 0.88, z: Math.sin(a) * 0.1 }); }
+      b.box(0.03, 0.07, 0.01, "#3b2a1c", { x, y: 0.55, z: 0.13 });
+    }
+    b.box(0.5, 0.5, 0.26, k.wall, { y: 0.06 });
+    b.box(0.52, 0.04, 0.28, k.trim, { y: 0.56 });
+    for (let i = 0; i < 6; i++) b.box(0.05, 0.05, 0.05, k.dark, { x: -0.22 + i * 0.088, y: 0.6, z: 0.11 });
+    b.add(new THREE.CylinderGeometry(0.13, 0.13, 0.28, 14, 1, false, 0, Math.PI), "#3b2a1c", { y: 0.3, rx: Math.PI / 2, rz: Math.PI / 2, sz: 0.01 });
+    b.box(0.26, 0.24, 0.27, "#3b2a1c", { y: 0.06, sz: 0.01 });
+    for (const x of [-0.12, 0.12]) b.box(0.03, 0.03, 0.02, C.light, { x, y: 0.42, z: 0.14 }, "lights");
+    for (const x of [-0.47, 0.47]) palm(b, x, 0.22, 0.7);
+  },
+  zabal(b, k) { // Za'bal: a mud fort on a hill, square towers, Najdi teeth, a gate in the wall below
+    b.box(0.98, 0.012, 0.98, k.ground);
+    b.add(new THREE.CylinderGeometry(0.34, 0.5, 0.26, 7), "#b48a5e", { y: 0.13 });
+    b.box(0.46, 0.3, 0.36, k.wall, { y: 0.26, z: -0.04 });
+    crenels(b, 0.46, 0.36, 0.59, k.dark, 0.03);
+    for (const [x, z] of [[-0.24, -0.2], [0.24, -0.2], [-0.24, 0.13], [0.24, 0.13]]) { b.box(0.12, 0.46, 0.12, k.dark, { x, y: 0.26, z }); crenels(b, 0.12, 0.12, 0.75, k.trim, 0.025); }
+    beams(b, 0.46, 0.46, 0.14, 5);
+    b.box(0.9, 0.16, 0.06, k.wall, { z: 0.42 });
+    b.box(0.16, 0.13, 0.065, "#3b2a1c", { z: 0.42 });
+    crenels(b, 0.9, 0.06, 0.17, k.dark, 0.025);
+    b.box(0.12, 0.04, 0.02, C.light, { y: 0.4, z: 0.15 }, "lights");
+    flag(b, 0.24, -0.2, 1.0);
+  },
+  kaf(b, k) { // Qasr Kaf: thick basalt blocks, a round-arched door, small square windows, a flat parapet
+    b.box(0.98, 0.012, 0.6, k.ground);
+    for (const x of [-0.33, 0.33]) {
+      b.box(0.24, 0.66, 0.3, k.wall, { x });
+      b.box(0.26, 0.04, 0.32, k.trim, { x, y: 0.66 });
+      for (const y of [0.3, 0.48]) b.box(0.05, 0.05, 0.01, k.dark, { x, y, z: 0.155 });
+      b.box(0.04, 0.04, 0.012, C.light, { x, y: 0.48, z: 0.156 }, "lights");
+      for (let i = 0; i < 4; i++) b.box(0.25, 0.006, 0.305, k.dark, { x, y: 0.12 + i * 0.13 });
+    }
+    b.box(0.44, 0.5, 0.3, k.wall, { y: 0.08 });
+    b.box(0.46, 0.04, 0.32, k.trim, { y: 0.58 });
+    b.add(new THREE.CylinderGeometry(0.15, 0.15, 0.31, 16, 1, false, 0, Math.PI), "#1e1d1b", { y: 0.28, rx: Math.PI / 2, rz: Math.PI / 2, sz: 0.01 });
+    b.box(0.3, 0.2, 0.31, "#1e1d1b", { y: 0.08, sz: 0.01 });
+    b.add(new THREE.TorusGeometry(0.16, 0.018, 6, 16, Math.PI), k.trim, { y: 0.28, z: 0.152 });
+    b.box(0.5, 0.08, 0.02, k.accent, { y: 0.46, z: 0.152 });
+    for (const x of [-0.46, 0.46]) oliveTree(b, x, 0.24, 0.9);
+  },
+  rawda(b, k) { // the olive country: a white limestone arcade (three open arches), green trim, olive trees along it
+    b.box(0.98, 0.012, 0.6, k.ground);
+    b.box(0.86, 0.58, 0.22, k.wall, { y: 0.02 });
+    for (let i = 0; i < 3; i++) { // each arch: a dark opening topped by a half circle, framed by a stone ring
+      const x = -0.26 + i * 0.26;
+      b.box(0.16, 0.26, 0.012, "#3a3a30", { x, y: 0.02, z: 0.111 });
+      b.add(new THREE.CircleGeometry(0.08, 14, 0, Math.PI), "#3a3a30", { x, y: 0.28, z: 0.118 });
+      b.add(new THREE.TorusGeometry(0.09, 0.014, 5, 14, Math.PI), k.dark, { x, y: 0.28, z: 0.115 });
+      b.box(0.03, 0.03, 0.02, C.light, { x, y: 0.36, z: 0.12 }, "lights");
+    }
+    b.box(0.9, 0.04, 0.26, k.trim, { y: 0.6 });
+    for (let i = 0; i < 9; i++) b.box(0.05, 0.05, 0.05, k.wall, { x: -0.4 + i * 0.1, y: 0.64, z: 0.1 });
+    b.box(0.3, 0.06, 0.02, k.accent, { y: 0.48, z: 0.115 });
+    for (const x of [-0.46, -0.3, 0.3, 0.46]) oliveTree(b, x, 0.22, 0.7);
+  },
+  nafud(b, k) { // the sands: two sand pillars and a black goat-hair tent stretched between them, Sadu bands
+    b.box(0.98, 0.012, 0.98, k.ground);
+    for (let i = 0; i < 5; i++) b.add(new THREE.SphereGeometry(0.16, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), "#e6c993", { x: -0.4 + i * 0.2, z: -0.38 + (i % 2) * 0.06, sy: 0.35 });
+    for (const x of [-0.36, 0.36]) {
+      b.box(0.16, 0.6, 0.16, k.wall, { x });
+      b.box(0.18, 0.05, 0.18, k.dark, { x, y: 0.6 });
+      b.cone(0.07, 0.12, k.dark, { x, y: 0.65 }, 4);
+      saduBand(b, 0.16, 0.35, 0.085, 0.03, x);
+      b.box(0.04, 0.04, 0.012, C.light, { x, y: 0.5, z: 0.086 }, "lights");
+    }
+    b.add(new THREE.PlaneGeometry(0.56, 0.36), k.trim, { y: 0.56, rx: -Math.PI / 2 + 0.25 });
+    b.box(0.56, 0.02, 0.36, k.trim, { y: 0.5 });
+    for (const x of [-0.18, 0, 0.18]) b.cyl(0.008, 0.008, 0.5, "#6b4426", { x, z: 0.12 }, 5);
+    saduBand(b, 0.56, 0.48, 0.19, 0.04);
+    for (let i = 0; i < 3; i++) b.cyl(0.04, 0.05, 0.03, ["#b3261e", "#2c8a7a", "#d4a53a"][i], { x: -0.12 + i * 0.12, z: -0.05 }, 8);
+  }
+};
+/** The TV tower: the same tall shaft, dressed in the place's stone and crowned its own way. */
+function styledTower(b, style) {
+  const k = ST[style], h = 2.6;
+  b.box(0.9, 0.015, 0.9, k.ground);
+  if (style === "jandal" || style === "zabal") { b.box(0.62, 0.2, 0.62, k.wall); crenels(b, 0.62, 0.62, 0.22, k.dark, 0.035); }
+  else if (style === "nafud") { b.cyl(0.36, 0.42, 0.14, k.wall, {}, 8); saduBand(b, 0.5, 0.06, 0.38); }
+  else b.cyl(0.3, 0.36, 0.14, k.wall, {}, 8);
+  b.add(new THREE.CylinderGeometry(0.11, 0.2, h, 8), style === "kaf" ? "#5a5753" : k.wall, { y: 0.12 + h / 2 });
+  for (let i = 0; i < 12; i++) b.add(new THREE.CylinderGeometry(0.125 - i * 0.0072, 0.13 - i * 0.0072, 0.012, 8), k.glass, { y: 0.3 + i * 0.2 }, "shiny");
+  const top = 0.12 + h * 0.78;
+  b.add(new THREE.CylinderGeometry(0.22, 0.14, 0.14, 12), k.dark, { y: top });
+  b.add(new THREE.CylinderGeometry(0.225, 0.225, 0.06, 12), k.glass, { y: top + 0.07 }, "shiny");
+  b.add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12), C.light, { y: top + 0.075 }, "lights");
+  if (style === "jandal") for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; b.box(0.04, 0.05, 0.04, k.dark, { x: Math.cos(a) * 0.2, y: top + 0.11, z: Math.sin(a) * 0.2 }); }
+  if (style === "zabal") for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; b.cone(0.03, 0.06, k.trim, { x: Math.cos(a) * 0.2, y: top + 0.1, z: Math.sin(a) * 0.2, ry: a }); }
+  if (style === "nafud") b.cone(0.24, 0.1, k.trim, { y: top + 0.1 }, 12);
+  if (style === "rawda") b.dome(0.16, k.accent, { y: top + 0.1 }, "shiny");
+  b.cone(0.06, 0.4, style === "kaf" ? k.accent : C.gold, { y: 0.12 + h }, 8, "shiny");
+  b.box(0.03, 0.03, 0.03, "#ff3b30", { y: 0.12 + h + 0.4 }, "lights");
+}
+/** The skyline: the place's glass and stone, and its own crown on the tallest tower. */
+function styledSkyline(b, style) {
+  const k = ST[style];
+  b.box(0.98, 0.015, 0.98, k.ground);
+  const towers = [[-0.22, -0.2, 0.26, 2.6], [0.22, -0.18, 0.22, 2.0], [0.0, 0.24, 0.24, 1.5], [-0.3, 0.28, 0.14, 0.9], [0.32, 0.3, 0.14, 1.1]];
+  towers.forEach(([x, z, w, h], i) => {
+    b.box(w, h, w, i % 2 ? k.glass : k.wall === "#efe9dc" ? "#cfe0d2" : k.glass, { x, z }, "shiny");
+    for (let f = 1; f < h / 0.12; f++) b.box(w + 0.004, 0.008, w + 0.004, style === "kaf" ? "#5a5753" : k.wall, { x, y: f * 0.12, z });
+    for (let f = 1; f < h / 0.24; f += 2) b.box(w * 0.7, 0.03, w + 0.006, C.light, { x, y: f * 0.24 + 0.05, z }, "lights");
+    b.box(w + 0.03, 0.12, w + 0.03, k.wall, { x, z }); // a stone base
+  });
+  const [x, z, w, h] = towers[0];
+  if (style === "jandal" || style === "zabal") crenels(b, w, w, h, k.dark, 0.03);
+  if (style === "nafud") { b.cone(w * 0.75, 0.2, k.trim, { x, y: h, z }, 4); saduBand(b, w, h - 0.15, z + w / 2 + 0.008, 0.03, x); }
+  if (style === "rawda") b.dome(w * 0.45, k.accent, { x, y: h, z }, "shiny");
+  if (style === "kaf") b.box(w * 0.5, 0.2, w * 0.5, k.accent, { x, y: h, z }, "shiny");
+  b.cone(0.05, 0.5, k.dark, { x, y: h + (style === "nafud" ? 0.2 : 0.1), z }, 6, "shiny");
+  b.box(0.02, 0.02, 0.02, "#ff3b30", { x, y: h + 0.62, z }, "lights");
+  b.box(0.9, 0.06, 0.12, k.wall, { z: 0.45 });
+}
+/** The airport: the same runway and plane, the terminal in the place's style. */
+function styledAirport(b, style) {
+  const k = ST[style];
+  b.box(0.98, 0.01, 0.98, k.ground);
+  b.box(0.98, 0.012, 0.26, "#3d3f44", { z: 0.22 });
+  for (let i = 0; i < 6; i++) b.box(0.08, 0.014, 0.015, "#f2f2f2", { x: -0.42 + i * 0.17, z: 0.22 });
+  b.box(0.5, 0.14, 0.24, k.wall, { x: -0.18, z: -0.26 });
+  b.box(0.5, 0.06, 0.02, C.glass, { x: -0.18, y: 0.05, z: -0.139 }, "shiny");
+  b.box(0.46, 0.04, 0.022, C.light, { x: -0.18, y: 0.06, z: -0.138 }, "lights");
+  if (style === "jandal") for (const x of [-0.43, 0.07]) { b.cyl(0.05, 0.06, 0.2, k.dark, { x, z: -0.26 }, 10); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; b.box(0.02, 0.025, 0.02, k.trim, { x: x + Math.cos(a) * 0.045, y: 0.2, z: -0.26 + Math.sin(a) * 0.045 }); } }
+  if (style === "zabal") crenels(b, 0.5, 0.24, 0.15, k.dark, 0.022);
+  if (style === "kaf") for (let i = 0; i < 4; i++) b.add(new THREE.TorusGeometry(0.04, 0.008, 5, 10, Math.PI), k.trim, { x: -0.36 + i * 0.12, y: 0.09, z: -0.137 });
+  if (style === "rawda") { b.box(0.54, 0.02, 0.3, k.accent, { x: -0.18, y: 0.14, z: -0.26 }); for (const x of [-0.46, 0.1]) oliveTree(b, x, -0.05, 0.5); }
+  if (style === "nafud") for (let i = 0; i < 4; i++) b.cone(0.07, 0.1, "#f6f2e8", { x: -0.36 + i * 0.12, y: 0.14, z: -0.26 }, 4, "shiny");
+  b.cyl(0.035, 0.05, 0.42, k.wall, { x: 0.3, z: -0.3 }, 8);
+  b.cyl(0.08, 0.06, 0.08, C.glass, { x: 0.3, y: 0.42, z: -0.3 }, 8, "shiny");
+  b.cyl(0.085, 0.085, 0.02, k.dark, { x: 0.3, y: 0.5, z: -0.3 }, 8);
+  b.add(new THREE.CylinderGeometry(0.025, 0.02, 0.36, 8), "#f6f6f6", { x: 0.05, y: 0.05, z: 0.22, rz: Math.PI / 2 }, "shiny");
+  b.add(new THREE.ConeGeometry(0.025, 0.06, 8), "#f6f6f6", { x: 0.26, y: 0.05, z: 0.22, rz: -Math.PI / 2 }, "shiny");
+  b.box(0.08, 0.008, 0.34, "#f6f6f6", { x: 0.06, y: 0.045, z: 0.22 }, "shiny");
+  b.box(0.05, 0.07, 0.008, "#2c8a7a", { x: -0.11, y: 0.05, z: 0.22 });
+  b.box(0.04, 0.006, 0.12, "#f6f6f6", { x: -0.11, y: 0.08, z: 0.22 }, "shiny");
+}
+for (const style of Object.keys(ST)) {
+  MAKERS[`gate_${style}`] = (b) => GATES[style](b, ST[style]);
+  MAKERS[`tower_${style}`] = (b) => styledTower(b, style);
+  MAKERS[`skyline_${style}`] = (b) => styledSkyline(b, style);
+  MAKERS[`airport_${style}`] = (b) => styledAirport(b, style);
+}
 export function modelKey(id, lvl) {
+  if (landStyle && STYLED.includes(id)) return `${id}_${landStyle}`;
   if (id === "vault") return lvl >= 3 ? "vault2" : lvl >= 1 ? "vault1" : "vault";
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;
   if (lvl > 0 && BIZ.includes(id)) return `${id}${lvl}`;

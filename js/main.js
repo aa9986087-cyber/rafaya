@@ -6,7 +6,7 @@ import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
 import { WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
-import { modelKey } from "./models.js";
+import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
 import { sfx, ambience, warSfx } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
@@ -1009,6 +1009,7 @@ function nameLandmarks(place) {
   for (const id of LANDMARKS.b) B[id].name = swap(placeNames.from.b[id]);
   GOALS.forEach((g, i) => { if (/^ابنِ .*الرافعية$/.test(placeNames.from.goals[i])) g.text = swap(placeNames.from.goals[i]); });
   for (const e of EVENTS) if (placeNames.from.events[e.id]) e.name = swap(placeNames.from.events[e.id]);
+  setLandStyle(PLACE_STYLE[place] || ""); // and the place's own designs for them
 }
 const FIX = { ask: null }; // the owner's name request while it waits (see namefixSheet)
 function sheet(html, kind) {
@@ -1540,6 +1541,7 @@ async function visitTown(code, opts = {}) {
   if (visiting) leaveVisit(); // from one visit straight to another: home stays your own town
   save();
   visiting = { code, world: true, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
+  nameLandmarks(worldPlace(Number(code))); // the visited town's landmarks are of its own place
   S = town; A = analyze(S);
   closeSheet(); setTool(null);
   world.stopFollow?.(); $("followTag").hidden = true;
@@ -1582,6 +1584,7 @@ function leaveVisit() {
   if (!visiting) return;
   if (WARX.targeting) { WARX.targeting = null; document.body.classList.remove("targeting"); world.fx?.showTargets(null); $("targetBar").hidden = true; }
   S = visiting.home; const cam = visiting.cam; visiting = null;
+  if (worldMode && me()?.plot != null) nameLandmarks(worldPlace(me().plot));
   A = analyze(S);
   document.body.classList.remove("visiting"); $("visitBar").hidden = true;
   closeSheet();
@@ -3161,7 +3164,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: { solo: "2027-02-02", world: "2027-02-03" },
   items: [
-    ["world", "🏛️", "المشاريع الكبرى باسم مكانك", "• البوابة والبرج والأبراج والمطار والمهرجان صارت تاخذ اسم المكان اللي مدينتك فيه على خريطة الجوف: اللي قرب سكاكا يبني «بوابة سكاكا» و«أبراج سكاكا»، واللي قرب دومة الجندل «بوابة دومة الجندل»، وهكذا."],
+    ["world", "🏛️", "المشاريع الكبرى باسم مكانك وشكله", "• البوابة والبرج والأبراج والمطار والمهرجان صارت تاخذ اسم المكان اللي مدينتك فيه على خريطة الجوف: اللي قرب سكاكا يبني «بوابة سكاكا» و«أبراج سكاكا». • وكل مكان له تصميمه: دومة الجندل حجر ذهبي على طراز قلعة مارد، وسكاكا وميقوع طين أحمر على طراز قلعة زعبل، والقريات والحديثة والحماد حجر أسود بأقواس، وطبرجل والروضات وصوير حجر أبيض بين الزيتون، والنفود بيت شعر بالسدو."],
     ["both", "📱", "شاشة كاملة بالأندرويد", "• بالأندرويد اللعبة صارت تاخذ الشاشة كلها أول ما تلمسها، وتختفي أشرطة المتصفح. • ما تبيها؟ طفّها من الإعدادات ← «📱 شاشة كاملة»."],
     ["both", "🔑", "كود النسخة الاحتياطية صار قصير", "• بالإعدادات ← «نسخة احتياطية» ← «🔑 اطلع كود»: يطلع لك كود قصير مثل K7PM-2QXA بدل الكود الطويل. • تكتبه بالجهاز الثاني من «استرجع من كود»، ويبقى ٦٠ يوم."],
     ["world", "🛠️", "إصلاحات الخريطة والشات", "• اسم «الرافعية» على خريطة الجوف وبالشات صار يطلع مثل ما هو، بدل ما يتبدل باسم مدينتك. • ولما تكتب بالشات ما تطلع لك قائمة كتاباتك القديمة فوق الكيبورد."],
