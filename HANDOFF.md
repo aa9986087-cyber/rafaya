@@ -309,6 +309,11 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `POST /world/push/test` sends one to your phones now, even with the game open. It is the «📲 جرّب التنبيه» button in settings.
     - The push request now sends an empty body (no hand-set Content-Length).
     - WAR_TEST shortens the waits (10 s away, 30 s between, 5 s alarm).
+50. **iPhone steps and move codes (owner, 2026-11-24, world only; in progress):**
+    - The iPhone's home-screen app has its own storage, so the account moves with a code. `POST /world/handoff` gives a 6-digit code (30 min, once).
+    - `POST /world/handoff/claim {code}` gives the new app its own key (table `keys`). Both keys work (`keyOk`). Failed claims are limited to 30 a minute.
+    - `pushIosHelp` shows the code and five steps with share and add icons, or asks for iOS 16.4+. The join sheet has «📲 عندي رمز نقل».
+    - Asked next: a move with no code. A token in the page URL and the manifest's start_url, claimed by the home-screen app on its first launch, with the 6-digit code kept as the fallback.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

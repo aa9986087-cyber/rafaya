@@ -1599,13 +1599,47 @@ async function pushOff() {
   store.set("rafaya-push-on", "0");
   toast("وقفت التنبيهات", "");
 }
-function pushIosHelp() {
-  sheet(`<h2>🔔 التنبيهات بالآيفون</h2><p>الآيفون يعطي تنبيهات للعبة إذا كانت مضافة للشاشة الرئيسية:</p>
+/** The iPhone version, e.g. 17.2 (0 when not an iPhone). */
+const iosVersion = () => { const m = navigator.userAgent.match(/OS (\d+)_(\d+)/); return m ? Number(m[1]) + Number(m[2]) / 100 : 0; };
+const SHARE_IC = `<svg viewBox="0 0 24 24" width="20" height="20" style="vertical-align:-4px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>`;
+const ADD_IC = `<svg viewBox="0 0 24 24" width="20" height="20" style="vertical-align:-4px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>`;
+/**
+ * The iPhone, step by step: notifications only work from the app on the home screen, and that app keeps
+ * its own storage, so the account goes over with a 6-digit move code.
+ */
+async function pushIosHelp() {
+  const v = iosVersion(), old = v && v < 16.04;
+  let code = "";
+  const id = me();
+  if (!old && id?.secret) { try { code = (await api("/world/handoff", { name: id.name, secret: id.secret })).code || ""; } catch { /* shown without */ } }
+  sheet(`<h2>🔔 التنبيهات بالآيفون</h2>
+    ${old ? `<div class="need">جوالك على نظام قديم. التنبيهات تحتاج iOS 16.4 أو أحدث: الإعدادات ← عام ← تحديث البرنامج.</div>` : `<p>الآيفون يعطي تنبيهات للعبة إذا كانت مضافة للشاشة الرئيسية مثل التطبيق. خمس خطوات:</p>
+    ${code ? `<div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b><span>رمز نقل حسابك · صالح ٣٠ دقيقة</span></div>
+    <button class="btn block" id="iosCopy" type="button">انسخ الرمز</button>` : ""}
     <div class="rows">
-      <div class="row"><span>١. اضغط زر المشاركة <b>⬆️</b> تحت بسفاري</span></div>
-      <div class="row"><span>٢. اختر <b>«إضافة إلى الشاشة الرئيسية»</b></span></div>
-      <div class="row"><span>٣. افتح اللعبة من أيقونتها، وفعّل التنبيهات من هنا</span></div>
-    </div><p class="hint">مدينتك ما تضيع: نفس الحساب ونفس المدينة.</p>`, "push");
+      <div class="row g-step"><b class="g-n">١</b><span>${code ? "احفظ الرمز اللي فوق (انسخه أو صوّره)" : "افتح الموقع بسفاري"}</span></div>
+      <div class="row g-step"><b class="g-n">٢</b><span>اضغط زر المشاركة ${SHARE_IC} تحت بسفاري</span></div>
+      <div class="row g-step"><b class="g-n">٣</b><span>انزل واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b> ثم <b>«إضافة»</b></span></div>
+      <div class="row g-step"><b class="g-n">٤</b><span>افتح <b>«الرافعية»</b> من أيقونتها بالشاشة، ادخل الجوف واختر <b>«عندي رمز نقل»</b> واكتب الرمز</span></div>
+      <div class="row g-step"><b class="g-n">٥</b><span>الإعدادات ← <b>«فعّل التنبيهات»</b> ← <b>«السماح»</b>، وجرّبها بزر «جرّب التنبيه»</span></div>
+    </div>
+    <p class="hint">مدينتك بالجوف ما تضيع: نفس الاسم ونفس المدينة، وتقدر تلعب من سفاري ومن الأيقونة. اللعب الفردي ما ينتقل لحاله: انسخه من الإعدادات ← نسخة احتياطية.</p>`}`, "push");
+  $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
+}
+/** The new app (iPhone home screen): bring the account over with the move code. */
+function handoffSheet() {
+  sheet(`<h2>📲 رمز النقل</h2><p>اكتب الرمز (٦ أرقام) اللي طلع لك بسفاري في «التنبيهات بالآيفون». يرجع لك اسمك ومدينتك.</p>
+    <label class="rg-name">الرمز <input id="hoCode" type="text" inputmode="numeric" maxlength="6" placeholder="١٢٣٤٥٦" style="letter-spacing:6px;text-align:center"></label>
+    <div class="sheet-actions keep"><button class="btn go block" id="hoGo" type="button">رجّع حسابي</button></div>`, "world");
+  $("hoGo").addEventListener("click", async () => {
+    const code = ($("hoCode").value || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+    try {
+      const r = await api("/world/handoff/claim", { code });
+      if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+      store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
+      toast(`رجع حسابك يا ${r.name} ✓`, "goal"); worldMapSheet();
+    } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
+  });
 }
 /** Once, on entering al-Jouf: offer notifications (they work best when asked at the right time). */
 function pushOffer(tries = 0) {
@@ -1745,8 +1779,10 @@ function worldJoinSheet(recover) {
       : `<label class="rg-name">اختر اسمك <input id="wjName" type="text" maxlength="16" placeholder="مثلاً: أبو_فهد"></label>
       <p class="hint">٣ إلى ١٦ حرف (عربي أو إنجليزي أو أرقام). يطلع للكل فوق مدينتك، فلا تكتب اسمك الكامل.</p>
       <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">ادخل العالم</button></div>
-      <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>`}`, "world");
+      <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>
+      <button class="btn block" id="wjHandoff" type="button">📲 عندي رمز نقل (من سفاري للأيقونة)</button>`}`, "world");
   $("wjRecover")?.addEventListener("click", () => worldJoinSheet(true));
+  $("wjHandoff")?.addEventListener("click", () => handoffSheet());
   $("wjGo").addEventListener("click", async () => {
     const name = $("wjName").value.trim();
     try {

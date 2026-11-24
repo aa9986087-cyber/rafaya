@@ -14,6 +14,7 @@
 //   GET  /api/world/town/PLOT                   → { town, comments }
 //   POST /api/world/town/PLOT/comment { name, secret, text } → { ok }
 //   POST /api/world/report   { name, secret, plot, reason } → { ok }
+//   POST /api/world/handoff { name, secret } → { code } · POST handoff/claim { code } → { name, secret, plot }  (move to the home-screen app)
 //   GET  /api/world/push/key · POST push/sub { name, secret, endpoint } · POST push/unsub { endpoint } · GET push/inbox?k=
 //        notifications on the phone (Web Push, signed with the server's own VAPID keys; the push carries no data)
 //   GET  /api/world/live  (WebSocket)            → hints pushed the moment something changes: chat, war, news, town
@@ -72,6 +73,11 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ } // the citizens' unanswered requests (for reminders)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
+    // moving an account to another app on the same phone (the iPhone's home-screen app keeps its own storage):
+    // a 6-digit code made in the old one gives the new one its own key; both keys work
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS handoff (code TEXT PRIMARY KEY, name TEXT, at INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS keys (name TEXT, secret TEXT, at INTEGER)`);
+    this.handoffFails = [];
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
     this.outbox = [];
@@ -89,7 +95,7 @@ export class Board extends DurableObject {
       this.sql.exec("DELETE FROM war");
       this.sql.exec("DELETE FROM chat");
       this.sql.exec("DELETE FROM wnews");
-      this.sql.exec("DELETE FROM pushsubs"); this.sql.exec("DELETE FROM pushq");
+      this.sql.exec("DELETE FROM pushsubs"); this.sql.exec("DELETE FROM pushq"); this.sql.exec("DELETE FROM handoff"); this.sql.exec("DELETE FROM keys");
       this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('world_gen', ?)", String(WORLD_GEN));
     }
     this.war = new WarServer(warDb, {
@@ -193,7 +199,7 @@ export class Board extends DurableObject {
     }
     if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
       const row = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", clean(m.name, 16)).toArray()[0];
-      const ok = row && row.secret === (await hash(String(m.secret || "")));
+      const ok = await this.keyOk(clean(m.name, 16), row, m.secret);
       ws.serializeAttachment({ plot: ok ? row.plot : null, seen: Date.now() });
       try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
     }
@@ -239,6 +245,11 @@ export class Board extends DurableObject {
   nameTaken(town, plot = -1) {
     const key = townNameKey(town);
     return this.sql.exec("SELECT plot, town FROM plots").toArray().some((t) => t.plot !== plot && townNameKey(t.town) === key);
+  }
+  /** Is this the player's key (the first one, or one given to another app by a move code)? */
+  async keyOk(name, row, secret) {
+    const h = await hash(String(secret || ""));
+    return !!row && (row.secret === h || this.sql.exec("SELECT 1 FROM keys WHERE name = ? AND secret = ?", name, h).toArray().length > 0);
   }
   /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
   news(kind, text, plot = null, n = null) {
@@ -330,9 +341,22 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.sql.exec("UPDATE players SET secret = ? WHERE name = ?", await hash(secret), name);
       return json({ name, secret, plot: row.plot });
     }
+    if (post && p[0] === "handoff" && p[1] === "claim") { // the new app: a move code → this player, with a key of its own
+      const now = Date.now();
+      this.handoffFails = this.handoffFails.filter((t) => now - t < 60000);
+      if (this.handoffFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
+      const code = String(body.code || "").replace(/\D/g, "").slice(0, 6), row = this.sql.exec("SELECT name, at FROM handoff WHERE code = ?", code).toArray()[0];
+      if (!row || now - row.at > 30 * 60000) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٣٠ دقيقة)" }); }
+      this.sql.exec("DELETE FROM handoff WHERE code = ?", code);
+      const pl = this.sql.exec("SELECT name, plot FROM players WHERE name = ?", row.name).toArray()[0];
+      if (!pl) return json({ error: "ما لقيت الحساب" });
+      const secret = makeSecret();
+      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, await hash(secret), now);
+      return json({ name: pl.name, secret, plot: pl.plot });
+    }
     // everything below needs the player's own secret
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
-    if (!me || me.secret !== (await hash(String(body.secret || "")))) return json({ error: "who are you" }, 403);
+    if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (p[0] === "claim") {
       const plot = int(body.plot), town = clean(body.town, 20) || "هجرة";
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);
@@ -376,6 +400,12 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
+    }
+    if (p[0] === "handoff") { // a move code for this account (6 digits, 30 minutes, once)
+      this.sql.exec("DELETE FROM handoff WHERE at < ? OR name = ?", Date.now() - 30 * 60000, name);
+      let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM handoff WHERE code = ?", code).toArray().length);
+      this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", code, name, Date.now());
+      return json({ code });
     }
     if (p[0] === "push" && p[1] === "test") { // «جرّب التنبيه»: one to this town's phones now, even with the game open
       if (me.plot == null) return json({ error: "no town" }, 400);
