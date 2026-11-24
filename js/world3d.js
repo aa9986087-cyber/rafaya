@@ -599,13 +599,21 @@ export class World {
       const p = tileCenter(x, y);
       for (const [dx, dy, a] of [[0, 1, 0], [0, -1, 0], [1, 0, Math.PI / 2], [-1, 0, Math.PI / 2]]) {
         if (inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)])) continue;
-        m.compose(new THREE.Vector3(p.x + dx * 0.47, 0.012, p.z + dy * 0.47), q.setFromAxisAngle(up, a), one);
+        m.compose(new THREE.Vector3(p.x + dx * 0.465, 0.0225, p.z + dy * 0.465), q.setFromAxisAngle(up, a), one);
         list.push(m.clone());
       }
     }
     if (!list.length) return;
-    const g = new THREE.BoxGeometry(1, 0.024, 0.06);
-    this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: "#ded2b7", roughness: 0.95 }), list.length);
+    // the kerbstones of a Saudi street: a raised concrete edge painted in yellow and black blocks (one striped texture)
+    if (!this.kerbTex) {
+      const c = document.createElement("canvas"); c.width = 128; c.height = 8;
+      const x = c.getContext("2d");
+      for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? "#2c2b29" : "#e2b52c"; x.fillRect(i * 16, 0, 16, 8); }
+      x.fillStyle = "rgba(255,255,255,.08)"; x.fillRect(0, 0, 128, 2);                     // the worn top edge
+      this.kerbTex = new THREE.CanvasTexture(c); this.kerbTex.colorSpace = THREE.SRGBColorSpace; this.kerbTex.anisotropy = 4;
+    }
+    const g = new THREE.BoxGeometry(1, 0.045, 0.07);
+    this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ map: this.kerbTex, roughness: 0.8 }), list.length);
     list.forEach((mm, i) => this.kerbs.setMatrixAt(i, mm));
     this.kerbs.receiveShadow = true; this.kerbs.frustumCulled = false;
     this.scene.add(this.kerbs);
