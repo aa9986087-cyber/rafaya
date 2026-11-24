@@ -18,9 +18,17 @@ const money = (n) => ar(Math.round(n).toLocaleString("en-US"));
 /** Money with one decimal for small amounts (٠٫٦) and whole numbers otherwise. */
 const fine = (n) => (Math.abs(n) < 10 && Math.round(n) !== n ? ar(n.toFixed(1)).replace(".", "٫") : money(n));
 const SAVE = "rafaya-save-v1";
+const storePrefix = globalThis.RAFAYA_PREVIEW_STORAGE || "";
+const trialStore = storePrefix ? new Map() : null;
 const store = {
-  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: the game still runs */ } }
+  get(k) {
+    if (trialStore?.has(k)) return trialStore.get(k);
+    try { return localStorage.getItem(storePrefix + k); } catch { return null; }
+  },
+  set(k, v) {
+    trialStore?.set(k, v);
+    try { localStorage.setItem(storePrefix + k, v); } catch { /* private mode: the game still runs */ }
+  }
 };
 // Graphics: «auto» (the default) adapts as it plays; the others are fixed (with a safety net for a struggling phone).
 // Old choices (high, medium, low) keep their meaning. RENDER maps each to the renderer's quality, its frame caps
@@ -48,6 +56,12 @@ if (!RG || !RG.towns) RG = { towns: {}, roads: [], active: "main" };
 const saveRegion = () => store.set(REGION_KEY, JSON.stringify(RG));
 
 let S = null;
+if (globalThis.RAFAYA_PREVIEW_SAMPLE && !store.get("rafaya-world-town")) {
+  const sample = globalThis.RAFAYA_PREVIEW_SAMPLE();
+  store.set("rafaya-world-id", JSON.stringify(sample.id));
+  store.set("rafaya-world-town", pack(sample.town));
+  store.set("rafaya-world-gen", "2");
+}
 try { const raw = store.get(townKey(RG.active)) || store.get(SAVE); if (raw) S = unpack(raw); } catch { S = null; }
 if (!S) S = newGame();
 let A = analyze(S);
@@ -2332,6 +2346,7 @@ async function enterWorldTown() {
   worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
   liveOpen(); lastTouch = Date.now();
   S = town; S.idle = null;
+  if (globalThis.RAFAYA_PREVIEW_SAMPLE) S.day = worldHourNow();
   const gap = worldHourNow() - S.day;
   const report = gap > 1 ? deputyCatchUp(S, gap) : null;
   if (gap > 0 && !report) S.day = worldHourNow();
@@ -2343,7 +2358,7 @@ async function enterWorldTown() {
   save(); worldSync(true);
   if (report) deputyReport(report);
   warBack(!!report);
-  setTimeout(maybeWhatsNew, 1200); // what changed since last time, after the deputy's report
+  if (!globalThis.RAFAYA_PREVIEW_SAMPLE) setTimeout(maybeWhatsNew, 1200); // after the deputy's report
   setTimeout(pushOffer, 6000); // waits for the report or any screen in front to close
 }
 function deputyReport(r) {
@@ -3382,11 +3397,12 @@ function showWhatsNewDot() {
   const dot = $("wnDot"); if (dot) dot.hidden = wnSeen(worldMode ? "world" : "solo"); // (the chip left the game screen; «وش الجديد» is on the main menu)
 }
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
-$("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
+$("mWorld").addEventListener("click", () => { sfx.tap(); if (globalThis.RAFAYA_PREVIEW_SAMPLE) enterWorldTown(); else openWorld(); });
 $("mContinue").addEventListener("click", async (e) => { // straight into your own town: no map, no picking
   sfx.tap();
   const button = e.currentTarget; button.disabled = true;
   try {
+    if (globalThis.RAFAYA_PREVIEW_SAMPLE) { await enterWorldTown(); return; }
     if (!onlineOk()) { toast("عالم الجوف يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev", "bad"); return; }
     if (await worldIsClosed()) { worldClosedSheet(); return; }
     await loadClock();
@@ -4271,7 +4287,17 @@ function frame(now) {
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
   const t0 = performance.now();
-  world.frame(dt, tod);
+  const previewLight = globalThis.RAFAYA_PREVIEW_LIGHT?.(), previewWeather = globalThis.RAFAYA_PREVIEW_WEATHER?.();
+  if (previewWeather) {
+    world.previewStorm = previewWeather.rain;
+    world.previewWet = previewWeather.wet;
+  }
+  if (previewLight != null) {
+    world.previewTod ??= previewLight;
+    world.previewTod += (previewLight - world.previewTod) * (1 - Math.exp(-dt * 5));
+    world.previewNight = world.previewTod > .81;
+  }
+  world.frame(dt, world.previewTod ?? tod);
   perfWatch(performance.now() - t0, now, wanted, busy);
   perfHud?.tick();
   if (world.follow && world.followPos) {

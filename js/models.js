@@ -26,11 +26,11 @@ export const SETS = ["matte", "shiny", "lights", "paint", "metal", "glass", "glo
 
 /** Collects coloured parts and merges them into one geometry per material. */
 class Builder {
-  /** far: the same model for a far-away camera (fewer faces, no tiny parts): see farGeo. */
+  /** The far mesh keeps the assembled building and reduces tessellation on its curved parts. */
   constructor(far = false) { this.sets = Object.fromEntries(SETS.map((k) => [k, []])); this.far = far; }
   add(geo, color, o = {}, set = "matte") {
     if ((set === "matte" || set === "shiny") && GLASS.has(String(color).toLowerCase())) set = "glass"; // windows and solar panels reflect the sky
-    if (this.far) { geo = farGeo(geo, o, set); if (!geo) return this; }
+    if (this.far) geo = farGeo(geo);
     tmp.position.set(o.x || 0, o.y || 0, o.z || 0);
     tmp.rotation.set(o.rx || 0, o.ry || 0, o.rz || 0);
     tmp.scale.set(o.sx ?? 1, o.sy ?? 1, o.sz ?? 1);
@@ -62,7 +62,7 @@ class Builder {
   box(w, h, d, color, o = {}, set) {
     // walls and big blocks get softly rounded edges that catch the light (small parts stay plain boxes: cheaper)
     const lo = Math.min(w, h, d), hi = Math.max(w, h, d);
-    const geo = lo >= 0.1 && hi >= 0.22 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.016, lo / 6)) : new THREE.BoxGeometry(w, h, d);
+    const geo = !this.far && lo >= 0.1 && hi >= 0.22 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.016, lo / 6)) : new THREE.BoxGeometry(w, h, d);
     return this.add(geo, color, { ...o, y: (o.y || 0) + h / 2 }, set);
   }
   cyl(rt, rb, h, color, o = {}, seg = 10, set) { return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }
@@ -71,7 +71,7 @@ class Builder {
   /** A box with rounded edges (catches the light like real panels). */
   rbox(w, h, d, r, color, o = {}, set = "paint") {
     const radius = Math.min(r, w / 2, h / 2, d / 2);
-    const geo = radius < 0.004 ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 1, radius);
+    const geo = this.far || radius < 0.004 ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 1, radius);
     return this.add(geo, color, { ...o, y: (o.y || 0) + h / 2 }, set);
   }
   /** A turned shape from a profile [[radius, y], ...] (noses, nozzles, domes). */
@@ -90,23 +90,12 @@ class Builder {
   }
 }
 
-/**
- * RAFAYA REMASTERED: the far version of a part (the performance engine). Shapes keep their size and colour, with fewer faces:
- * a rounded box becomes a plain box; round shapes take about half their segments; parts too small to see from afar go,
- * except the lights that make the town glow at night.
- */
-const TINY = 0.045;
-function farGeo(geo, o, set) {
-  if (set !== "lights" && set !== "glow") {
-    if (!geo.boundingSphere) geo.computeBoundingSphere();
-    const scale = Math.max(Math.abs(o.sx ?? 1), Math.abs(o.sy ?? 1), Math.abs(o.sz ?? 1));
-    if (geo.boundingSphere.radius * scale < TINY) { geo.dispose(); return null; }
-  }
-  const p = geo.parameters || {}, half = (n, min) => Math.max(min, Math.ceil((n || min) / 2));
+/** Reduce subdivision while keeping trim, glazing and the full roofline from above. */
+function farGeo(geo) {
+  const p = geo.parameters || {}, half = (n, min) => Math.min(n, Math.max(min, Math.ceil(n / 2)));
   let g = null;
   switch (geo.type) {
-    case "RoundedBoxGeometry": { geo.computeBoundingBox(); const s = new THREE.Vector3(); geo.boundingBox.getSize(s); g = new THREE.BoxGeometry(s.x, s.y, s.z); break; }
-    case "CylinderGeometry": g = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, half(p.radialSegments, 5), 1, p.openEnded, p.thetaStart, p.thetaLength); break;
+    case "CylinderGeometry": g = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, half(p.radialSegments, 5), p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength); break;
     case "ConeGeometry": g = new THREE.ConeGeometry(p.radius, p.height, half(p.radialSegments, 4), 1, p.openEnded, p.thetaStart, p.thetaLength); break;
     case "SphereGeometry": g = new THREE.SphereGeometry(p.radius, half(p.widthSegments, 5), half(p.heightSegments, 3), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength); break;
     case "TorusGeometry": g = new THREE.TorusGeometry(p.radius, p.tube, half(p.radialSegments, 3), half(p.tubularSegments, 6), p.arc); break;
@@ -305,7 +294,7 @@ function splitAC(b, x, y, z) { b.box(0.07, 0.045, 0.025, "#ecebe6", { x, y, z })
 function roofTank(b, x, y, z, r = 0.055, color = C.white) { b.cyl(r, r, r * 1.6, color, { x, y, z }, 14); b.cyl(r * 0.35, r * 0.35, 0.012, color, { x, y: y + r * 1.6, z }, 10); }
 /** A small modern car (sedan). */
 function sedan(b, x, z, ry, color) {
-  const g = new Builder();
+  const g = new Builder(b.far);
   g.rbox(0.22, 0.05, 0.1, 0.014, color, { y: 0.018 }, "matte");
   g.rbox(0.12, 0.045, 0.092, 0.018, color, { x: -0.01, y: 0.06 }, "matte");
   g.box(0.11, 0.035, 0.094, "#22303a", { x: -0.01, y: 0.066 }, "glass");
@@ -537,6 +526,8 @@ function civicBench(b,x,z,angle=0) {
 }
 
 export const FAIR_WHEEL = { x: -.144, y: .554, z: -.144, radius: .349, cabins: 8 };
+
+export const STREET_LAMP_HEAD = .172;
 
 const MAKERS = {
   // بيت الشعر: low black tent, three peaks, sadu band, poles and ropes.
@@ -1345,13 +1336,18 @@ const MAKERS = {
     for (const x of [-0.18, 0, 0.18]) b.cyl(0.014, 0.014, 0.05, "#e9e4d8", { x, y: 0.905 }, 5, "shiny");
   },
   lantern(b) {
-    b.lathe([[.102,0],[.092,.039],[.065,.071],[.041,.086]],"#b9a688",{},10,"stone");
-    b.lathe([[.039,.078],[.021,.117],[.017,.385],[.027,.401],[.041,.423]],"#666557",{},9,"metal");
-    b.cyl(.059,.043,.136,"#8c7753",{y:.419},6,"glass");
-    for(let i=0;i<6;i++){const a=i*Math.PI/3;b.box(.009,.131,.009,"#77614b",{x:Math.cos(a)*.051,z:Math.sin(a)*.051,y:.424,rz:.035},"metal");}
-    b.cyl(.033,.033,.092,"#e7b76d",{y:.442},7,"lights");
-    b.lathe([[.064,0],[.068,.015],[.051,.045],[.026,.064],[.015,.083]],"#8e7753",{y:.553},8,"metal");
-    b.add(new THREE.SphereGeometry(.012,6,4),"#b19462",{y:.64},"metal");
+    b.lathe([[.085,0],[.09,.021],[.069,.043],[.041,.064],[.033,.085]],"#b5a28a",{},10,"stone");
+    b.lathe([[.039,.069],[.024,.115],[.015,.389],[.026,.409],[.044,.425]],"#564d40",{},9,"metal");
+    b.cyl(.051,.046,.02,"#766049",{y:.42},8,"metal");
+    b.cyl(.033,.026,.1,"#d3b48b",{y:.439},8,"matte");
+    b.cyl(.034,.029,.102,"#ffd197",{y:.438},8,"lights");
+    for(let i=0;i<4;i++) {
+      const a=i*Math.PI/2+Math.PI/4;
+      b.add(new THREE.BoxGeometry(.008,.116,.008),"#574639",{x:Math.cos(a)*.047,z:Math.sin(a)*.047,y:.492,rz:.029},"metal");
+    }
+    b.cyl(.063,.059,.018,"#6e5946",{y:.536},8,"metal");
+    b.lathe([[.06,0],[.049,.023],[.032,.04],[.013,.058]],"#6e5946",{y:.551},8,"paint");
+    b.add(new THREE.SphereGeometry(.013,6,4),"#a9845c",{y:.615},"metal");
   },
   fountain(b) {
     stoneApron(b,"#c7b9a0");
@@ -1815,11 +1811,15 @@ const MAKERS = {
     b.box(0.023, 0.012, 0.18, "#2c8a7a", { y: 0.2 });
   },
   lamp(b) {
-    b.cyl(0.011, 0.023, 0.05, C.stone, {}, 7);
-    b.cyl(0.008, 0.012, 0.42, "#38484a", {}, 6);
-    b.box(0.12, 0.012, 0.012, C.dark, { x: 0.05, y: 0.42 });
-    b.box(0.04, 0.012, 0.03, C.grey, { x: 0.1, y: 0.405 });
-    b.box(0.036, 0.008, 0.026, "#fff1b8", { x: 0.1, y: 0.398 }, "lights");
+    const steel="#485659", x=STREET_LAMP_HEAD;
+    b.box(.082,.017,.082,"#9e9b90",{},"plaster");
+    b.cyl(.016,.021,.032,steel,{y:.015},8,"metal");
+    b.cyl(.008,.014,.48,steel,{y:.032},8,"paint");
+    processPipe(b,[[0,.487,0],[.017,.533,0],[.054,.554,0],[.112,.557,0],[x-.033,.552,0]],.009,steel);
+    b.rbox(.119,.025,.047,.007,steel,{x,y:.531},"paint");
+    b.rbox(.091,.008,.036,.004,"#d0d6cd",{x:x+.007,y:.524},"matte");
+    b.box(.086,.005,.032,"#fff3db",{x:x+.007,y:.521},"lights");
+    b.box(.031,.007,.031,"#b2b7af",{x,y:.555},"metal");
   },
   mesa(b, ground, seed = 1) {
     const r = (k) => ((Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
@@ -2059,7 +2059,7 @@ export const MIL_LAYOUT = {
 };
 /** Place everything another builder drew into this one (moved, turned and scaled). */
 function graft(b, draw, { x = 0, y = 0, z = 0, ry = 0, s = 1 } = {}) {
-  const g = new Builder(); draw(g);
+  const g = new Builder(b.far); draw(g);
   const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(s, s, s));
   for (const set of SETS) for (const part of g.sets[set]) { part.applyMatrix4(m); b.sets[set].push(part); }
 }

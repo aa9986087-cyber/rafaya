@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { NIGHT_LIGHT_SHADER } from "./world-lighting.js";
 
 export function wetSurface(material, weather, strength) {
   material.onBeforeCompile = (shader) => {
@@ -20,6 +21,7 @@ export function worldWater(weather, { mask = null, puddle = false, current = 0 }
     uniforms: {
       waterTime: weather.time, waterRain: weather.rain, waterWet: weather.wet,
       waterDay: weather.day, waterFlow: { value: current }, shapeMap: { value: mask },
+      ...weather.lighting,
     },
     vertexShader: `
       varying vec2 surfaceUv;
@@ -35,6 +37,7 @@ export function worldWater(weather, { mask = null, puddle = false, current = 0 }
       varying vec3 waterWorld;
       uniform float waterTime, waterRain, waterWet, waterDay, waterFlow;
       uniform sampler2D shapeMap;
+      ${weather.lighting ? NIGHT_LIGHT_SHADER : ""}
 
       vec2 waterHash(vec2 p) {
         p = fract(p * vec2(.3183099,.3678794) + vec2(.17,.51));
@@ -85,6 +88,12 @@ export function worldWater(weather, { mask = null, puddle = false, current = 0 }
         #ifdef WATER_PUDDLE
           color = mix(vec3(.046,.044,.039)*mix(.42,1.,waterDay),color,.62+reflected*.20);
         #endif
+        ${weather.lighting ? `
+          if (nightLightMix > .003) {
+            vec4 lamp = sampleNightLight(p + n.xz * .44);
+            float shimmer = .30 + fresnel * (.45 + reflected * .21);
+            color += nightLightTint(lamp.g) * lamp.r * nightLightMix * shimmer * .62;
+          }` : ""}
         gl_FragColor = vec4(color,cover*.91);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
