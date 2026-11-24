@@ -540,29 +540,25 @@ export const FAIR_WHEEL = { x: -.144, y: .554, z: -.144, radius: .349, cabins: 8
 
 const MAKERS = {
   // بيت الشعر: low black tent, three peaks, sadu band, poles and ropes.
-  tent0(b) {
-    b.box(0.86, 0.02, 0.62, C.sand, {});
-    const shape = new THREE.Shape();
-    shape.moveTo(-0.42, 0); shape.lineTo(-0.42, 0.14); shape.lineTo(-0.27, 0.27); shape.lineTo(-0.12, 0.22); shape.lineTo(0, 0.3);
-    shape.lineTo(0.12, 0.22); shape.lineTo(0.27, 0.27); shape.lineTo(0.42, 0.14); shape.lineTo(0.42, 0); shape.lineTo(-0.42, 0);
-    const roof = new THREE.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false });
-    b.add(roof, C.black, { z: -0.25 });
-    for (let i = 0; i < 8; i++) b.box(0.105, 0.05, 0.01, i % 2 ? C.cream : C.red, { x: -0.37 + i * 0.105, y: 0.03, z: 0.256 });
-    b.box(0.3, 0.12, 0.01, "#1a1411", { x: 0.05, y: 0.07, z: 0.262 });
-    for (const x of [-0.27, 0, 0.27]) b.cyl(0.01, 0.01, 0.3, C.wood, { x, z: 0.27 }, 4);
-    for (const s of [-1, 1]) b.add(new THREE.BoxGeometry(0.2, 0.006, 0.006), "#8a7458", { x: s * 0.5, y: 0.08, z: 0, rz: s * 0.6 });
-    b.add(new THREE.BoxGeometry(0.12, 0.05, 0.12), C.red, { x: -0.33, y: 0.025, z: 0.38 });
-    // A sadu rug in front, a hearth ringed with stones, a dallah and a saddle.
-    sadu(b, 0.34, 0.16, 0.04, 0.37);
-    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; b.add(new THREE.DodecahedronGeometry(0.018, 0), "#8d8174", { x: 0.33 + Math.cos(a) * 0.055, y: 0.012, z: 0.38 + Math.sin(a) * 0.055 }); }
-    b.add(new THREE.ConeGeometry(0.03, 0.06, 5), "#ff8a2a", { x: 0.33, y: 0.03, z: 0.38 }, "lights");
-    b.add(new THREE.BoxGeometry(0.05, 0.012, 0.012), "#3b2a1c", { x: 0.33, y: 0.01, z: 0.38, ry: 0.5 });
-    b.cyl(0.012, 0.022, 0.04, C.gold, { x: 0.26, z: 0.44 }, 8, "shiny");
-    b.cone(0.012, 0.02, C.gold, { x: 0.26, y: 0.04, z: 0.44 }, 8, "shiny");
-    b.add(new THREE.BoxGeometry(0.02, 0.006, 0.006), C.gold, { x: 0.28, y: 0.035, z: 0.44, rz: 0.5 }, "shiny");
-    b.add(new THREE.TorusGeometry(0.04, 0.012, 4, 8, Math.PI), C.wood, { x: -0.36, y: 0.0, z: 0.25, ry: Math.PI / 2 });
+  tent0(b) { // بيت الشعر: a black goat-hair tent on poles with guy ropes, a Sadu curtain, the majlis rugs, the fire with the dallah
+    b.box(0.92, 0.012, 0.7, "#d9c49a");
+    const ridge = (x, h) => b.cyl(0.008, 0.01, h, "#6b4a2e", { x, z: 0 }, 6, "wood");
+    // the roof: one woven sheet over three poles, rising to each pole and sagging between (the tent's profile, extruded)
+    const prof = [[-0.43, 0], [-0.43, 0.15], [-0.28, 0.29], [-0.14, 0.23], [0, 0.31], [0.14, 0.23], [0.28, 0.29], [0.43, 0.15], [0.43, 0], [0.4, 0], [0.4, 0.14], [0.28, 0.265], [0.14, 0.205], [0, 0.285], [-0.14, 0.205], [-0.28, 0.265], [-0.4, 0.14], [-0.4, 0]];
+    b.plate(prof, 0.52, "#231c18", { z: 0 }, "plaster");
+    for (let i = 0; i < 5; i++) b.plate(prof.slice(0, 9).map(([x, y]) => [x, y + 0.002]).concat(prof.slice(9).map(([x, y]) => [x, y + 0.002])), 0.012, "#3a302a", { z: -0.2 + i * 0.1 }, "plaster"); // the woven strips' seams
+    for (const x of [-0.28, 0, 0.28]) ridge(x, x ? 0.29 : 0.31);
+    b.box(0.84, 0.14, 0.012, "#2a221d", { y: 0.02, z: -0.255 }, "plaster");             // the back wall
+    for (const x of [-0.42, 0.42]) b.box(0.012, 0.16, 0.5, "#2a221d", { x, y: 0.02 }, "plaster");
+    for (let i = 0; i < 9; i++) b.box(0.08, 0.13, 0.006, ["#b3261e", "#f2ece0", "#2a221d", "#d9822b"][i % 4], { x: -0.32 + i * 0.08, y: 0.03, z: -0.03 }); // the Sadu curtain (the ladies' side)
+    for (const [x, z] of [[-0.44, 0.32], [0.44, 0.32], [-0.44, -0.32], [0.44, -0.32]]) { b.add(new THREE.CylinderGeometry(0.002, 0.002, 0.3, 4), "#c9b38a", { x: x * 0.8, y: 0.12, z: z * 0.8, rx: z > 0 ? 0.9 : -0.9 }); b.cyl(0.006, 0.006, 0.03, "#6b4a2e", { x, z }, 5, "wood"); }
+    // the majlis in front: rugs, cushions along the side, the fire pit and coffee things
+    b.box(0.56, 0.006, 0.22, "#9c2f28", { z: 0.12 }); b.box(0.5, 0.007, 0.16, "#c9a24a", { z: 0.12 });
+    for (let i = 0; i < 4; i++) b.rbox(0.11, 0.035, 0.05, 0.01, i % 2 ? "#7a1f1a" : "#24425e", { x: -0.2 + i * 0.13, z: 0.03 }, "matte");
+    b.cyl(0.05, 0.055, 0.02, "#8a8378", { x: 0.3, z: 0.3 }, 10, "stone"); b.add(new THREE.ConeGeometry(0.022, 0.05, 6), "#ff8a2a", { x: 0.3, y: 0.045, z: 0.3 }, "glow");
+    b.lathe([[0, 0], [0.018, 0.005], [0.02, 0.025], [0.008, 0.04], [0.012, 0.055], [0, 0.06]], "#d4a53a", { x: 0.36, y: 0.007, z: 0.24 }, 10, "metal"); // the dallah
+    b.box(0.05, 0.02, 0.03, "#6b4a2e", { x: -0.34, z: 0.28 }, "wood");
   },
-  // Najdi mud house: thick walls, crenellations, beam ends, a carved door.
   house1(b) {
     const w=.69,d=.58,z=-.095;
     b.box(.93,.026,.89,"#c1a080",{z:.026});
@@ -818,13 +814,26 @@ const MAKERS = {
     }
     palm(b, 0, 0, 0.6, 0);
   },
-  trafficLight(b) {
-    b.cyl(0.012, 0.012, 0.36, C.dark, {}, 6);
-    b.box(0.05, 0.12, 0.05, C.black, { y: 0.32 });
-    b.box(0.03, 0.03, 0.01, "#e0523f", { y: 0.41, z: 0.026 }, "lights");
-    b.box(0.03, 0.03, 0.01, "#3fbf5f", { y: 0.35, z: 0.026 }, "lights");
+  trafficLight(b) { // a mast-arm signal: a galvanised pole on a concrete foot, the arm over the junction, three-lamp heads, a pedestrian box
+    b.cyl(0.03, 0.036, 0.04, "#bdb6a8", {}, 10, "stone");
+    b.cyl(0.011, 0.015, 0.56, "#8f969b", { y: 0.04 }, 10, "metal");
+    b.add(new THREE.CylinderGeometry(0.007, 0.009, 0.34, 8), "#8f969b", { x: 0.17, y: 0.56, rz: Math.PI / 2 - 0.08 }, "metal");
+    b.add(new THREE.CylinderGeometry(0.003, 0.003, 0.2, 5), "#8f969b", { x: 0.09, y: 0.5, rz: Math.PI / 2 - 0.62 }, "metal"); // the brace
+    for (const [x, y, z] of [[0.3, 0.47, 0], [0.16, 0.48, 0], [0.02, 0.3, 0.02]]) {
+      b.rbox(0.034, 0.1, 0.03, 0.006, "#1f2326", { x, y, z }, "paint");
+      b.box(0.04, 0.106, 0.004, "#f2c230", { x, y: y - 0.003, z: z - 0.017 });          // the yellow back plate
+      for (let k = 0; k < 3; k++) { b.box(0.018, 0.004, 0.012, "#1f2326", { x, y: y + 0.08 - k * 0.03, z: z + 0.021 }); b.cyl(0.009, 0.009, 0.004, ["#e0523f", "#f0b43a", "#3fbf5f"][k], { x, y: y + 0.07 - k * 0.03, z: z + 0.016, rx: Math.PI / 2 }, 10, "lights"); }
+    }
+    b.rbox(0.03, 0.04, 0.026, 0.005, "#2c3034", { x: -0.002, y: 0.2, z: 0.02 }, "paint"); b.box(0.016, 0.016, 0.004, "#e8e8e6", { y: 0.215, z: 0.034 }, "lights");
+    b.box(0.07, 0.04, 0.004, "#1f6f3f", { x: 0.1, y: 0.6, z: 0.008 }); b.box(0.05, 0.006, 0.005, "#f2f2ee", { x: 0.1, y: 0.605, z: 0.011 }); // the street name sign
   },
-  medianPalm(b) { b.box(0.12, 0.03, 0.12, C.stone); palm(b, 0, 0, 0.45, 0.05); },
+  medianPalm(b) { // a planted median: stone kerbs, red earth with ground cover, a date palm with its uplight
+    b.box(0.2, 0.035, 0.12, "#d6ccb8", {}, "stone");
+    b.box(0.18, 0.01, 0.1, "#8a5d3e", { y: 0.035 });
+    for (const [x, z] of [[-0.06, -0.03], [0.06, 0.03], [-0.07, 0.035], [0.07, -0.03]]) b.add(new THREE.IcosahedronGeometry(0.022, 0), "#6f8f4a", { x, y: 0.05, z, sy: 0.6 });
+    palm(b, 0, 0, 0.5, 0.04);
+    b.box(0.014, 0.01, 0.014, "#fff0c0", { x: 0.04, y: 0.045, z: 0 }, "lights");
+  },
   parking(b) { // a Saudi car park: kerbed asphalt, marked bays with wheel stops, a fabric car shade over one row, parked sedans and SUVs
     b.box(0.98, 0.01, 0.98, "#5a5c5f");
     for (const [x, z, w, d] of [[0, -0.475, 0.98, 0.03], [0, 0.475, 0.98, 0.03], [-0.475, 0, 0.03, 0.98], [0.475, 0, 0.03, 0.98]]) b.box(w, 0.026, d, "#d4cab6", { x, z }, "stone");
@@ -845,9 +854,20 @@ const MAKERS = {
     b.cyl(0.008, 0.01, 0.42, "#5b6065", { x: 0.44, z: 0.04 }, 6, "metal"); b.box(0.09, 0.012, 0.03, "#5b6065", { x: 0.41, y: 0.42, z: 0.04 }); b.box(0.06, 0.006, 0.022, "#fff2d0", { x: 0.4, y: 0.414, z: 0.04 }, "glow");
     b.cyl(0.006, 0.006, 0.2, "#5b6065", { x: -0.44, z: 0.44 }, 5); b.box(0.08, 0.08, 0.008, "#1f5fa8", { x: -0.44, y: 0.2, z: 0.445 }); b.box(0.03, 0.05, 0.01, "#f4f4f2", { x: -0.44, y: 0.215, z: 0.45 });
   },
-  avenue(b) { b.box(0.98, 0.01, 0.98, "#4d4f55"); b.box(0.98, 0.02, 0.12, "#cdbf9f", { y: 0.01 }); palm(b, 0, 0, 0.45, 0); },
+  avenue(b) { // the boulevard (its card): two carriageways, dashed lanes, a kerbed median with palms and a lamp
+    b.box(0.98, 0.01, 0.98, "#55575b");
+    for (const z of [-0.25, 0.25]) for (let k = 0; k < 4; k++) b.box(0.12, 0.004, 0.014, "#f3efe6", { x: -0.36 + k * 0.24, y: 0.01, z });
+    for (const z of [-0.47, 0.47]) b.box(0.98, 0.04, 0.05, "#e2b52c", { z });
+    MAKERS.medianPalm(b); b.box(0.98, 0.035, 0.12, "#d6ccb8", {}, "stone");
+    b.cyl(0.006, 0.008, 0.4, "#5b6065", { x: 0.3 }, 6, "metal"); b.box(0.1, 0.01, 0.02, "#5b6065", { x: 0.3, y: 0.4 }); b.box(0.06, 0.006, 0.02, "#fff2d0", { x: 0.3, y: 0.394 }, "lights");
+  },
   roundabout(b) { b.box(0.98, 0.01, 0.98, "#4d4f55"); b.cyl(ISLAND_RADIUS-.02, ISLAND_RADIUS, 0.05, C.stone); b.cyl(0.22, 0.22, 0.012, "#7fae4c", { y: 0.05 }, 20); },
-  signal(b) { b.box(0.98, 0.01, 0.98, "#4d4f55"); b.cyl(0.02, 0.02, 0.5, C.dark, { x: 0.3, z: 0.3 }, 6); b.box(0.08, 0.2, 0.08, C.black, { x: 0.3, y: 0.42, z: 0.3 }); b.box(0.05, 0.05, 0.01, "#e0523f", { x: 0.3, y: 0.56, z: 0.345 }, "lights"); b.box(0.05, 0.05, 0.01, "#3fbf5f", { x: 0.3, y: 0.46, z: 0.345 }, "lights"); },
+  signal(b) { // the signalled junction (its card): zebra crossings, stop lines, a mast-arm signal on the corner
+    b.box(0.98, 0.01, 0.98, "#55575b");
+    for (let k = 0; k < 6; k++) { b.box(0.05, 0.004, 0.16, "#f3efe6", { x: -0.3 + k * 0.12, y: 0.01, z: 0.38 }); b.box(0.16, 0.004, 0.05, "#f3efe6", { x: 0.38, y: 0.01, z: -0.3 + k * 0.12 }); }
+    b.box(0.4, 0.004, 0.02, "#f3efe6", { x: -0.2, y: 0.011, z: 0.26 });
+    MAKERS.trafficLight(b);
+  },
   quarry(b) {
     utilitySlab(b,"#b59d7d");
     for(const [x,z,r,h] of [[-.27,-.249,.18,.212],[-.089,-.313,.12,.143],[.254,.186,.127,.112],[-.277,.262,.111,.085]])
@@ -1637,21 +1657,28 @@ const MAKERS = {
     oliveTree(b,-.352,.359,.63);
   },
 
-  construction(b) {
-    b.box(0.94, 0.008, 0.94, "#cdb68a");
-    for (const [x, z, w, d] of [[0, -0.46, 0.94, 0.02], [0, 0.46, 0.94, 0.02], [-0.46, 0, 0.02, 0.94], [0.46, 0, 0.02, 0.94]]) b.box(w, 0.1, d, "#e8d9b5", { x, z });
-    for (const [x, z] of [[-0.25, -0.2], [0.25, -0.2], [-0.25, 0.15], [0.25, 0.15]]) b.box(0.03, 0.5, 0.03, "#9aa0a6", { x, z });
-    for (const y of [0.18, 0.36, 0.5]) { b.box(0.53, 0.02, 0.03, "#9aa0a6", { y, z: -0.2 }); b.box(0.53, 0.02, 0.03, "#9aa0a6", { y, z: 0.15 }); }
-    b.box(0.5, 0.02, 0.38, "#bfbab0", { y: 0.18, z: -0.02 });
-    b.cone(0.12, 0.1, "#d9b77a", { x: 0.3, z: 0.32 }, 7);
-    b.cyl(0.012, 0.012, 1.1, "#e0b02a", { x: -0.35, z: 0.3 }, 4);
-    b.box(0.6, 0.03, 0.03, "#e0b02a", { x: -0.15, y: 1.1, z: 0.3 });
-    b.box(0.08, 0.06, 0.06, "#e0b02a", { x: -0.38, y: 1.06, z: 0.3 });
-    b.box(0.004, 0.4, 0.004, "#333", { x: 0.1, y: 0.7, z: 0.3 });
+  construction(b) { // a building site: a hoarded fence, a slab with rebar and scaffolding, a tower crane, a mixer, pallets of block, the site cabin
+    b.box(0.94, 0.008, 0.94, "#bfae8a");
+    for (const [x, z, w, d] of [[0, -0.46, 0.94, 0.012], [-0.46, 0, 0.012, 0.94], [0.46, 0, 0.012, 0.94], [-0.28, 0.46, 0.38, 0.012], [0.28, 0.46, 0.38, 0.012]]) { b.box(w, 0.12, d, "#f1eee6", { x, z }); b.box(w + 0.002, 0.03, d + 0.002, "#2f7d5b", { x, y: 0.06, z }); }
+    b.box(0.5, 0.03, 0.42, "#c9c4b8", { x: -0.08, z: -0.08 }, "stone");                     // the slab
+    for (const [x, z] of [[-0.3, -0.26], [-0.08, -0.26], [0.14, -0.26], [-0.3, 0.1], [-0.08, 0.1], [0.14, 0.1]]) { b.box(0.03, 0.24, 0.03, "#bdb7ab", { x, y: 0.03, z }, "stone"); for (const dx of [-0.008, 0.008]) b.box(0.003, 0.08, 0.003, "#7a4a2a", { x: x + dx, y: 0.27, z }, "metal"); }
+    for (let k = 0; k < 4; k++) b.box(0.52, 0.006, 0.008, "#c9a24a", { x: -0.08, y: 0.08 + k * 0.06, z: 0.15 }, "metal"); // scaffold ledgers
+    for (const x of [-0.32, -0.08, 0.16]) b.box(0.006, 0.26, 0.006, "#c9a24a", { x, y: 0.03, z: 0.15 }, "metal");
+    b.box(0.5, 0.008, 0.05, "#a0783a", { x: -0.08, y: 0.2, z: 0.17 }, "wood");             // planks
+    // the tower crane: a yellow lattice mast, the jib, the counterweight, a hook
+    const mx = 0.33, mz = -0.32;
+    for (const [dx, dz] of [[-0.02, -0.02], [0.02, -0.02], [-0.02, 0.02], [0.02, 0.02]]) b.box(0.006, 0.9, 0.006, "#e2b52c", { x: mx + dx, z: mz + dz }, "paint");
+    for (let k = 0; k < 9; k++) b.add(new THREE.BoxGeometry(0.004, 0.06, 0.004), "#e2b52c", { x: mx, y: 0.05 + k * 0.1, z: mz + 0.02, rx: 0.6 }, "paint");
+    b.box(0.07, 0.05, 0.06, "#e2b52c", { x: mx, y: 0.9, z: mz }, "paint"); b.box(0.04, 0.03, 0.03, "#2a3036", { x: mx, y: 0.905, z: mz + 0.03 }, "glass");
+    b.box(0.68, 0.02, 0.02, "#e2b52c", { x: mx - 0.3, y: 0.96, z: mz }, "paint"); b.box(0.12, 0.05, 0.05, "#7d8288", { x: mx + 0.1, y: 0.94, z: mz }, "metal");
+    b.cyl(0.002, 0.002, 0.4, "#3a3a3a", { x: mx - 0.5, y: 0.56, z: mz }, 4); b.box(0.02, 0.02, 0.02, "#e0523f", { x: mx - 0.5, y: 0.55, z: mz });
+    b.box(0.02, 0.02, 0.02, "#ff3b30", { x: mx - 0.62, y: 0.98, z: mz }, "lights");
+    // the mixer, block pallets, sand, the cabin
+    b.add(new THREE.CylinderGeometry(0.035, 0.05, 0.09, 10), "#e8e6e0", { x: 0.3, y: 0.07, z: 0.2, rz: 0.7 }, "paint"); b.box(0.08, 0.03, 0.06, "#c43c3c", { x: 0.32, z: 0.2 });
+    for (let i = 0; i < 3; i++) b.box(0.08, 0.05, 0.08, "#b9b3a6", { x: -0.36 + i * 0.1, z: 0.34 }, "stone");
+    b.cone(0.08, 0.06, "#d8c69a", { x: 0.06, z: 0.34 }, 10);
+    b.box(0.2, 0.1, 0.1, "#e8e4da", { x: 0.3, z: 0.36 }); b.box(0.06, 0.03, 0.004, "#4f7f99", { x: 0.26, y: 0.05, z: 0.412 }, "glass"); b.box(0.21, 0.01, 0.11, "#2f7d5b", { x: 0.3, y: 0.1, z: 0.36 });
   },
-
-  // ---------- life and scenery (used by the world, not by the build menu) ----------
-
   camel(b) {
     const hide = "#c99a5e", dark = "#a77a45";
     b.add(new THREE.SphereGeometry(0.1, 8, 6), hide, { y: 0.24, sx: 1.5, sy: 0.8, sz: 0.85 });
