@@ -324,9 +324,8 @@ globalThis.RAFAYA_PREVIEW_RESET = () => {
   document.body.classList.add("visual-preview");
   document.querySelector(".menu-eyebrow").textContent = "تجربة الرافعية الجديدة";
   document.querySelector(".menu-sub").textContent = "جرّب الإضاءة الجديدة بعد الغروب";
-  const entry = document.getElementById("mWorld");
-  entry.querySelector("b").textContent = "ادخل واحة الرافعية";
-  entry.querySelector("small").textContent = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
+  document.getElementById("mPlayLabel").dataset.start = "ادخل واحة الرافعية";
+  document.getElementById("mPlayHint").dataset.start = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
   const reset = document.createElement("button");
   reset.type = "button"; reset.className = "pv-reset"; reset.textContent = "أعد التجربة من البداية";
   reset.addEventListener("click", () => { if (confirm("ترجع المدينة التجريبية لبدايتها؟")) globalThis.RAFAYA_PREVIEW_RESET(); });

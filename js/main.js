@@ -2156,7 +2156,8 @@ function worldJoinSheet(recover) {
         $("wjNext").addEventListener("click", () => worldMapSheet());
       }
     } catch (e) {
-      toast(String(e.message) === "409" ? "الاسم مأخوذ، اختر غيره" : String(e.message) === "400" ? "الاسم ما يصلح: ٣ إلى ١٦ حرف بدون رموز" : "ما زبط، تأكد من الاسم والكود", "bad");
+      const messages = { 409: "الاسم مأخوذ، اختر غيره", 400: "اختر اسمًا من ٣ إلى ١٦ حرف بدون رموز", 422: "هالاسم ما يصلح. اختر لقب مناسب للعبة." };
+      toast(messages[e.message] || "ما زبط، تأكد من الاسم والكود", "bad");
     }
   });
 }
@@ -2294,7 +2295,11 @@ async function worldMapSheet(pick) {
       store.set(WORLD_SAVE, pack(s));
       sfx.era(); toast(`تأسست «${town}» في عالم الجوف! 🎉`, "era");
       enterWorldTown();
-    } catch (e) { toast(String(e.message) === "409" ? "الأرض انأخذت، اختر غيرها" : String(e.message) === "422" ? "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" : "ما زبط التأسيس", "bad"); worldMapSheet(); }
+    } catch (e) {
+      const messages = { 409: "الأرض انأخذت، اختر غيرها", 422: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره", 400: "اختر اسم مناسب لمدينتك" };
+      toast(messages[e.message] || "ما زبط التأسيس", "bad");
+      if (e.message !== "400") worldMapSheet();
+    }
   });
 }
 /** Rename your town in al-Jouf: once only, and never to a name another town has. */
@@ -3045,10 +3050,12 @@ function chatSheet(keep, draft = $("chatText")?.value || "") {
     developerNoteSheet(id, $("chatText").value);
   });
   const send = async () => {
+    const button = $("chatGo");
+    if (button.disabled) return;
     const text = $("chatText").value.trim();
     if (!text) return;
     if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; }
-    $("chatGo").disabled = true;
+    button.disabled = true;
     let r;
     try { r = await api("/world/chat", { name: id.name, secret: id.secret, text }); } catch { r = { error: "ما وصلت الرسالة، جرّب بعد شوي" }; }
     if (r.error) {
@@ -3433,8 +3440,7 @@ function shareGameSheet() {
   });
 }
 $("mShare").addEventListener("click", () => { sfx.tap(); shareGameSheet(); });
-$("mWorld").addEventListener("click", () => { sfx.tap(); if (globalThis.RAFAYA_PREVIEW_SAMPLE) enterWorldTown(); else openWorld(); });
-$("mContinue").addEventListener("click", async (e) => { // straight into your own town: no map, no picking
+$("mContinue").addEventListener("click", async (e) => {
   sfx.tap();
   const button = e.currentTarget; button.disabled = true;
   try {
@@ -3463,10 +3469,11 @@ function menuBackdrop() {
   let town = null;
   if (id?.plot != null) try { town = unpack(store.get(WORLD_SAVE)); } catch { town = null; }
   MENU.town = town;
-  $("mContinue").hidden = !town;
-  if (globalThis.RAFAYA_PREVIEW) $("mWorld").hidden = !!town; // the trial: «continue» is the way in, its second «enter» button goes
+  const label = $("mPlayLabel"), hint = $("mPlayHint");
+  label.textContent = town ? `▶️ كمّل في «${town.name}»` : label.dataset.start || "▶️ ابدأ اللعب";
+  hint.textContent = town ? "ادخل مدينتك على طول" : hint.dataset.start || "";
+  hint.hidden = !hint.textContent;
   if (!town) return;
-  $("mTownName").textContent = `«${town.name}»`;
   nameLandmarks(worldPlace(id.plot));
   world.newTown(); world.sync(town, { tiles: true, roads: true, buildings: true });
   let sx = 0, sy = 0, n = 0;

@@ -30,6 +30,7 @@ import { ERAS, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
+import { blockedChat, blockedName } from "./moderation.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -59,6 +60,7 @@ const NAMEFIX_REASONS = {
   fake: "الاسم يوهم إنه من الإدارة أو المطور"
 };
 const DEV_NAME = "🛠️ المطور"; // how the owner's messages show in the world's chat
+const CHAT_MUTE_MS = 10 * 60 * 1000;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
 // never in the repository). A login makes a token for that phone; tokens are kept hashed.
@@ -80,6 +82,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS towns (code TEXT PRIMARY KEY, secret TEXT, name TEXT, mayor TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, author TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS players (name TEXT PRIMARY KEY, secret TEXT, recovery TEXT, created INTEGER, plot INTEGER)`);
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN chat_warned INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN chat_muted_until INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS plots (plot INTEGER PRIMARY KEY, owner TEXT, town TEXT, terrain TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
     // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
@@ -601,7 +605,7 @@ export class Board extends DurableObject {
       }
       const citizenSupport = this.sql.exec("SELECT day, due, paid_at, recipients FROM citizen_support ORDER BY day")
         .toArray().map(({ day, due, paid_at, recipients }) => ({ day, due, paidAt: paid_at, credited: recipients > 0 }));
-      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport });
+      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport, worldVersion: VERSION });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
@@ -670,7 +674,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     }
     if (post && p[0] === "join") {
       const name = clean(body.name, 16);
-      if (!NAME_RE.test(name) || badText(name)) return json({ error: "bad name" }, 400);
+      if (!NAME_RE.test(name)) return json({ error: "bad name" }, 400);
+      if (badText(name) || blockedName(name)) return json({ error: "اختر لقب مناسب للعبة" }, 422);
       if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", name).toArray().length) return json({ error: "taken" }, 409);
       const secret = makeSecret(), recovery = makeCode() + makeCode();
       this.sql.exec("INSERT INTO players (name, secret, recovery, created, plot) VALUES (?, ?, ?, ?, NULL)", name, await hash(secret), await hash(recovery), Date.now());
@@ -720,12 +725,12 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const wantName = fix.what !== "town", wantTown = fix.what !== "name" && !!t;
       const newName = wantName ? clean(body.newName, 16) : name, newTown = wantTown ? clean(body.newTown, 20) : t?.town;
       if (wantName) {
-        if (!NAME_RE.test(newName) || badText(newName)) return json({ error: "اسمك الجديد ما يصلح" });
+        if (!NAME_RE.test(newName) || badText(newName) || blockedName(newName)) return json({ error: "اسمك الجديد ما يصلح. اختر لقب مناسب للعبة." });
         if (newName === name) return json({ error: "اكتب اسم غير اسمك القديم" });
         if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", newName).toArray().length) return json({ error: "هالاسم مأخوذ، اختر غيره" });
       }
       if (wantTown) {
-        if (newTown.length < 2 || badText(newTown)) return json({ error: "اسم المدينة الجديد ما يصلح" });
+        if (newTown.length < 2 || badText(newTown) || blockedName(newTown)) return json({ error: "اختر اسم مناسب لمدينتك" });
         if (townNameKey(newTown) === townNameKey(t.town)) return json({ error: "اكتب اسم مدينة غير القديم" });
         if (this.nameTaken(newTown, me.plot)) return json({ error: "فيه مدينة بالجوف بهالاسم، اختر غيره" });
       }
@@ -745,7 +750,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     if (p[0] === "claim") {
       const plot = int(body.plot), town = clean(body.town, 20) || "هجرة";
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);
-      if (plot < 0 || plot >= 5000 || badText(town)) return json({ error: "bad" }, 400);
+      if (plot < 0 || plot >= 5000 || badText(town) || blockedName(town)) return json({ error: "bad" }, 400);
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", plot).toArray().length) return json({ error: "taken" }, 409);
       if (this.nameTaken(town)) return json({ error: "name taken" }, 422); // every town in al-Jouf has its own name
       this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), Date.now());
@@ -852,7 +857,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const town = clean(body.town, 20);
       if (!row) return json({ error: "no town" }, 400);
       if (row.renamed) return json({ error: "غيّرت الاسم قبل، ما يتغير مرة ثانية" }, 200);
-      if (town.length < 2 || badText(town)) return json({ error: "الاسم ما يصلح" }, 200);
+      if (town.length < 2 || badText(town) || blockedName(town)) return json({ error: "اختر اسم مناسب لمدينتك" }, 200);
       if (townNameKey(town) === townNameKey(row.town)) return json({ error: "هذا نفس الاسم" }, 200);
       if (this.nameTaken(town, me.plot)) return json({ error: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" }, 200);
       this.sql.exec("UPDATE plots SET town = ?, renamed = 1 WHERE plot = ?", town, me.plot);
@@ -881,11 +886,24 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     if (p[0] === "chat") {
       const text = clean(body.text, 200);
       if (!text) return json({ error: "اكتب شي" }, 200);
-      if (badText(text)) return json({ error: "الكلام هذا ما يصير بالشات" }, 200);
+      const now = Date.now();
+      const { chat_warned, chat_muted_until } = this.sql.exec("SELECT chat_warned, chat_muted_until FROM players WHERE name = ?", name).toArray()[0];
+      if (chat_muted_until > now) {
+        const minutes = Math.ceil((chat_muted_until - now) / 60000).toLocaleString("ar-SA");
+        return json({ error: `الشات موقوف عندك مؤقتًا. باقي ${minutes} د.` });
+      }
+      if (blockedChat(text) || badText(text)) {
+        if (chat_warned) {
+          this.sql.exec("UPDATE players SET chat_warned = 0, chat_muted_until = ? WHERE name = ?", now + CHAT_MUTE_MS, name);
+          return json({ error: "تكرر الكلام الممنوع. تم كتمك في الشات لمدة ١٠ دقائق." });
+        }
+        this.sql.exec("UPDATE players SET chat_warned = 1, chat_muted_until = 0 WHERE name = ?", name);
+        return json({ error: "تنبيه: رسالتك فيها اسم أو كلام ممنوع. التكرار يوقف إرسال الشات ١٠ دقائق." });
+      }
       const last = this.sql.exec("SELECT at FROM chat WHERE name = ? ORDER BY id DESC LIMIT 1", name).toArray()[0];
-      if (last && Date.now() - last.at < 6000) return json({ error: "على هونك: رسالة كل ٦ ثواني" }, 200);
+      if (last && now - last.at < 6000) return json({ error: "على هونك: رسالة كل ٦ ثواني" }, 200);
       const town = me.plot != null ? this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0]?.town || "" : "";
-      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, Date.now());
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, now);
       this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
       const message = this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
       this.live({ t: "chat", message });

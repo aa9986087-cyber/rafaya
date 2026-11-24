@@ -635,4 +635,3 @@ body.world .speeds { display: none !important; }
 .when .online { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: rgba(63, 191, 95, .18); color: #bff0c8; font-variant-numeric: tabular-nums; }
 .when .online::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-inline-end: 4px; border-radius: 50%; background: #3fbf5f; box-shadow: 0 0 6px #3fbf5f; vertical-align: 1px; }
 #mContinue { background: linear-gradient(135deg, #1f7a52, #2c8a7a); box-shadow: 0 10px 24px -12px rgba(20, 80, 60, .9); }
-#mContinue:not([hidden]) + #mWorld { opacity: .92; }
