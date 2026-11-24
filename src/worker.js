@@ -586,6 +586,11 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         ? this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ? AND k = ?", me.plot, await hash(endpoint)).toArray()
         : this.sql.exec("SELECT k, endpoint, p256dh, auth FROM pushsubs WHERE plot = ?", me.plot).toArray();
       if (!subs.length) return json({ error: "ما فيه اشتراك مسجّل لهالجهاز. فعّل التنبيهات أول." });
+      if (body.later) { // the test the phone gets with the game closed: some (Samsung's web apps) show nothing while the game is open
+        const message = { title: "🔔 تجربة التنبيهات", body: "وصلك التنبيه والتطبيق مسكّر. كذا بتجيك تنبيهات الجوف 👍", tag: "test-later" };
+        this.ctx.waitUntil(new Promise((resolve) => setTimeout(resolve, 12000)).then(() => Promise.all(subs.map((sub) => this.sendPush(sub, message, "300")))));
+        return json({ ok: true, later: true });
+      }
       const receipt = typeof body.receipt === "string" && /^[a-f0-9-]{36}$/.test(body.receipt) ? body.receipt : undefined;
       const message = { title: "🔔 تجربة التنبيهات", body: "وصلتك تجربة التنبيه من عالم الجوف.", tag: receipt ? `test-${receipt}` : "test", receipt };
       const statuses = await Promise.all(subs.map((sub) => this.sendPush(sub, message, "60")));

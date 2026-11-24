@@ -3080,8 +3080,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-25", world: "2027-01-25" },
+  v: { solo: "2027-01-25", world: "2027-01-26" },
   items: [
+    ["world", "📴", "جرّب التنبيه والتطبيق مسكّر", "• بالإعدادات تحت «جرّب التنبيه» صار فيه زر «📴 جرّب والتطبيق مسكّر»: تضغطه وتسكّر اللعبة، والتنبيه يجيك بعد ١٠ ثواني. • بعض الجوالات (مثل تطبيقات متصفح سامسونج) ما تعرض التنبيه واللعبة مفتوحة قدامك، بس توصلك وهي مسكّرة، وهذا وقتها الحقيقي."],
     ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل متصفح سامسونج بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد. • وصار فيه شرح خاص لتنبيهات متصفح سامسونج."],
     ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
     ["world", "🌧️", "الشتاء رجع له مطره", "• الشتاء صار موسم المطر بالجوف: ينزل فيه مطر ثلاث مرات على الأقل (أوله ونصه وآخره)، وكل مرة قرابة اليوم. • ومطر الشتاء يخلّي الربيع اللي بعده أخضر."],
@@ -3616,7 +3617,7 @@ function settingsSheet(fromMenu) {
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
-    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
+    <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div><button class="btn block" id="pushLater" type="button">📴 جرّب والتطبيق مسكّر</button><div id="pushLaterStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     <h3>نسخة احتياطية</h3>
@@ -3681,6 +3682,18 @@ function settingsSheet(fromMenu) {
       navigator.serviceWorker.removeEventListener("message", onReceipt);
       button.disabled = false;
     }
+  });
+  $("pushLater")?.addEventListener("click", async (e) => { // a notification 12 seconds later, with the game closed
+    const button = e.currentTarget, status = $("pushLaterStatus"), id = me();
+    button.disabled = true;
+    try {
+      const sub = await (await activePushWorker()).pushManager.getSubscription();
+      if (!sub) throw new Error("no subscription");
+      await registerPushEndpoint(sub, id);
+      const r = await api("/world/push/test", { name: id.name, secret: id.secret, endpoint: sub.endpoint, later: true });
+      status.innerHTML = r.ok ? "✅ <b>سكّر اللعبة الحين</b> (اطلع للشاشة الرئيسية)، والتنبيه يجيك بعد ١٠ ثواني تقريبًا." : (r.error || "ما قدرنا نرسل التجربة. جرّب بعد شوي.");
+    } catch { status.textContent = "ما قدرنا نرسل التجربة. طفّ التنبيهات وشغّلها من جديد، ثم جرّب."; }
+    finally { button.disabled = false; }
   });
   const pushToggle = $("setPush");
   if (pushToggle && pushStatus === "checking") checkPush()?.then(() => {
