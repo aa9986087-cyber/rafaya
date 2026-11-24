@@ -1004,7 +1004,7 @@ let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
 // sheets that show what players wrote (al-Jouf's map, the chat, war screens): «الرافعية» there is a real name, never your town's
-const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "developer-note", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
 function here(text) {
   const n = S?.name;
   // a landmark keeps its place's name (بوابة الرافعية is the gate of the place on al-Jouf's map, not of the town)
@@ -1587,7 +1587,7 @@ async function refreshVisit() {
  * before its own handler runs. Reading, following a family, the world map and comments still work.
  */
 const VISIT_OK = ".keep, [data-follow], [data-day], [data-plot], [data-district], .wm-zoom, #olText, #wmTown, .ol-com";
-const VISIT_SHEETS = new Set(["chat", "online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew", "war", "war-rel", "war-strike", "war-report", "war-back"]); // the war sheets only talk to the server
+const VISIT_SHEETS = new Set(["chat", "developer-note", "online", "world", "pop", "happy", "when", "util", "pause", "how", "whatsnew", "war", "war-rel", "war-strike", "war-report", "war-back"]); // the war sheets only talk to the server
 for (const type of ["click", "input", "change"]) $("sheetBody").addEventListener(type, (e) => {
   if (!visiting || VISIT_SHEETS.has(sheetFor)) return;
   const el = e.target.closest?.("button, input, select, textarea, [data-tech], [data-opt]");
@@ -3019,20 +3019,25 @@ function chatCount() {
   $("chatCount").hidden = !n || sheetFor === "chat";
   $("chatCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
 }
-function chatSheet(keep) {
+function chatSheet(keep, draft = $("chatText")?.value || "") {
   const id = me(), box = $("chatList"), stick = !keep || !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-  const draft = $("chatText")?.value || "";
   const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
   sheet(`<h2>💬 شات الجوف</h2>
     <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
         <div class="chat-head"><b>${m.name}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
         <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
     <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
-    <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>`, "chat");
+    <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>
+    ${globalThis.RAFAYA_PREVIEW ? "" : '<div class="sheet-actions keep"><button class="btn block" id="developerNote" type="button">ملاحظة خاصة للمطور</button></div>'}`, "chat");
   const list = $("chatList");
   if (stick) list.scrollTop = list.scrollHeight;
   store.set("rafaya-chat-seen", String(CHAT.last));
   chatCount();
+  $("developerNote")?.addEventListener("click", () => {
+    if (!id) { toast("سجّل اسمك في عالم الجوف أول", "bad"); return; }
+    sfx.tap();
+    developerNoteSheet(id, $("chatText").value);
+  });
   const send = async () => {
     const text = $("chatText").value.trim();
     if (!text) return;
@@ -3040,11 +3045,17 @@ function chatSheet(keep) {
     $("chatGo").disabled = true;
     let r;
     try { r = await api("/world/chat", { name: id.name, secret: id.secret, text }); } catch { r = { error: "ما وصلت الرسالة، جرّب بعد شوي" }; }
-    if (r.error) { toast(r.error, "bad"); sfx.deny(); $("chatGo").disabled = false; return; }
-    $("chatText").value = "";
+    if (r.error) {
+      toast(r.error, "bad"); sfx.deny();
+      const go = $("chatGo");
+      if (go) go.disabled = false;
+      return;
+    }
+    const input = $("chatText");
+    if (input?.value.trim() === text) input.value = "";
     sfx.tap();
     await chatPoll(true);
-    chatSheet();
+    if (sheetFor === "chat") chatSheet();
   };
   $("chatGo").addEventListener("click", send);
   $("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
@@ -3054,6 +3065,43 @@ function chatSheet(keep) {
     if (!m || !id) return;
     try { await api("/world/report", { name: id.name, secret: id.secret, plot: m.plot, reason: `شات (${m.name}): ${m.text}` }); toast("وصل البلاغ، شكرًا", "goal"); b.disabled = true; } catch { toast("ما وصل البلاغ", "bad"); }
   }));
+}
+function developerNoteSheet(id, chatDraft) {
+  sheet(`<h2>ملاحظة خاصة للمطور</h2>
+    <p>المطور يشوف ملاحظتك واسمك في اللعبة. الملاحظة تبقى خاصة وما تظهر في الشات العام.</p>
+    <form id="developerNoteForm">
+      <label for="developerNoteText">ملاحظتك</label>
+      <textarea id="developerNoteText" maxlength="600" required placeholder="اكتب اقتراحك أو وصف المشكلة"></textarea>
+      <div class="sheet-actions keep">
+        <button class="btn go block" id="developerNoteSend" type="submit">إرسال للمطور فقط</button>
+        <button class="btn block" id="developerNoteBack" type="button">رجوع للشات</button>
+      </div>
+    </form>`, "developer-note");
+  const form = $("developerNoteForm");
+  $("developerNoteBack").addEventListener("click", () => chatSheet(false, chatDraft));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = $("developerNoteText").value.trim(), send = $("developerNoteSend");
+    if (send.disabled) return;
+    if (!text) { toast("اكتب ملاحظتك أول", "bad"); return; }
+    send.disabled = true;
+    let result;
+    try {
+      result = await api("/world/feedback", { name: id.name, secret: id.secret, text });
+    } catch (error) {
+      result = { error: error.message === "maintenance" ? "عالم الجوف تحت الصيانة" : "ما وصلت الملاحظة، جرّب مرة ثانية" };
+    } finally {
+      send.disabled = false;
+    }
+    if (!result.ok) {
+      toast(result.error || "ما وصلت الملاحظة، جرّب مرة ثانية", "bad");
+      sfx.deny();
+      return;
+    }
+    toast("وصلت ملاحظتك للمطور", "goal");
+    sfx.tap();
+    if (sheetFor === "developer-note" && form.isConnected) chatSheet(false, chatDraft);
+  });
 }
 $("chatBtn").addEventListener("click", async () => { sfx.tap(); chatSheet(); await chatPoll(true); });
 

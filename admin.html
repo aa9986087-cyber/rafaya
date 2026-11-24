@@ -34,6 +34,7 @@
   #toast { position: fixed; bottom: 16px; inset-inline: 16px; background: #2a1d12; color: #fff; padding: 12px; border-radius: 12px; text-align: center; display: none; }
   .login { max-width: 360px; margin: 60px auto; text-align: center; }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .feedback-text { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   #stmt { position: fixed; inset: 0; z-index: 9; background: #fff; overflow: auto; padding: 16px; display: none; }
   #stmt table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 14px; }
   #stmt th, #stmt td { border-bottom: 1px solid #e3d6bd; padding: 6px 4px; text-align: start; vertical-align: top; }
@@ -72,7 +73,7 @@ function login() {
     token = r.token; localStorage.setItem("rafaya-admin", token); show();
   };
 }
-const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["names", "✏️ الأسماء"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
+const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["feedback", "🔒 ملاحظات اللاعبين"], ["players", "👥 اللاعبين"], ["names", "✏️ الأسماء"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
 function frame(inner) {
   $("app").innerHTML = `<header><h1>🛠️ لوحة تحكم الجوف</h1><button id="out">خروج</button></header>
     <nav>${TABS.map(([k, t]) => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</nav><main>${inner}</main>`;
@@ -82,7 +83,7 @@ function frame(inner) {
 async function show() {
   if (!token) return login();
   frame(`<p class="muted">نحمّل…</p>`);
-  try { await ({ home, reports, chat, players, names, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
+  try { await ({ home, reports, chat, feedback, players, names, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
 }
 async function home() {
   const s = await api("stats");
@@ -103,9 +104,37 @@ async function chat() {
   frame(`<div class="card"><b>🛠️ اكتب بالشات</b><p class="muted">يطلع للكل بشات الجوف باسم «🛠️ المطور».</p><textarea id="say" maxlength="200" placeholder="اكتب رسالتك"></textarea><button class="btn go block" id="sayGo">أرسل</button></div>` +
     (list.length ? list.map((m) => `<div class="card"><div class="row"><b>${esc(m.name)}</b><small>${esc(m.town)} · ${ago(m.at)}</small></div><div>${esc(m.text)}</div>
       <div class="acts"><button class="btn" data-del="${m.id}">🗑️ امسح</button>${/^(📢|🛠️)/.test(m.name) ? "" : `<button class="btn bad" data-ban="${esc(m.name)}">⛔ احظر</button><button class="btn" data-fix="${esc(m.name)}">✏️ اطلب تغيير الاسم</button>`}</div></div>`).join("") : `<p class="muted">الشات فاضي</p>`));
-  $("sayGo").onclick = async () => { const r = await api("say", { text: $("say").value }); toast(r.error || "انرسلت ✓"); if (!r.error) show(); };
+  $("sayGo").onclick = async (event) => {
+    const send = event.currentTarget, text = $("say").value.trim();
+    if (!text) { toast("اكتب رسالة أول"); return; }
+    send.disabled = true;
+    try {
+      const r = await api("say", { text });
+      if (r.ok) { toast("انرسلت في الشات العام ✓"); if (send.isConnected) show(); }
+      else toast(r.error || "ما وصلت الرسالة");
+    } catch (e) { if (e.message !== "login") toast("ما وصلت الرسالة، جرّب مرة ثانية"); }
+    finally { send.disabled = false; }
+  };
   bindActs();
   document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { await api("chat", { del: b.dataset.del }); toast("انمسحت"); show(); }));
+}
+async function feedback(before = 0) {
+  const session = token;
+  const { list, nextBefore, error } = await api(before ? "feedback?before=" + before : "feedback");
+  if (tab !== "feedback" || token !== session) return;
+  if (error || !list) throw new Error(error || "تعذّر تحميل الملاحظات");
+  frame(`<div class="row"><h2>ملاحظات اللاعبين الخاصة</h2>
+    <button class="btn" id="feedbackLatest" type="button">${before ? "أحدث الملاحظات" : "حدّث الملاحظات"}</button></div>
+    ${list.map((m) => `<article class="card"><div class="row"><span><b>${esc(m.name)}</b> <small>${esc(m.town)}</small></span><small>${ago(m.at)}</small></div><p class="feedback-text" dir="auto">${esc(m.text)}</p></article>`).join("") || '<p class="muted">ما وصلت أي ملاحظات للحين.</p>'}
+    ${nextBefore ? '<button class="btn block" id="feedbackOlder" type="button">ملاحظات أقدم</button>' : ""}`);
+  $("feedbackLatest").onclick = () => show();
+  if (nextBefore) $("feedbackOlder").onclick = async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await feedback(nextBefore); }
+    catch (e) { if (e.message !== "login") toast("ما قدرنا نحمّل الملاحظات الأقدم"); }
+    finally { button.disabled = false; }
+  };
 }
 async function players(q = lastQ) {
   lastQ = q;

@@ -20,6 +20,7 @@
 //   GET  /api/world/live  (WebSocket)            → hints pushed the moment something changes: chat, war, news, town
 //   GET  /api/world/chat?after=ID               → { messages: [...] }  (the public chat, newest 50 or those after ID)
 //   POST /api/world/chat     { name, secret, text } → { ok, message }  (one message every 6 s, 200 characters)
+//   POST /api/world/feedback { name, secret, text } → { ok } (private to /api/admin/feedback)
 //   POST /api/world/war/ACTION { name, secret, ... }   → «صراع الجوف», decided here (see js/warserver.js):
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
@@ -80,6 +81,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
     // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, town TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`);
+    this.sql.exec("CREATE INDEX IF NOT EXISTS feedback_sender ON feedback (name, at DESC)");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
@@ -404,6 +407,14 @@ export class Board extends DurableObject {
       if (post && body.del) { this.sql.exec("DELETE FROM chat WHERE id = ?", int(body.del)); this.live({ t: "chatdel", id: int(body.del) }); return json({ ok: true }); }
       return json({ list: this.sql.exec("SELECT id, name, town, text, at FROM chat ORDER BY id DESC LIMIT 100").toArray() });
     }
+    if (request.method === "GET" && p[0] === "feedback") {
+      const before = int(new URL(request.url).searchParams.get("before"));
+      const rows = before > 0
+        ? this.sql.exec("SELECT id, name, town, text, at FROM feedback WHERE id < ? ORDER BY id DESC LIMIT 51", before).toArray()
+        : this.sql.exec("SELECT id, name, town, text, at FROM feedback ORDER BY id DESC LIMIT 51").toArray();
+      const list = rows.slice(0, 50);
+      return json({ list, nextBefore: rows.length > 50 ? list[49].id : null });
+    }
     if (p[0] === "players") {
       const q = `%${clean(new URL(request.url).searchParams.get("q"), 20)}%`;
       const list = this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray();
@@ -613,6 +624,17 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    if (post && p[0] === "feedback") {
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      if (!text) return json({ error: "اكتب ملاحظتك أول" });
+      if (text.length > 600) return json({ error: "اختصر الملاحظة إلى ٦٠٠ حرف" });
+      const now = Date.now();
+      const last = this.sql.exec("SELECT at FROM feedback WHERE name = ? ORDER BY at DESC LIMIT 1", name).toArray()[0];
+      if (last && now - last.at < 20000) return json({ error: "انتظر شوي قبل ترسل ملاحظة ثانية" });
+      const town = me.plot == null ? "" : this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0]?.town || "";
+      this.sql.exec("INSERT INTO feedback (name, town, text, at) VALUES (?, ?, ?, ?)", name, town, text, now);
+      return json({ ok: true });
+    }
     const fix = this.sql.exec("SELECT what, reasons, note, due, removed FROM namefix WHERE name = ?", name).toArray()[0];
     if (p[0] === "namefix") { // the player changes the names the owner asked for (name and/or town)
       if (!fix) return json({ error: "ما فيه طلب تغيير" });
@@ -631,7 +653,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       }
       if (wantName) {
         this.sql.exec("UPDATE players SET name = ? WHERE name = ?", newName, name);
-        for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
+        for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["feedback", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
       }
       if (wantTown) {
         this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", newTown, me.plot);
