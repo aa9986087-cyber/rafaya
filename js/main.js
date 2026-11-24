@@ -954,7 +954,7 @@ function toast(text, kind = "") {
 let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
-const NAME_KEEP = new Set(["wnews", "whatsnew", "settings", "settings-menu", "how", "region", "welcome"]);
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "welcome"]);
 function here(text) {
   const n = S?.name;
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
@@ -1030,7 +1030,7 @@ function addPosts(posts) {
   if (sheetFor === "news") newsSheet();
 }
 function showNewsCount() {
-  const n = (S.newsUnread || 0) + (worldMode ? wnewsUnread() : 0);
+  const n = (S.newsUnread || 0) + (worldMode ? wnewsUnread() : 0) + (() => { try { return wnUnseen(worldMode ? "world" : "solo").length; } catch { return 0; } })(); // (before the updates list is set up: none)
   $("newsCount").hidden = !n;
   $("newsCount").textContent = ar(Math.min(n, 9)) + (n > 9 ? "+" : "");
 }
@@ -1118,6 +1118,7 @@ function promisesHtml() {
   return `<details class="proms" open><summary>🤝 وعودك (${ar(open.length)})${waiting.length ? ` · ينتظرون جواب (${ar(waiting.length)})` : ""}</summary>${open.join("")}${waiting.join("")}</details>`;
 }
 function newsSheet() {
+  if (WNEWS.tab === "updates") { updatesNewsSheet(); return; }
   if (worldMode && WNEWS.tab === "world") { worldNewsSheet(); return; }
   S.newsUnread = 0; showNewsCount();
   const posts = S.news || [];
@@ -1147,10 +1148,20 @@ async function wnewsPoll(force) {
   WNEWS.busy = false;
   showNewsCount();
 }
+/** The news sheet's tabs: the town's news, al-Jouf's (world only) and the game's updates. */
 function newsTabs(on) {
-  if (!worldMode) return "";
-  const n = wnewsUnread();
-  return `<div class="wn-tabs"><button type="button" class="btn${on === "town" ? " go" : ""}" data-ntab="town">📰 نشرة مدينتي${S.newsUnread && on !== "town" ? `<i class="dot"></i>` : ""}</button><button type="button" class="btn${on === "world" ? " go" : ""}" data-ntab="world">🌍 نشرة الجوف${n && on !== "world" ? `<i class="dot"></i>` : ""}</button></div>`;
+  const mode = worldMode ? "world" : "solo", n = worldMode ? wnewsUnread() : 0, up = wnUnseen(mode).length;
+  const tabs = [["town", worldMode ? "📰 مدينتي" : "📰 القرية", S.newsUnread], ...(worldMode ? [["world", "🌍 الجوف", n]] : []), ["updates", "✨ التحديثات", up]];
+  return `<div class="wn-tabs" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map(([k, name, dot]) => `<button type="button" class="btn${on === k ? " go" : ""}" data-ntab="${k}">${name}${dot && on !== k ? `<i class="dot"></i>` : ""}</button>`).join("")}</div>`;
+}
+/** The updates tab: what changed in the game for this mode, newest first (the new ones marked). */
+function updatesNewsSheet() {
+  const mode = worldMode ? "world" : "solo", fresh = new Set(wnUnseen(mode).map(([, , t]) => t));
+  const list = WHATS_NEW.items.filter(([m]) => m === mode || m === "both");
+  wnMarkAll(mode); showWhatsNewDot(); showNewsCount();
+  sheet(`${newsTabs("updates")}<div class="news-head"><h2>✨ التحديثات</h2><p>وش تغيّر ${mode === "world" ? "بعالم الجوف" : "باللعب الفردي"}، الأحدث فوق.</p></div>
+    <div class="rows">${list.map(([, icon, title, text]) => `<div class="row wn"><b class="wn-i">${icon}</b><span><b>${title}${fresh.has(title) ? ' <small class="new-tag">جديد</small>' : ""}</b><small>${text}</small></span></div>`).join("")}</div>`, "news-up");
+  bindNewsTabs();
 }
 function bindNewsTabs() {
   $("sheetBody").querySelectorAll("[data-ntab]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); WNEWS.tab = b.dataset.ntab; newsSheet(); }));
@@ -2883,7 +2894,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: { solo: "2027-01-14", world: "2027-01-14" },
   items: [
-    ["both", "✨", "الجديد يوصلك", "كل ما تدخل (الفردي أو الجوف) وفيه شي جديد من آخر مرة، يطلع لك «الجديد من آخر مرة» بالأشياء الجديدة بس، وتقدر تشوف «كل التحديثات» من نفس الصفحة."],
+    ["both", "✨", "الجديد يوصلك", "كل ما تدخل (الفردي أو الجوف) وفيه شي جديد من آخر مرة، يطلع لك «الجديد من آخر مرة» بالأشياء الجديدة بس. وبالنشرة صار فيه تبويب «✨ التحديثات» تلقى فيه كل اللي تغيّر، والجديد عليه علامة."],
     ["world", "🔄", "ابدأ من جديد", "بالإعدادات صار فيه «ابدأ مدينتي من جديد»: مدينتك بالجوف ترجع قرية من الصفر على نفس الأرض وبنفس الاسم. مرة كل ٢٤ ساعة، وتكتب اسم مدينتك تتأكد قبل."],
     ["world", "🔒", "الخزنة", "بعالم الجوف صار للفلوس سعة: البلدية تشيل (قرية ٥٬٠٠٠ · بلدة ١٥٬٠٠٠ · مدينة ٥٠٬٠٠٠ · محافظة ١٥٠٬٠٠٠ · حاضرة ٤٠٠٬٠٠٠)، ولما تمتلي يوقف الدخل لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» من «ماء وكهرباء» (لين ٤ خزنات) وطوّرها خمس مستويات: من ٥٬٠٠٠ لين ٣٥٠٬٠٠٠ للخزنة الوحدة. فلوسك اللي معك الحين ما تنلمس، والقروض والمكافآت تدخل حتى لو مليانة."],
     ["world", "🛠️", "الإدارة صارت معكم", "إدارة الجوف تقدر ترسل إعلانات (تطلع بالنشرة والشات) وهدايا للمدن، وتمسح الرسايل المسيئة وتوقف اللي يسيء. بلّغ عن أي إساءة من زر البلاغ والإدارة تشوفه."],

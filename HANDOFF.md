@@ -343,6 +343,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - `newSinceSheet` («✨ الجديد من آخر مرة») lists only the unseen lines, with «كل التحديثات» for the whole list. A phone that only had the old date stamp gets the newest 5.
     - `maybeWhatsNew` waits for the screen in front (the away or deputy report) to close. It runs on «كمّل» (solo) and on entering al-Jouf; the notifications offer comes after it.
     - With mandatory updates this reaches everyone: every new item needs a new title in WHATS_NEW.
+    - The news sheet has an «✨ التحديثات» tab (`updatesNewsSheet`) next to the town's news and al-Jouf's (the solo game shows the town and updates tabs). Unseen updates add to the news badge.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
