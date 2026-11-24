@@ -1611,18 +1611,28 @@ async function pushIosHelp() {
   const v = iosVersion(), old = v && v < 16.04;
   let code = "";
   const id = me();
-  if (!old && id?.secret) { try { code = (await api("/world/handoff", { name: id.name, secret: id.secret })).code || ""; } catch { /* shown without */ } }
+  if (!old && id?.secret) {
+    try {
+      const h = await api("/world/handoff", { name: id.name, secret: id.secret });
+      code = h.code || "";
+      // the home-screen app opens at this page's address and the manifest's start: both carry the move link,
+      // so the account goes over by itself on its first launch (the code is only the fallback)
+      if (h.token) {
+        history.replaceState(null, "", `/?link=${h.token}`);
+        document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?t=${h.token}`);
+      }
+    } catch { /* shown without */ }
+  }
   sheet(`<h2>🔔 التنبيهات بالآيفون</h2>
     ${old ? `<div class="need">جوالك على نظام قديم. التنبيهات تحتاج iOS 16.4 أو أحدث: الإعدادات ← عام ← تحديث البرنامج.</div>` : `<p>الآيفون يعطي تنبيهات للعبة إذا كانت مضافة للشاشة الرئيسية مثل التطبيق. خمس خطوات:</p>
-    ${code ? `<div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b><span>رمز نقل حسابك · صالح ٣٠ دقيقة</span></div>
-    <button class="btn block" id="iosCopy" type="button">انسخ الرمز</button>` : ""}
     <div class="rows">
-      <div class="row g-step"><b class="g-n">١</b><span>${code ? "احفظ الرمز اللي فوق (انسخه أو صوّره)" : "افتح الموقع بسفاري"}</span></div>
-      <div class="row g-step"><b class="g-n">٢</b><span>اضغط زر المشاركة ${SHARE_IC} تحت بسفاري</span></div>
-      <div class="row g-step"><b class="g-n">٣</b><span>انزل واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b> ثم <b>«إضافة»</b></span></div>
-      <div class="row g-step"><b class="g-n">٤</b><span>افتح <b>«الرافعية»</b> من أيقونتها بالشاشة، ادخل الجوف واختر <b>«عندي رمز نقل»</b> واكتب الرمز</span></div>
-      <div class="row g-step"><b class="g-n">٥</b><span>الإعدادات ← <b>«فعّل التنبيهات»</b> ← <b>«السماح»</b>، وجرّبها بزر «جرّب التنبيه»</span></div>
+      <div class="row g-step"><b class="g-n">١</b><span>اضغط زر المشاركة ${SHARE_IC} تحت بسفاري</span></div>
+      <div class="row g-step"><b class="g-n">٢</b><span>انزل واختر ${ADD_IC} <b>«إضافة إلى الشاشة الرئيسية»</b> ثم <b>«إضافة»</b></span></div>
+      <div class="row g-step"><b class="g-n">٣</b><span>افتح <b>«الرافعية»</b> من أيقونتها بالشاشة: حسابك ومدينتك ينتقلون <b>لحالهم</b></span></div>
+      <div class="row g-step"><b class="g-n">٤</b><span>الإعدادات ← <b>«فعّل التنبيهات»</b> ← <b>«السماح»</b>، وجرّبها بزر «جرّب التنبيه»</span></div>
     </div>
+    ${code ? `<details class="ios-fallback"><summary>ما انتقل حسابك؟</summary><p>بالأيقونة: ادخل الجوف ← «عندي رمز نقل» واكتب هالرمز (صالح ٣٠ دقيقة):</p>
+      <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}
     <p class="hint">مدينتك بالجوف ما تضيع: نفس الاسم ونفس المدينة، وتقدر تلعب من سفاري ومن الأيقونة. اللعب الفردي ما ينتقل لحاله: انسخه من الإعدادات ← نسخة احتياطية.</p>`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
@@ -1653,6 +1663,20 @@ function pushOffer(tries = 0) {
   $("pushLater").addEventListener("click", closeSheet);
   $("pushYes").addEventListener("click", async () => { if (await pushOn()) closeSheet(); });
 }
+
+// ---------- the home-screen app's first launch: ?link=TOKEN brings the al-Jouf account over by itself ----------
+(async () => {
+  const link = new URLSearchParams(location.search).get("link");
+  if (!link) return;
+  history.replaceState(null, "", "/"); // the address stays clean
+  if (me()?.secret || !onlineOk() || globalThis.RAFAYA_PREVIEW) return; // already signed in here
+  try {
+    const r = await api("/world/handoff/claim", { code: link });
+    if (r.error || !r.secret) return; // used already or old: the 6-digit code is the fallback
+    store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
+    toast(`📲 حيّاك ${r.name}! حسابك بالجوف انتقل هنا ✓`, "goal");
+  } catch { /* the code is the fallback */ }
+})();
 
 // ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
 const GAME_FILES = ["./", "index.html", "css/style.css", ...["version", "data", "sim", "people", "models", "world3d", "icons", "warfx", "war", "sound", "news", "main"].map((m) => `js/${m}.js`)];
@@ -2814,8 +2838,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-08" },
+  v: { solo: "2027-01-05", world: "2027-01-09" },
   items: [
+    ["world", "📱", "التنبيهات بالآيفون", "بالآيفون: الإعدادات ← «فعّل التنبيهات» تطلع لك الخطوات بالصور: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وتفتح اللعبة من أيقونتها وحسابك ومدينتك ينتقلون لحالهم، وبعدها تفعّل التنبيهات. ولو ما انتقل الحساب فيه رمز احتياط."],
     ["world", "📰", "مواطنينك يبونك", "إذا غبت أكثر من ساعة وعند أهل مدينتك طلب مهم ما رديت عليه (أو قرار ينتظرك)، يوصلك تنبيه على جوالك فيه كلامهم، مرة كل ٨ ساعات بالكثير. وبالإعدادات صار فيه زر «جرّب التنبيه» تتأكد فيه إن التنبيهات توصلك."],
     ["world", "🧾", "تصحيح خصم الغياب", "اللي كانت مدينته مديونة وطلع، ودرع الغياب سدّد دينه، كان ينخصم منه بالغلط كأنه كسب. صلّحناه، ورجّعنا لكل واحد صار له كذا فلوسه مع رسالة اعتذار."],
     ["world", "🔔", "تنبيهات على جوالك", "بعالم الجوف يوصلك تنبيه حتى واللعبة مسكّرة: إذا صاروخ أو مسيّرة جاية لمدينتك أو انضربت، إذا أحد أعلن عليك حرب أو عرض هدنة أو صلح، وإذا أحد ذكر اسمك أو اسم مدينتك بالشات. فعّلها من الإعدادات. بالآيفون: أضف اللعبة للشاشة الرئيسية أول (زر المشاركة ← إضافة إلى الشاشة الرئيسية)."],

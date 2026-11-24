@@ -285,6 +285,12 @@ export class Board extends DurableObject {
       const items = this.sql.exec("SELECT id, kind, plot, text, at FROM wnews WHERE id > ? ORDER BY id DESC LIMIT 60", after).toArray();
       return json({ items, now: Date.now() });
     }
+    if (!post && p[0] === "manifest") { // the app's manifest, opening at /?link=TOKEN: the home-screen app takes the account over by itself
+      const t = String(new URL(request.url).searchParams.get("t") || "").replace(/[^a-f0-9]/g, "").slice(0, 32);
+      const m = { name: "الرافعية", short_name: "الرافعية", lang: "ar", dir: "rtl", start_url: t ? `/?link=${t}` : "/", scope: "/", display: "standalone", orientation: "portrait", background_color: "#2a1d12", theme_color: "#2a1d12",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
+      return new Response(JSON.stringify(m), { headers: { "content-type": "application/manifest+json", "cache-control": "no-store" } });
+    }
     if (!post && p[0] === "push" && p[1] === "key") return json({ key: (await this.vapid()).pub });
     if (!post && p[0] === "push" && p[1] === "inbox") { // the phone's service worker: what to show (by its endpoint's hash)
       const k = String(new URL(request.url).searchParams.get("k") || "").slice(0, 64);
@@ -345,8 +351,10 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const now = Date.now();
       this.handoffFails = this.handoffFails.filter((t) => now - t < 60000);
       if (this.handoffFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
-      const code = String(body.code || "").replace(/\D/g, "").slice(0, 6), row = this.sql.exec("SELECT name, at FROM handoff WHERE code = ?", code).toArray()[0];
-      if (!row || now - row.at > 30 * 60000) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٣٠ دقيقة)" }); }
+      const raw = String(body.code || ""), long = raw.length > 6;
+      const code = long ? raw.replace(/[^a-f0-9]/g, "").slice(0, 32) : raw.replace(/\D/g, "").slice(0, 6);
+      const row = this.sql.exec("SELECT name, at FROM handoff WHERE code = ?", code).toArray()[0];
+      if (!row || now - row.at > (long ? 7 * 86400000 : 30 * 60000)) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٣٠ دقيقة)" }); }
       this.sql.exec("DELETE FROM handoff WHERE code = ?", code);
       const pl = this.sql.exec("SELECT name, plot FROM players WHERE name = ?", row.name).toArray()[0];
       if (!pl) return json({ error: "ما لقيت الحساب" });
@@ -401,11 +409,14 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
     }
-    if (p[0] === "handoff") { // a move code for this account (6 digits, 30 minutes, once)
-      this.sql.exec("DELETE FROM handoff WHERE at < ? OR name = ?", Date.now() - 30 * 60000, name);
+    if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (30 minutes); each works once
+      const now = Date.now();
+      this.sql.exec("DELETE FROM handoff WHERE name = ? OR (length(code) = 6 AND at < ?) OR at < ?", name, now - 30 * 60000, now - 7 * 86400000);
       let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM handoff WHERE code = ?", code).toArray().length);
-      this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", code, name, Date.now());
-      return json({ code });
+      const token = makeSecret();
+      this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", code, name, now);
+      this.sql.exec("INSERT INTO handoff (code, name, at) VALUES (?, ?, ?)", token, name, now);
+      return json({ code, token });
     }
     if (p[0] === "push" && p[1] === "test") { // «جرّب التنبيه»: one to this town's phones now, even with the game open
       if (me.plot == null) return json({ error: "no town" }, 400);
