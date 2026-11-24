@@ -980,7 +980,8 @@ function toast(text, kind = "") {
 let sheetFor = null, sheetAt = 0;
 let sheetHide = 0;
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
-const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget"]);
+// sheets that show what players wrote (al-Jouf's map, the chat, war screens): «الرافعية» there is a real name, never your town's
+const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
 function here(text) {
   const n = S?.name;
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
@@ -992,6 +993,7 @@ function sheet(html, kind) {
   $("sheetClose").hidden = kind === "update" || kind === "namefix"; // those two can't be closed
   sheetFor = kind; sheetAt = performance.now();
   $("sheetBody").innerHTML = NAME_KEEP.has(kind) ? html : here(html);
+  $("sheetBody").querySelectorAll("input[type=text], textarea").forEach((i) => { i.autocomplete = "off"; }); // no list of old entries over the keyboard
   $("sheet").hidden = false;
   $("sheet").classList.remove("closing");
 }
@@ -2967,7 +2969,7 @@ function chatSheet(keep) {
     <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
         <div class="chat-head"><b>${m.name}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
         <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
-    <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
+    <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
     <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>`, "chat");
   const list = $("chatList");
   if (stick) list.scrollTop = list.scrollHeight;
@@ -3131,8 +3133,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-28", world: "2027-01-30" },
+  v: { solo: "2027-01-28", world: "2027-01-31" },
   items: [
+    ["world", "🛠️", "إصلاحات الخريطة والشات", "• اسم «الرافعية» على خريطة الجوف وبالشات صار يطلع مثل ما هو، بدل ما يتبدل باسم مدينتك. • ولما تكتب بالشات ما تطلع لك قائمة كتاباتك القديمة فوق الكيبورد."],
     ["world", "🔔", "التنبيهات رجعت مثل أول", "• رجّعنا طريقة اشتراك جوالك بالتنبيهات مثل ما كانت لما كانت توصل. • إذا ما وصلتك: الإعدادات ← طفّ «التنبيهات على الجوال» وشغّلها من جديد."],
     ["world", "✏️", "قوانين الأسماء بالجوف", "• ممنوع تكتب باسمك أو اسم مدينتك اسم شخص حقيقي غير اسمك، أو اسم أو رمز عائلة أو فخذ أو قبيلة. • إذا الإدارة طلبت منك تغيّر الاسم، يطلع لك السبب ومعك يوم كامل تغيّره، وإذا ما غيّرته تنحذف مدينتك من عالم الجوف. • والمطور صار يكتب معكم بالشات باسم «🛠️ المطور»."],
     ["both", "🖼️", "الرسوم رجعت واضحة", "• كانت اللعبة إذا حسّت إن الجوال بطيء لحظة، تنزّل الدقة وتحفظها للأبد، فتصير مبكسلة. • الحين ترجع واضحة، وإذا الجوال تعب فعلًا تخفف الظلال بس ولهالمرة، والدقة تبقى حلوة."],
