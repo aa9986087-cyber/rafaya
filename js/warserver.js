@@ -137,6 +137,8 @@ export class WarServer {
 
   // ---------- reading ----------
   state(body, me) {
+    // what this town's game has applied (the bills and gifts up to this number): the owner's panel shows a gift as arrived
+    { const a0 = this.acct(me.plot), seen = Math.round(Number(body.seq) || 0); if (seen > (a0.seenSeq || 0)) { a0.seenSeq = seen; this.saveAcct(me.plot, a0); } }
     const now = this.now(), info = this.townInfo(me.plot), a = this.acct(me.plot);
     const p = info ? this.profileOf(info) : milProfile([]);
     const rels = this.db.list("rel", { either: String(me.plot) }).map((r) => {

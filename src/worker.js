@@ -334,6 +334,11 @@ export class Board extends DurableObject {
       this.sql.exec("UPDATE players SET banned = ?, ban_reason = ? WHERE name = ?", body.on ? 1 : 0, clean(body.reason, 100), nm);
       return json({ ok: true });
     }
+    if (!post && p[0] === "gifts") { // the gifts sent, and whether each town's game has taken it yet
+      const plots = new Map(this.sql.exec("SELECT plot, town, owner FROM plots").toArray().map((t) => [String(t.plot), t]));
+      const rows = this.sql.exec("SELECT id, k1, data FROM war WHERE tbl = 'charge' ORDER BY at DESC LIMIT 500").toArray().map((r) => ({ plot: r.k1, c: JSON.parse(r.data) })).filter((r) => r.c.why === "gift").slice(0, 100);
+      return json({ list: rows.map(({ plot, c }) => { const a = this.war.acct(Number(plot)), t = plots.get(String(plot)); return { town: t?.town || "؟", owner: t?.owner || "", amount: -c.amount, at: c.at, arrived: (a.seenSeq || 0) >= c.seq }; }) });
+    }
     if (post && p[0] === "gift") {
       const plot = int(body.plot), amount = Math.max(1, Math.min(1000000, int(body.amount)));
       const t = one("SELECT town FROM plots WHERE plot = ?", plot);
