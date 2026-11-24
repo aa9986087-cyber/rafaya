@@ -147,7 +147,22 @@ export function worldEventsAt(hour) {
     sharedCache.next = start + ev.days + 20 + Math.floor(r() * 60);
   }
   const out = sharedCache.list.filter((e) => e.start <= hour && hour < e.end);
+  if (!out.some((e) => e.id === "rain")) { const w = winterRainAt(hour); if (w) out.push(w); }
   return out.concat(calendarAt(hour));
+}
+/**
+ * Winter is the rainy season of al-Jouf: on top of the weather series, three showers fall each winter
+ * (early, middle, late, about a day each, seeded by the year), so a winter never passes dry.
+ */
+function winterRainAt(hour) {
+  const S = SEASON_DAYS * HOURS, yearStart = Math.floor(Math.max(0, hour - 1) / (S * 4)) * S * 4, start = yearStart + 3 * S + 1; // the first hour of this year's winter (spring, summer, autumn, winter)
+  if (hour < start || hour >= start + S) return null;
+  const r = rng(Math.floor(yearStart / (S * 4)) * 104729 + 31);
+  for (let k = 0; k < 3; k++) {
+    const from = start + Math.floor(S * (k / 3 + r() * 0.12)), len = 14 + Math.floor(r() * 8);
+    if (hour >= from && hour < from + len) return { id: "rain", start: from, end: from + len, name: RAIN_NAMES.winter };
+  }
+  return null;
 }
 export const CALENDAR_EVENTS = ["ramadan", "eid", "adha"];
 /**
