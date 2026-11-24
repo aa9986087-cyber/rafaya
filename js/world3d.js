@@ -1631,12 +1631,12 @@ export class World {
       }
       pos.needsUpdate = true;
     }
-    // RAFAYA REMASTERED: a quick build (looks only; the building works from the first moment, as before), about 2.6 s:
+    // RAFAYA REMASTERED: a build to watch (looks only; the building works from the first moment, as before), 10 s (the owner asked for it):
     // the site goes up (hoarding, scaffolding, a puff of dust), the building rises out of it floor by floor,
     // then the scaffolding comes down with a last puff. Only for buildings on screen; at most 24 at once.
     if (this.anims?.size && this.where) {
       const m = new THREE.Matrix4(), sc = new THREE.Matrix4(), fx = [];
-      const BUILD = this.buildTime ?? (this.quality === "low" ? 0.55 : 2.6); // (buildTime: the showcase can slow it down)
+      const BUILD = this.buildTime ?? (this.quality === "low" ? 0.55 : 10); // (buildTime: the showcase can slow it down)
       for (const [tile, t0] of this.anims) {
         const w = this.where.get(tile), inst = w && this.instances.get(w.k);
         const t = Math.min(1, (this.clock - t0) / BUILD);
