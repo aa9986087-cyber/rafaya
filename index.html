@@ -28,6 +28,7 @@
       <p class="menu-sub">من خيمة في الوادي… إلى محافظة</p>
     </div>
     <div class="menu-actions">
+      <button id="mContinue" class="mbtn world" type="button" hidden><b>▶️ كمّل في <span id="mTownName"></span></b><small>ادخل مدينتك على طول</small></button>
       <button id="mWorld" class="mbtn world" type="button"><b>🌍 عالم الجوف</b><small>أونلاين: مدينتك بين مدن اللاعبين على خريطة الجوف</small></button>
       <button id="mWhatsNew" class="mbtn news" type="button"><b>🆕 وش الجديد في التحديث؟</b><small>المدن، المرور، السدود، أهل الرافعية، والأونلاين</small></button>
       <div class="mrow">
@@ -47,7 +48,7 @@
         <button class="stat util" id="statUtil" type="button"><span>ماء</span><i class="bar"><i id="sWater"></i></i><span id="sPowerLabel">كهرباء</span><i class="bar"><i id="sPower"></i></i></button>
       </div>
       <div class="timebar">
-        <div class="when"><div class="when-top"><b id="sEra"></b><span id="sDay"></span><span id="sTime" class="time"></span></div><div class="when-season"><span id="sSeason"></span><i class="bar"><i id="sSeasonBar"></i></i></div></div>
+        <div class="when"><div class="when-top"><b id="sEra"></b><span id="sDay"></span><span id="sTime" class="time"></span><span id="sOnline" class="online" hidden title="المتصلين بعالم الجوف الحين"></span></div><div class="when-season"><span id="sSeason"></span><i class="bar"><i id="sSeasonBar"></i></i></div></div>
         <div class="speeds" role="group" aria-label="سرعة الوقت">
           <button type="button" data-speed="0" aria-label="إيقاف"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
           <button type="button" data-speed="1" aria-label="عادي"><svg viewBox="0 0 24 24"><path d="M8 5l10 7-10 7z"/></svg></button>

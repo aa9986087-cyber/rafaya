@@ -1560,7 +1560,7 @@ async function visitTown(code, opts = {}) {
   S = town; A = analyze(S);
   closeSheet(); setTool(null);
   world.stopFollow?.(); $("followTag").hidden = true;
-  world.sync(S, { tiles: true, roads: true, buildings: true });
+  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true });
   focusTown(); world.view.zoom = 0.9; world.updateCamera();
   document.body.classList.add("visiting");
   $("visitName").textContent = data.town.name; $("visitMayor").textContent = ` · العمدة ${data.town.mayor}`;
@@ -1603,7 +1603,7 @@ function leaveVisit() {
   A = analyze(S);
   document.body.classList.remove("visiting"); $("visitBar").hidden = true;
   closeSheet();
-  world.sync(S, { tiles: true, roads: true, buildings: true });
+  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true });
   world.view.x = cam.x; world.view.z = cam.z; world.view.zoom = cam.zoom; world.updateCamera();
   refresh();
 }
@@ -1797,7 +1797,7 @@ function freshWorldTown(name, restartAt) {
 function syncReply(r) {
   if (!r?.restarted || !worldMode || visiting || (S.world?.restartAt || 0) >= r.restarted) return false;
   S = freshWorldTown(r.town || S.name, r.restarted); A = analyze(S);
-  world.sync(S, { tiles: true, roads: true, buildings: true }); refresh();
+  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true }); refresh();
   sheet(`<h2>🔄 مدينتك بدأت من جديد</h2><p>بدأت «${S.name}» من جديد من جوال ثاني، فهذا الجوال أخذ المدينة الجديدة.</p><div class="sheet-actions keep"><button class="btn go block" id="rsOk" type="button">تمام</button></div>`, "away");
   $("rsOk").addEventListener("click", closeSheet);
   return true;
@@ -1995,6 +1995,17 @@ function liveClose() {
   const ws = LIVE.ws; LIVE.ws = null; LIVE.ok = false;
   if (ws) { ws.onclose = null; try { ws.close(); } catch { /* closed */ } }
 }
+/** How many towns of al-Jouf are being played right now: a number only, never who (every 45 s while playing there). */
+const ONLINE = { at: 0, busy: false };
+async function onlinePoll(force) {
+  const chip = $("sOnline");
+  if (!worldMode || globalThis.RAFAYA_PREVIEW || !onlineOk()) { chip.hidden = true; return; }
+  if (ONLINE.busy || document.hidden || (!force && Date.now() - ONLINE.at < 45000)) return;
+  ONLINE.busy = true; ONLINE.at = Date.now();
+  try { const r = await api("/world/online"); if (Number.isFinite(r.n) && worldMode) { chip.textContent = `${ar(Math.max(1, r.n))} متصل`; chip.hidden = false; } } catch { /* next time */ }
+  finally { ONLINE.busy = false; }
+}
+
 /** What the server said changed: ask for it now. */
 function liveHint(m) {
   if (!worldMode) return;
@@ -2082,7 +2093,7 @@ function forgetTown() {
 function townRemoved(f) {
   if (sheetFor === "removed") return;
   forgetTown();
-  leaveWorld(); showMenu();
+  leaveWorld(); showMenu(); menuBackdrop();
   sheet(`<h2>🗑️ مدينتك انحذفت من عالم الجوف</h2><p>الإدارة طلبت تغيير الاسم وخلصت المهلة (يوم كامل) بدون تغيير، فانحذفت المدينة.</p>
     <div class="sheet-actions keep"><button class="btn go block" id="rmOk" type="button">تمام</button></div>`, "removed");
   $("rmOk").addEventListener("click", () => { closeSheet(); if (f) namefixSheet(f); });
@@ -2101,6 +2112,7 @@ async function worldIsClosed() {
 }
 async function openWorld() {
   if (!onlineOk()) { toast("عالم الجوف يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev", "bad"); return; }
+  if (me()) sheet(`<h2>🌍 عالم الجوف</h2><p class="hint">نحمّل الخريطة…</p>`, "world"); // something on screen at once, while the server answers
   if (await worldIsClosed()) { worldClosedSheet(); return; }
   await loadClock();
   if (!me()) { worldJoinSheet(); return; }
@@ -2325,7 +2337,7 @@ async function enterWorldTown() {
   if (gap > 0 && !report) S.day = worldHourNow();
   A = analyze(S);
   closeSheet(); setTool(null);
-  world.sync(S, { tiles: true, roads: true, buildings: true });
+  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true });
   if (S.cam) { world.view.x = S.cam.x; world.view.z = S.cam.z; world.view.zoom = S.cam.zoom; world.updateCamera(); } else { focusTown(); world.view.zoom = 0.9; world.updateCamera(); }
   startPlaying();
   save(); worldSync(true);
@@ -3061,9 +3073,10 @@ function leaveWorld() {
   if (visiting) leaveVisit(); // never save or send a visited town as yours
   save(); worldSync(true);
   worldMode = false; document.body.classList.remove("world"); showWhatsNewDot();
+  $("sOnline").hidden = true;
   nameLandmarks("الرافعية");
   liveClose();
-  if (soloS) { S = soloS; soloS = null; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
+  if (soloS) { S = soloS; soloS = null; A = analyze(S); world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true }); }
 }
 
 // ---------- the region ----------
@@ -3180,8 +3193,13 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-02-02", world: "2027-02-03" },
+  v: { solo: "2027-02-10", world: "2027-02-10" },
   items: [
+    ["both", "🎨", "الرافعية بحلّة جديدة", "• أكثر من ٩٠ مبنى بتصاميم جديدة: البيوت والفلل والعماير، والمساجد، والأسواق بالحجر، والمدارس والمستشفيات، والمصانع ومحطات الماء والكهرباء، والمشاريع الكبرى. • خامات حقيقية: حجر بمداميك، ولياسة، وخشب. • أرض فيها كثبان وحصى، والنخل يتحرك مع الريح، والإسفلت يلمع إذا تبلل، وبرك ماء بالمطر. • سيارات وناس بتصاميم جديدة. • مواقف بمظلات، وكافرات أصفر وأسود على الشوارع، وإشارات مرور حقيقية، وبيت الشعر بالمجلس والدلة."],
+    ["both", "🏗️", "شوف مدينتك وهي تنبني", "• أي مبنى تبنيه أو تطوّره يطلع له موقع بناء بسقالات، ويرتفع دور دور، وبعدها تنزل السقالات. • للشكل بس: المبنى يشتغل من أول لحظة مثل قبل."],
+    ["both", "⚡", "أجمل وأخف على الجوال", "• اللعبة ما ترسم إلا اللي قدامك، ومن بعيد ترسم المباني بنسخة أخف. • الرسومات صارت أجمل بكثير، والجوال يتعب أقل من قبل. • جودة «✨ تلقائي» (الافتراضية) تخفف لحالها إذا الجوال تعب أو سخن، وترجع ترفع إذا ارتاح. • وبالإعدادات صار فيه «🔋 توفير الطاقة» و«فائقة» للجوالات القوية."],
+    ["world", "▶️", "كمّل ديرتك على طول", "• بالقائمة الرئيسية صار فيه زر «كمّل في …» يدخلك مدينتك على طول، بدون الخريطة. • وخلفية القائمة صارت مدينتك نفسها بتصوير جوي يتحرك فوقها."],
+    ["world", "🟢", "كم واحد متصل الحين", "• داخل عالم الجوف تشوف جنب الوقت كم لاعب متصل الحين. رقم بس، بدون أسماء."],
     ["world", "🏛️", "المشاريع الكبرى باسم مكانك وشكله", "• البوابة والبرج والأبراج والمطار والمهرجان صارت تاخذ اسم المكان اللي مدينتك فيه على خريطة الجوف: اللي قرب سكاكا يبني «بوابة سكاكا» و«أبراج سكاكا». • وكل مكان له تصميمه: دومة الجندل حجر ذهبي على طراز قلعة مارد، وسكاكا وميقوع طين أحمر على طراز قلعة زعبل، والقريات والحديثة والحماد حجر أسود بأقواس، وطبرجل والروضات وصوير حجر أبيض بين الزيتون، والنفود بيت شعر بالسدو."],
     ["both", "📱", "شاشة كاملة بالأندرويد", "• بالأندرويد اللعبة صارت تاخذ الشاشة كلها أول ما تلمسها، وتختفي أشرطة المتصفح. • ما تبيها؟ طفّها من الإعدادات ← «📱 شاشة كاملة»."],
     ["both", "🔑", "كود النسخة الاحتياطية صار قصير", "• بالإعدادات ← «نسخة احتياطية» ← «🔑 اطلع كود»: يطلع لك كود قصير مثل K7PM-2QXA بدل الكود الطويل. • تكتبه بالجهاز الثاني من «استرجع من كود»، ويبقى ٦٠ يوم."],
@@ -3315,6 +3333,45 @@ function showWhatsNewDot() {
 }
 $("mWhatsNew").addEventListener("click", () => { sfx.tap(); whatsNewSheet(); });
 $("mWorld").addEventListener("click", () => { sfx.tap(); openWorld(); });
+$("mContinue").addEventListener("click", async (e) => { // straight into your own town: no map, no picking
+  sfx.tap();
+  const button = e.currentTarget; button.disabled = true;
+  try {
+    if (!onlineOk()) { toast("عالم الجوف يشتغل من رابط اللعبة: rafaya.vamosx.workers.dev", "bad"); return; }
+    if (await worldIsClosed()) { worldClosedSheet(); return; }
+    await loadClock();
+    const id = me();
+    if (!id) { worldJoinSheet(); return; }
+    try { // the owner's name request comes first; a town taken off the map is forgotten
+      const st = await api("/world/war/state", { name: id.name, secret: id.secret, since: 0, seq: 0 });
+      if (st.noTown && id.plot != null) { forgetTown(); menuBackdrop(); }
+      if (st.namefix) { namefixSheet(st.namefix); return; }
+    } catch { /* in anyway */ }
+    if (me()?.plot == null) { worldMapSheet(); return; }
+    await enterWorldTown();
+  } finally { button.disabled = false; }
+});
+/**
+ * The main menu shows your own al-Jouf town from the air, the camera drifting slowly over it, with a button to go
+ * straight in. Without a town of your own, the menu keeps its usual scene.
+ */
+const MENU = { town: null, t: 0, cx: 0, cz: 0, pitch: null };
+function menuBackdrop() {
+  const id = me();
+  let town = null;
+  if (id?.plot != null) try { town = unpack(store.get(WORLD_SAVE)); } catch { town = null; }
+  MENU.town = town;
+  $("mContinue").hidden = !town;
+  if (!town) return;
+  $("mTownName").textContent = `«${town.name}»`;
+  nameLandmarks(worldPlace(id.plot));
+  world.newTown(); world.sync(town, { tiles: true, roads: true, buildings: true });
+  let sx = 0, sy = 0, n = 0;
+  town.tiles.forEach((t, i) => { if (t.b) { sx += i % N; sy += Math.floor(i / N); n++; } });
+  const c = n ? [Math.round(sx / n), Math.round(sy / n)] : [N / 2, N / 2];
+  MENU.cx = c[0] - N / 2 + 0.5; MENU.cz = c[1] - N / 2 + 0.5;
+  MENU.pitch ??= world.view.pitch;
+}
 showWhatsNewDot();
 // What changed since this phone last looked, per mode: the titles already seen are kept, so only the new
 // lines show (a phone that knew only the old date stamp gets the newest few).
@@ -3957,7 +4014,7 @@ function pauseMenu() {
   $("pmDeputy")?.addEventListener("click", () => deputySheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
-  $("pmMain").addEventListener("click", () => { save(); leaveWorld(); closeSheet(); showMenu(); });
+  $("pmMain").addEventListener("click", () => { save(); leaveWorld(); closeSheet(); showMenu(); menuBackdrop(); });
 }
 $("pauseMenuBtn").addEventListener("click", () => { sfx.tap(); pauseMenu(); });
 
@@ -3976,6 +4033,7 @@ function focusTown() {
 
 function startPlaying() {
   document.body.classList.remove("at-menu");
+  if (MENU.pitch != null) { world.view.pitch = MENU.pitch; world.updateCamera(); } // back to the game's view from the menu's flight
   playing = true;
   refresh();
   scheduleLayout();
@@ -4148,9 +4206,16 @@ function frame(now) {
     const part = partOfDay(p, d), text = `${part} ${clockAt(p, d)}${world.prayer ? " · 🕌" : ""}`;
     if (text !== shownTime) { shownTime = text; $("sTime").textContent = text; $("sTime").dataset.p = part; world.nightTime = part === "الليل" || part === "الفجر"; }
   }
-  if (!playing) { world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1; }
+  if (!playing) {
+    if (MENU.town) { // a slow flight over your town: higher up, drifting across it
+      MENU.t += dt; const v = world.view;
+      v.pitch = 0.88; v.zoom = 0.62 + 0.08 * Math.sin(MENU.t * 0.07);
+      v.x = MENU.cx + Math.sin(MENU.t * 0.045) * 4; v.z = MENU.cz + Math.cos(MENU.t * 0.06) * 3;
+    }
+    world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1;
+  }
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
-  if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
+  if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); onlinePoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
   const t0 = performance.now();
@@ -4190,6 +4255,7 @@ window.__tod = (t) => { tod = t; playing = false; };
 renderCats();
 refresh();
 showMenu();
+menuBackdrop();
 $("loading").classList.add("done");
 setTimeout(() => $("loading").remove(), 700);
 requestAnimationFrame(frame);

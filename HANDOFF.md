@@ -560,3 +560,27 @@ Short Arabic: you have read the handoff, you know the last thing done was buildi
 - Then `/api/version` answers `{ version: <stamp>, latest: <new> }`: copies from release `<stamp>` on carry on, older ones update.
 - `<stamp>` is the first 10 characters of the commit SHA of the last must-update release (Workers CI stamps with it).
 - For the next must-update release, delete `UPDATE.json` (or set `optional` to false).
+
+## RAFAYA REMASTERED (graphics update, 2026-11-24)
+
+The plan, the measurements and the merge notes are in `docs/REMASTER.md`.
+
+**Merged from another assistant's update (brought by the owner):**
+- `js/models.js`;
+- three new modules: `js/building-surfaces.js` (stone, plaster and timber), `js/traffic-path.js` (lanes) and `js/world-weather.js` (water, rain, wet ground);
+- a three-way merged `js/world3d.js`.
+
+**Added on top of it:**
+- **The performance engine:**
+  - `World.cull` draws only what the camera sees.
+  - Far models: `modelFar` in models.js, used when zoomed out.
+  - The adaptive quality: main.js `perfWatch`/`perfSet` with `World.setLevel`; the new default «auto», plus «saver» and «ultra».
+- **Looks:**
+  - The realism layer: `addDetail`, world-space grain, stains and streaks.
+  - The quick build animation, looks only: `World.anims` with the `buildFx` scaffolding. Call `World.newTown()` before showing a different town.
+  - Remodels: the car park, the tent, the traffic signal, the median, the building site, and painted kerbs.
+- **Menu and al-Jouf:**
+  - The main menu's «كمّل في …» button and the aerial backdrop of your own town (`menuBackdrop`).
+  - The online count: `/api/world/online` (a number only, never who).
+
+**Gotcha: building meshes need `frustumCulled = false`.** `cull()` decides what is drawn. three's own test uses a stale bounding sphere and hides whole groups, while their shadows still show. The merge had dropped that line.

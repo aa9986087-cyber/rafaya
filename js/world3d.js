@@ -840,6 +840,7 @@ export class World {
           const mesh = new THREE.InstancedMesh(geo[set], this.mats[set], capacity);
           mesh.castShadow = set !== "lights" && this.quality !== "low";
           mesh.receiveShadow = set !== "lights";
+          mesh.frustumCulled = false; // cull() decides what is drawn; three's own test would use a stale bounding sphere and hide whole groups
           this.scene.add(mesh);
           inst[set] = mesh;
         }
@@ -1920,6 +1921,8 @@ export class World {
     for (const mesh of this.buildFx) { list.forEach((mm, i) => mesh.setMatrixAt(i, mm)); mesh.count = list.length; mesh.instanceMatrix.needsUpdate = true; }
     this.buildFxOn = list.length > 0;
   }
+  /** Another town takes the screen (the menu's, yours, a visit): nothing in it is "just built", so no build animation. */
+  newTown() { this.prevKeys = null; this.anims?.clear(); this.buildFxOn && this.drawBuildFx([]); }
   /** Play the build animation on a tile again (the showcase and tests). */
   playBuild(tile) { if (this.where?.has(tile)) { this.anims ||= new Map(); this.anims.set(tile, this.clock); } }
 

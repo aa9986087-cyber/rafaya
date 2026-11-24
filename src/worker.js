@@ -563,6 +563,11 @@ export class Board extends DurableObject {
 ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p>"}</body></html>`;
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
+    if (!post && p[0] === "online") { // how many towns are being played right now (a number only: never who)
+      const plots = new Set();
+      for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot != null && Date.now() - (a.seen || 0) < 70000) plots.add(a.plot); }
+      return json({ n: plots.size });
+    }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
