@@ -73,6 +73,14 @@ let visiting = null; // { code, town, comments } while looking at another player
 let worldMode = false; // playing a town in the shared world of al-Jouf
 // the iPhone, and the game opened as an app from the home screen (used early: by save and the app's move)
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+// Android: the whole screen, without the browser's bars. Browsers only allow it on a tap, so every tap asks again
+// while it is on (the iPhone does not allow it at all: there the game is played from the home screen).
+const isAndroid = /Android/i.test(navigator.userAgent) && !isIOS;
+const canFull = () => isAndroid && !!document.documentElement.requestFullscreen && store.get("rafaya-fullscreen") !== "0";
+addEventListener("pointerup", () => {
+  if (!canFull() || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => { /* refused: the next tap asks again */ });
+}, { passive: true });
 const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 function save() {
   if (visiting || arrange) return; // mid-layout the town is saved as it was before (see enterArrange)
@@ -3133,8 +3141,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-02-01", world: "2027-02-01" },
+  v: { solo: "2027-02-02", world: "2027-02-02" },
   items: [
+    ["both", "📱", "شاشة كاملة بالأندرويد", "• بالأندرويد اللعبة صارت تاخذ الشاشة كلها أول ما تلمسها، وتختفي أشرطة المتصفح. • ما تبيها؟ طفّها من الإعدادات ← «📱 شاشة كاملة»."],
     ["both", "🔑", "كود النسخة الاحتياطية صار قصير", "• بالإعدادات ← «نسخة احتياطية» ← «🔑 اطلع كود»: يطلع لك كود قصير مثل K7PM-2QXA بدل الكود الطويل. • تكتبه بالجهاز الثاني من «استرجع من كود»، ويبقى ٦٠ يوم."],
     ["world", "🛠️", "إصلاحات الخريطة والشات", "• اسم «الرافعية» على خريطة الجوف وبالشات صار يطلع مثل ما هو، بدل ما يتبدل باسم مدينتك. • ولما تكتب بالشات ما تطلع لك قائمة كتاباتك القديمة فوق الكيبورد."],
     ["world", "🔔", "التنبيهات رجعت مثل أول", "• رجّعنا طريقة اشتراك جوالك بالتنبيهات مثل ما كانت لما كانت توصل. • إذا ما وصلتك: الإعدادات ← طفّ «التنبيهات على الجوال» وشغّلها من جديد."],
@@ -3668,6 +3677,7 @@ function settingsSheet(fromMenu) {
     <div class="seg">${[["high", "عالية"], ["medium", "متوسطة"], ["low", "خفيفة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
     <div class="rows" style="margin-top:10px">
       <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
+      ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
@@ -3735,6 +3745,11 @@ function settingsSheet(fromMenu) {
     if (!want) await pushOff();
     else await pushOn();
     if (e.target.isConnected) settingsSheet(fromMenu);
+  });
+  $("setFull")?.addEventListener("change", (e) => {
+    store.set("rafaya-fullscreen", e.target.checked ? "1" : "0");
+    if (e.target.checked) document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {});
+    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   });
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
