@@ -69,6 +69,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, plot INTEGER, town TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ } // the citizens' unanswered requests (for reminders)
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushsubs (k TEXT PRIMARY KEY, plot INTEGER, endpoint TEXT, created INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, title TEXT, body TEXT, tag TEXT, at INTEGER)`);
@@ -135,8 +137,8 @@ export class Board extends DurableObject {
     return this.ctx.getWebSockets().some((ws) => { const a = ws.deserializeAttachment(); return a?.plot === plot && Date.now() - (a.seen || 0) < 50000; });
   }
   /** Queue a notification for a town's phones and wake them (sent after the answer, see flush). */
-  push(plot, title, body, tag = "jouf") {
-    if (plot == null || this.watching(plot)) return;
+  push(plot, title, body, tag = "jouf", force = false) {
+    if (plot == null || (!force && this.watching(plot))) return;
     const subs = this.sql.exec("SELECT k, endpoint FROM pushsubs WHERE plot = ?", plot).toArray();
     for (const sub of subs) {
       this.sql.exec("INSERT INTO pushq (k, title, body, tag, at) VALUES (?, ?, ?, ?, ?)", sub.k, title, String(body).slice(0, 180), tag, Date.now());
@@ -150,9 +152,26 @@ export class Board extends DurableObject {
       const head = b64url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
       const body = b64url(new TextEncoder().encode(JSON.stringify({ aud: new URL(sub.endpoint).origin, exp: now + 12 * 3600, sub: "https://rafaya.vamosx.workers.dev" })));
       const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, v.key, new TextEncoder().encode(`${head}.${body}`));
-      const r = await fetch(sub.endpoint, { method: "POST", headers: { TTL: "3600", Urgency: "high", "Content-Length": "0", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
+      const r = await fetch(sub.endpoint, { method: "POST", body: "", headers: { TTL: "3600", Urgency: "high", Authorization: `vapid t=${head}.${body}.${b64url(sig)}, k=${v.pub}` } });
       if (r.status === 404 || r.status === 410) this.sql.exec("DELETE FROM pushsubs WHERE k = ?", sub.k); // the phone dropped it
     } catch { /* the next one */ }
+  }
+  /**
+   * The citizens' important requests: a town whose mayor has been away over an hour, with an unanswered
+   * complaint or a decision waiting, gets one reminder on the phone (at most every 8 hours).
+   */
+  remind() {
+    const now = Date.now();
+    const rows = this.sql.exec("SELECT plot, town, pending, updated, reminded FROM plots WHERE pending IS NOT NULL AND plot IN (SELECT plot FROM pushsubs)").toArray();
+    for (const t of rows) {
+      let p; try { p = JSON.parse(t.pending); } catch { continue; }
+      if (!p || (!(p.n > 0) && !p.decision)) continue;
+      const fast = this.env?.WAR_TEST === "1"; // local tests: 10 s away, 30 s between reminders
+      if (now - (t.updated || 0) < (fast ? 10000 : 60 * 60000) || now - (t.reminded || 0) < (fast ? 30000 : 8 * 3600000)) continue;
+      const body = p.decision ? `قرار ينتظرك: ${p.decision}` : `${p.who ? `${p.who}: ` : ""}«${p.text || "عندنا طلب"}»${p.n > 1 ? ` · و${(p.n - 1).toLocaleString("ar-SA")} طلبات ثانية تنتظر ردك` : ""}`;
+      this.push(t.plot, `📰 أهل «${t.town}» يبونك`, body, "citizens");
+      this.sql.exec("UPDATE plots SET reminded = ? WHERE plot = ?", now, t.plot);
+    }
   }
   async flush() { const out = this.outbox.splice(0); if (out.length) await Promise.allSettled(out); }
 
@@ -183,13 +202,15 @@ export class Board extends DurableObject {
   webSocketError() { /* the game reconnects by itself */ }
   /** Wake up when the next strike arrives, to settle it then (results and notes go out live). */
   async armWar() {
-    const next = this.war.nextArrival();
-    if (!next) return;
+    const war = this.war.nextArrival(), subs = this.sql.exec("SELECT 1 FROM pushsubs LIMIT 1").toArray().length;
+    const next = Math.min(war || Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
+    if (!Number.isFinite(next)) return;
     const cur = await this.ctx.storage.getAlarm();
     if (!cur || cur > next) await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next + 200));
   }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
+    try { this.remind(); } catch { /* next time */ }
     await this.flush();
     await this.armWar();
   }
@@ -207,7 +228,7 @@ export class Board extends DurableObject {
     const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
     if (parts[1] === "world" && parts[2] === "live" && (WORLD_OPEN || this.env?.WAR_TEST === "1")) return this.liveSocket(request);
     try {
-      if (parts[1] === "world") { const res = await this.world(request, parts.slice(2)); await this.flush(); return res; }
+      if (parts[1] === "world") { const res = await this.world(request, parts.slice(2)); await this.flush(); if (request.method === "POST") await this.armWar(); return res; }
       return json({ error: "not found" }, 404);
     } catch (e) {
       return json({ error: "bad request" }, 400);
@@ -352,8 +373,16 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       }
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
         int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
+      if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
       return json({ ok: true, town: was?.town });
+    }
+    if (p[0] === "push" && p[1] === "test") { // «جرّب التنبيه»: one to this town's phones now, even with the game open
+      if (me.plot == null) return json({ error: "no town" }, 400);
+      const n = this.sql.exec("SELECT COUNT(*) AS n FROM pushsubs WHERE plot = ?", me.plot).toArray()[0].n;
+      if (!n) return json({ error: "ما فيه جوال مسجّل للتنبيهات: فعّلها أول" });
+      this.push(me.plot, "🔔 تجربة", "التنبيهات شغالة! كذا بيوصلك إذا انضربت مدينتك أو أحد ذكرك أو مواطنينك يبونك.", "test", true);
+      return json({ ok: true, phones: n });
     }
     if (p[0] === "push" && p[1] === "sub") { // this phone wants notifications for the player's town
       const endpoint = String(body.endpoint || "");

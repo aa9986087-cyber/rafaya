@@ -1614,7 +1614,7 @@ function pushOffer(tries = 0) {
   if (sheetFor || visiting || WARX.scene) { if (tries < 20) setTimeout(() => pushOffer(tries + 1), 10000); return; } // after the screen in front closes
   store.set("rafaya-push-asked", "1");
   sheet(`<h2>🔔 تبي تنبيهات على جوالك؟</h2><p>يوصلك تنبيه حتى واللعبة مسكّرة إذا:</p>
-    <div class="rows"><div class="row"><span>🚨 صاروخ أو مسيّرة جاية لمدينتك، أو انضربت</span></div><div class="row"><span>⚔️ أحد أعلن عليك حرب، أو عرض هدنة أو صلح</span></div><div class="row"><span>💬 أحد ذكر اسمك أو اسم مدينتك بالشات</span></div></div>
+    <div class="rows"><div class="row"><span>🚨 صاروخ أو مسيّرة جاية لمدينتك، أو انضربت</span></div><div class="row"><span>⚔️ أحد أعلن عليك حرب، أو عرض هدنة أو صلح</span></div><div class="row"><span>💬 أحد ذكر اسمك أو اسم مدينتك بالشات</span></div><div class="row"><span>📰 مواطنينك عندهم طلب مهم ينتظر ردك وانت غايب</span></div></div>
     <div class="sheet-actions two"><button class="btn" id="pushLater" type="button">بعدين</button><button class="btn go" id="pushYes" type="button">🔔 فعّلها</button></div>`, "push");
   $("pushLater").addEventListener("click", closeSheet);
   $("pushYes").addEventListener("click", async () => { if (await pushOn()) closeSheet(); });
@@ -1693,6 +1693,12 @@ function liveHint(m) {
 // back on the phone after a while: the socket may have died while asleep
 document.addEventListener("visibilitychange", () => { if (!document.hidden && worldMode && !LIVE.ws) { LIVE.tries = 0; liveOpen(); } });
 
+/** The citizens' important requests still waiting for the mayor (for a reminder on the phone while away). */
+function pendingSummary(home) {
+  const list = (home.news || []).filter((p) => p.mood < 0 && !p.answered && p.person).sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  const d = home.decision && DECISIONS.find((x) => x.id === home.decision.id);
+  return { n: list.length, who: list[0]?.person?.name || "", text: list[0]?.text || "", decision: d?.title || "" };
+}
 /** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
 function worldSync(force) {
   if (worldMode && !force) { clearTimeout(worldSync.soon); worldSync.soon = setTimeout(() => warSyncNow(), 3000); } // only sent if the layout changed
@@ -1703,7 +1709,7 @@ function worldSync(force) {
   if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!mine?.world) return;
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era,
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine),
     snapshot: pack({ ...mine, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
@@ -2008,7 +2014,7 @@ async function warSyncNow() {
   if (!worldMode || !home?.world || id?.plot == null) return;
   const key = warTownKey(home);
   if (key === WARX.syncKey) return;
-  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era,
+  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home),
     snapshot: pack({ ...home, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
   try {
     const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
@@ -2772,8 +2778,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-07" },
+  v: { solo: "2027-01-05", world: "2027-01-08" },
   items: [
+    ["world", "📰", "مواطنينك يبونك", "إذا غبت أكثر من ساعة وعند أهل مدينتك طلب مهم ما رديت عليه (أو قرار ينتظرك)، يوصلك تنبيه على جوالك فيه كلامهم، مرة كل ٨ ساعات بالكثير. وبالإعدادات صار فيه زر «جرّب التنبيه» تتأكد فيه إن التنبيهات توصلك."],
     ["world", "🧾", "تصحيح خصم الغياب", "اللي كانت مدينته مديونة وطلع، ودرع الغياب سدّد دينه، كان ينخصم منه بالغلط كأنه كسب. صلّحناه، ورجّعنا لكل واحد صار له كذا فلوسه مع رسالة اعتذار."],
     ["world", "🔔", "تنبيهات على جوالك", "بعالم الجوف يوصلك تنبيه حتى واللعبة مسكّرة: إذا صاروخ أو مسيّرة جاية لمدينتك أو انضربت، إذا أحد أعلن عليك حرب أو عرض هدنة أو صلح، وإذا أحد ذكر اسمك أو اسم مدينتك بالشات. فعّلها من الإعدادات. بالآيفون: أضف اللعبة للشاشة الرئيسية أول (زر المشاركة ← إضافة إلى الشاشة الرئيسية)."],
     ["both", "⬆️", "التحديث صار إجباري", "إذا نزل تحديث جديد واللعبة عندك قديمة، تطلع لك شاشة «تحديث جديد» وتضغط «حدّث الحين»: مدينتك تنحفظ أول، وتنزل النسخة الجديدة. كذا الكل يلعب على نفس النسخة."],
@@ -3201,8 +3208,8 @@ function settingsSheet(fromMenu) {
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
     </div>
-    ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>تنبيه على جوالك حتى واللعبة مسكّرة: الهجوم على مدينتك، والحرب، ولما أحد يذكرك بالشات.</p>
-    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<div class="need">منعت التنبيهات بالمتصفح. اسمح لها من إعدادات المتصفح للموقع.</div>` : st === "no" ? `<div class="need">متصفحك ما يدعم التنبيهات.</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
+    ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>تنبيه على جوالك حتى واللعبة مسكّرة: الهجوم على مدينتك، والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك عندهم طلب مهم ينتظر ردك وانت غايب.</p>
+    <div class="rows">${(() => { const st = pushState(); return st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><button class="btn block" id="pushToggle" data-on="1" type="button">🔕 وقّف التنبيهات</button>` : st === "denied" ? `<div class="need">منعت التنبيهات بالمتصفح. اسمح لها من إعدادات المتصفح للموقع.</div>` : st === "no" ? `<div class="need">متصفحك ما يدعم التنبيهات.</div>` : `<button class="btn go block" id="pushToggle" type="button">🔔 فعّل التنبيهات</button>`; })()}</div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. انسخ الكود لو تبي تنقلها لجهاز ثاني.</p>
     <textarea id="saveCode" readonly></textarea>
@@ -3213,6 +3220,10 @@ function settingsSheet(fromMenu) {
     store.set("rafaya-quality", b.dataset.q); save();
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
+  $("pushTest")?.addEventListener("click", async () => {
+    const id = me();
+    try { const r = await api("/world/push/test", { name: id.name, secret: id.secret }); toast(r.error || "📲 أرسلنا تنبيه تجربة: لازم يوصلك خلال ثواني", r.error ? "bad" : "goal"); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
+  });
   $("pushToggle")?.addEventListener("click", async (e) => { const on = e.currentTarget.dataset.on === "1"; if (on) await pushOff(); else await pushOn(); settingsSheet(fromMenu); });
   $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });

@@ -302,6 +302,13 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - The client's `idleClamp` after charges now runs only for bills (paid > 0), never for refunds.
     - The refund note has kind "apology" (`WarServer.fine(..., kind, extra)`). The game shows it as a centred box (`apologyBox`): our mistake, the amount given back, 30 s with a shrinking bar, or «تمام».
     - `GET /api/world/awayfix?view=page` is the same list as an Arabic page for the owner. Red is a wrong deduction (the town left in debt), green is a refund.
+49. **Citizens' reminders and a test button (owner, 2026-11-24, world only):**
+    - Syncs carry `pending` from `pendingSummary`: unanswered complaints (mood < 0, the most liked first) and a waiting decision. They are stored in `plots.pending`.
+    - `Board.remind()` runs on the alarm. The alarm fires every 30 min while anyone has notifications on (`armWar` also arms it on every POST).
+    - It pushes «📰 أهل «town» يبونك» when the mayor has been away over 1 h, at most every 8 h (`plots.reminded`).
+    - `POST /world/push/test` sends one to your phones now, even with the game open. It is the «📲 جرّب التنبيه» button in settings.
+    - The push request now sends an empty body (no hand-set Content-Length).
+    - WAR_TEST shortens the waits (10 s away, 30 s between, 5 s alarm).
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 
