@@ -64,7 +64,7 @@ function login() {
     token = r.token; localStorage.setItem("rafaya-admin", token); show();
   };
 }
-const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
+const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["players", "👥 اللاعبين"], ["names", "✏️ الأسماء"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
 function frame(inner) {
   $("app").innerHTML = `<header><h1>🛠️ لوحة تحكم الجوف</h1><button id="out">خروج</button></header>
     <nav>${TABS.map(([k, t]) => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</nav><main>${inner}</main>`;
@@ -74,7 +74,7 @@ function frame(inner) {
 async function show() {
   if (!token) return login();
   frame(`<p class="muted">نحمّل…</p>`);
-  try { await ({ home, reports, chat, players, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
+  try { await ({ home, reports, chat, players, names, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
 }
 async function home() {
   const s = await api("stats");
@@ -92,8 +92,10 @@ async function reports() {
 }
 async function chat() {
   const { list } = await api("chat");
-  frame(list.length ? list.map((m) => `<div class="card"><div class="row"><b>${esc(m.name)}</b><small>${esc(m.town)} · ${ago(m.at)}</small></div><div>${esc(m.text)}</div>
-      <div class="acts"><button class="btn" data-del="${m.id}">🗑️ امسح</button>${m.name.startsWith("📢") ? "" : `<button class="btn bad" data-ban="${esc(m.name)}">⛔ احظر</button>`}</div></div>`).join("") : `<p class="muted">الشات فاضي</p>`);
+  frame(`<div class="card"><b>🛠️ اكتب بالشات</b><p class="muted">يطلع للكل بشات الجوف باسم «🛠️ المطور».</p><textarea id="say" maxlength="200" placeholder="اكتب رسالتك"></textarea><button class="btn go block" id="sayGo">أرسل</button></div>` +
+    (list.length ? list.map((m) => `<div class="card"><div class="row"><b>${esc(m.name)}</b><small>${esc(m.town)} · ${ago(m.at)}</small></div><div>${esc(m.text)}</div>
+      <div class="acts"><button class="btn" data-del="${m.id}">🗑️ امسح</button>${/^(📢|🛠️)/.test(m.name) ? "" : `<button class="btn bad" data-ban="${esc(m.name)}">⛔ احظر</button><button class="btn" data-fix="${esc(m.name)}">✏️ اطلب تغيير الاسم</button>`}</div></div>`).join("") : `<p class="muted">الشات فاضي</p>`));
+  $("sayGo").onclick = async () => { const r = await api("say", { text: $("say").value }); toast(r.error || "انرسلت ✓"); if (!r.error) show(); };
   bindActs();
   document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { await api("chat", { del: b.dataset.del }); toast("انمسحت"); show(); }));
 }
@@ -104,9 +106,38 @@ async function players(q = lastQ) {
     ${list.map((p) => `<div class="card"><div class="row"><span><b>${esc(p.town || "بدون مدينة")}</b> <small>${esc(p.name)}</small></span>${p.banned ? `<span class="tag">محظور</span>` : ""}</div>
       <small>${p.town ? `${n(p.pop)} ساكن · ${ERAS[p.era] || ""} · ${n(p.money)} ريال · آخر دخول ${ago(p.updated)}` : "ما أسس مدينة"}${p.banned && p.ban_reason ? ` · السبب: ${esc(p.ban_reason)}` : ""}</small>
       <div class="acts">${p.banned ? `<button class="btn go" data-unban="${esc(p.name)}">فك الحظر</button>` : `<button class="btn bad" data-ban="${esc(p.name)}">⛔ احظر</button>`}
+      <button class="btn" data-fix="${esc(p.name)}">✏️ اطلب تغيير الاسم</button>
       ${p.plot != null ? `<button class="btn" data-gift="${p.plot}" data-town="${esc(p.town)}">🎁 هدية</button><button class="btn" data-rename="${p.plot}" data-town="${esc(p.town)}">✏️ اسم المدينة</button>` : ""}</div></div>`).join("") || `<p class="muted">ما لقيت أحد</p>`}`);
   $("q").onchange = () => players($("q").value);
   bindActs();
+}
+const FIX_REASONS = [["person", "اسم شخص حقيقي غير اسمه"], ["tribe", "اسم أو رمز عائلة أو فخذ أو قبيلة"], ["bad", "كلام ما يصلح"], ["fake", "يوهم إنه من الإدارة"]];
+const WHAT = { both: "اسمه واسم مدينته", name: "اسمه بس", town: "اسم مدينته بس" };
+const left = (due) => { const m = Math.round((due - Date.now()) / 60000); return m <= 0 ? "خلصت المهلة" : m >= 60 ? `باقي ${n(Math.floor(m / 60))} س ${n(m % 60)} د` : `باقي ${n(m)} د`; };
+async function names() {
+  const { list } = await api("namefix");
+  frame(`<p class="muted">اللي طلبت منهم يغيرون الاسم. لازم يغيرونه خلال يوم (٢٤ ساعة)، وإذا ما غيروه تنحذف مدينتهم من عالم الجوف لحالها. تطلب من «👥 اللاعبين» أو من «💬 الشات».</p>
+    ${list.length ? list.map((f) => `<div class="card"><div class="row"><span><b>${esc(f.name)}</b> <small>${esc(f.town || "بدون مدينة")}</small></span>${f.removed ? `<span class="tag">🗑️ انحذفت مدينته</span>` : `<span class="tag">⏳ ${left(f.due)}</span>`}</div>
+      <small>المطلوب: ${WHAT[f.what] || ""} · ${JSON.parse(f.reasons || "[]").map((r) => (FIX_REASONS.find((x) => x[0] === r) || [, r])[1]).concat(f.note ? [f.note] : []).map(esc).join(" · ")}</small>
+      <div class="acts"><button class="btn" data-unfix="${esc(f.name)}">إلغاء الطلب</button></div></div>`).join("") : `<p class="muted">ما فيه طلبات ✓</p>`}`);
+  document.querySelectorAll("[data-unfix]").forEach((b) => (b.onclick = async () => { await api("namefix", { cancel: b.dataset.unfix }); toast("انلغى الطلب"); show(); }));
+}
+function fixForm(name) {
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:5;padding:16px";
+  box.innerHTML = `<div class="card" style="max-width:420px;width:100%"><h3>✏️ اطلب من «${esc(name)}» يغيّر</h3>
+    <p class="muted">يطلع له شاشة ما تتسكر لين يغيّر، ومعه مهلة يوم. إذا ما غيّر تنحذف مدينته.</p>
+    <label>وش يغيّر؟ <select id="fxWhat" style="width:100%;font:inherit;padding:8px;border-radius:10px">${Object.entries(WHAT).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
+    <p><b>السبب:</b></p>${FIX_REASONS.map(([k, t]) => `<label style="display:block;margin:6px 0"><input type="checkbox" value="${k}" style="width:auto"> ${t}</label>`).join("")}
+    <textarea id="fxNote" maxlength="160" placeholder="سبب ثاني أو توضيح (اختياري)"></textarea>
+    <div class="acts"><button class="btn go" id="fxGo">أرسل الطلب</button><button class="btn" id="fxNo">إلغاء</button></div></div>`;
+  document.body.appendChild(box);
+  box.querySelector("#fxNo").onclick = () => box.remove();
+  box.querySelector("#fxGo").onclick = async () => {
+    const reasons = [...box.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
+    const r = await api("namefix", { name, what: box.querySelector("#fxWhat").value, reasons, note: box.querySelector("#fxNote").value });
+    toast(r.error || "انرسل الطلب ✓ عنده يوم يغيّر"); if (!r.error) { box.remove(); show(); }
+  };
 }
 async function gifts() {
   const { list } = await api("gifts");
@@ -134,6 +165,7 @@ function bindActs() {
     const text = prompt("رسالة معها (اختياري)", "شكرًا على مشاركتك 🌹") || "";
     const r = await api("gift", { plot: b.dataset.gift, amount, text }); toast(r.error || `وصلت الهدية لـ«${r.town}» 🎁`);
   }));
+  document.querySelectorAll("[data-fix]").forEach((b) => (b.onclick = () => fixForm(b.dataset.fix)));
   document.querySelectorAll("[data-rename]").forEach((b) => (b.onclick = async () => {
     const town = prompt(`الاسم الجديد بدل «${b.dataset.town}»`, "");
     if (!town) return;

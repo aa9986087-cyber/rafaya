@@ -47,6 +47,14 @@ const WORLD_OPEN = true; // reopened 2026-11-23 with «صراع الجوف» (ow
 // comment and report) and tells every phone to forget its old world town. The solo game is never touched.
 //   gen 2 (2026-11-23): the owner wiped the world so everyone starts again.
 const WORLD_GEN = 2;
+// the owner's reasons for asking a player to change a name (the panel picks them; the player reads the text)
+const NAMEFIX_REASONS = {
+  person: "ممنوع تكتب اسم شخص حقيقي غير اسمك",
+  tribe: "ممنوع تكتب اسم أو رمز عائلة أو فخذ أو قبيلة",
+  bad: "الاسم فيه كلام ما يصلح",
+  fake: "الاسم يوهم إنه من الإدارة أو المطور"
+};
+const DEV_NAME = "🛠️ المطور"; // how the owner's messages show in the world's chat
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
 // never in the repository). A login makes a token for that phone; tokens are kept hashed.
@@ -79,6 +87,9 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
+    // the owner asks a player to change a name that breaks the rules: player name and/or town (what: "name", "town", "both");
+    // not done within a real day, the town is taken off al-Jouf (the request stays until the player changes)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS namefix (name TEXT PRIMARY KEY, what TEXT, reasons TEXT, note TEXT, at INTEGER, due INTEGER, removed INTEGER DEFAULT 0)`);
     this.adminFails = []; // the citizens' unanswered requests (for reminders)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
@@ -245,14 +256,35 @@ export class Board extends DurableObject {
   /** Wake up when the next strike arrives, to settle it then (results and notes go out live). */
   async armWar() {
     const war = this.war.nextArrival(), subs = this.sql.exec("SELECT 1 FROM pushsubs LIMIT 1").toArray().length;
-    const next = Math.min(war || Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
+    const due = this.sql.exec("SELECT MIN(due) d FROM namefix WHERE removed = 0").toArray()[0]?.d; // a name request running out
+    const next = Math.min(war || Infinity, due || Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
     if (!Number.isFinite(next)) return;
     const cur = await this.ctx.storage.getAlarm();
     if (!cur || cur > next) await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next + 200));
   }
+  /** Name requests past their day: the town leaves al-Jouf (the player stays, and must still change the name). */
+  namefixSweep() {
+    for (const f of this.sql.exec("SELECT name FROM namefix WHERE removed = 0 AND due <= ?", Date.now()).toArray()) {
+      const pl = this.sql.exec("SELECT plot FROM players WHERE name = ?", f.name).toArray()[0];
+      if (pl?.plot != null) this.removeTown(pl.plot, "ما تغيّر اسمها بالوقت");
+      this.sql.exec("UPDATE namefix SET removed = 1 WHERE name = ?", f.name);
+    }
+  }
+  /** Take a town off the map: its land is free again; the player keeps the account and may found a new one. */
+  removeTown(plot, why) {
+    const t = this.sql.exec("SELECT town FROM plots WHERE plot = ?", plot).toArray()[0];
+    this.war.resetTown(plot);
+    this.sql.exec("DELETE FROM plots WHERE plot = ?", plot);
+    this.sql.exec("UPDATE players SET plot = NULL WHERE plot = ?", plot);
+    this.sql.exec("DELETE FROM pushsubs WHERE plot = ?", plot);
+    this.sql.exec("DELETE FROM comments WHERE code = ?", `w${plot}`);
+    if (t) this.news("removed", `🗑️ «${t.town}» انحذفت من عالم الجوف (${why})`, plot);
+    this.live({ t: "town", plot });
+  }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
     try { this.remind(); } catch { /* next time */ }
+    try { this.namefixSweep(); } catch { /* next time */ }
     await this.flush();
     await this.armWar();
   }
@@ -379,6 +411,32 @@ export class Board extends DurableObject {
       if (this.nameTaken(town, plot)) return json({ error: "الاسم مأخوذ" });
       this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", town, plot);
       this.live({ t: "town", plot });
+      return json({ ok: true });
+    }
+    if (p[0] === "namefix") { // ask a player to change their name and/or town's name, with the reasons; cancel; the list
+      if (post && body.cancel) { this.sql.exec("DELETE FROM namefix WHERE name = ?", clean(body.cancel, 16)); return json({ ok: true }); }
+      if (post) {
+        const nm = clean(body.name, 16), pl = one("SELECT name, plot FROM players WHERE name = ?", nm);
+        if (!pl) return json({ error: "ما لقيت اللاعب" });
+        const what = ["name", "town", "both"].includes(body.what) ? body.what : "both";
+        const reasons = (Array.isArray(body.reasons) ? body.reasons : []).filter((r) => NAMEFIX_REASONS[r]).slice(0, 4);
+        const note = clean(body.note, 160);
+        if (!reasons.length && !note) return json({ error: "اختر سبب أو اكتب واحد" });
+        const hours = this.env?.WAR_TEST === "1" && body.testSeconds ? Number(body.testSeconds) / 3600 : 24;
+        this.sql.exec("INSERT OR REPLACE INTO namefix (name, what, reasons, note, at, due, removed) VALUES (?, ?, ?, ?, ?, ?, 0)", nm, what, JSON.stringify(reasons), note, now, now + hours * 3600000);
+        if (pl.plot != null) { this.live({ t: "namefix" }, pl.plot); this.push(pl.plot, "✏️ مطلوب تغيير اسم", "الإدارة طلبت منك تغيير الاسم خلال ٢٤ ساعة، ادخل اللعبة وشوف السبب.", "namefix", true); this.ctx.waitUntil(this.flush()); }
+        await this.armWar();
+        return json({ ok: true });
+      }
+      return json({ list: this.sql.exec("SELECT f.name, f.what, f.reasons, f.note, f.at, f.due, f.removed, t.town FROM namefix f LEFT JOIN players p ON p.name = f.name LEFT JOIN plots t ON t.plot = p.plot ORDER BY f.at DESC").toArray() });
+    }
+    if (post && p[0] === "say") { // the owner writes in the world's chat, as «المطور»
+      const text = clean(body.text, 200);
+      if (!text) return json({ error: "اكتب شي" });
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", DEV_NAME, null, "", text, now);
+      this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
+      const message = one("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1");
+      this.live({ t: "chat", message });
       return json({ ok: true });
     }
     if (post && p[0] === "announce") {
@@ -513,6 +571,35 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    const fix = this.sql.exec("SELECT what, reasons, note, due, removed FROM namefix WHERE name = ?", name).toArray()[0];
+    if (p[0] === "namefix") { // the player changes the names the owner asked for (name and/or town)
+      if (!fix) return json({ error: "ما فيه طلب تغيير" });
+      const t = me.plot != null ? this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0] : null;
+      const wantName = fix.what !== "town", wantTown = fix.what !== "name" && !!t;
+      const newName = wantName ? clean(body.newName, 16) : name, newTown = wantTown ? clean(body.newTown, 20) : t?.town;
+      if (wantName) {
+        if (!NAME_RE.test(newName) || badText(newName)) return json({ error: "اسمك الجديد ما يصلح" });
+        if (newName === name) return json({ error: "اكتب اسم غير اسمك القديم" });
+        if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", newName).toArray().length) return json({ error: "هالاسم مأخوذ، اختر غيره" });
+      }
+      if (wantTown) {
+        if (newTown.length < 2 || badText(newTown)) return json({ error: "اسم المدينة الجديد ما يصلح" });
+        if (townNameKey(newTown) === townNameKey(t.town)) return json({ error: "اكتب اسم مدينة غير القديم" });
+        if (this.nameTaken(newTown, me.plot)) return json({ error: "فيه مدينة بالجوف بهالاسم، اختر غيره" });
+      }
+      if (wantName) {
+        this.sql.exec("UPDATE players SET name = ? WHERE name = ?", newName, name);
+        for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
+      }
+      if (wantTown) {
+        this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", newTown, me.plot);
+        this.news("rename", `✏️ «${t.town}» صار اسمها «${newTown}»`, me.plot, 0);
+      }
+      this.sql.exec("DELETE FROM namefix WHERE name = ?", name);
+      if (me.plot != null) this.live({ t: "town", plot: me.plot });
+      return json({ ok: true, name: newName, town: newTown || null });
+    }
+    if (p[0] === "claim" && fix) return json({ error: "غيّر اسمك أول: الإدارة طالبة منك تغييره" });
     if (p[0] === "claim") {
       const plot = int(body.plot), town = clean(body.town, 20) || "هجرة";
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);
@@ -634,6 +721,10 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const who = this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0];
       const res = this.war.handle(p[1], body, who);
       await this.armWar(); // the next strike lands on time, even if nobody asks
+      if (p[1] === "state") { // what the owner asks of this player, and whether the town is still on the map
+        if (fix) res.namefix = { what: fix.what, reasons: JSON.parse(fix.reasons || "[]").map((r) => NAMEFIX_REASONS[r]).filter(Boolean), note: fix.note || "", due: fix.due, removed: !!fix.removed };
+        if (me.plot == null) res.noTown = true;
+      }
       return json(res, res.error === "not found" ? 404 : 200); // a refusal comes back as { error: "why, in Arabic" }
     }
     if (p[0] === "chat") {

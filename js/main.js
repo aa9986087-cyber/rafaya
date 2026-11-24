@@ -985,9 +985,11 @@ function here(text) {
   const n = S?.name;
   return n && n !== "الرافعية" && typeof text === "string" ? text.replaceAll("الرافعية", n) : text;
 }
+const FIX = { ask: null }; // the owner's name request while it waits (see namefixSheet)
 function sheet(html, kind) {
   if (sheetFor === "update" && kind !== "update") return; // nothing covers the update
   clearTimeout(sheetHide); // a sheet opened while the last one was closing must stay open
+  $("sheetClose").hidden = kind === "update" || kind === "namefix"; // those two can't be closed
   sheetFor = kind; sheetAt = performance.now();
   $("sheetBody").innerHTML = NAME_KEEP.has(kind) ? html : here(html);
   $("sheet").hidden = false;
@@ -995,6 +997,8 @@ function sheet(html, kind) {
 }
 function closeSheet() {
   if ($("sheet").hidden || sheetFor === "update") return; // the update can't be put off
+  if (sheetFor === "namefix" && FIX.ask) return; // nor the owner's name request, until the names are changed
+  if (FIX.ask) setTimeout(() => { if (FIX.ask && sheetFor !== "namefix") namefixSheet(FIX.ask); }, 400); // another screen closed: the request comes back
   $("sheet").classList.add("closing");
   sheetHide = setTimeout(() => { $("sheet").hidden = true; $("sheet").classList.remove("closing"); }, 180);
   const was = sheetFor; sheetFor = null;
@@ -1960,7 +1964,7 @@ function liveHint(m) {
     if (sheetFor === "chat") chatSheet(true);
     chatCount();
   } else if (m.t === "chatdel") { CHAT.msgs = CHAT.msgs.filter((x) => x.id !== m.id); if (sheetFor === "chat") chatSheet(true); chatCount(); }
-  else if (m.t === "war") warPoll(true);
+  else if (m.t === "war" || m.t === "namefix") warPoll(true);
   else if (m.t === "news") { wnewsPoll(true).then(() => { if (sheetFor === "wnews") worldNewsSheet(true); }); }
   else if (m.t === "town") {
     if (m.plot === me()?.plot) return;
@@ -1996,6 +2000,52 @@ function worldSync(force) {
 addEventListener("pagehide", () => worldSync(true));
 document.addEventListener("visibilitychange", () => { if (document.hidden) worldSync(true); });
 
+const esc = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
+// ---------- the owner asked this player to change a name (player and/or town): it has to be done ----------
+const fixLeft = (due) => { const m = Math.max(0, Math.round((due - Date.now()) / 60000)); return m >= 60 ? `${ar(Math.floor(m / 60))} ساعة${m % 60 ? ` و${ar(m % 60)} دقيقة` : ""}` : `${ar(m)} دقيقة`; };
+function namefixSheet(f) {
+  if (sheetFor === "namefix" || sheetFor === "update") return;
+  FIX.ask = f;
+  const id = me(), wantName = f.what !== "town", wantTown = f.what !== "name" && !f.removed && id?.plot != null;
+  const town = worldMode && S.world ? S.name : (() => { try { return unpack(store.get(WORLD_SAVE)).name; } catch { return ""; } })();
+  const why = [...f.reasons, ...(f.note ? [f.note] : [])];
+  sheet(`<h2>✏️ مطلوب تغيير ${wantName && wantTown ? "اسمك واسم مدينتك" : wantName ? "اسمك" : "اسم مدينتك"}</h2>
+    <p>الإدارة طلبت منك تغيّر ${wantName && wantTown ? "اسمك واسم مدينتك" : wantName ? "اسمك" : "اسم مدينتك"} عشان:</p>
+    <div class="need">${why.map((w) => `• ${esc(w)}`).join("<br>")}</div>
+    ${f.removed ? `<p class="hint">انتهت المهلة وانحذفت مدينتك من عالم الجوف. غيّر اسمك وتقدر تأسس مدينة جديدة.</p>` : `<div class="rows"><div class="row"><span>⏳ باقي على المهلة</span><b>${fixLeft(f.due)}</b></div></div><p class="hint">إذا ما غيّرته قبل ما تخلص المهلة، <b>تنحذف مدينتك كاملة من عالم الجوف</b>.</p>`}
+    ${wantName ? `<label class="rg-name">اسمك الجديد <input id="nfName" type="text" maxlength="16" placeholder="بدل «${esc(id?.name || "")}»"></label>` : ""}
+    ${wantTown ? `<label class="rg-name">اسم مدينتك الجديد <input id="nfTown" type="text" maxlength="20" placeholder="${town ? `بدل «${esc(town)}»` : ""}"></label>` : ""}
+    <div class="sheet-actions keep"><button class="btn go block" id="nfGo" type="button">غيّر</button></div>`, "namefix");
+  $("nfGo").addEventListener("click", async () => {
+    const newName = ($("nfName")?.value || "").trim(), newTown = ($("nfTown")?.value || "").trim();
+    if ((wantName && !newName) || (wantTown && !newTown)) { toast("اكتب الاسم الجديد", "bad"); sfx.deny(); return; }
+    let r;
+    try { r = await api("/world/namefix", { name: id.name, secret: id.secret, newName, newTown }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+    store.set(WORLD_ID, JSON.stringify({ ...me(), name: r.name }));
+    if (r.town) {
+      if (worldMode && S.world) { S.name = r.town; save(); refresh(); }
+      else { try { const t = unpack(store.get(WORLD_SAVE)); t.name = r.town; store.set(WORLD_SAVE, pack(t)); } catch { /* the town picks it up next time */ } }
+    }
+    FIX.ask = null; closeSheet();
+    sfx.era(); toast("تم التغيير ✓ شكرًا لتعاونك", "goal");
+    if (!worldMode) openWorld();
+  });
+}
+/** The town is gone from the map (a name not changed in time): forget it on this phone. */
+function forgetTown() {
+  try { localStorage.removeItem(WORLD_SAVE); } catch { /* fine */ }
+  const id = me(); if (id) store.set(WORLD_ID, JSON.stringify({ ...id, plot: null }));
+}
+function townRemoved(f) {
+  if (sheetFor === "removed") return;
+  forgetTown();
+  leaveWorld(); showMenu();
+  sheet(`<h2>🗑️ مدينتك انحذفت من عالم الجوف</h2><p>الإدارة طلبت تغيير الاسم وخلصت المهلة (يوم كامل) بدون تغيير، فانحذفت المدينة.</p>
+    <div class="sheet-actions keep"><button class="btn go block" id="rmOk" type="button">تمام</button></div>`, "removed");
+  $("rmOk").addEventListener("click", () => { closeSheet(); if (f) namefixSheet(f); });
+}
+
 /** The way into the world: a name first, then the map. */
 /** The world is closed for maintenance (the server answers 503): say so, and that nothing is lost. */
 function worldClosedSheet() {
@@ -2012,6 +2062,11 @@ async function openWorld() {
   if (await worldIsClosed()) { worldClosedSheet(); return; }
   await loadClock();
   if (!me()) { worldJoinSheet(); return; }
+  try { // a name the owner asked to change comes first; a town taken off the map is forgotten on this phone
+    const id = me(), st = await api("/world/war/state", { name: id.name, secret: id.secret, since: 0, seq: 0 });
+    if (st.noTown && id.plot != null) forgetTown();
+    if (st.namefix) { namefixSheet(st.namefix); return; }
+  } catch { /* the map anyway */ }
   worldMapSheet();
 }
 function worldJoinSheet(recover) {
@@ -2333,6 +2388,9 @@ async function warPoll(force) {
   if (force) await warSyncNow();
   const st = await warApi("state", { since: warSeen(), seq: (visiting ? visiting.home : S).war?.seq || 0 });
   WARX.busy = false;
+  if (st.noTown && worldMode) { townRemoved(st.namefix); return WARX.st; }
+  if (st.namefix) namefixSheet(st.namefix);
+  else if (FIX.ask && !st.error) { FIX.ask = null; if (sheetFor === "namefix") closeSheet(); } // the owner took the request back
   if (st.error) return WARX.st;
   WARX.offset = st.now - Date.now();
   world.fx && (world.fx.clockOffset = WARX.offset);
@@ -3078,8 +3136,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-28", world: "2027-01-28" },
+  v: { solo: "2027-01-28", world: "2027-01-29" },
   items: [
+    ["world", "✏️", "قوانين الأسماء بالجوف", "• ممنوع تكتب باسمك أو اسم مدينتك اسم شخص حقيقي غير اسمك، أو اسم أو رمز عائلة أو فخذ أو قبيلة. • إذا الإدارة طلبت منك تغيّر الاسم، يطلع لك السبب ومعك يوم كامل تغيّره، وإذا ما غيّرته تنحذف مدينتك من عالم الجوف. • والمطور صار يكتب معكم بالشات باسم «🛠️ المطور»."],
     ["both", "🖼️", "الرسوم رجعت واضحة", "• كانت اللعبة إذا حسّت إن الجوال بطيء لحظة، تنزّل الدقة وتحفظها للأبد، فتصير مبكسلة. • الحين ترجع واضحة، وإذا الجوال تعب فعلًا تخفف الظلال بس ولهالمرة، والدقة تبقى حلوة."],
     ["both", "📱", "أزرار الجنب كلها تبان", "• إذا الشاشة قصيرة (مثل المتصفح بأشرطته)، أزرار الجنب تصغر شوي عشان تبان كلها بعمود واحد."],
     ["both", "🎯", "المهام ما تتعلق", "• لو خلّصت مهمة من اللي تحت قبل اللي فوقها (مثل بحث الري بالتنقيط قبل المدرسة)، تستلم مكافأتها على طول. • واللي خلّصها قبل ومكافأته معلقة، تجيه خلال ساعة من دخوله."],
