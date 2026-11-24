@@ -321,7 +321,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
       - The copy is refreshed at most every 10 min from `save()`, and on load.
       - The standalone app's startup takes it (`/move/take`, once), restores the keys, and reloads («جبنا لعبتك كاملة»). It asks before overwriting anything played there.
       - An empty app asks once for the code (`handoffSheet`). Safari's settings have «📲 انقل لعبتك للتطبيق» (`moveCodeSheet`).
-      - **The owner's choice: two ways only.** The automatic move (above) and the code. The iPhone guide shows the code under the steps. The old account-only link and code are no longer offered; the server still answers them, but the game ignores old `?link` addresses.
+      - **The owner's choice: two ways only.** The automatic move (above) and the code. The iPhone guide shows the code under the steps. The old account-only link and code are no longer offered (the server and the startup still accept old `?link` addresses).
     - **iPhone steps by version (owner said it was hard):**
       - iOS 26 put Share inside «⋯» (bottom right) and added an «Open as Web App» switch that must stay on, so the steps say both. Older iOS gets ⬆️ with a «⋯» hint.
       - The fallback code now lasts 24 h.
