@@ -307,16 +307,17 @@ export class Board extends DurableObject {
         this.sql.exec("INSERT OR IGNORE INTO citizen_support_push (day, plot, k, next_at) SELECT ?, plot, k, ? FROM pushsubs WHERE plot = ?", round.day, now, plot);
       }
       this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
+      this.news("citizenSupport", plots.length
+        ? "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف."
+        : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.", null, null, false);
       return plots;
     });
     if (!payout) return;
+    this.live({ t: "news" });
     const paid = new Set(payout);
     for (const ws of this.ctx.getWebSockets()) if (paid.has(ws.deserializeAttachment()?.plot)) {
       try { ws.send('{"t":"war"}'); } catch { /* the next poll reads the saved credit */ }
     }
-    this.news("citizenSupport", payout.length
-      ? "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف."
-      : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.");
   }
   async flushCitizenSupport(now) {
     this.sql.exec(`DELETE FROM citizen_support_push WHERE NOT EXISTS (
@@ -573,11 +574,11 @@ export class Board extends DurableObject {
     return !!row && (row.secret === h || this.sql.exec("SELECT 1 FROM keys WHERE name = ? AND secret = ?", name, h).toArray().length > 0);
   }
   /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
-  news(kind, text, plot = null, n = null) {
+  news(kind, text, plot = null, n = null, notify = true) {
     if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
     this.sql.exec("INSERT INTO wnews (kind, plot, n, text, at) VALUES (?, ?, ?, ?, ?)", kind, plot, n, text, Date.now());
     this.sql.exec("DELETE FROM wnews WHERE id NOT IN (SELECT id FROM wnews ORDER BY id DESC LIMIT 300)");
-    this.live({ t: "news" });
+    if (notify) this.live({ t: "news" });
   }
 
   // ---------- the world of al-Jouf ----------
@@ -598,7 +599,9 @@ export class Board extends DurableObject {
         await this.armWar();
         this.payCitizenSupport(Date.now());
       }
-      return json({ ...clock, now, gen: WORLD_GEN });
+      const citizenSupport = this.sql.exec("SELECT day, due, paid_at, recipients FROM citizen_support ORDER BY day")
+        .toArray().map(({ day, due, paid_at, recipients }) => ({ day, due, paidAt: paid_at, credited: recipients > 0 }));
+      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
