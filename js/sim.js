@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -887,7 +887,7 @@ export function houseBlocker(s, a, x, y) {
 }
 
 /** Building materials the next level needs. */
-export const upgradeMats = (b) => (b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : MIL[b?.id] ? MAT.biz[b.lvl + 2] || 0 : 0);
+export const upgradeMats = (b) => (b?.id === "vault" ? 0 : b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : MIL[b?.id] ? MAT.biz[b.lvl + 2] || 0 : 0);
 /** Everything the next level costs now: money, plus whatever materials are short, bought from outside. */
 export function upgradePrice(s, b) {
   const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0));
@@ -900,15 +900,39 @@ function payUpgrade(s, b) {
   s.materials = Math.max(0, (s.materials || 0) - (p.mats - p.short));
   return "";
 }
+/** How much money the town can gather from its income (al-Jouf only; Infinity alone): the strongroom plus every vault. */
+export function moneyCap(s) {
+  if (!s.world) return Infinity;
+  let cap = BASE_VAULT[Math.min(BASE_VAULT.length - 1, s.era)] ?? BASE_VAULT[0];
+  for (const t of s.tiles) if (t.b?.id === "vault" && !(t.b.build > 0) && (t.b.wd || 0) < 85) cap += VAULT[t.b.lvl || 0]?.cap || 0;
+  return cap;
+}
+/** Hourly money into the town: up to the cap (money already above it stays; nothing is taken). */
+function earn(s, amount, a) {
+  if (amount <= 0 || !s.world) { s.money += amount; return 0; }
+  const cap = a?.moneyCap ?? moneyCap(s), room = Math.max(0, cap - s.money), got = Math.min(amount, room);
+  s.money += got;
+  return amount - got; // what was lost to a full vault
+}
 /** What the next level of this house costs (0 at the top). */
 export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
+  : b?.id === "vault" ? VAULT[b.lvl + 1]?.up || 0
   : MIL[b?.id] ? (MIL[b.id][b.lvl + 1] ? Math.round(B[b.id].cost * MIL_UP[b.lvl + 1].cost) : 0)
   : BIZ_LEVELS[b?.id] && BIZ_UP[b.lvl + 1] ? Math.round(B[b.id].cost * BIZ_UP[b.lvl + 1].cost) : 0);
 /** Can this building be upgraded at all (a house, a farm, a shop, a workshop, a military building with levels)? */
-export const upgradable = (b) => b?.id === "house" || !!BIZ_LEVELS[b?.id] || (MIL[b?.id]?.length || 0) > 1;
+export const upgradable = (b) => b?.id === "house" || b?.id === "vault" || !!BIZ_LEVELS[b?.id] || (MIL[b?.id]?.length || 0) > 1;
 /** Why this farm, shop or workshop cannot move up a level now, or "". */
 export function bizBlocker(s, a, x, y) {
   const b = s.tiles[idx(x, y)]?.b;
+  if (b?.id === "vault") {
+    const next = VAULT[b.lvl + 1];
+    if (!next) return "أعلى مستوى";
+    if (b.build > 0) return "تحت الإنشاء";
+    if (b.wd > 0) return "فيه ضرر عسكري: أصلحه أول";
+    if ((b.cond ?? 100) < 40) return "رمّمه أول";
+    if (s.era < next.era) return `يحتاج تصير ${ERAS[next.era].name}`;
+    return "";
+  }
   if (b && MIL[b.id]) {
     const next = MIL[b.id][b.lvl + 1];
     if (!next) return "أعلى مستوى";
@@ -953,6 +977,11 @@ export function upgradeEffect(s, b) {
     const capNow = Math.round(now.cap * concrete), capNext = Math.round(next.cap * concrete);
     return { house: true, capNow, capNext, taxGain: (capNext - capNow) * perHead };
   }
+  if (b.id === "vault") {
+    const now = VAULT[b.lvl || 0], next = VAULT[(b.lvl || 0) + 1];
+    if (!next) return null;
+    return { vault: true, capNow: now.cap, capNext: next.cap, upkeepNow: (def.upkeep || 0) * now.upkeepX, upkeepNext: (def.upkeep || 0) * next.upkeepX };
+  }
   if (MIL[b.id]) {
     if (!MIL[b.id][b.lvl + 1]) return null;
     return { mil: true, upkeepNow: (def.upkeep || 0) * MIL_UP[b.lvl].upkeep, upkeepNext: (def.upkeep || 0) * MIL_UP[b.lvl + 1].upkeep, now: MIL[b.id][b.lvl], next: MIL[b.id][b.lvl + 1] };
@@ -971,7 +1000,7 @@ export function upgradeEffect(s, b) {
 /** Upgrade whatever is on this tile. */
 export const upgradeAt = (s, x, y, a = analyze(s)) => (s.tiles[idx(x, y)]?.b?.id === "house" ? upgradeHouse(s, x, y, a) : upgradeBiz(s, x, y, a));
 /** The name of a building at its level. */
-export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : MIL[b.id]?.length > 1 ? MIL[b.id][b.lvl]?.name || B[b.id].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
+export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : b.id === "vault" ? VAULT[b.lvl || 0]?.name || B.vault.name : MIL[b.id]?.length > 1 ? MIL[b.id][b.lvl]?.name || B[b.id].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
 
 /** The mayor upgrades a house one level. Returns why not, or "". */
 export function upgradeHouse(s, x, y, a = analyze(s)) {
@@ -1068,7 +1097,8 @@ export function step(s, r = Math.random) {
     if (t.b.id === "house") { t.b.lvl--; t.b.cond = 60; t.b.ruin = 0; fell.push({ i, name: "بيت", house: true }); }
     else { const name = B[t.b.id].name; fell.push({ i, name, refund: lose(s, t) }); }
   });
-  s.money += a.net;
+  a.moneyCap = moneyCap(s);
+  s.capLost = earn(s, a.net, a); // al-Jouf: income stops at a full vault
   s.happy = Math.round((s.happy * 0.7 + a.happyTarget * 0.3) * 10) / 10;
   const seasonBefore = seasonOf(s.day).i, yearBefore = Math.floor((s.day - 1) / YEAR_HOURS);
   s.day++;
@@ -1333,7 +1363,7 @@ export function deputyCatchUp(s, hours, r = Math.random) {
   if (rest > 0) {
     const net = analyze(s).net;
     steady = Math.round(net > 0 ? net * rest * 0.8 : Math.max(net * rest, -Math.max(0, s.money - orders.floor)));
-    s.money = Math.max(0, s.money + steady);
+    if (steady > 0) earn(s, steady); else s.money = Math.max(0, s.money + steady);
   }
   s.day += hours - full; // the town keeps the world's hour
   // away, a town gains at most AWAY_CAP for its stage (the money it had before is never touched)
@@ -1383,7 +1413,7 @@ export function unpack(text) {
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond, rot, wd] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
-    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || 1) - 1), res: Number(res) || 0 } : null;
+    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || (id === "vault" ? VAULT.length : 0) || 1) - 1), res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
     if (b) b.cond = cond === undefined ? 100 : Number(cond);
     if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it

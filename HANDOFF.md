@@ -328,6 +328,12 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
       - announce: a bulletin line plus a chat message as «📢 الإدارة».
       - away: the awayfix page.
     - To change the code: put the SHA-256 of the new code in `ADMIN_CODE_HASH`.
+52. **Money vaults (owner, 2026-11-24, world only):**
+    - The economy was measured first: careful bots' net per hour is about 81 / 417 / 873 / ~0 by stage, and the dearest buildings are 2.1k / 27k / 90k / 210k / 420k.
+    - `moneyCap(s)` = `BASE_VAULT[era]` [5k, 15k, 50k, 150k, 400k] + each vault's `VAULT[lvl].cap`. Levels: 5k / 15k / 40k / 120k / 350k, upgrade prices 2.5k / 8k / 25k / 70k, eras 0–4. A vault is worldOnly, max 4, 600 to build, upkeep 2×upkeepX.
+    - `earn()` caps only the hourly income and the deputy's steady income. Loans, rewards, refunds and gifts still come in, and money already above the cap is never taken.
+    - Upgrades go through the vault branches in upgradeCost, upgradable, bizBlocker, upgradeEffect, levelName and upgradeMats. Models `vault`/`vault1`/`vault2`.
+    - The HUD says «🔒 الخزنة مليانة» and gives one toast when it fills. The budget sheet shows the capacity, and the vault's sheet and card show capacity numbers.
 
 **Nothing is half-done.** All tests pass (39/39). Everything is pushed and auto-deployed.
 

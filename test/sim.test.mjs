@@ -474,3 +474,32 @@ test("away cap from debt: the shield clearing a debt is not income and is never 
   assert.ok(s.money >= 0, `left at ${s.money}`);
   assert.ok(s.money <= AWAY_CAP[s.era], "the gain is counted from zero");
 });
+
+test("vault (al-Jouf): income stops at the cap, vaults raise it, money above it is never taken, solo has no cap", async () => {
+  const { moneyCap, upgradeCost, upgradeAt, levelName } = await import("../js/sim.js");
+  const { BASE_VAULT, VAULT } = await import("../js/data.js");
+  const s = autoplay(300, 42);
+  assert.equal(moneyCap(s), Infinity, "solo: no cap");
+  s.world = { plot: 1 };
+  assert.equal(moneyCap(s), BASE_VAULT[s.era]);
+  // a vault next to the town
+  let at = null;
+  for (let i = 0; i < s.tiles.length && !at; i++) if (!s.tiles[i].b && s.tiles[i].t === "sand" && owns(s, i % 72, Math.floor(i / 72))) at = i;
+  s.tiles[at].b = { id: "vault", lvl: 0, res: 0, cond: 100 };
+  assert.equal(moneyCap(s), BASE_VAULT[s.era] + VAULT[0].cap);
+  // income stops at the cap
+  s.money = moneyCap(s) - 10;
+  for (let h = 0; h < 5; h++) step(s, rng(1));
+  assert.ok(s.money <= moneyCap(s) + 1, "stopped at the cap");
+  // above the cap (an old town): kept, not taken
+  s.money = moneyCap(s) + 50000; const before = s.money;
+  step(s, rng(2));
+  assert.ok(s.money >= before - 5000, "nothing taken beyond the hour's own costs");
+  // upgrade
+  s.era = 1; s.money = 100000;
+  const b = s.tiles[at].b;
+  assert.equal(upgradeCost(b), VAULT[1].up);
+  assert.equal(upgradeAt(s, at % 72, Math.floor(at / 72)), "");
+  assert.equal(b.lvl, 1); assert.equal(levelName(b), VAULT[1].name);
+  assert.equal(moneyCap(s), BASE_VAULT[1] + VAULT[1].cap);
+});

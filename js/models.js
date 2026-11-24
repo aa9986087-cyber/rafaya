@@ -430,6 +430,8 @@ const MAKERS = {
     awning(b, 0.6, 0.27, 0.15, "#7a3b1f");
     for (const x of [-0.2, 0.18]) { b.cyl(0.07, 0.07, 0.015, C.white, { x, y: 0.1, z: 0.33 }, 10); b.cyl(0.012, 0.012, 0.1, C.dark, { x, z: 0.33 }, 5); b.cyl(0.11, 0.004, 0.02, "#e9dcc0", { x, y: 0.32, z: 0.33 }, 10); b.cyl(0.006, 0.006, 0.32, C.dark, { x, z: 0.33 }, 4); }
   },
+  // the town's vault: a stone strongroom with a steel door; bigger and grander as it is upgraded
+  vault(b) { vaultParts(b, 0); }, vault1(b) { vaultParts(b, 1); }, vault2(b) { vaultParts(b, 2); },
   bank(b) {
     b.box(0.92, 0.02, 0.92, C.stone);
     b.box(0.74, 0.44, 0.56, "#e9e2d2", { z: -0.06 });
@@ -1619,7 +1621,23 @@ const MIL_MODELS = ["milhq", "dronebase", "missilepad", "radar", "airdef"];
 /** The base of a military building without its moving parts, when it has them (else the full model). */
 export const baseKey = (key) => (MAKERS[`${key}_b`] ? `${key}_b` : key);
 
+/** The vault at three sizes: 0 a small strongroom, 1 iron-clad, 2 the treasury house with a dome. */
+function vaultParts(b, k) {
+  const w = 0.56 + k * 0.1, h = 0.3 + k * 0.08, d = 0.5 + k * 0.08;
+  b.box(0.92, 0.02, 0.92, C.stone);
+  b.rbox(w, h, d, 0.02, k ? "#cbbfa6" : "#d8c9a6", { z: -0.04 }, "paint");
+  b.box(w + 0.06, 0.04, d + 0.06, C.stone, { y: h, z: -0.04 });
+  // the steel door with its wheel
+  b.rbox(0.2, 0.22, 0.03, 0.01, k ? "#7d8691" : "#8a7a5c", { y: 0.02, z: -0.04 + d / 2 + 0.005 }, "metal");
+  b.cyl(0.05, 0.05, 0.012, C.gold, { y: 0.13, z: -0.04 + d / 2 + 0.03, rx: Math.PI / 2 }, 12, "metal");
+  for (const r of [0, Math.PI / 2]) b.box(0.08, 0.008, 0.008, C.gold, { y: 0.13, z: -0.04 + d / 2 + 0.035, rz: r }, "metal");
+  // iron bands, then a dome and gold for the treasury
+  if (k >= 1) for (const y of [0.08, h - 0.06]) b.box(w + 0.01, 0.025, d + 0.01, "#6f757c", { y, z: -0.04 }, "metal");
+  if (k >= 2) { b.dome(0.16, "#d9b55a", { y: h + 0.04, z: -0.04 }, "metal"); b.cyl(0.012, 0.012, 0.12, C.gold, { y: h + 0.2, z: -0.04 }, 6, "metal"); }
+  b.box(0.16, 0.04, 0.02, "#1f6f5c", { y: h - 0.03, z: -0.04 + d / 2 + 0.006 });
+}
 export function modelKey(id, lvl) {
+  if (id === "vault") return lvl >= 3 ? "vault2" : lvl >= 1 ? "vault1" : "vault";
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;
   if (lvl > 0 && BIZ.includes(id)) return `${id}${lvl}`;
   if (lvl > 0 && MIL_MODELS.includes(id)) return `${id}${Math.min(2, lvl)}`;

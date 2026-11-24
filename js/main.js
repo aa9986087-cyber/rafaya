@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION } from "./version.js";
-import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee } from "./sim.js";
+import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, dayNet, worldEventsAt, provinceFee, moneyCap } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -851,6 +851,7 @@ function renderCards() {
       ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${B[id].fullCost ? `<s>${money(B[id].fullCost)}</s> ` : ""}${money(B[id].cost)} ريال</span>`}
       ${B[id].fullCost && !lock ? `<span class="hours">دعم الدولة −${ar(Math.round(SUBSIDY[B[id].cat] * 100))}٪</span>` : ""}
       ${B[id].buildHours && !lock ? `<span class="hours">يُبنى في ${ar(B[id].buildHours / 24)} أيام</span>` : ""}
+      ${id === "vault" ? `<span class="hours">+${money(VAULT[0].cap)} سعة · تتطور لين ${money(VAULT[VAULT.length - 1].cap)}</span>` : ""}
       ${!lock && (B[id].income || B[id].upkeep) ? `<span class="money-line">${B[id].income ? `<i class="plus">+${money(B[id].income)}</i>` : ""}${B[id].upkeep ? `<i class="minus">−${money(B[id].upkeep)}</i>` : ""}<small>بالساعة</small></span>` : ""}</button>`;
   }).join("");
   box.querySelectorAll("[data-build]").forEach((b) => b.addEventListener("click", () => {
@@ -893,8 +894,12 @@ const face = (k) => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fil
 function refresh() {
   A = analyze(S);
   $("sMoney").textContent = money(S.money);
-  $("sNet").textContent = `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} بالساعة`;
-  $("sNet").className = A.net >= 0 ? "up" : "down";
+  const cap = moneyCap(S), full = A.net > 0 && S.money >= cap;
+  $("sNet").textContent = full ? "🔒 الخزنة مليانة" : `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))} بالساعة`;
+  $("sNet").className = full ? "down" : A.net >= 0 ? "up" : "down";
+  // al-Jouf: say it once when the vault fills (income stops until money is spent or a vault is built)
+  if (full && !refresh.fullSaid && worldMode && !visiting) { refresh.fullSaid = true; toast(`🔒 الخزنة مليانة (${money(cap)}): الدخل يوقف لين تصرف أو تبني «خزنة» أو تطورها`, "bad"); }
+  if (!full) refresh.fullSaid = false;
   $("sPop").textContent = money(S.pop);
   const gr = S.lastGrowth || 0;
   $("sGrow").textContent = gr ? `${gr > 0 ? "+" : "−"}${ar(Math.abs(gr))} آخر ساعة` : `السعة ${money(A.cap)}`;
@@ -1323,6 +1328,7 @@ function inspect(x, y) {
   if (d.jobs) html += row("الوظائف", ar(Math.round(d.jobs * up.jobs)));
   if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(Math.round(d.income * up.income))} ريال`, "plus");
   if (d.upkeep) html += row("المصروف بالساعة", `${money(Math.round(d.upkeep * up.upkeep))} ريال`, "minus");
+  if (t.b.id === "vault") { html += row("تشيل", `${money(VAULT[t.b.lvl || 0].cap)} ريال`, "plus"); html += row("الخزنة كلها (مع البلدية)", `${money(Math.max(0, S.money))} من ${money(moneyCap(S))}`); }
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
@@ -2849,8 +2855,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-01-05", world: "2027-01-11" },
+  v: { solo: "2027-01-05", world: "2027-01-12" },
   items: [
+    ["world", "🔒", "الخزنة", "بعالم الجوف صار للفلوس سعة: البلدية تشيل (قرية ٥٬٠٠٠ · بلدة ١٥٬٠٠٠ · مدينة ٥٠٬٠٠٠ · محافظة ١٥٠٬٠٠٠ · حاضرة ٤٠٠٬٠٠٠)، ولما تمتلي يوقف الدخل لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» من «ماء وكهرباء» (لين ٤ خزنات) وطوّرها خمس مستويات: من ٥٬٠٠٠ لين ٣٥٠٬٠٠٠ للخزنة الوحدة. فلوسك اللي معك الحين ما تنلمس، والقروض والمكافآت تدخل حتى لو مليانة."],
     ["world", "🛠️", "الإدارة صارت معكم", "إدارة الجوف تقدر ترسل إعلانات (تطلع بالنشرة والشات) وهدايا للمدن، وتمسح الرسايل المسيئة وتوقف اللي يسيء. بلّغ عن أي إساءة من زر البلاغ والإدارة تشوفه."],
     ["world", "🔔", "زر التنبيهات بالإعدادات", "بالإعدادات صار فيه مفتاح «🔔 التنبيهات على الجوال»: شغّله وقت ما تبي (حتى لو قلت «بعدين» أول مرة)، وطفّه وقت ما تبي."],
     ["world", "📱", "التنبيهات بالآيفون", "بالآيفون: الإعدادات ← «فعّل التنبيهات» تطلع لك الخطوات بالصور: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وتفتح اللعبة من أيقونتها وحسابك ومدينتك ينتقلون لحالهم، وبعدها تفعّل التنبيهات. ولو ما انتقل الحساب فيه رمز احتياط."],
@@ -2983,6 +2990,7 @@ function budget() {
   sheet(`<h2>الأرقام</h2>
     <div class="rows">
       ${row("الصافي بالساعة", `${A.net >= 0 ? "+" : "−"}${money(Math.abs(A.net))}`, A.net >= 0 ? "plus" : "minus")}
+      ${S.world ? (() => { const cap = moneyCap(S); return row("🔒 سعة الخزنة", `${money(Math.max(0, S.money))} من ${money(cap)}`, S.money >= cap ? "minus" : "") + `<div class="hint">بالجوف الدخل يتجمع لين تمتلي الخزنة، وبعدها يوقف لين تصرف. تبي تجمع أكثر؟ ابنِ «خزنة» (ماء وكهرباء) أو طوّرها.</div>`; })() : ""}
       ${(() => { const d = dayNet(S, A); return row("اللي دخل فعلاً آخر ٢٤ ساعة", `${d >= 0 ? "+" : "−"}${money(Math.abs(d))}`, d >= 0 ? "plus" : "minus"); })()}
       <div class="hint">💡 الصافي بالساعة يتغير طول اليوم وهذا طبيعي مو خطأ: ${A.prayer && A.prayer.id !== "fajr" ? "<b>الحين وقت صلاة والمحلات مسكرة</b> فمبيعاتها أقل" : "وقت الصلاة المحلات تسكر فتقل مبيعاتها"}، و${A.congestion > 0.02 ? "<b>الحين فيه زحمة</b> تأخر الموظفين والزبائن" : "وقت الذروة الزحمة تأخر الموظفين والزبائن"}. عشان كذا رقم اليوم محسوب من اللي دخل فعلاً، مو ساعة وحدة × ٢٤.</div>
       ${A.net < 0 && S.money > 0 ? `<div class="need">تخسر كل ساعة. بعد ${ar(Math.max(1, Math.floor(S.money / -A.net)))} ساعة تصير الميزانية بالسالب.</div>` : ""}
@@ -3111,6 +3119,7 @@ function effectHtml(b) {
     const up = d > 0, cls = up === good ? "plus" : "minus";
     return `<div class="row eff"><span>${label}</span><b class="${cls}">${fine(a)} ← ${fine(z)}${unit} <small>(${up ? "+" : "−"}${fine(Math.abs(d))})</small></b></div>`;
   };
+  if (e.vault) return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch("تشيل", e.capNow, e.capNext, true, " ريال")}${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}</div></div>`;
   if (e.mil) {
     const n = e.next, stat = n.ops ? `عمليات بالجو: ${ar(n.ops)}` : n.salvo ? `سعة ${ar(n.cap)} · ${ar(n.salvo)} بالعملية · تجهيز ${ar(n.reload)} د` : n.cap ? `صواريخ ${ar(n.cap)} · تجهيز ${ar(n.reload)} د` : n.detect ? `دقة الدفاع ×${ar(n.detect)}` : n.vsDrone ? `ضد المسيّرات ${ar(Math.round(n.vsDrone * 100))}٪ · ضد الصواريخ ${ar(Math.round(n.vsMissile * 100))}٪ · ${ar(n.intc)} اعتراضية` : "";
     return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}<div class="row eff"><span>القدرة العسكرية</span><b class="plus">${stat}</b></div></div></div>`;
