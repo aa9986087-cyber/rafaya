@@ -155,6 +155,7 @@ function pvRoute(p, body) {
   if (p[0] === "sync") {
     const t = pvState.plots[me.plot];
     if (!t) throw new Error("400");
+    if (t.restarted && (Number(body.restartAt) || 0) < t.restarted) return { ok: false, restarted: t.restarted, town: t.town };
     if ((body.era || 0) > (t.era || 0) && ERAS[body.era]) pvNews("era", `🏙️ «${t.town}» صارت ${ERAS[body.era].name}!`, me.plot, body.era);
     Object.assign(t, { pop: body.pop, happy: body.happy, money: body.money, era: body.era, updated: Date.now() });
     if (body.snapshot) t.snapshot = body.snapshot;
@@ -165,8 +166,9 @@ function pvRoute(p, body) {
     if (!t) return { error: "ما عندك مدينة" };
     pvWar.resetTown(me.plot);
     Object.assign(t, { pop: 9, happy: 55, money: 0, era: 0, snapshot: "", updated: Date.now() });
+    t.restarted = Date.now();
     pvNews("restart", `🔄 «${t.town}» بدأت من جديد. الله يوفقهم`, me.plot);
-    return { ok: true };
+    return { ok: true, restarted: t.restarted };
   }
   if (p[0] === "rename") {
     const t = pvState.plots[me.plot], town = String(body.town || "").trim().slice(0, 20);

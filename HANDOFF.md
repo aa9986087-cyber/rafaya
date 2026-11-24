@@ -338,6 +338,7 @@ Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
     - Settings has «🔄 ابدأ مدينتي من جديد» (`restartSheet`); you type the town's name to confirm.
     - `POST /world/restart` allows once per 24 h (`plots.restarted`). It calls `WarServer.resetTown` (deletes acct, charge, dmg, hit and note rows by k1 via the new `db.delK1`; relations stay), resets the plot's row, and writes a bulletin line.
     - The game makes a fresh town on the same land and name with `war.seq` 0, and the war notes seen are reset. The trial supports it too.
+    - Two phones: the fresh town keeps `world.restartAt` (the server's `restarted`). /sync refuses a copy whose `restartAt` is older and answers `{restarted, town}`. `syncReply` on the other phone swaps in the fresh town (`freshWorldTown`) and says why.
 54. **Telling players what changed (owner, 2026-11-24, both modes):**
     - Each phone keeps the WHATS_NEW titles it has seen, per mode (`rafaya-news-titles-<mode>`).
     - `newSinceSheet` («✨ الجديد من آخر مرة») lists only the unseen lines, with «كل التحديثات» for the whole list. A phone that only had the old date stamp gets the newest 5.

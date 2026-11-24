@@ -462,7 +462,9 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (me.plot == null) return json({ error: "no town" }, 400);
       const snapshot = String(body.snapshot || "");
       if (snapshot.length > MAX_SNAPSHOT) return json({ error: "snapshot too big" }, 413);
-      const was = this.sql.exec("SELECT town, owner, pop, era, money, updated FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const was = this.sql.exec("SELECT town, owner, pop, era, money, updated, restarted FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      // a copy of the town from before its fresh start (another phone): refused; that phone takes the new town
+      if (was?.restarted && int(body.restartAt) < was.restarted) return json({ ok: false, restarted: was.restarted, town: was.town });
       // back after a while away: a town gains at most AWAY_CAP for its stage while its mayor is out (old
       // games on phones without the cap too). Only what is above the cap is taken back; the money it had
       // when it left (the last sync before) is never touched. A little room is left for the minutes played since.
@@ -498,9 +500,10 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (wait > 0) return json({ error: `بدأت من جديد قريب: تقدر مرة ثانية بعد ${Math.ceil(wait / 3600000)} ساعة` });
       this.war.resetTown(me.plot);
       this.sql.exec("UPDATE plots SET pop = 9, happy = 55, money = 0, era = 0, snapshot = '', pending = NULL, reminded = 0, restarted = ?, updated = ? WHERE plot = ?", Date.now(), Date.now(), me.plot);
+      const at = this.sql.exec("SELECT restarted FROM plots WHERE plot = ?", me.plot).toArray()[0].restarted;
       this.news("restart", `🔄 «${t.town}» بدأت من جديد. الله يوفقهم`, me.plot);
       this.live({ t: "town", plot: me.plot });
-      return json({ ok: true });
+      return json({ ok: true, restarted: at });
     }
     if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (30 minutes); each works once
       const now = Date.now();

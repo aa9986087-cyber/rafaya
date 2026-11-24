@@ -1659,6 +1659,24 @@ async function pushIosHelp() {
       <div class="vote"><b class="ol-code" style="letter-spacing:6px">${ar(code)}</b></div><button class="btn block" id="iosCopy" type="button">انسخ الرمز</button></details>` : ""}`}`, "push");
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
+/** A fresh town on the same land and name (the restart, here or from another phone). */
+function freshWorldTown(name, restartAt) {
+  const id = me();
+  const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(id.plot), name, site: "world" });
+  s.day = worldHourNow(); s.world = { plot: id.plot, owner: id.name, start: s.day, restartAt }; s.war = { seq: 0 };
+  store.set(WORLD_SAVE, pack(s));
+  store.set(warKey("seen"), "0");
+  return s;
+}
+/** The server says this town started again (from another phone) after this copy: take the new one. */
+function syncReply(r) {
+  if (!r?.restarted || !worldMode || visiting || (S.world?.restartAt || 0) >= r.restarted) return false;
+  S = freshWorldTown(r.town || S.name, r.restarted); A = analyze(S);
+  world.sync(S, { tiles: true, roads: true, buildings: true }); refresh();
+  sheet(`<h2>🔄 مدينتك بدأت من جديد</h2><p>بدأت «${S.name}» من جديد من جوال ثاني، فهذا الجوال أخذ المدينة الجديدة.</p><div class="sheet-actions keep"><button class="btn go block" id="rsOk" type="button">تمام</button></div>`, "away");
+  $("rsOk").addEventListener("click", closeSheet);
+  return true;
+}
 /** Start your al-Jouf town again from nothing: same land, same name; everything else goes (once a day). */
 function restartSheet() {
   const id = me();
@@ -1675,11 +1693,8 @@ function restartSheet() {
     try { r = await api("/world/restart", { name: id.name, secret: id.secret }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
     if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
     // a fresh town on the same land (like founding it), the world's hour, no old war bills
-    const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(id.plot), name: town, site: "world" });
-    s.day = worldHourNow(); s.world = { plot: id.plot, owner: id.name, start: s.day }; s.war = { seq: 0 };
-    store.set(WORLD_SAVE, pack(s));
+    const s = freshWorldTown(town, r.restarted || Date.now());
     if (worldMode) { S = s; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
-    store.set(warKey("seen"), "0");
     closeSheet(); sfx.era(); toast(`🔄 «${town}» بدأت من جديد. بالتوفيق!`, "era");
     enterWorldTown();
   });
@@ -1817,11 +1832,11 @@ function worldSync(force) {
   if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!mine?.world) return;
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine),
+  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0,
     snapshot: pack({ ...mine, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
   if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
   if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
-  else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => {});
+  else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).then((r) => r.json()).then(syncReply).catch(() => {});
 }
 addEventListener("pagehide", () => worldSync(true));
 document.addEventListener("visibilitychange", () => { if (document.hidden) worldSync(true); });
@@ -2125,10 +2140,11 @@ async function warSyncNow() {
   if (!worldMode || !home?.world || id?.plot == null) return;
   const key = warTownKey(home);
   if (key === WARX.syncKey) return;
-  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home),
+  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home), restartAt: home.world?.restartAt || 0,
     snapshot: pack({ ...home, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
   try {
     const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
+    if (syncReply(r)) return;
     if (r?.town && worldMode && S.world && r.town !== S.name) { S.name = r.town; refresh(); } // renamed (maybe from another phone)
   } catch { /* the next try */ }
 }
