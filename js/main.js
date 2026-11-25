@@ -34,7 +34,7 @@ export const money = (n) => ar(Math.round(n).toLocaleString("en-US"));
 /** Money with one decimal for small amounts (٠٫٦) and whole numbers otherwise. */
 export const fine = (n) => (Math.abs(n) < 10 && Math.round(n) !== n ? ar(n.toFixed(1)).replace(".", "٫") : money(n));
 const SAVE = "rafaya-save-v1";
-const storePrefix = globalThis.RAFAYA_PREVIEW_STORAGE || "";
+export const storePrefix = globalThis.RAFAYA_PREVIEW_STORAGE || "";
 const trialStore = storePrefix ? new Map() : null;
 export const store = {
   get(k) {
@@ -1672,7 +1672,8 @@ export function settingsSheet(fromMenu) {
     if (short) {
       box.innerHTML = `<p class="hint">نطلع الكود…</p>`;
       try {
-        const r = await (await fetch(API + "/move/backup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(snapshot), old: store.get("rafaya-backup-code") || "" }) })).json();
+        const account = id && town.world ? { name: id.name, secret: id.secret } : null;
+        const r = await (await fetch(API + "/move/backup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(snapshot), old: store.get("rafaya-backup-code") || "", account }) })).json();
         if (r.code) { code = `${r.code.slice(0, 4)}-${r.code.slice(4)}`; store.set("rafaya-backup-code", r.code); }
       } catch { /* the long code below */ }
     }

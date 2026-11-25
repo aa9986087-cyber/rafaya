@@ -1,7 +1,8 @@
 // Online: the API, visiting towns, the world account, phone notifications, the iPhone app, updates, live hints.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
-import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, playing, refreshVisit, save, sendWorldSave, sheet, sheetFor, standalone, store, visiting, worldClock, worldMapSheet, worldMode } from "./main.js";
-import { toast } from "./ui-build.js";
+import { menuBackdrop } from "./ui-whatsnew.js";
+import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, leaveArrange, leaveVisit, leaveWorld, playing, refreshVisit, save, sendWorldSave, sheet, sheetFor, showMenu, standalone, store, storePrefix, visiting, worldClock, worldMapSheet, worldMode } from "./main.js";
+import { FIX, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { joufHours, newGame, pack } from "./sim.js";
 import { DECISIONS, worldTerrain } from "./data.js";
@@ -248,7 +249,8 @@ export async function iosPrepareMove(force) {
     const all = {}; for (const k of moveKeys()) all[k] = localStorage.getItem(k);
     const text = JSON.stringify(all);
     if (!force && MOVE.token && MOVE.snapshot === text && Date.now() - MOVE.at < 6 * 3600000) return MOVE;
-    const r = await (await fetch(API + "/move/put", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(text), old: MOVE.token }) })).json();
+    const id = me(), account = id && { name: id.name, secret: id.secret };
+    const r = await (await fetch(API + "/move/put", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(text), old: MOVE.token, account }) })).json();
     if (!r.token) return MOVE;
     Object.assign(MOVE, { token: r.token, code: r.code, at: Date.now(), snapshot: text });
     const link = new URLSearchParams(location.search).get("link");
@@ -363,13 +365,29 @@ export function liveHint(m) {
     if (!CHAT.msgs.some((x) => x.id === m.message.id)) { CHAT.msgs = [...CHAT.msgs, m.message].slice(-120); CHAT.last = Math.max(CHAT.last || 0, m.message.id); }
     if (sheetFor === "chat") chatSheet(true);
     chatCount();
-  } else if (m.t === "chatdel") { CHAT.msgs = CHAT.msgs.filter((x) => x.id !== m.id); if (sheetFor === "chat") chatSheet(true); chatCount(); }
+  } else if (m.t === "chatdel") {
+    const ids = new Set(Array.isArray(m.ids) ? m.ids : [m.id]);
+    CHAT.msgs = CHAT.msgs.filter((x) => !ids.has(x.id));
+    if (sheetFor === "chat") chatSheet(true);
+    chatCount();
+  } else if (m.t === "banned" && m.purged) {
+    if (arrange) leaveArrange(false);
+    FIX.ask = null;
+    leaveWorld();
+    try { localStorage.removeItem(storePrefix + WORLD_ID); localStorage.removeItem(storePrefix + WORLD_SAVE); } catch { /* storage unavailable */ }
+    showMenu(); menuBackdrop();
+    toast("حسابك بعالم الجوف موقوف من الإدارة وحُذفت مدينتك", "bad");
+  }
   else if (m.t === "war" || m.t === "namefix") warPoll(true);
   else if (m.t === "news") { wnewsPoll(true).then(() => { if (sheetFor === "wnews") worldNewsSheet(true); }); }
   else if (m.t === "town") {
     if (m.plot === me()?.plot) return;
     if (sheetFor === "world") clearTimeout(liveHint.map), liveHint.map = setTimeout(() => { if (sheetFor === "world") worldMapSheet(); }, 800);
-    if (visiting?.world && Number(visiting.code) === m.plot && !WARX.targeting) clearTimeout(liveHint.visit), liveHint.visit = setTimeout(() => refreshVisit(), 800);
+    if (visiting?.world && Number(visiting.code) === m.plot) {
+      clearTimeout(liveHint.visit);
+      if (m.removed) { leaveVisit(); toast("المدينة انشالت من عالم الجوف", "bad"); }
+      else if (!WARX.targeting) liveHint.visit = setTimeout(() => refreshVisit(), 800);
+    }
   }
 }
 /** The citizens' important requests still waiting for the mayor (for a reminder on the phone while away). */
