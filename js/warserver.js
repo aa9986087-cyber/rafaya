@@ -247,8 +247,8 @@ export class WarServer {
     if (!mine || !them || other === me.plot) return { error: "ما لقيت المدينة" };
     const mineEra = { ...mine, era: mine.snap.era || mine.era, created: me.created || mine.created };
     const themEra = { ...them, era: them.snap.era || them.era };
-    const block = conflictBlocker(mineEra, themEra, now, this.cfg);
     const stored = this.rel(me.plot, other);
+    const block = conflictBlocker(mineEra, themEra, now, this.cfg, stored ? relNow(stored, now, this.cfg) : null);
     const r = { a: Math.min(me.plot, other), b: Math.max(me.plot, other), hist: [], lastThreat: {}, ...relNow(stored, now, this.cfg) };
     r.hist ||= []; r.lastThreat ||= {};
     const allowed = relActions(stored ? r : null, me.plot, now, block, this.cfg);
@@ -305,9 +305,9 @@ export class WarServer {
     const mine = this.townInfo(me.plot), them = this.townInfo(to);
     if (!mine?.snap.list.length) return { error: "زامن مدينتك أول" };
     if (!them) return { error: "ما لقيت المدينة" };
-    const block = conflictBlocker({ ...mine, era: mine.snap.era || mine.era, created: me.created || mine.created }, { ...them, era: them.snap.era || them.era }, now, this.cfg);
-    if (block) return { error: block };
     const r = relNow(this.rel(me.plot, to), now, this.cfg);
+    const block = conflictBlocker({ ...mine, era: mine.snap.era || mine.era, created: me.created || mine.created }, { ...them, era: them.snap.era || them.era }, now, this.cfg, r);
+    if (block) return { error: block };
     if (r.state === "warning") return { error: `الحرب تبدأ بعد ${minutesText(r.warStart - now)}` };
     if (r.state !== "war") return { error: r.state === "truce" ? "فيه هدنة: ما يصير تضرب" : "ما فيه حرب مع هالمدينة" };
     const target = them.snap.list.find((b) => b.x === x && b.y === y);

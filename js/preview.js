@@ -95,6 +95,101 @@ function pvBots() {
   pvSave();
 }
 
+// ---------- war scenarios for the owner's review (trial only) ----------
+// Each one puts the owner straight into a case, with the same war server the live site runs.
+const pvMe = () => Object.values(pvState.players).find((p) => !p.bot && p.plot != null);
+const pvBot = (mood) => Object.values(pvState.players).find((p) => p.bot === mood);
+function pvSetEra(bot, era) {
+  const t = pvState.plots[bot.plot];
+  try {
+    const o = JSON.parse(t.snapshot); o.era = era;
+    // its command centre grows with it, so it can keep several operations in the air
+    o.tiles = o.tiles.map((str) => { const q = String(str).split(":"); if (q[1] === "milhq") q[2] = String(era >= 3 ? 2 : era >= 2 ? 1 : 0); return q.join(":"); });
+    t.snapshot = JSON.stringify(o);
+  } catch { /* the bot keeps its stage */ }
+  t.era = era;
+}
+/** Put two towns straight into a state (war starts now, no waiting), as if `by` had started it. */
+function pvSetRel(by, other, state) {
+  const now = Date.now(), a = Math.min(by.plot, other.plot), b = Math.max(by.plot, other.plot);
+  const r = { a, b, state, since: now, hist: [{ at: now, by: by.plot, kind: state === "war" ? "war" : state, text: state === "war" ? "إعلان حرب" : state === "hostile" ? "إعلان عداوة" : "صلح" }], lastThreat: {}, offer: null };
+  if (state === "war") { r.warStart = now - 1000; r.warEnd = now + PV_CFG.T.war; }
+  if (state === "peace") { r.hist = []; r.cool = 0; }
+  pvWar.saveRel(by.plot, other.plot, r);
+}
+function pvArm(plot, arsenal) { const a = pvWar.acct(plot); Object.assign(a.arsenal, arsenal); a.reload = {}; pvWar.saveAcct(plot, a); }
+/** Everything still in the air lands now (so a new scenario never waits on the last one's flights). */
+function pvLandAll() {
+  for (const f of pvDb.list("fly", {})) { const op = pvDb.get("op", f.id); if (op?.status === "flying") { op.arriveAt = Date.now() - 1; pvDb.put("op", op.id, op, { k1: String(op.from), k2: String(op.to), at: op.launchAt }); } pvDb.put("fly", f.id, { id: f.id, at: Date.now() - 1 }, { at: Date.now() - 1 }); }
+  pvWar.settle();
+}
+/** The bot fires at the owner's town: n operations at different buildings. Returns how many left. */
+function pvStrike(bot, n, load) {
+  pvLandAll();
+  const me = pvMe(), mine = snapBuildings(pvState.plots[me.plot].snapshot);
+  const targets = mine.list.filter((b) => canTarget(b.id) && !(b.build > 0)).sort(() => Math.random() - .5);
+  let sent = 0, why = "";
+  for (const t of targets) {
+    if (sent >= n) break;
+    pvArm(bot.plot, { drone: 6, drone2: 4, missile: 4, missile2: 2 });
+    const r = pvWar.handle("launch", { op: `sc${Date.now()}${Math.random()}`, to: me.plot, x: t.x, y: t.y, load }, bot);
+    if (r.ok) sent++; else why = r.error || why;
+  }
+  return { sent, why };
+}
+const PV_SCENARIOS = [
+  ["small", "🎯 مدينة أصغر منك تعلن عليك الحرب وتضربك", "«الخضراء» (بلدة) تبدأ الحرب وتضرب. جرّب ترد عليها: حق الرد مسموح لأنها هي اللي بدأت.", () => {
+    const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 1); pvSetRel(bot, me, "war");
+    const r = pvStrike(bot, 1, { drone: 1 }); pvArm(me.plot, { drone: 6, missile: 2, intc: 10 });
+    return { plot: null, msg: r.sent ? "«الخضراء» أعلنت الحرب وأطلقت مسيّرة عليك. ردّ عليها: «القيادة» ← «الخضراء» ← «استهداف المدينة»." : `أعلنت الحرب (ما قدرت تطلق: ${r.why})` };
+  }],
+  ["equal", "⚔️ حرب مع مدينة بنفس قوتك", "«هجرة الشعيب» تصير حاضرة وتدخل معك حرب مفتوحة، وتضربك بصاروخ.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
+    const r = pvStrike(bot, 1, { missile: 1 }); pvArm(me.plot, { drone: 8, drone2: 4, missile: 4, missile2: 2, intc: 12 });
+    return { plot: null, msg: r.sent ? "الحرب بدأت، وصاروخ جاي عليك. ردّ: «القيادة» ← «هجرة الشعيب» ← «استهداف المدينة»." : `الحرب بدأت (ما قدروا يطلقون: ${r.why})` };
+  }],
+  ["bully", "🛡️ أنت الأكبر: جرّب تبدأ على مدينة صغيرة", "ترجع «الخضراء» بسلام معك. جرّب تعلن عليها العداوة: اللعبة تمنعك لأنها أصغر منك بكثير.", () => {
+    const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 1); pvSetRel(me, bot, "peace");
+    return { plot: bot.plot, msg: "«الخضراء» بسلام معك. جرّب «إعلان عداوة»." };
+  }],
+  ["wave", "💥 هجوم كبير: ثلاث ضربات بنفس الوقت", "«هجرة الشعيب» تطلق ثلاث عمليات على ثلاث مبانٍ عندك بنفس اللحظة.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
+    const r = pvStrike(bot, 3, { drone: 2 });
+    return { plot: null, msg: r.sent ? `${r.sent} عمليات جاية عليك الحين` : `ما انطلقت: ${r.why}` };
+  }],
+  ["dry", "🔋 دفاعك بدون ذخيرة وجاك هجوم", "تنتهي صواريخ الاعتراض عندك، و«الخضراء» تضربك. تشوف الضرر وتجرب الإصلاح.", () => {
+    const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
+    pvArm(me.plot, { intc: 0 }); const r = pvStrike(bot, 2, { drone: 2 });
+    return { plot: null, msg: r.sent ? "ما عندك اعتراض، والضربات جاية. بعد ما توصل افتح المبنى المتضرر وجرّب الإصلاح." : `ما انطلقت: ${r.why}` };
+  }],
+  ["truce", "🏳️ عدوك يعرض عليك هدنة", "«هجرة الشعيب» بحرب معك وتعرض هدنة. اقبلها أو ارفضها.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
+    pvWar.handle("rel", { req: `sct${Date.now()}`, other: me.plot, act: "truce" }, bot);
+    return { plot: bot.plot, msg: "وصلك عرض هدنة. افتح العلاقات واختر." };
+  }],
+  ["arm", "📦 جهّز ترسانتي وزد فلوسي", "مسيّرات وصواريخ واعتراض كاملة، ومليون ريال زيادة.", () => {
+    const me = pvMe(); pvArm(me.plot, { drone: 12, drone2: 6, missile: 6, missile2: 3, intc: 24 });
+    const home = typeof S !== "undefined" ? S : null; if (home) changeMoney(home, 1000000, "gift", "تجربة");
+    return { plot: null, msg: "ترسانتك كاملة وزادت فلوسك مليون." };
+  }],
+  ["peace", "🕊️ رجّع كل شي سلام", "تنتهي كل الحروب والعداوات مع كل المدن.", () => {
+    const me = pvMe(); for (const bot of Object.values(pvState.players).filter((p) => p.bot)) pvSetRel(me, bot, "peace");
+    return { plot: null, msg: "رجع السلام مع الكل." };
+  }],
+];
+globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
+  sheet(`<h2>🧪 سيناريوهات الحرب</h2><p class="hint">للتجربة بس: كل زر يحطك بحالة. تقدر تجرب وحدة بعد الثانية.</p>
+    ${PV_SCENARIOS.map(([id, title, text]) => `<button class="btn block" type="button" data-sc="${id}">${title}<small>${text}</small></button>`).join("")}`, "scenarios");
+  document.querySelectorAll("[data-sc]").forEach((b) => b.addEventListener("click", async () => {
+    const sc = PV_SCENARIOS.find(([id]) => id === b.dataset.sc);
+    let out;
+    try { out = sc[3](); pvSave(); } catch (e) { toast(`ما زبط: ${e.message}`, "bad"); return; }
+    closeSheet(); toast(out.msg, "goal");
+    await warPoll(true);
+    if (out.plot != null) setTimeout(() => relSheet(out.plot), 600);
+  }));
+};
+
 /** The trial's chat: your messages, and now and then a word from the bots. */
 function pvChat(name, plot, text) {
   pvState.chat ||= [];
@@ -397,6 +492,11 @@ globalThis.RAFAYA_PREVIEW_RESET = () => {
   document.querySelector(".menu-sub").textContent = "تجربة الحاضرة الكبرى: لف وقرّب، وجرّب الليل والنهار";
   document.getElementById("mPlayLabel").dataset.start = "ادخل الحاضرة الكبرى";
   document.getElementById("mPlayHint").dataset.start = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
+  const scen = document.createElement("button");
+  scen.type = "button"; scen.id = "pvScenarios"; scen.textContent = "🧪 سيناريوهات الحرب";
+  scen.style.cssText = "position:fixed;z-index:30;left:12px;bottom:calc(96px + env(safe-area-inset-bottom));padding:8px 12px;border-radius:14px;border:0;background:#7a2e2e;color:#fff;font:700 13px Almarai,system-ui;box-shadow:0 2px 8px #0005";
+  scen.addEventListener("click", () => globalThis.RAFAYA_PREVIEW_SCENARIOS());
+  document.body.append(scen);
   const reset = document.createElement("button");
   reset.type = "button"; reset.className = "pv-reset"; reset.textContent = "أعد التجربة من البداية";
   reset.addEventListener("click", () => { if (confirm("ترجع المدينة التجريبية لبدايتها؟")) globalThis.RAFAYA_PREVIEW_RESET(); });

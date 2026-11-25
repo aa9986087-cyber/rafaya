@@ -290,3 +290,17 @@ test("a town that moves to other land takes its war with it", () => {
   db.put("op", "o2", { from: 9, to: 20, status: "flying" }, { k1: "9", k2: "20", at: 2 });
   assert.equal(war.inFlight(20), true);
 });
+
+test("حق الرد: a much bigger town never starts a war, but answers one the smaller town started", () => {
+  const W = makeWorld();
+  const big = W.addTown(1, "الكبيرة", { era: 4, mil: BASE }), small = W.addTown(2, "الصغيرة", { era: 2, mil: BASE });
+  // the big one may not start
+  assert.match(W.war.handle("rel", { req: "b1", other: small.plot, act: "hostile" }, big).error, /أكبر منها/);
+  // the small one starts it and goes to war
+  atWar(W, small, big);
+  // now the big one can strike back
+  const a = W.war.acct(big.plot); a.arsenal.drone = 3; W.war.saveAcct(big.plot, a);
+  const t = W.towns.get(small.plot).s.tiles.findIndex((x) => x.b?.id === "dronebase");
+  const r = W.war.handle("launch", { op: "r1", to: small.plot, x: t % 72, y: Math.floor(t / 72), load: { drone: 1 } }, big);
+  assert.equal(r.error, undefined, r.error);
+});

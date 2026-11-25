@@ -228,7 +228,7 @@ export async function relSheet(plot) {
   if (!info) { try { const d = await api(`/world/town/${plot}`); info = { town: d.town.town, owner: d.town.owner, era: d.town.era }; } catch { toast("ما لقيت المدينة", "bad"); return; } }
   r ||= { state: "peace", hist: [] };
   const mine = me()?.plot, home = visiting ? visiting.home : S;
-  const block = (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (info.era || 0) < WAR.minEra ? "القرى محمية من الحروب" : (home.era || 0) - (info.era || 0) >= WAR.bully ? "مدينتك أكبر منها بكثير: ما يصير تتعدى على الصغار" : "";
+  const block = (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (info.era || 0) < WAR.minEra ? "القرى محمية من الحروب" : (home.era || 0) - (info.era || 0) >= WAR.bully && !["hostile", "warning", "war"].includes(r.state) ? "مدينتك أكبر منها بكثير: ما تبدأ على الصغار (لكن إذا بدأوا عليك تقدر ترد)" : "";
   const acts = relActions(r.state === "peace" && !r.hist?.length ? null : { ...r, a: Math.min(mine, plot), b: Math.max(mine, plot) }, mine, warNow(), block);
   const btn = (act, label, cls = "") => `<button class="btn block ${cls}" type="button" data-act="${act}" ${acts[act] ? `data-why="${acts[act]}"` : ""} ${acts[act] ? "aria-disabled=true" : ""}>${label}${acts[act] ? `<small>${acts[act]}</small>` : ""}</button>`;
   sheet(`<h2>⚔️ العلاقات العسكرية</h2>

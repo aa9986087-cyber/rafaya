@@ -227,7 +227,7 @@ export function minutesText(ms) {
 }
 
 /** Can these two towns be in a conflict at all (both past village, not a bully, protections)? Why not, or "". */
-export function conflictBlocker(a, b, now, cfg = WAR) {
+export function conflictBlocker(a, b, now, cfg = WAR, rel = null) {
   // a, b: { era, created, updated, plot, name }
   if (!b) return "ما لقيت المدينة";
   if (a.plot === b.plot) return "هذي مدينتك";
@@ -237,6 +237,8 @@ export function conflictBlocker(a, b, now, cfg = WAR) {
   if (now - (a.created || 0) < cfg.newPlayer) return `أنت لاعب جديد: تقدر تدخل الحروب بعد ${minutesText(cfg.newPlayer - (now - a.created))}`;
   if (now - (b.updated || 0) > cfg.sleep) return "المدينة نايمة (صاحبها غايب من زمان): محمية";
   const warEra = (town) => Math.min(town.era || 0, GREATER_CITY_STAGE - 1);
-  if (warEra(a) - warEra(b) >= cfg.bully) return "مدينتك أكبر منها بكثير: ما يصير تتعدى على الصغار";
+  // حق الرد: the big town never starts it, but once the smaller one turned hostile or went to war, both may fight
+  if (rel && ["hostile", "warning", "war"].includes(rel.state)) return "";
+  if (warEra(a) - warEra(b) >= cfg.bully) return "مدينتك أكبر منها بكثير: ما تبدأ على الصغار (لكن إذا بدأوا عليك تقدر ترد)";
   return "";
 }
