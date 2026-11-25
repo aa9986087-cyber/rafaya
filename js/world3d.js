@@ -1923,10 +1923,14 @@ export class World {
     if (!tile || !key) return;
     const geo = model(key, ground);
     if (!geo) return;
-    const mesh = new THREE.Mesh(geo.matte, ok ? this.mats.ghost : this.mats.ghostBad);
-    mesh.position.copy(tileCenter(tile.x, tile.y));
-    mesh.rotation.y = angle;
-    this.ghost.add(mesh);
+    // every part of the model (the remodelled tank and dam have no plain "matte" part: the ghost broke and the tool stuck)
+    for (const set of SETS) {
+      if (!geo[set] || set === "lights" || set === "glow") continue;
+      const mesh = new THREE.Mesh(geo[set], ok ? this.mats.ghost : this.mats.ghostBad);
+      mesh.position.copy(tileCenter(tile.x, tile.y));
+      mesh.rotation.y = angle;
+      this.ghost.add(mesh);
+    }
   }
 
   /** Tint tiles (a service's reach). values: Float32Array(N*N) of strengths, colour: css colour. */
