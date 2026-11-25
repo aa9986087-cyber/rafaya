@@ -9,6 +9,7 @@
 //   POST /api/world/recover  { name, recovery } → { name, secret }
 //   GET  /api/world/map                         → { plots: [...] }  (every claimed plot, no snapshots)
 //   POST /api/world/claim    { name, secret, plot, town, terrain } → { ok }
+//   POST /api/world/move     { name, secret, plot } → { ok, plot, from } | { error }  (the whole town to empty land, once a day)
 //   POST /api/world/rename   { name, secret, town } → { ok, town } | { error }  (once per town; names are unique in al-Jouf)
 //   POST /api/world/sync     { name, secret, pop, happy, money, era, snapshot } → { ok }
 //   GET  /api/world/town/PLOT                   → { town, comments }
@@ -26,7 +27,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
-import { ERAS, townNameKey } from "../js/data.js";
+import { ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { pendingSaveMatches } from "../js/save-version.js";
@@ -39,6 +40,7 @@ const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 const clean = (v, max) => String(v ?? "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+const MOVE_GAP = 86400000; // a town moves once a day
 const int = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
@@ -113,6 +115,7 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS namefix (name TEXT PRIMARY KEY, what TEXT, reasons TEXT, note TEXT, at INTEGER, due INTEGER, removed INTEGER DEFAULT 0)`);
     this.adminFails = []; // the citizens' unanswered requests (for reminders)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN moved INTEGER DEFAULT 0"); } catch { /* already there */ } // the last move to other land (one a day)
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
     // moving an account to another app on the same phone (the iPhone's home-screen app keeps its own storage):
     // a 6-digit code made in the old one gives the new one its own key; both keys work
@@ -824,6 +827,30 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.sql.exec("UPDATE players SET plot = ? WHERE name = ?", plot, name);
       this.news("town", `🏕️ تأسست «${town}» بأرض الجوف. حيّاهم الله`, plot, 0);
       return json({ ok: true, plot });
+    }
+    if (post && p[0] === "move") { // «انقل مدينتك»: the whole town goes to other land, with everything in it
+      if (me.plot == null) return json({ error: "ما عندك مدينة تنقلها" });
+      const from = me.plot, to = int(body.plot), now = Date.now();
+      if (to < 0 || to >= WORLD.cols * WORLD.rows || to === from) return json({ error: "اختر أرض ثانية فاضية" });
+      if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", to).toArray().length) return json({ error: "الأرض انأخذت، اختر غيرها" });
+      const t = this.sql.exec("SELECT town, moved FROM plots WHERE plot = ?", from).toArray()[0];
+      if (!t) return json({ error: "ما عندك مدينة تنقلها" });
+      const wait = (t.moved || 0) + MOVE_GAP - now;
+      if (wait > 0) return json({ error: `تقدر تنقل مدينتك مرة وحدة باليوم. باقي ${Math.ceil(wait / 3600000)} ساعة`, wait });
+      if (this.war.inFlight(from)) return json({ error: "فيه عملية حربية بالجو تخص مدينتك، انتظر لين توصل" });
+      this.ctx.storage.transactionSync(() => {
+        this.sql.exec("UPDATE plots SET plot = ?, moved = ? WHERE plot = ?", to, now, from);
+        const snap = this.sql.exec("SELECT snapshot FROM plots WHERE plot = ?", to).toArray()[0]?.snapshot;
+        if (snap) try { const o = JSON.parse(snap); if (o.world) { o.world.plot = to; this.sql.exec("UPDATE plots SET snapshot = ? WHERE plot = ?", JSON.stringify(o), to); } } catch { /* an unreadable save stays as it is */ }
+        for (const tbl of ["players", "reports", "chat", "citizen_support_push", "pushsubs", "awayfix", "wnews"]) this.sql.exec(`UPDATE ${tbl} SET plot = ? WHERE plot = ?`, to, from);
+        this.sql.exec("UPDATE comments SET code = ? WHERE code = ?", `w${to}`, `w${from}`);
+        this.war.moveTown(from, to);
+      });
+      for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot === from) ws.serializeAttachment({ ...a, plot: to }); }
+      const was = worldPlace(from), now2 = worldPlace(to);
+      this.news("move", `🚚 «${name}» هاجر بمدينته «${t.town}» من ${was} إلى ${was === now2 ? `أرض ثانية في ${now2}` : now2}`, to);
+      this.live({ t: "town", plot: from }); this.live({ t: "town", plot: to });
+      return json({ ok: true, plot: to, from });
     }
     if (p[0] === "sync") {
       if (me.plot == null) return json({ error: "no town" }, 400);

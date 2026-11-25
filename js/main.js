@@ -2624,7 +2624,8 @@ async function worldMapSheet(pick) {
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
-          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
+          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id && byPlot.get(id.plot) ? `<p class="hint">كل لاعب له مدينة وحدة بالعالم، بس تقدر تنقل مدينتك هنا بكل اللي فيها.</p>
+          <div class="sheet-actions keep"><button class="btn go block" id="wmMove" type="button">🚚 انقل مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
   sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
@@ -2645,6 +2646,7 @@ async function worldMapSheet(pick) {
   $("wmReport")?.addEventListener("click", async () => {
     try { await api("/world/report", { name: id?.name, secret: id?.secret, plot: sel, reason: "اسم أو كلام مسيء" }); toast("وصل البلاغ، شكرًا", "goal"); } catch { toast("سجّل اسمك أول", "bad"); }
   });
+  $("wmMove")?.addEventListener("click", () => { sfx.tap(); moveSheet(byPlot.get(id.plot), sel); });
   $("wmClaim")?.addEventListener("click", async () => {
     const town = ($("wmTown").value || "").trim() || `هجرة ${id.name}`;
     if (plots.some((o) => townNameKey(o.town) === townNameKey(town))) { toast(`فيه مدينة بالجوف اسمها «${town}»، اختر اسم ثاني`, "bad"); sfx.deny(); return; }
@@ -2661,6 +2663,35 @@ async function worldMapSheet(pick) {
       toast(messages[e.message] || "ما زبط التأسيس", "bad");
       if (e.message !== "400") worldMapSheet();
     }
+  });
+}
+/** «انقل مدينتك»: the whole town (buildings, money, people, war, comments) goes to empty land, once a day. */
+function moveSheet(t, to) {
+  const id = me();
+  if (!t || !id) return;
+  if (arrange) { toast("احفظ الترتيب أو ألغِه قبل النقل", "bad"); return; }
+  sheet(`<h2>🚚 انقل مدينتك</h2><p>تنقل «<b>${t.town}</b>» من ${worldPlace(id.plot)} إلى ${worldPlace(to)}، أرض ${TERRAINS[worldTerrain(to)].name}.</p>
+    <p>كل شي ينتقل معك: المباني والفلوس والسكان والمخازن والحرب والعلاقات والتعليقات. أرضك القديمة تصير فاضية.</p>
+    <p class="hint">تقدر تنقل مرة وحدة باليوم، ويطلع خبر هجرتك بالنشرة.</p>
+    <div class="sheet-actions keep"><button class="btn go block" id="mvGo" type="button">انقلها الحين</button><button class="btn block" id="mvBack" type="button">رجوع</button></div>`, "world");
+  $("mvBack").addEventListener("click", () => worldMapSheet(to));
+  $("mvGo").addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      if (worldMode && !visiting) await worldSync(true); // the server has the town as it is now, before it moves
+      const r = await api("/world/move", { name: id.name, secret: id.secret, plot: to });
+      if (r.error) { toast(r.error, "bad"); sfx.deny(); worldMapSheet(to); return; }
+      const from = id.plot;
+      store.set(WORLD_ID, JSON.stringify({ ...me(), plot: r.plot }));
+      try { const local = JSON.parse(store.get(WORLD_SAVE) || "null"); if (local?.world?.plot === from) { local.world.plot = r.plot; store.set(WORLD_SAVE, JSON.stringify(local)); } } catch { /* the server copy is read instead */ }
+      const own = visiting ? visiting.home : S;
+      if (own?.world?.plot === from) own.world.plot = r.plot;
+      for (const k of Object.keys(localStorage)) if (k.startsWith("rafaya-war-") && k.endsWith(`-${from}`)) { try { localStorage.setItem(k.slice(0, -String(from).length) + r.plot, localStorage.getItem(k)); localStorage.removeItem(k); } catch { /* fine */ } }
+      nameLandmarks(worldPlace(r.plot));
+      sfx.era(); toast(`🚚 «${t.town}» انتقلت إلى ${worldPlace(r.plot)}! كل شي معك`, "era");
+      wmView = null; wmSeen = false;
+      if (worldMode) enterWorldTown(); else worldMapSheet(r.plot);
+    } catch (err) { toast(err.message === "maintenance" ? "اللعبة بالصيانة، جرّب بعد شوي" : "ما زبط النقل، جرّب مرة ثانية", "bad"); worldMapSheet(to); }
   });
 }
 /** Rename your town in al-Jouf: once only, and never to a name another town has. */
@@ -3638,8 +3669,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-reach", world: "2026-11-25-map" },
+  v: { solo: "2026-11-25-reach", world: "2026-11-25-move" },
   items: [
+    ["world", "🚚", "انقل مدينتك لأي أرض بالجوف", "• افتح خريطة الجوف واضغط على أي أرض فاضية، بيطلع لك زر «🚚 انقل مدينتك هنا». • مدينتك تنتقل كاملة: مبانيها وفلوسها وسكانها وحربها وعلاقاتها وتعليقاتها، وأرضك القديمة تصير فاضية. • تقدر تنقل مرة وحدة باليوم، وتطلع هجرتك بالنشرة."],
     ["world", "🗺️", "الأضارع والرديفة بخريطة الجوف", "• خريطة الجوف توسّعت ٦ أعمدة يمين و٦ يسار، فيها أراضي جديدة للمدن. • انضافت «الأضارع» يسار الرافعية (أرض جبلية)، و«الرديفة» يمينها (روضة خضرا)، ولكل وحدة تصاميم مبانيها ومعالمها. • المدن الموجودة باقية بمكانها واسمها ومعالمها مثل ما هي."],
     ["world", "🔐", "الدخول بحساب قوقل", "• اربط حسابك بقوقل من «الإعدادات» ← «حسابك وقوقل»، وبعدها من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل» وترجع لمدينتك بضغطة، بدون كود استرجاع. • ما ناخذ إيميلك ولا اسمك من قوقل، بس رقم حسابك المميز مشفّر. • تقدر تفك الربط متى ما بغيت."],
     ["both", "🗺️", "شوف مدى المبنى على الخريطة", "• اضغط على أي مبنى له مدى (مسجد، مدرسة، بقالة، بئر، مولد، مصنع…) وبمعلوماته زر «🗺️ شوف مداه على الخريطة»: تختفي المعلومات، والخريطة تقرّب عليه وتلوّن مداه كامل، وفوق شريط يقول كم بيت يخدم. • زر «ℹ️ المعلومات» يرجعك لمعلوماته، و✕ أو أي ضغطة على الخريطة تقفله."],

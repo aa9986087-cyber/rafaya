@@ -81,6 +81,30 @@ export class WarServer {
     const k = String(plot);
     for (const tbl of ["acct", "charge", "dmg", "hit", "note"]) this.db.delK1(tbl, k);
   }
+  /** Is anything of this town in the air (its own attack, or one coming at it)? A town does not move then. */
+  inFlight(plot) { return this.db.list("op", { either: String(plot), limit: 500 }).some((o) => o.status === "flying"); }
+  /**
+   * The town moves to another plot of land: everything of its war goes with it (weapons, bills, damage, hits,
+   * notes, its relations with every town, its operations' history). Other towns' rows that name it follow too.
+   */
+  moveTown(from, to) {
+    const F = String(from), T = String(to), num = (v) => (v === from || v === F ? (typeof v === "number" ? to : T) : v);
+    const fix = (row) => {
+      for (const k of ["a", "b", "from", "to", "by", "plot", "other"]) if (k in row) row[k] = num(row[k]);
+      if (Array.isArray(row.hist)) for (const h of row.hist) if (h && "by" in h) h.by = num(h.by);
+      if (row.offer && "by" in row.offer) row.offer.by = num(row.offer.by);
+      if (row.lastThreat && F in row.lastThreat) { row.lastThreat[T] = row.lastThreat[F]; delete row.lastThreat[F]; }
+      return row;
+    };
+    for (const r of this.db.rowsOf(F)) {
+      const row = fix(r.row);
+      this.db.del(r.tbl, r.id);
+      if (r.tbl === "rel") { if (row.a > row.b) [row.a, row.b] = [row.b, row.a]; this.db.put("rel", pairId(row.a, row.b), row, { k1: String(row.a), k2: String(row.b), at: r.at }); continue; }
+      const id = r.id === F ? T : r.id.startsWith(F + ":") ? T + r.id.slice(F.length) : r.id;
+      this.db.put(r.tbl, id, row, { k1: r.k1 === F ? T : r.k1, k2: r.k2 === F ? T : r.k2, at: r.at });
+    }
+    for (const r of this.db.rowsNaming(from)) this.db.put(r.tbl, r.id, fix(r.row), { k1: r.k1, k2: r.k2, at: r.at }); // other towns' damage and hits that it made
+  }
   /** Take back money a town should not have (the game pays it like a war bill, once), with a note saying why. */
   fine(plot, amount, why, text, kind = "fine", extra = {}) {
     const a = this.acct(plot), c = this.charge(plot, a, amount, why);
@@ -492,6 +516,9 @@ export function sqlWarDb(sql) {
     put: (tbl, id, row, k = {}) => { sql.exec("INSERT OR REPLACE INTO war (tbl, id, k1, k2, at, data) VALUES (?, ?, ?, ?, ?, ?)", tbl, id, k.k1 ?? null, k.k2 ?? null, k.at ?? 0, JSON.stringify(row)); },
     del: (tbl, id) => { sql.exec("DELETE FROM war WHERE tbl = ? AND id = ?", tbl, id); },
     delK1: (tbl, k1) => { sql.exec("DELETE FROM war WHERE tbl = ? AND k1 = ?", tbl, k1); },
+    rowsOf: (k) => sql.exec("SELECT tbl, id, k1, k2, at, data FROM war WHERE k1 = ? OR k2 = ?", k, k).toArray().map((r) => ({ ...r, row: JSON.parse(r.data) })),
+    rowsNaming: (plot) => sql.exec("SELECT tbl, id, k1, k2, at, data FROM war WHERE tbl IN ('dmg', 'hit') AND k1 != ?", String(plot)).toArray()
+      .map((r) => ({ ...r, row: JSON.parse(r.data) })).filter((r) => r.row.by === plot || r.row.from === plot),
     list: (tbl, q = {}) => {
       const where = ["tbl = ?"], args = [tbl];
       if (q.k1 != null) { where.push("k1 = ?"); args.push(q.k1); }
@@ -514,6 +541,8 @@ export function memWarDb(seed) {
     put: (tbl, id, row, k = {}) => { key(tbl)[id] = { row: JSON.parse(JSON.stringify(row)), k1: k.k1 ?? null, k2: k.k2 ?? null, at: k.at ?? 0 }; },
     del: (tbl, id) => { delete key(tbl)[id]; },
     delK1: (tbl, k1) => { for (const [id, r] of Object.entries(key(tbl))) if (r.k1 === k1) delete key(tbl)[id]; },
+    rowsOf: (k) => Object.entries(t).flatMap(([tbl, rows]) => Object.entries(rows).filter(([, r]) => r.k1 === k || r.k2 === k).map(([id, r]) => ({ tbl, id, k1: r.k1, k2: r.k2, at: r.at, row: JSON.parse(JSON.stringify(r.row)) }))),
+    rowsNaming: (plot) => ["dmg", "hit"].flatMap((tbl) => Object.entries(key(tbl)).filter(([, r]) => r.k1 !== String(plot) && (r.row.by === plot || r.row.from === plot)).map(([id, r]) => ({ tbl, id, k1: r.k1, k2: r.k2, at: r.at, row: JSON.parse(JSON.stringify(r.row)) }))),
     list: (tbl, q = {}) => Object.values(key(tbl))
       .filter((r) => (q.k1 == null || r.k1 === q.k1) && (q.k2 == null || r.k2 === q.k2) && (q.either == null || r.k1 === q.either || r.k2 === q.either)
         && (q.upTo == null || r.at <= q.upTo) && (q.since == null || r.at > q.since))

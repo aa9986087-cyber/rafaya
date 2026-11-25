@@ -265,3 +265,28 @@ test("the world: every town gets the same rain, dust, Ramadan and Eid at the sam
 });
 function seasonOfTest(h) { const day = Math.floor(Math.max(0, h - 1) / 24); return ["spring", "summer", "autumn", "winter"][Math.floor(day / SEASON_DAYS_T) % 4]; }
 const { SEASON_DAYS: SEASON_DAYS_T } = await import("../js/data.js");
+
+test("a town that moves to other land takes its war with it", () => {
+  const db = memWarDb(), war = new WarServer(db, { town: () => null, player: () => null }, { now: () => 1000 });
+  war.saveAcct(5, { seq: 2, arsenal: { drone: 3 }, reload: {} });
+  db.put("charge", "5:1", { seq: 1, amount: 10, at: 1 }, { k1: "5", at: 1 });
+  db.put("dmg", "5:3:4", { x: 3, y: 4, by: 9, at: 1 }, { k1: "5", at: 1 });
+  db.put("dmg", "9:1:1", { x: 1, y: 1, by: 5, at: 1 }, { k1: "9", at: 1 });
+  war.note(5, "x", "hello", {}, false);
+  war.saveRel(5, 9, { a: 5, b: 9, state: "war", hist: [{ by: 5 }], lastThreat: { 5: 7 } });
+  db.put("op", "o1", { from: 5, to: 9, status: "done" }, { k1: "5", k2: "9", at: 1 });
+  assert.equal(war.inFlight(5), false);
+  war.moveTown(5, 20);
+  assert.equal(war.acct(20).arsenal.drone, 3);
+  assert.equal(db.list("charge", { k1: "20" }).length, 1);
+  assert.equal(db.list("charge", { k1: "5" }).length, 0);
+  assert.equal(db.get("dmg", "20:3:4").by, 9);
+  assert.equal(db.get("dmg", "9:1:1").by, 20);
+  assert.equal(db.list("note", { k1: "20" }).length, 1);
+  const rel = war.rel(9, 20);
+  assert.equal(rel.state, "war"); assert.equal(rel.a, 9); assert.equal(rel.b, 20); assert.equal(rel.hist[0].by, 20); assert.equal(rel.lastThreat[20], 7);
+  assert.equal(war.rel(5, 9), null);
+  assert.deepEqual([db.get("op", "o1").from, db.get("op", "o1").to], [20, 9]);
+  db.put("op", "o2", { from: 9, to: 20, status: "flying" }, { k1: "9", k2: "20", at: 2 });
+  assert.equal(war.inFlight(20), true);
+});

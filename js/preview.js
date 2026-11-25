@@ -154,6 +154,23 @@ function pvRoute(p, body) {
     pvNews("town", `🏕️ تأسست «${pvState.plots[me.plot].town}» بأرض الجوف. حيّاهم الله`, me.plot, 0);
     return { ok: true, plot: me.plot };
   }
+  if (p[0] === "move") { // like the live one: the whole town to empty land (the trial lets it move any time)
+    const from = me.plot, to = Number(body.plot), t = pvState.plots[from];
+    if (!t) return { error: "ما عندك مدينة تنقلها" };
+    if (!(to >= 0 && to < WORLD.cols * WORLD.rows) || to === from) return { error: "اختر أرض ثانية فاضية" };
+    if (pvState.plots[to]) return { error: "الأرض انأخذت، اختر غيرها" };
+    if (pvWar.inFlight(from)) return { error: "فيه عملية حربية بالجو تخص مدينتك، انتظر لين توصل" };
+    delete pvState.plots[from];
+    pvState.plots[to] = { ...t, plot: to };
+    if (t.snapshot) try { const o = JSON.parse(t.snapshot); o.world.plot = to; pvState.plots[to].snapshot = JSON.stringify(o); } catch { /* kept */ }
+    me.plot = to;
+    for (const c of pvState.comments) if (c.plot === from) c.plot = to;
+    pvWar.moveTown(from, to);
+    const was = worldPlace(from), now = worldPlace(to);
+    pvNews("move", `🚚 «${me.name}» هاجر بمدينته «${t.town}» من ${was} إلى ${was === now ? `أرض ثانية في ${now}` : now}`, to);
+    pvSave();
+    return { ok: true, plot: to, from };
+  }
   if (p[0] === "sync") {
     const t = pvState.plots[me.plot];
     if (!t) throw new Error("400");
