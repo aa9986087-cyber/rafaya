@@ -29,6 +29,7 @@ import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
+import { pendingSaveMatches } from "../js/save-version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
 import { createModeration } from "./moderation.js";
 import { REVIEW_ROUTES, verifyReview } from "./review-access.js";
@@ -806,8 +807,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         if (!snapshot) return json({ error: "missing snapshot" }, 400);
         // A close or lost response may leave the phone with a write it sent but could not confirm.
         if (was.saveVersion === write) return json({ ok: true, town: was.town, saveVersion: write });
-        const pending = Array.isArray(body.pendingWrites) ? body.pendingWrites.slice(0, 8) : [];
-        if (body.saveVersion !== was.saveVersion && !pending.includes(was.saveVersion)) return conflict();
+        if (body.saveVersion !== was.saveVersion && !pendingSaveMatches(was.saveVersion, body.pendingWrites)) return conflict();
       } else if (was.saveVersion && !was.saveVersion.startsWith("legacy-")) {
         return conflict(); // an installed app with old code must update before it can write again
       }

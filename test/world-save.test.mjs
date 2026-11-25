@@ -3,6 +3,7 @@ import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { newGame, pack, unpack } from "../js/sim.js";
+import { rememberPendingSave, townSaveWriter } from "../js/save-version.js";
 
 const workerLoader = `export function resolve(specifier, context, next) {
   if (specifier === "cloudflare:workers") return {
@@ -87,5 +88,23 @@ test("world saves preserve newer progress across device handoffs and retries", a
   assert.ok((await sync(first, original, write(restarted.saveVersion))).ok);
   const oldTown = await sync(second, latest, next);
   assert.equal(oldTown.hasSave, true);
+
+  const base = (await read()).saveVersion;
+  const sameSession = townSaveWriter();
+  const background = sameSession();
+  original.money = 1200;
+  assert.ok((await sync(first, original, { saveVersion: base, saveWrite: background })).ok);
+  let unconfirmed = [background];
+  // Several closing/reconnecting attempts receive no answer, but the first attempt was accepted.
+  for (let i = 0; i < 20; i++) unconfirmed = rememberPendingSave(unconfirmed, sameSession());
+  assert.equal(unconfirmed.length, 1);
+  assert.notEqual(unconfirmed[0], background);
+  original.money = 1350;
+  const resumed = sameSession();
+  assert.equal((await sync(first, original, { saveVersion: base, saveWrite: resumed, pendingWrites: unconfirmed })).saveVersion, resumed);
+  assert.equal((await sync(first, original, { saveVersion: base, saveWrite: background, pendingWrites: [] })).conflict, true);
+  const differentSession = townSaveWriter();
+  assert.equal((await sync(second, original, { saveVersion: base, saveWrite: differentSession(), pendingWrites: [differentSession()] })).conflict, true);
+  assert.equal((await read()).money, 1350);
   db.close();
 });
