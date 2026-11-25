@@ -3,6 +3,7 @@ import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
+import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
 import { WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
@@ -3266,8 +3267,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-tank", world: "2026-11-25-tank" },
+  v: { solo: "2026-11-25-advisor", world: "2026-11-25-advisor" },
   items: [
+    ["both", "💼", "المستشار المالي", "• زر جديد «المستشار» فوق «القائمة»: يقرأ مدينتك كلها ويقول لك إذا كنت رابح أو خسران، ووش أكبر أخطاءك، وكيف تصلحها خطوة خطوة بالأرقام، مع زر «📍 وريني» يوديك للمكان. • أول استشارة مجانية، وبعدها سعرها حسب مرحلتك، وتبقى صالحة يوم كامل باللعبة."],
     ["both", "💧", "الخزان والسد ينبنون", "• صلّحنا خطأ كان يعلّق اختيار مكان الخزان والسد، فما كانوا ينبنون. الحين تختار المكان وتبني عادي."],
     ["both", "⚡", "طريق مكهرب", "• طريق جديد بقسم الطرق: مسفلت ومعه أعمدة كهرب. إذا اتصل بمولد أو محطة أو عمود، ينقل الكهرب على طوله ويوصّلها للمباني لين مربعين من جنبه. سعره أغلى من المسفلت."],
     ["both", "🌴", "الزينة صارت تفرق", "• النخل والزهور والفوانيس والنوافير صار لها أثر خاص فوق أثر الخدمات، فتزيد رضا البيوت حولها حتى في الحارات المخدومة. • الزينة الكبيرة (النافورة الراقصة، دوار الدلة، نصب الزيتونة، مجسم المبخرة) صارت تاخذ ٢×٢ مربعات بحجم أكبر، والصغيرة (النخلة، الزهور، الفانوس) تاخذ ربع مربع: تقدر تحط ٤ من نفس النوع بمربع واحد، وكل وحدة تحسب، وإذا جنبها طريق تنصف على طرفه. • النخل والفوانيس صارت تطلع من الأرض بدون حوض. • الدلة والزيتونة والمبخرة والنافورة الراقصة تقدر تركبها في وسط دوار على الطريق، والدوار يكمل شغله. اللي مبنية من قبل تبقى مثل ما هي."],
@@ -3554,7 +3556,7 @@ const MONEY_MOVES = {
   election: ["🗳️", "دعم الفوز بالانتخابات"], grant: ["🎉", "دعم من المحافظ"],
   fee: ["🏦", "رسوم المحافظة السنوية"], cleaning: ["🛣️", "تنظيف الطرق"],
   citizenSupport: ["💰", "دعم حساب المواطن"], gift: ["🎁", "هدية من إدارة الجوف"], refund: ["↩", "مبلغ رجّعته إدارة الجوف"],
-  worldBill: ["📋", "عملية في عالم الجوف"], transfer: ["↔", "تحويل بين المدن"],
+  worldBill: ["📋", "عملية في عالم الجوف"], transfer: ["↔", "تحويل بين المدن"], advisor: ["💼", "المستشار المالي"],
   awayLimit: ["🔒", "خصم كسب الغياب الزايد"], idleLimit: ["🔒", "كسب فوق حدّ الخمول"],
   idleCover: ["🛡️", "تغطية مصروف من كسب الخمول"]
 };
@@ -3884,6 +3886,49 @@ function happySheet() {
 $("turnBtn").addEventListener("click", () => { sfx.tap(); world.turn(1); });
 $("worldBtn").addEventListener("click", () => { sfx.tap(); if (worldMode) worldMapSheet(); else openWorld(); }); // solo too: the way into al-Jouf, on the game screen
 $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
+
+// ---------- المستشار المالي: a paid reading of the town (js/advisor.js), the first one free ----------
+const advisorFee = () => (S.advisor?.used ? ADVISOR_FEE[Math.min(ADVISOR_FEE.length - 1, S.era)] : 0);
+function advisorSheet() {
+  const fresh = S.advisor?.at != null && S.day - S.advisor.at < ADVISOR_HOURS;
+  if (!fresh) {
+    const fee = advisorFee(), poor = fee > S.money;
+    sheet(`<h2>💼 المستشار المالي</h2>
+      <p>يقرأ مدينتك كلها: الفلوس، وكل حارة، والماء والكهرب، والوظايف، والزحمة، والمباني الواقفة. ويقول لك إذا كنت رابح أو خسران، ووش أكبر أخطاءك، وكيف تصلحها خطوة خطوة.</p>
+      <p class="hint">الاستشارة صالحة ${ar(ADVISOR_HOURS)} ساعة باللعبة. سعرها حسب مرحلة مدينتك.</p>
+      <div class="sheet-actions"><button class="btn go block" id="advPay" type="button" ${poor ? "disabled" : ""}>${fee ? `استشره بـ${money(fee)} ريال` : "استشره مجاناً (أول مرة)"}${poor ? " · ما يكفي المال" : ""}</button></div>`, "advisor");
+    $("advPay").addEventListener("click", () => {
+      const f = advisorFee();
+      if (f > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+      if (f) changeMoney(S, -f, "advisor", "المستشار المالي");
+      S.advisor = { at: S.day, used: true };
+      sfx.coin(); refresh(); save(); advisorSheet();
+    });
+    return;
+  }
+  const r = advise(S, A), left = ADVISOR_HOURS - (S.day - S.advisor.at);
+  const mood = r.verdict === "مديون" || r.verdict === "خسران" ? "minus" : "plus";
+  sheet(`<h2>💼 المستشار المالي</h2>
+    <div class="rows">
+      <div class="row"><span>وضعك</span><b class="${mood}">${r.verdict}</b></div>
+      <div class="row"><span>الصافي بالساعة</span><b class="${r.net >= 0 ? "plus" : "minus"}">${r.net >= 0 ? "+" : "−"}${money(Math.abs(r.net))}</b></div>
+    </div>
+    ${r.good.length ? `<div class="need ok">👍 ${r.good.join(" ")}</div>` : ""}
+    <h3>${r.findings.length ? "اللي يحتاج تصليح، الأهم أول" : "ما لقيت مشاكل تذكر 👏"}</h3>
+    ${r.findings.slice(0, 7).map((f, k) => `<div class="adv-item">
+      <b>${f.icon} ${ar(k + 1)}. ${f.title}</b>
+      <p>${f.why}</p>
+      <ol>${f.steps.map((st) => `<li>${st}</li>`).join("")}</ol>
+      ${f.at >= 0 ? `<button class="btn small" type="button" data-advgo="${f.at}">📍 وريني</button>` : ""}
+    </div>`).join("")}
+    <p class="hint">الاستشارة صالحة ${ar(left)} ساعة باقية، والأرقام تتحدث كل ما فتحتها.</p>`, "advisor");
+  $("sheetBody").querySelectorAll("[data-advgo]").forEach((b) => b.addEventListener("click", () => {
+    const i = Number(b.dataset.advgo);
+    closeSheet(); world.focus(i % N, Math.floor(i / N)); world.view.zoom = Math.max(world.view.zoom, 1.4); world.updateCamera();
+    setTimeout(() => inspect(i % N, Math.floor(i / N)), 350);
+  }));
+}
+$("advisorBtn").addEventListener("click", () => { sfx.tap(); advisorSheet(); });
 $("warBtn").addEventListener("click", async () => { sfx.tap(); sheet(`<h2>⚔️ القيادة العسكرية</h2><p class="hint">نحمّل…</p>`, "war"); await warPoll(true); warSheet(); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
 

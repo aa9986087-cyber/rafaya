@@ -16,7 +16,7 @@ const assets = {
 };
 // --preview: the TRIAL copy with a practice world of al-Jouf inside the page (js/preview.js), written to dist/rafaya-trial.html
 const preview = process.argv.includes("--preview");
-const mods = ["version", "data", "sim", "people", "building-surfaces", "world-lighting", "traffic-path", "world-weather", "models", "world3d", "icons", "warfx", "war", "rain-sound", "sound", "news", ...(preview ? ["warserver", "preview"] : []), "main"];
+const mods = ["version", "data", "sim", "people", "building-surfaces", "world-lighting", "traffic-path", "world-weather", "models", "world3d", "icons", "warfx", "war", "rain-sound", "sound", "news", "advisor", ...(preview ? ["warserver", "preview"] : []), "main"];
 // One module: drop the local imports and exports; three.js is imported once from jsDelivr.
 const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
   .map((src) => src
