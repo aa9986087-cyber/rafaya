@@ -48,15 +48,15 @@ export function fastWar(div = 30) {
 
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
 export const WEAPONS = {
-  drone: { name: "مسيّرة شاهين", kind: "drone", price: 900, fee: 150, power: 16, evade: 1, needs: ["dronebase", 0], icon: "🛩️", text: "رخيصة وبطيئة، ضررها محدود، والدفاع يصيدها بسهولة." },
-  drone2: { name: "مسيّرة صقر", kind: "drone", price: 2400, fee: 300, power: 26, evade: 0.8, needs: ["dronebase", 1], icon: "🦅", text: "أغلى وأذكى: تتهرب من الدفاع أكثر وضررها أكبر." },
-  missile: { name: "صاروخ طويق", kind: "missile", price: 4500, fee: 500, power: 38, evade: 0.75, needs: ["missilepad", 0], icon: "🚀", text: "سريع وضرره متوسط. الدفاع المتوسط والمتقدم يقدرون عليه." },
-  missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." }
+  drone: { name: "مسيّرة شاهين", kind: "drone", price: 900, fee: 150, power: 16, evade: 1, blast: 0.7, needs: ["dronebase", 0], icon: "🛩️", text: "رخيصة وبطيئة، ضررها محدود، والدفاع يصيدها بسهولة." },
+  drone2: { name: "مسيّرة صقر", kind: "drone", price: 2400, fee: 300, power: 26, evade: 0.8, blast: 0.95, needs: ["dronebase", 1], icon: "🦅", text: "أغلى وأذكى: تتهرب من الدفاع أكثر وضررها أكبر." },
+  missile: { name: "صاروخ طويق", kind: "missile", price: 4500, fee: 500, power: 38, evade: 0.75, blast: 1.5, needs: ["missilepad", 0], icon: "🚀", text: "سريع وضرره متوسط. الدفاع المتوسط والمتقدم يقدرون عليه." },
+  missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, blast: 2.1, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." }
 };
 export const WEAPON_IDS = Object.keys(WEAPONS);
 export const MIL_IDS = Object.keys(MIL);
 
-/** What may be hit, and what a hit does there. Homes, mosques, schools, clinics and parks never. */
+/** What a hit does there (the military and the utilities in words of their own; the rest by kind below). */
 export const TARGETS = {
   milhq: "تقل جاهزية العمليات: عمليات أقل بالجو",
   dronebase: "تقل سعة المسيّرات، وإذا تعطلت ما تطلق",
@@ -70,7 +70,24 @@ export const TARGETS = {
   mill: "ينقص الإنتاج والدخل", oilpress: "ينقص الإنتاج والدخل", blockfactory: "تنقص مواد البناء", quarry: "تنقص مواد البناء",
   mall: "ينقص دخل المجمع"
 };
-export const canTarget = (id) => !!TARGETS[id];
+/** Mosques are never struck, and a blast near them leaves them whole (the owner's rule). */
+export const MOSQUES = new Set(["mosque", "bigmosque"]);
+/** Everything may be struck except the mosques: a strike falls on a spot, and what stands around it is hit too. */
+export const canTarget = (id) => !!B[id] && !MOSQUES.has(id);
+const KIND_TEXT = {
+  home: "تتضرر البيوت، ويطلع منها سكانها لين تتصلّح", shop: "ينقص الدخل والوظائف", serv: "تتعطل الخدمة عن الحي", part: "تتضرر الزينة",
+  road: "ينقطع الطريق أو يبطأ", farm: "ينقص الإنتاج", util: "ينقص الماء أو الكهرباء", proj: "يتعطل المشروع لين يتصلّح", deco: "تتضرر الزينة"
+};
+export const targetText = (id) => TARGETS[id] || KIND_TEXT[B[id]?.cat] || "يتضرر المبنى";
+/**
+ * What a blast at (x, y) with radius r reaches: every building within r (the tile it falls on fully, the
+ * ones further away less), never a mosque. list: [{ x, y, id, ... }] → [{ ...b, d, f }].
+ */
+export function blastArea(list, x, y, r) {
+  return list.filter((b) => !MOSQUES.has(b.id)).map((b) => ({ ...b, d: Math.hypot(b.x - x, b.y - y) }))
+    .filter((b) => b.d <= r + 0.01).map((b) => ({ ...b, f: b.d < 0.5 ? 1 : Math.max(0.3, 1 - (b.d - 0.5) / (r + 0.5)) }))
+    .sort((p, q) => p.d - q.d);
+}
 
 /** How well a building with war damage still works (0 … 1). */
 export const warFactor = (wd) => (!wd ? 1 : wd >= 85 ? 0 : 1 - wd * 0.007);
@@ -94,8 +111,8 @@ export function snapBuildings(snap) {
   if (!o || !Array.isArray(o.tiles)) return { list: [], era: 0, money: 0, seq: 0 };
   const n = Math.round(Math.sqrt(o.tiles.length)) || MAP_SIZE, list = [];
   o.tiles.forEach((str, i) => {
-    const [, id, lvl, , build] = String(str).split(":");
-    if (id && B[id]) list.push({ x: i % n, y: Math.floor(i / n), id, lvl: Number(lvl) || 0, build: Number(build) || 0 });
+    const [, id, lvl, res, build] = String(str).split(":");
+    if (id && B[id]) list.push({ x: i % n, y: Math.floor(i / n), id, lvl: Number(lvl) || 0, res: Number(res) || 0, build: Number(build) || 0 });
   });
   return { list, era: o.era || 0, money: Number(o.money) || 0, seq: Number(o.war?.seq) || 0, name: o.name };
 }

@@ -13,7 +13,8 @@
 import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
-  hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState
+  hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
+  MOSQUES, blastArea
 } from "./war.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
@@ -312,16 +313,17 @@ export class WarServer {
     if (block) return { error: block };
     if (r.state === "warning") return { error: `الحرب تبدأ بعد ${minutesText(r.warStart - now)}` };
     if (r.state !== "war") return { error: r.state === "truce" ? "فيه هدنة: ما يصير تضرب" : "ما فيه حرب مع هالمدينة" };
-    const target = them.snap.list.find((b) => b.x === x && b.y === y);
-    if (!target) return { error: "ما فيه مبنى هنا" };
-    if (!canTarget(target.id)) return { error: "هذا مبنى مدني محمي: ما يصير تستهدفه" };
-    if (target.build > 0) return { error: "المبنى تحت الإنشاء" };
+    // a spot in the town: whatever stands there and around it is hit (never a mosque)
+    if (!(x >= 0 && y >= 0 && x < 80 && y < 80)) return { error: "اختر مكان داخل المدينة" };
+    const at = them.snap.list.find((b) => b.x === x && b.y === y);
+    if (at && MOSQUES.has(at.id)) return { error: "المساجد محمية: ما تنقصف" };
+    const near = at || them.snap.list.filter((b) => canTarget(b.id)).map((b) => ({ ...b, d: Math.hypot(b.x - x, b.y - y) })).sort((p, q) => p.d - q.d)[0];
+    if (!near || Math.hypot(near.x - x, near.y - y) > 3) return { error: "المكان بعيد عن مباني المدينة" };
+    const target = at ? { ...at, name: B[at.id].name } : { x, y, id: null, lvl: 0, name: `موقع قرب ${B[near.id].name}` };
     const shield = this.shieldUntil(them, now);
     if (shield) return { error: `المدينة عليها درع حماية: باقي ${minutesText(shield - now)}` };
     const rehits = this.db.list("hit", { k1: String(to) }).filter((h) => h.x === x && h.y === y && now - h.at < this.cfg.caps.rehitWindow);
-    if (rehits.length >= this.cfg.caps.rehitMax) return { error: "هالمبنى انضرب كثير: محمي فترة" };
-    const dmgRow = this.damage(to).get(`${x}:${y}`);
-    if (dmgRow && dmgRow.wd >= this.cfg.caps.building) return { error: "المبنى متعطل أصلاً" };
+    if (rehits.length >= this.cfg.caps.rehitMax) return { error: "هالمكان انضرب كثير: محمي فترة" };
     // what is sent
     const a = this.acct(me.plot), p = this.profileOf(mine);
     if (!p.hq) return { error: "تحتاج مركز القيادة العسكرية" };
@@ -380,7 +382,7 @@ export class WarServer {
       if (seen.has(key)) return { error: "نفس الهدف مكرر بالدفعة" };
       seen.add(key);
       const pl = this.plan({ to: body.to, x: t.x, y: t.y, load: t.load }, me, { batch: true });
-      if (pl.error) return { error: pl.target ? `«${B[pl.target.id]?.name}»: ${pl.error}` : pl.error };
+      if (pl.error) return { error: pl.error };
       plans.push(pl);
     }
     const { now, to, a, p, mine, them, readyBases, readyPads } = plans[0];
@@ -409,7 +411,7 @@ export class WarServer {
     const detected = detects(this.profileOf(them));
     const out = plans.map((pl, i) => {
       const op = {
-        id: `${id}-${i}`, salvo: id, from: me.plot, to, fromTown: mine.town, toTown: them.town, x: pl.x, y: pl.y, bid: pl.target.id, blvl: pl.target.lvl, bname: B[pl.target.id].name,
+        id: `${id}-${i}`, salvo: id, from: me.plot, to, fromTown: mine.town, toTown: them.town, x: pl.x, y: pl.y, bid: pl.target.id, blvl: pl.target.lvl, bname: pl.target.name,
         load: pl.load, launchAt: now, arriveAt: now + pl.flight, status: "flying", fee: pl.fee, value: pl.value, detected,
         pads: readyPads.map((b) => [b.x, b.y]).slice(0, 2), bases: readyBases.map((b) => [b.x, b.y]).slice(0, 1)
       };
@@ -439,7 +441,7 @@ export class WarServer {
     const theirP = this.profileOf(them);
     const seen = detects(theirP);
     const op = {
-      id, from: me.plot, to, fromTown: mine.town, toTown: them.town, x, y, bid: target.id, blvl: target.lvl, bname: B[target.id].name,
+      id, from: me.plot, to, fromTown: mine.town, toTown: them.town, x, y, bid: target.id, blvl: target.lvl, bname: target.name,
       load, launchAt: now, arriveAt: now + flight, status: "flying", fee, value: pl.value, detected: seen,
       pads: pl.readyPads.map((b) => [b.x, b.y]).slice(0, 2), bases: pl.readyBases.map((b) => [b.x, b.y]).slice(0, 1)
     };
@@ -471,17 +473,18 @@ export class WarServer {
     const them = this.townInfo(op.to), res = { hits: [], dmg: 0, intcUsed: 0, before: 0, after: 0, blocked: "" };
     const da = this.acct(op.to);
     const weapons = WEAPON_IDS.flatMap((w) => Array(op.load[w] || 0).fill(w)).sort((p, q) => WEAPONS[p].kind === WEAPONS[q].kind ? 0 : WEAPONS[p].kind === "missile" ? -1 : 1);
-    const target = them?.snap.list.find((b) => b.x === op.x && b.y === op.y);
     const key = `${op.to}:${op.x}:${op.y}`, row = this.db.get("dmg", key);
     const before = row ? this.wdNow(row, now) : 0;
     res.before = before;
-    if (!them || !target || target.id !== op.bid) res.blocked = "gone";
+    if (!them) res.blocked = "gone";
     else if (this.shieldUntil(them, now)) res.blocked = "shield";
     else if (relNow(this.rel(op.from, op.to), now, this.cfg).state !== "war") res.blocked = "truce";
     const p = them ? this.profileOf(them) : null;
-    let dmg = 0;
+    // every weapon that gets through bursts on the spot: the buildings in its radius take a share of its damage
+    const dmgMap = this.damage(op.to), area = new Map(), list = them ? them.snap.list.filter((b) => !(b.build > 0)) : [];
+    const wdOf = (b) => { const k = `${b.x}:${b.y}`; if (!area.has(k)) { const r0 = dmgMap.get(k); area.set(k, { x: b.x, y: b.y, id: b.id, before: r0 ? this.wdNow(r0, now) : 0, dmg: 0 }); } return area.get(k); };
     for (const w of weapons) {
-      const h = { w, intercepted: false, tried: false, dmg: 0, chance: 0 };
+      const h = { w, intercepted: false, tried: false, dmg: 0, chance: 0, reach: 0 };
       if (!res.blocked && p) {
         const chance = interceptChance(p, w);
         if (chance > 0 && da.arsenal.intc > 0) {
@@ -489,19 +492,29 @@ export class WarServer {
           if (this.rand() < chance) h.intercepted = true;
         }
         if (!h.intercepted) {
-          const room = Math.min(this.cfg.caps.perOp - dmg, this.cfg.caps.building - before - dmg);
-          h.dmg = Math.max(0, Math.min(room, hitDamage(w, this.rand())));
-          dmg += h.dmg;
+          const base = hitDamage(w, this.rand());
+          for (const b of blastArea(list, op.x, op.y, WEAPONS[w].blast || 0.7)) {
+            const a = wdOf(b), room = Math.min(this.cfg.caps.perOp - a.dmg, this.cfg.caps.building - a.before - a.dmg);
+            const add = Math.max(0, Math.min(room, Math.round(base * b.f)));
+            a.dmg += add; if (add) h.reach++;
+          }
+          h.dmg = base;
         }
       }
       res.hits.push(h);
     }
-    res.dmg = dmg; res.after = Math.min(this.cfg.caps.building, before + dmg);
+    const hurt = [...area.values()].filter((a) => a.dmg > 0).map((a) => ({ ...a, after: Math.min(this.cfg.caps.building, a.before + a.dmg) })).sort((p, q) => q.dmg - p.dmg);
+    const centre = hurt.find((a) => a.x === op.x && a.y === op.y) || hurt[0];
+    const dmg = hurt.length ? hurt[0].dmg : 0;
+    res.area = hurt.map(({ x, y, id, dmg: d, before: b0, after }) => ({ x, y, id, dmg: d, before: b0, after }));
+    res.dmg = dmg; res.before = centre ? centre.before : before; res.after = centre ? centre.after : before;
+    // the people of the houses hit leave them until they are repaired (in the game's numbers)
+    res.displaced = them ? hurt.filter((a) => a.id === "house").reduce((n, a) => { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y); return n + Math.round((t?.res || 0) * Math.min(1, a.dmg / 85)); }, 0) : 0;
     res.airdef = p ? p.airdefs.filter((x) => x.wd < 85).length : 0; // working batteries (to tell "no defence" from "no interceptors")
     res.intcValue = res.intcUsed * this.cfg.interceptor.price;
     if (dmg > 0) {
-      this.db.put("dmg", key, { x: op.x, y: op.y, bid: op.bid, wd: res.after, by: op.from, at: now }, { k1: String(op.to), at: now });
-      this.db.put("hit", op.id, { x: op.x, y: op.y, at: now, from: op.from, dmg }, { k1: String(op.to), at: now });
+      for (const a of hurt) this.db.put("dmg", `${op.to}:${a.x}:${a.y}`, { x: a.x, y: a.y, bid: a.id, wd: a.after, by: op.from, at: now }, { k1: String(op.to), at: now });
+      this.db.put("hit", op.id, { x: op.x, y: op.y, at: now, from: op.from, dmg: hurt.reduce((n, a) => n + a.dmg, 0) }, { k1: String(op.to), at: now });
     }
     res.state = damageState(res.after).name;
     op.status = "done"; op.result = res; op.doneAt = now;
@@ -513,8 +526,9 @@ export class WarServer {
       this.note(op.from, "result", `📋 عمليتك على «${op.toTown}» ما أصابت: ${why}.`, { op: op.id });
       this.note(op.to, "result", `🛡️ هجوم «${op.fromTown}» ما وصل: ${why}.`, { op: op.id });
     } else if (dmg > 0) {
-      this.note(op.to, "hit", `💥 تعرض ${op.bname} لضربة عسكرية من «${op.fromTown}» وتضرر بنسبة ${nf(dmg)}٪.${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
-      this.note(op.from, "result", `🎯 إصابة ناجحة: ${op.bname} في «${op.toTown}» تضرر ${nf(dmg)}٪.`, { op: op.id });
+      const many = res.area.length > 1 ? ` وتضرر ${nf(res.area.length)} مباني حوله` : "", gone = res.displaced ? `، ونزح ${nf(res.displaced)} ساكن من بيوتهم` : "";
+      this.note(op.to, "hit", `💥 ضربة عسكرية من «${op.fromTown}» على ${op.bname}${many} (أكبر ضرر ${nf(dmg)}٪)${gone}.${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
+      this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).`, { op: op.id });
       this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»`, op.to);
     } else {
       this.note(op.to, "intercept", `🛡️ دفاعاتك نجحت في اعتراض هجوم «${op.fromTown}».`, { op: op.id });

@@ -130,6 +130,17 @@ function pvFill(me) {
   missiles.forEach((w, i) => { a.arsenal[w] = i === missiles.length - 1 ? c.missiles - missiles.slice(0, -1).reduce((n, x) => n + a.arsenal[x], 0) : Math.floor(c.missiles / missiles.length); });
   a.reload = {}; pvWar.saveAcct(me.plot, a);
 }
+/** The bot fires a salvo: n spots in the owner's town at once, as the live server allows a player to. */
+function pvSalvo(bot, n, w = "missile") {
+  pvLandAll();
+  const me = pvMe(), mine = snapBuildings(pvState.plots[me.plot].snapshot);
+  const spots = mine.list.filter((b) => canTarget(b.id) && !(b.build > 0) && b.id !== "asphalt" && b.id !== "road").sort(() => Math.random() - .5).slice(0, n);
+  const a = pvWar.acct(bot.plot); a.arsenal = { drone: 8, drone2: 6, missile: 8, missile2: 6, intc: 6 }; a.reload = {}; pvWar.saveAcct(bot.plot, a);
+  // its launchers grow for the scenario so the whole salvo can go at once
+  const t = pvState.plots[bot.plot];
+  try { const o = JSON.parse(t.snapshot); o.tiles = o.tiles.map((str) => { const q = String(str).split(":"); if (q[1] === "missilepad") q[2] = "2"; if (q[1] === "dronebase") q[2] = "2"; return q.join(":"); }); t.snapshot = JSON.stringify(o); } catch { /* as it is */ }
+  return pvWar.handle("salvo", { op: `bs${Date.now()}${Math.random()}`, to: me.plot, targets: spots.map((b, i) => ({ x: b.x, y: b.y, load: { [w !== "missile" ? w : i >= 3 ? "drone2" : i % 2 ? "missile2" : "missile"]: 1 } })) }, bot);
+}
 /** Everything still in the air lands now (so a new scenario never waits on the last one's flights). */
 function pvLandAll() {
   for (const f of pvDb.list("fly", {})) { const op = pvDb.get("op", f.id); if (op?.status === "flying") { op.arriveAt = Date.now() - 1; pvDb.put("op", op.id, op, { k1: String(op.from), k2: String(op.to), at: op.launchAt }); } pvDb.put("fly", f.id, { id: f.id, at: Date.now() - 1 }, { at: Date.now() - 1 }); }
@@ -170,10 +181,10 @@ const PV_SCENARIOS = [
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 1); pvSetRel(me, bot, "peace");
     return { plot: bot.plot, msg: "«الخضراء» بسلام معك. جرّب «إعلان عداوة»." };
   }],
-  ["wave", "💥 هجوم كبير: ثلاث ضربات بنفس الوقت", "«هجرة الشعيب» تطلق ثلاث عمليات على ثلاث مبانٍ عندك بنفس اللحظة.", () => {
-    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
-    const r = pvStrike(bot, 3, { drone: 2 });
-    return { plot: null, msg: r.sent ? `${r.sent} عمليات جاية عليك الحين` : `ما انطلقت: ${r.why}` };
+  ["wave", "💥 دفعة: ٣ صواريخ ومسيّرة بنفس الوقت", "«هجرة الشعيب» تطلق دفعة على ٤ أماكن بمدينتك بنفس اللحظة، والدفاع يتصدى.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
+    const r = pvSalvo(bot, 4, "missile");
+    return { plot: null, room: "attack", msg: r.ok ? "دفعة على ٤ أماكن جاية عليك. تابعها من الشريط، ولا وصلت اضغطها وشوف المشهد." : `ما انطلقت: ${r.error}` };
   }],
   ["dry", "🔋 دفاعك بدون ذخيرة وجاك هجوم", "تنتهي صواريخ الاعتراض عندك، و«الخضراء» تضربك. تشوف الضرر وتجرب الإصلاح.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
@@ -189,7 +200,7 @@ const PV_SCENARIOS = [
     const me = pvMe(), enemy = pvBot("enemy"), loud = pvBot("loud");
     pvSetEra(enemy, 4); pvSetEra(loud, 3); pvSetRel(enemy, me, "war"); pvSetRel(loud, me, "war");
     pvFill(me);
-    pvStrike(enemy, 2, { missile: 1 });
+    pvSalvo(enemy, 3, "missile");
     const r2 = pvLaunchFrom(loud, { drone: 2 }); void r2;
     pvWar.handle("rel", { req: `scr${Date.now()}`, other: me.plot, act: "truce" }, loud);
     return { plot: null, room: "attack", msg: "أنت وسط معركة: هجمات جاية عليك، وعدوين بحرب. جرّب كل شي من هنا." };

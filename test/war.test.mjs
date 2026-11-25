@@ -122,13 +122,13 @@ test("protections: villages, new players, sleeping towns and bullies are out of 
 
 test("a strike: checked, paid once, decided once at arrival, with the caps", () => {
   const W = makeWorld({ rolls: [] });
-  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"], [31, 30, "house", 2]] });
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"], [31, 30, "house", 2], [33, 30, "mosque"]] });
   W.war.handle("buy", { req: "b1", kind: "missile", n: 1 }, a);
   W.war.handle("buy", { req: "b2", kind: "drone", n: 2 }, a);
   assert.match(W.war.handle("launch", { op: "o0", to: 30, x: 30, y: 30, load: { missile: 1 } }, a).error, /ما فيه حرب/);
   atWar(W, a, b);
-  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 31, y: 30, load: { missile: 1 } }, a).error, /مدني محمي/);
-  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 5, y: 5, load: { missile: 1 } }, a).error, /ما فيه مبنى/);
+  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 33, y: 30, load: { missile: 1 } }, a).error, /المساجد/);
+  assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 5, y: 5, load: { missile: 1 } }, a).error, /بعيد/);
   assert.match(W.war.handle("launch", { op: "o1", to: 30, x: 30, y: 30, load: { missile: 3 } }, a).error, /ما عندك/);
   const r = W.war.handle("launch", { op: "o1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
   assert.equal(r.ok, true);
@@ -218,7 +218,7 @@ test("repairs: paid on the server, damage comes off over time; the deputy repair
   assert.ok(st.notes.some((n) => n.kind === "repair"));
 });
 
-test("a truce stops strikes in the air; a gone target is not hit", () => {
+test("a truce stops strikes in the air; a spot left empty takes no damage", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "generator"]] });
   W.war.handle("buy", { req: "d", kind: "drone", n: 2 }, a);
@@ -226,7 +226,7 @@ test("a truce stops strikes in the air; a gone target is not hit", () => {
   const r = W.war.handle("launch", { op: "g", to: 30, x: 30, y: 30, load: { drone: 1 } }, a);
   W.resync(30, (s) => { s.tiles[idx(30, 30)].b = null; }); // demolished before it arrived
   W.tick(r.op.arriveAt - W.now() + 1);
-  assert.equal(W.war.handle("op", { op: "g" }, a).op.result.blocked, "gone");
+  assert.equal(W.war.handle("op", { op: "g" }, a).op.result.dmg, 0);
   assert.equal(relNow(null, 0).state, "peace");
 });
 
@@ -329,4 +329,25 @@ test("«دفعة»: several targets in one batch, checked as a whole, one operat
   W.tick(30 * MIN); W.war.settle();
   const done = r.ops.map((o) => W.db.get("op", o.id));
   assert.ok(done.every((o) => o.status === "done" && o.result));
+});
+
+test("a strike falls on a spot: the buildings around it are hit too, mosques never, and people leave hit houses", () => {
+  const W = makeWorld({ rolls: Array(40).fill(0.99) }); // no interception, full damage
+  const a = W.addTown(1, "المهاجمة", { era: 3, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [26, 20, "radar"]] });
+  const b = W.addTown(2, "الهدف", { era: 3, mil: [[20, 20, "milhq"], [40, 40, "house", 3], [41, 40, "house", 3], [42, 40, "generator"], [40, 41, "mosque"], [45, 45, "factory"]] });
+  W.resync(2, (s) => { s.tiles[idx(40, 40)].b.res = 16; s.tiles[idx(41, 40)].b.res = 16; });
+  atWar(W, a, b);
+  const acct = W.war.acct(a.plot); acct.arsenal.missile2 = 2; W.war.saveAcct(a.plot, acct);
+  const r = W.war.handle("launch", { op: "area", to: 2, x: 40, y: 40, load: { missile2: 1 } }, a);
+  assert.equal(r.error, undefined, r.error);
+  W.tick(30 * MIN); W.war.settle();
+  const res = W.db.get("op", "area").result;
+  const hit = new Set(res.area.map((h) => `${h.x}:${h.y}`));
+  assert.ok(hit.has("40:40") && hit.has("41:40") && hit.has("42:40"), JSON.stringify(res.area));
+  assert.ok(!hit.has("40:41"), "the mosque is never hit");
+  assert.ok(!hit.has("45:45"), "too far");
+  const centre = res.area.find((h) => h.x === 40 && h.y === 40), side = res.area.find((h) => h.x === 42 && h.y === 40);
+  assert.ok(centre.dmg > side.dmg, "less damage further from the spot");
+  assert.ok(res.displaced > 0);
+  assert.equal(W.war.publicDamage(2).some((d) => d.x === 40 && d.y === 41), false);
 });

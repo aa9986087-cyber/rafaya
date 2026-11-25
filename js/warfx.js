@@ -263,6 +263,42 @@ export class WarFX {
     }
   }
 
+  /**
+   * Choosing where to strike: for every spot a ring as wide as the weapon's blast, a crosshair, a beam of
+   * light standing over it with its number, and the buildings the blast would reach glowing red.
+   * points: [{ x, y, r, on }], hit: [{ x, y, f }] (f: how hard, 0 … 1).
+   */
+  showStrike(points, hit) {
+    for (const m of [...this.marks.children]) if (m.userData.strike) { this.marks.remove(m); m.geometry?.dispose(); if (m.userData.own) m.material.dispose(); }
+    if (!points) return;
+    const flat = (w, h, color, opacity, map = null, add = true) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, opacity, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false }));
+      m.rotation.x = -Math.PI / 2; m.renderOrder = 4; m.userData = { strike: true, own: true }; return m;
+    };
+    for (const h of hit || []) {
+      const c = tileCenter(h.x, h.y), m = flat(0.94, 0.94, new THREE.Color(1.6, 0.25, 0.15), 0.25 + h.f * 0.35);
+      m.position.set(c.x, 0.04, c.z); m.userData.pulse = 0.25 + h.f * 0.35; this.marks.add(m);
+    }
+    points.forEach((p, i) => {
+      const c = tileCenter(p.x, p.y), d = (p.r * 2 + 1) * 1.02;
+      const ring = flat(d, d, p.on ? new THREE.Color(2.4, 0.3, 0.2) : new THREE.Color(1.7, 0.8, 0.3), p.on ? 0.7 : 0.5, fxTexture("ring"));
+      ring.position.set(c.x, 0.06, c.z); ring.userData.spin = p.on ? 0.9 : 0.35; this.marks.add(ring);
+      const inner = flat(0.7, 0.7, new THREE.Color(2.4, 0.5, 0.35), 0.9, fxTexture("ring"));
+      inner.position.set(c.x, 0.07, c.z); inner.userData.spin = -2.2; this.marks.add(inner);
+      for (const rot of [0, Math.PI / 2]) { const bar = flat(d * 0.98, 0.035, new THREE.Color(2.4, 0.5, 0.35), 0.75); bar.rotation.z = rot; bar.position.set(c.x, 0.075, c.z); this.marks.add(bar); }
+      // the beam: a tall thin column of light marking the spot from afar
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.09, 3.2, 8, 1, true), new THREE.MeshBasicMaterial({ color: p.on ? new THREE.Color(2.6, 0.5, 0.35) : new THREE.Color(1.8, 1.0, 0.45), transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+      beam.position.set(c.x, 1.6, c.z); beam.renderOrder = 6; beam.userData = { strike: true, own: true, pulse: 0.45 }; this.marks.add(beam);
+      // its number, floating at the top of the beam
+      const cv = document.createElement("canvas"); cv.width = cv.height = 64;
+      const g = cv.getContext("2d"); g.fillStyle = p.on ? "#d63b2f" : "#b5852e"; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#fff"; g.lineWidth = 4; g.stroke(); g.fillStyle = "#fff"; g.font = "bold 34px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(i + 1).replace(/\d/g, (x) => "٠١٢٣٤٥٦٧٨٩"[x]), 32, 34);
+      const tex = new THREE.CanvasTexture(cv), sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+      sp.position.set(c.x, 3.25, c.z); sp.scale.set(0.42, 0.42, 1); sp.renderOrder = 8; sp.userData = { strike: true, own: true, bob: Math.random() * 6, target: true, high: 3.25 };
+      this.marks.add(sp);
+    });
+  }
+
   // ---------- particles (sprites, so they keep their size in the flat camera) ----------
   sprite(kind, color, blending = THREE.NormalBlending) {
     let sp = this.pool.pop();
@@ -435,15 +471,19 @@ export class WarFX {
    */
   async playIncoming(o) {
     this.skipping = false;
-    const c = tileCenter(o.x, o.y), top = c.clone().setY(0.45);
-    // the nearest air defence battery: when it fires, the camera keeps it and the target in view
-    const adNear = (o.airdefs || []).map((a) => ({ ...a, p: tileCenter(a.x, a.y) })).sort((p, q) => p.p.distanceTo(c) - q.p.distanceTo(c))[0];
-    const defends = !!adNear && o.weapons.some((h) => h.tried);
-    if (defends) { const mid = c.clone().lerp(adNear.p, 0.5), d = adNear.p.distanceTo(c); await this.camTo({ x: mid.x, z: mid.z, zoom: Math.min(1.45, 9 / (d * 1.3 + 3)), y: 0.6 }, 1.0); }
-    else await this.camTo({ x: c.x, z: c.z, zoom: 1.45, y: 0.3 }, 1.0);
-    if (adNear && !defends && o.noAmmo) { o.banner?.("🛡️ الدفاع الجوي بلا صواريخ اعتراضية!", "bad"); await this.wait(1.2); }
+    // one strike, or a salvo of them: each falls on its own spot, all of them together
+    const strikes = (o.strikes || [{ x: o.x, y: o.y, r: 0.7, weapons: o.weapons, area: [], onHit: o.onHit }]).map((st) => ({ ...st, c: tileCenter(st.x, st.y) }));
+    strikes.forEach((st) => { st.top = st.c.clone().setY(0.45); });
+    const ads = (o.airdefs || []).map((a) => ({ ...a, p: tileCenter(a.x, a.y), used: 0 }));
+    const defends = ads.length > 0 && strikes.some((st) => st.weapons.some((h) => h.tried));
+    // the camera takes in every spot (and the batteries that fire)
+    const pts = [...strikes.map((st) => st.c), ...(defends ? ads.map((a) => a.p) : [])];
+    const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x)), minZ = Math.min(...pts.map((p) => p.z)), maxZ = Math.max(...pts.map((p) => p.z));
+    const span = Math.max(maxX - minX, maxZ - minZ) + (strikes.length > 1 ? 3 : 2);
+    await this.camTo({ x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, zoom: Math.max(0.95, Math.min(1.5, 10 / span)), y: 0.5 }, 1.0);
+    if (ads.length && !defends && o.noAmmo) { o.banner?.("🛡️ الدفاع الجوي بلا صواريخ اعتراضية!", "bad"); await this.wait(1.2); }
     if (o.detected) {
-      o.banner?.("⚠️ تم رصد هدف جوي", "warn");
+      o.banner?.(strikes.length > 1 ? `⚠️ تم رصد ${strikes.reduce((n, st) => n + st.weapons.length, 0)} أهداف جوية` : "⚠️ تم رصد هدف جوي", "warn");
       o.sfx?.alarm();
       this.alertT = 6;
       for (const r of o.radars || []) {
@@ -451,40 +491,53 @@ export class WarFX {
         sp.position.set(p.x, 0.9, p.z);
         this.tween(2.4, (k) => { sp.scale.setScalar(0.4 + (k * 6 % 1) * 0.9); sp.material.opacity = 1 - (k * 6 % 1); if (k >= 1) { this.flyers.remove(sp); this.pool.push(sp); } });
       }
+      // where they are going: a red lock over every spot
+      this.showStrike(strikes.map((st) => ({ x: st.x, y: st.y, r: st.r, on: true })), []);
       await this.wait(1.0);
     }
     const dir = new THREE.Vector3(o.dir?.x ?? 1, 0, o.dir?.z ?? 0).normalize();
     const side = new THREE.Vector3(-dir.z, 0, dir.x);
-    let hits = 0;
-    const one = async (h, k) => {
-      const missile = h.kind === "missile", dur = (missile ? 2.0 : 3.8) * (h.tried ? 1.35 : 1);
-      const lateral = (k - (o.weapons.length - 1) / 2) * 1.6;
-      const from = c.clone().addScaledVector(dir, missile ? 13 : 10).addScaledVector(side, lateral).setY(missile ? 9 : 3.2);
+    const total = strikes.reduce((n, st) => n + st.weapons.length, 0);
+    let hits = 0, n = 0;
+    const one = async (h, k, st) => {
+      const missile = h.kind === "missile", dur = (missile ? 2.2 : 3.8) * (h.tried ? 1.3 : 1);
+      const lateral = (k - (total - 1) / 2) * 1.1;
+      const from = st.c.clone().addScaledVector(dir, missile ? 13 : 10).addScaledVector(side, lateral).setY(missile ? 9 : 3.2);
       const fly = this.mesh({ missile: "wMissile", missile2: "wMissile2", drone: "wDrone", drone2: "wDrone2" }[h.w] || "wMissile");
       const rotor = !missile ? this.mesh(h.w === "drone2" ? "wRotor2" : "wRotor") : null;
       if (rotor) fly.add(rotor);
-      fly.position.copy(from); this.flyers.add(fly);
+      fly.position.copy(from); fly.scale.setScalar(strikes.length > 1 ? 1.5 : 1.25); this.flyers.add(fly);
+      const top = st.top;
+      let framed = false;
+      // a missile comes in high and dives at the end; a drone flies low and steady, then drops on it
       const at = (kk) => {
-        const e = missile ? fxEaseIn(kk) * 0.35 + kk * 0.65 : kk;
-        const p = from.clone().lerp(top, e);
-        if (!missile) p.y += Math.sin(kk * Math.PI) * 0.6 + Math.sin(kk * 20) * 0.03;
-        return p;
+        if (missile) { const p = from.clone().lerp(top, kk); p.y = fxLerp(from.y, top.y, Math.pow(kk, 2.2)) + Math.sin(kk * Math.PI) * 1.2 * (1 - kk); return p; }
+        const p = from.clone().lerp(top, kk); p.y = fxLerp(from.y, top.y + 0.6, kk) - (kk > 0.85 ? (kk - 0.85) / 0.15 * 0.6 : 0) + Math.sin(kk * 20) * 0.025; return p;
       };
-      const ad = adNear;
-      const meet = 0.8, fireAt = 0.3;
+      // the battery: the nearest one to this spot that fired least (so several batteries share the work)
+      const ad = h.tried ? ads.slice().sort((p, q) => (p.used - q.used) * 3 + p.p.distanceTo(st.c) - q.p.distanceTo(st.c))[0] : null;
+      if (ad) ad.used++;
+      const meet = 0.78, fireAt = 0.28 + (ad ? (ad.used - 1) * 0.05 : 0);
       let inter = null, gone = false;
       o.sfx?.whoosh();
       await this.tween(dur, (kk) => {
         if (gone) return;
         const p = at(kk), next = at(Math.min(1, kk + 0.01));
         fly.position.copy(p);
+        // a salvo: the camera glides to each spot as its weapon comes down (one after another)
+        if (strikes.length > 1 && !framed && kk >= 0.55) { framed = true; this.camTo({ x: st.c.x, z: st.c.z, zoom: 1.45, y: 0.45 }, 0.7); }
         if (missile) fly.lookAt(next); else { fly.lookAt(new THREE.Vector3(next.x, p.y, next.z)); rotor.rotation.y += 0.9; }
-        if (missile) { const tail = p.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.3)); this.emit("flame", tail, { size: 0.32 }); if (Math.random() < 0.8) this.emit("trail", tail, { size: 0.26 }); this.light.position.copy(tail); this.light.intensity = 3; this.lightT = 0.12; }
-        else if (Math.random() < 0.25) this.emit("trail", p, { size: 0.12, alpha: 0.3 });
-        // the air defence: turn to it, fire, and meet it
+        if (missile) {
+          const back = p.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.3));
+          this.emit("flame", back, { size: 0.34 }); this.emit("flame", back.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.1)), { size: 0.2, life: 0.08 });
+          if (Math.random() < 0.85) this.emit("trail", back, { size: 0.28, life: 1.8 });
+          if (k === 0) { this.light.position.copy(back); this.light.intensity = 3; this.lightT = 0.12; }
+        } else {
+          if (Math.random() < 0.3) this.emit("trail", p, { size: 0.12, alpha: 0.3 });
+          if (Math.random() < 0.2) this.emit("flash", p.clone().add(new THREE.Vector3(0, 0.05, 0)), { size: 0.12, life: 0.08, color: kk * 10 % 2 < 1 ? "#ff4d3a" : "#5ad1ff" }); // its navigation lights
+        }
         if (h.tried && ad) {
           const part = this.parts.get(idx(ad.x, ad.y));
-          // the launcher turns to the threat and lifts before it fires
           if (part?.turret) { const want = Math.atan2(p.x - ad.p.x, p.z - ad.p.z) - part.group.rotation.y; part.turret.rotation.y += (want - part.turret.rotation.y) * 0.15; part.turret.rotation.x = -Math.min(0.75, kk * 2.5); }
           if (kk >= fireAt && !inter) {
             const src = ad.p.clone().setY(0.45), aim = at(meet);
@@ -492,11 +545,10 @@ export class WarFX {
             inter = { m: this.mesh("wInterceptor"), src, aim: aim.add(miss), done: false, last: src.clone() };
             inter.m.scale.setScalar(1.8);
             inter.m.position.copy(src); this.flyers.add(inter.m);
-            // the launch at the battery: a flash, a burst of white smoke, dust on the ground
-            this.emit("flash", src, { size: 1.0, life: 0.25 });
-            for (let j = 0; j < 8; j++) this.emit("smoke", src.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, -0.2, (Math.random() - 0.5) * 0.3)), { color: "#ece7dc", size: 0.45, v: new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.4, (Math.random() - 0.5) * 1.4) });
+            this.emit("flash", src, { size: 1.1, life: 0.25 });
+            for (let j = 0; j < 10; j++) this.emit("smoke", src.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, -0.2, (Math.random() - 0.5) * 0.3)), { color: "#ece7dc", size: 0.45, v: new THREE.Vector3((Math.random() - 0.5) * 1.6, 0.4, (Math.random() - 0.5) * 1.6) });
             this.light.position.copy(src); this.light.intensity = 3.5; this.lightT = 0.4;
-            o.banner?.("🚀 الدفاع الجوي أطلق صاروخ اعتراضي", "warn");
+            if (n++ % 2 === 0) o.banner?.(total > 1 ? "🚀 الدفاع الجوي يطلق الاعتراضات" : "🚀 الدفاع الجوي أطلق صاروخ اعتراضي", "warn");
             o.sfx?.intercept();
           }
           if (inter && !inter.done) {
@@ -504,20 +556,19 @@ export class WarFX {
             const ip = inter.src.clone().lerp(inter.aim, fxEase(q)); ip.y += Math.sin(q * Math.PI) * 1.0;
             inter.m.lookAt(ip.clone().add(ip.clone().sub(inter.last)));
             inter.m.position.copy(ip);
-            // a bright flame and a thick white trail, easy to follow
             const back = ip.clone().add(inter.last.clone().sub(ip).normalize().multiplyScalar(0.3));
             this.emit("flame", back, { size: 0.3 });
-            this.emit("trail", back, { size: 0.24, color: "#f4f1ea", alpha: 0.75, life: 1.8 });
+            this.emit("trail", back, { size: 0.24, color: "#f4f1ea", alpha: 0.8, life: 2.2 });
             inter.last.copy(ip);
             if (q >= 1) {
               inter.done = true; this.flyers.remove(inter.m);
               if (h.intercepted) {
                 gone = true; this.flyers.remove(fly);
-                this.explode(p, missile ? 1.1 : 0.8, true); this.shake(0.05, 0.4);
-                o.sfx?.airBurst(); o.banner?.("✅ تم اعتراض الهجوم", "ok");
+                this.airBurst(p, missile ? 1.15 : 0.8);
+                o.sfx?.airBurst(); o.banner?.("✅ تم اعتراض هدف", "ok");
               } else {
-                this.emit("flash", ip, { size: 0.6 }); for (let j = 0; j < 6; j++) this.emit("spark", ip);
-                o.banner?.("❌ فشل الاعتراض: الهجوم مكمّل", "bad");
+                this.emit("flash", ip, { size: 0.6 }); for (let j = 0; j < 8; j++) this.emit("spark", ip);
+                o.banner?.("❌ فشل اعتراض: الهدف مكمّل", "bad");
               }
             }
           }
@@ -525,18 +576,47 @@ export class WarFX {
       });
       if (gone) return;
       this.flyers.remove(fly);
-      // the hit: the flash first, then the blast, the debris and the smoke
-      this.explode(top.clone().setY(0.35), missile ? 1.5 : 1, false);
-      this.w.puff?.(c, 14);
-      this.shake(missile ? 0.18 : 0.1, 0.6);
+      this.blast(st, missile, h);
       o.sfx?.boom();
       hits++;
-      o.onHit?.(h.dmg, k);
+      st.onHit?.(h.dmg, k);
     };
-    const runs = o.weapons.map((h, k) => this.wait(k * 0.9).then(() => one(h, k)));
+    let k = 0;
+    const runs = [];
+    for (const st of strikes) for (const h of st.weapons) { const kk = k++; runs.push(this.wait(kk * (strikes.length > 1 ? 1.5 : 0.9)).then(() => one(h, kk, st))); }
     await Promise.all(runs);
-    await this.wait(hits ? 1.6 : 0.8);
+    this.showStrike(null);
+    await this.wait(hits ? 1.8 : 0.8);
     this.skipping = false;
+  }
+
+  /** An interceptor meets its target in the air: a white puff, a ring of fragments, the wreck falling. */
+  airBurst(p, big = 1) {
+    this.explode(p, big, true); this.shake(0.05, 0.4);
+    for (let i = 0; i < 24; i++) { const a = Math.random() * Math.PI * 2, b = (Math.random() - 0.5) * Math.PI; this.emit("spark", p, { v: new THREE.Vector3(Math.cos(a) * Math.cos(b) * 3, Math.sin(b) * 3 + 0.5, Math.sin(a) * Math.cos(b) * 3), size: 0.07 }); }
+    for (let i = 0; i < 6; i++) this.emit("smoke", p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3)), { color: "#d9d4cc", size: 0.5, life: 3, v: new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.1, (Math.random() - 0.5) * 0.4) });
+    for (let i = 0; i < 4; i++) this.emit("trail", p.clone(), { color: "#3e3a35", size: 0.1, life: 1.6, v: new THREE.Vector3((Math.random() - 0.5) * 0.8, -1.4, (Math.random() - 0.5) * 0.8) });
+  }
+  /**
+   * A hit: the blast at the spot as wide as the weapon reaches (a ground ring that size), the flash and
+   * fireball, and smaller bursts on the buildings around it that the blast reached.
+   */
+  blast(st, missile, h) {
+    const r = Math.max(0.7, st.r || 0.7), big = missile ? 0.9 + r * 0.35 : 0.7 + r * 0.3;
+    this.explode(st.top.clone().setY(0.35), big, false);
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: fxTexture("shock"), color: new THREE.Color(1.8, 1.1, 0.7), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(st.c.x, 0.07, st.c.z); ring.renderOrder = 4;
+    this.flyers.add(ring); this.rings.push({ m: ring, t: 0, size: (r * 2 + 1) * 1.15 });
+    // a column of fire and dark smoke rising after a heavy missile
+    if (missile && r > 1.2) for (let i = 0; i < 10; i++) this.emit("fire", st.c.clone().setY(0.3 + i * 0.12), { size: 0.5 + Math.random() * 0.3, life: 1 + Math.random() * 0.6, v: new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.4 + i * 0.1, (Math.random() - 0.5) * 0.3) });
+    for (const a of st.area || []) {
+      if (a.x === st.x && a.y === st.y) continue;
+      const p = tileCenter(a.x, a.y).setY(0.3), delay = 0.08 + Math.hypot(a.x - st.x, a.y - st.y) * 0.09;
+      this.wait(delay).then(() => { this.explode(p, 0.35 + Math.min(0.5, (a.dmg || 10) / 80), false); for (let j = 0; j < 4; j++) this.emit("dust", p.clone().setY(0.05), { size: 0.4, v: new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.2, (Math.random() - 0.5) * 1.4) }); });
+    }
+    this.w.puff?.(st.c, 14 + Math.round(r * 6));
+    this.shake(missile ? 0.12 + r * 0.05 : 0.08, 0.7);
+    void h;
   }
 
   // ---------- every frame ----------
@@ -568,7 +648,8 @@ export class WarFX {
     // marks: target rings turn, signs bob
     for (const m of this.marks.children) {
       if (m.userData.spin) m.rotation.z += dt * m.userData.spin;
-      if (m.isSprite && m.userData.bob !== undefined) { m.userData.bob += dt * 3; m.position.y = (m.userData.target ? 1.25 : 1.1) + Math.sin(m.userData.bob) * 0.08; }
+      if (m.isSprite && m.userData.bob !== undefined) { m.userData.bob += dt * 3; m.position.y = (m.userData.high ?? (m.userData.target ? 1.25 : 1.1)) + Math.sin(m.userData.bob) * 0.08; }
+      if (m.userData.pulse) m.material.opacity = m.userData.pulse * (0.65 + 0.35 * Math.sin(this.w.clock * 5 + m.position.x));
     }
     // the blast light fades; rings spread; debris falls and bounces
     if (this.lightT > 0) { this.lightT -= dt; if (this.lightT <= 0) this.light.intensity = 0; else this.light.intensity *= Math.pow(0.02, dt); }

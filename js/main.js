@@ -662,6 +662,7 @@ export function closeSheet() {
   sheetHide = setTimeout(() => { $("sheet").hidden = true; $("sheet").classList.remove("closing"); }, 180);
   const was = sheetFor; sheetFor = null;
   world.setOverlay(null);
+  if (was === "war-report" && WARX.st) setTimeout(() => { if (!WARX.scene) warWatch(WARX.st); }, 600); // an attack that waited for the report plays now
   if (was === "settings-menu") showMenu();
 }
 $("sheetClose").addEventListener("click", () => { sfx.tap(); closeSheet(); });

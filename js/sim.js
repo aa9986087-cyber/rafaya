@@ -901,7 +901,7 @@ export function analyze(s) {
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
-      if (works) { a.connectedHomes++; a.cap += Math.round(def.levels[t.b.lvl].cap * concrete); }
+      if (works) { a.connectedHomes++; a.cap += Math.round(def.levels[t.b.lvl].cap * concrete * warWorks(t.b.wd)); } // a house hit in a war holds fewer until repaired
       if (a.watered[here]) a.waterUse += t.b.lvl; // bigger homes use more
       else if (works) a.dryHomes++;
       if (!a.powered[here] && works && t.b.lvl >= 3) a.darkHomes++;

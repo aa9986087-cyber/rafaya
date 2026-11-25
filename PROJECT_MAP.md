@@ -205,7 +205,7 @@ and import each other's functions. So:
 | Moving a town (once) | `worker.js` `move`; `warserver.js` `moveTown`; `main.js` `moveSheet` |
 | Names (player once, town once), bad names | `worker.js` `newname`, `rename`, `namefix`; `src/moderation.js` |
 | Bans and device bans | `worker.js` `ban`, `remove`, `banned_devices`; `ui-online.js` `deviceId` |
-| War | `war.js` (rules; `conflictBlocker` has حق الرد), `warserver.js` (decides; `salvo` = several targets as one operation), `ui-war.js` + `main.js` (screen), `warfx.js` (show) |
+| War | `war.js` (rules; `conflictBlocker` has حق الرد; strikes fall on a **spot**: `blastArea` + `WEAPONS[w].blast`, everything but `MOSQUES`), `warserver.js` (decides; `salvo` = several spots as one operation; `res.area`, `res.displaced`), `warfx.js` (`showStrike` reticles, `playIncoming` with `strikes`, `blast`, `airBurst`), `ui-war.js` + `main.js` (screen), `warfx.js` (show) |
 | Bulletin and chat | `worker.js` `news()`, `chat`; `ui-news.js`, `ui-chat.js`, `main.js` `chatSheet` |
 | Citizen support | `worker.js` `startCitizenSupport2`, `payCitizenSupport`, `flushCitizenSupport` |
 | Google sign-in | `src/google.js`; `worker.js` `google/*`; `ui-account.js` |

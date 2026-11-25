@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, opReport, replayOp, warOpScene, warDefenseScene, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
+import { WARX, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
@@ -22,13 +22,20 @@ function liveOps(st) {
 }
 function chip(o) {
   const out = o.side === "out", r = o.result, now = warNow();
-  const what = o.status === "flying" ? `⏱ ${secLeft(o.arriveAt - now)}` : r?.blocked ? "ما أصابت" : r?.dmg ? `💥 ${ar(r.dmg)}٪` : "🛡️ انعترضت";
-  return `<button type="button" class="wr-chip ${out ? "out" : "in"} ${o.status === "flying" ? "fly" : "done"}" data-wrop="${o.id}">
-    <b>${out ? "➡️" : "⬅️"} ${out ? `«${o.toTown}»` : `«${o.fromTown}»`}</b><small>${o.bname} · ${weaponsText(o.load)}</small><i>${what}</i></button>`;
+  const what = o.status === "flying" ? (o.arriveAt - now > 500 ? `⏱ ${secLeft(o.arriveAt - now)}` : "💥 يوصل الحين") : r?.blocked ? "ما أصابت" : r?.dmg ? `💥 ${ar(r.area?.length || 1)} · ${ar(r.dmg)}٪` : "🛡️ انعترضت";
+  return `<button type="button" class="wr-chip ${out ? "out" : "in"} ${o.status === "flying" ? "fly" : "done"}" data-wrop="${o.id}"><small>${o.bname}</small><span>${weaponsText(o.load)}</span><i>${what}</i></button>`;
 }
 function stripHtml(st) {
   const list = liveOps(st);
-  return list.length ? list.map(chip).join("") : `<p class="hint wr-quiet">ما فيه عمليات بالجو الحين.</p>`;
+  if (!list.length) return `<p class="wr-quiet">◉ الأجواء هادية · ما فيه عمليات بالجو</p>`;
+  // grouped: every town attacking us, then our own operations by target, so several attackers stay readable
+  const groups = new Map();
+  for (const o of list) { const k = `${o.side}:${o.side === "in" ? o.from : o.to}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
+  return [...groups.values()].sort((a, b) => (a[0].side === "in" ? 0 : 1) - (b[0].side === "in" ? 0 : 1)).map((g) => {
+    const o = g[0], flying = g.filter((x) => x.status === "flying"), next = flying.sort((a, b) => a.arriveAt - b.arriveAt)[0];
+    return `<div class="wr-group ${o.side}"><div class="wr-gh"><b>${o.side === "in" ? `⬅️ من «${o.fromTown}»` : `➡️ على «${o.toTown}»`}</b><small>${ar(g.length)} ${g.length > 1 ? "ضربات" : "ضربة"}${next && next.arriveAt - warNow() > 500 ? ` · أقربها ${secLeft(next.arriveAt - warNow())}` : ""}</small></div>
+      <div class="wr-gl">${g.map(chip).join("")}</div></div>`;
+  }).join("");
 }
 /** The front: our town in the middle, the towns we are in conflict with, and every operation moving between. */
 function mapHtml(st) {
@@ -51,6 +58,13 @@ function mapHtml(st) {
 function tick() {
   if (sheetFor !== "warroom") { clearInterval(ROOM.tick); ROOM.tick = null; $("sheet").classList.remove("warroom"); return; }
   const strip = $("wrStrip"); if (strip) { strip.innerHTML = stripHtml(WARX.st); bindStrip(); }
+  const times = WARX.st?.profile ? new Map(launcherTimes(WARX.st).map((x) => [x.key, x])) : new Map();
+  document.querySelectorAll(".wr-launcher").forEach((el) => {
+    const x = times.get(el.dataset.key); if (!x) return;
+    el.className = `wr-launcher ${x.broken ? "broken" : x.left ? "wait" : "ready"}`;
+    el.querySelector("i").textContent = x.broken ? "متعطلة: صلّحها" : x.left ? `⏳ ${secLeft(x.left)}` : "✓ جاهزة";
+    el.querySelector(".bar span").style.width = `${x.left ? Math.max(4, 100 - x.left / 6000) : 100}%`;
+  });
   const now = warNow();
   document.querySelectorAll(".wr-dot").forEach((d) => {
     const [ax, ay] = d.dataset.from.split(",").map(Number), [bx, by] = d.dataset.to.split(",").map(Number), t0 = Number(d.dataset.t0), t1 = Number(d.dataset.t1);
@@ -66,7 +80,7 @@ function bindStrip() {
 function watch(o) {
   sfx.tap();
   ROOM.back = true;
-  if (o.status === "flying" && o.side === "out") warOpScene(o, false);
+  if (o.status === "flying" && o.side === "out") warSalvoScene(salvoOf(o), false);
   else if (o.status === "flying") { toast(`🚨 ${o.bname}: يوصل بعد ${secLeft(o.arriveAt - warNow())}. تشوف المشهد لا وصل`, ""); ROOM.back = false; }
   else if (o.side === "in") warDefenseScene(o);
   else replayOp(o);
@@ -94,31 +108,25 @@ async function enemyTargets(plot) {
 }
 const TARGET_ORDER = ["milhq", "airdef", "radar", "missilepad", "dronebase", "armory", "powerplant", "generator", "solar", "windfarm", "desal", "tank", "factory"];
 
+/** Every pad and drone base with its countdown until it can fire again. */
+function launchersHtml(st) {
+  const list = launcherTimes(st);
+  if (!list.length) return `<div class="need">ما عندك منصات ولا قواعد مسيّرات: ابنها من «البناء ← الدفاع والعسكرية».</div>`;
+  return `<div class="wr-launchers">${list.map((x) => `<div class="wr-launcher ${x.broken ? "broken" : x.left ? "wait" : "ready"}" data-left="${x.left}" data-key="${x.key}">
+    <b>${x.kind === "missilepad" ? "🚀" : "🛩️"} ${x.name}</b><i>${x.broken ? "متعطلة: صلّحها" : x.left ? `⏳ ${secLeft(x.left)}` : "✓ جاهزة"}</i><span class="bar"><span style="width:${x.left ? Math.max(4, 100 - x.left / 6000) : 100}%"></span></span></div>`).join("")}</div>`;
+}
 async function attackTab(st) {
   const wars = st.rels.filter((r) => r.state === "war");
-  if (!wars.length) return `<p class="hint">ما فيه حرب الحين. الهجوم يفتح لا صار بينك وبين مدينة حرب: من «🤝 تفاوض» أو خريطة الجوف.</p>`;
+  const ars = st.arsenal, p = st.profile;
+  const stock = WEAPON_IDS.filter((w) => !weaponBlocker(p, w)).map((w) => `<span class="wr-stock">${WEAPONS[w].icon} ${WEAPONS[w].name} <b>${ar(ars[w])}</b><small>مدى ${ar(WEAPONS[w].blast)}</small></span>`).join("");
+  if (!wars.length) return `<h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}<p class="hint">ما فيه حرب الحين. الهجوم يفتح لا صار بينك وبين مدينة حرب: من «🤝 تفاوض» أو خريطة الجوف.</p>`;
   if (!wars.some((r) => r.other === ROOM.enemy)) ROOM.enemy = wars[0].other;
   const enemy = wars.find((r) => r.other === ROOM.enemy);
-  const list = await enemyTargets(enemy.other);
-  const p = st.profile, ars = st.arsenal;
-  const pick = ROOM.pick[enemy.other] ||= {};
-  const avail = WEAPON_IDS.filter((w) => !weaponBlocker(p, w) && ars[w] > 0);
-  const opts = (sel) => avail.map((w) => `<option value="${w}" ${sel === w ? "selected" : ""}>${WEAPONS[w].icon} ${WEAPONS[w].name} (${ar(ars[w])})</option>`).join("");
-  const chosen = Object.entries(pick).filter(([, v]) => v.on);
-  const need = {}; let fee = 0, eta = 0, value = 0;
-  for (const [, v] of chosen) { need[v.w] = (need[v.w] || 0) + v.n; fee += WEAPONS[v.w].fee * v.n; value += WEAPONS[v.w].price * v.n; eta = Math.max(eta, flightMs(me().plot, enemy.other, v.w)); }
-  const short = Object.entries(need).filter(([w, n]) => ars[w] < n).map(([w, n]) => `${WEAPONS[w].name}: تحتاج ${ar(n)} وعندك ${ar(ars[w])}`);
-  return `<div class="wr-enemies">${wars.map((r) => `<button type="button" class="${r.other === enemy.other ? "on" : ""}" data-wrenemy="${r.other}">${REL_ICONS[r.state]} «${r.town}»<small>${relTimer(r)}</small></button>`).join("")}</div>
-    ${list == null ? `<div class="need">ما قدرت أجيب مباني «${enemy.town}». جرّب بعد شوي.</div>` : !list.length ? `<p class="hint">ما عندها منشآت تنضرب.</p>` : !avail.length ? `<div class="need">💡 ما عندك أسلحة جاهزة: عبّ من «🛡️ دفاع وتعبئة».</div>` : `
-    <p class="hint">اختر الأهداف، ولكل هدف سلاحه وعدده. الدفعة تنطلق مرة وحدة، وكل هدف له نتيجته. (حد الدفعة ٦ أهداف)</p>
-    <div class="wr-targets">${list.slice(0, 18).map((t) => { const k = `${t.x}:${t.y}`, v = pick[k] || { on: false, w: avail[0], n: 1 }; pick[k] = v; return `<div class="wr-target ${v.on ? "on" : ""}">
-      <label><input type="checkbox" data-wrpick="${k}" ${v.on ? "checked" : ""}><span><b>${B[t.id].name}</b><small>${TARGETS[t.id] || ""}${t.wd ? ` · ${damageState(t.wd).name} ${ar(Math.round(t.wd))}٪` : ""}</small></span></label>
-      ${v.on ? `<span class="wr-load"><select data-wrw="${k}">${opts(v.w)}</select><span class="step"><button type="button" data-wrdec="${k}">−</button><b>${ar(v.n)}</b><button type="button" data-wrinc="${k}">+</button></span></span>` : ""}</div>`; }).join("")}</div>
-    <div class="rows">${row("الأهداف", `${ar(chosen.length)} من ٦`)}${row("الذخيرة", Object.entries(need).map(([w, n]) => `${ar(n)}× ${WEAPONS[w].name}`).join(" · ") || "—")}
-      ${row("تكلفة التشغيل", `${money(fee)} ريال`, "minus")}${row("قيمة الذخائر", `${money(value)} ريال`)}${row("وقت الوصول", eta ? `تقريبًا ${secLeft(eta)}` : "—")}</div>
-    ${short.length ? `<div class="need">${short.join("<br>")}</div>` : ""}
-    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFire" ${!chosen.length || chosen.length > 6 || short.length ? "disabled" : ""}>🚀 أطلق الدفعة (${ar(chosen.length)} أهداف)</button>
-      <button class="btn block" type="button" id="wrMapTarget">🗺️ أو اختر هدف واحد من المدينة نفسها</button></div>`}`;
+  return `<div class="wr-enemies">${wars.map((r) => `<button type="button" class="${r.other === enemy.other ? "on" : ""}" data-wrenemy="${r.other}">🔥 «${r.town}»<small>${relTimer(r).replace(/^\s*·\s*/, "")}</small></button>`).join("")}</div>
+    <div class="wr-aim"><b>🎯 اختر أماكن الضربة على «${enemy.town}»</b><small>تدخل على مدينتهم، وتضغط أي مكان: الضربة تنزل عليه وعلى اللي حوله حسب مدى السلاح. لين ٦ أماكن بالدفعة، ولكل مكان سلاحه. المساجد محمية.</small>
+      <button class="btn go block" type="button" id="wrMapTarget">🎯 افتح مدينة «${enemy.town}» واختر الأماكن</button></div>
+    <h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}
+    <h3>📦 الذخيرة</h3><div class="wr-stocks">${stock || "—"}</div>`;
 }
 function defTab(st) {
   const p = st.profile, ars = st.arsenal, caps = st.caps, home = visiting ? visiting.home : S;
@@ -186,10 +194,11 @@ export async function warRoom(tab = ROOM.tab) {
   const st = WARX.st;
   if (!st) { sheet(`<h2>⚔️ غرفة العمليات</h2><div class="need">ما قدرت أوصل للسيرفر.</div>`, "warroom"); return; }
   const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "enemies" ? enemiesTab(st) : tab === "talk" ? talkTab(st) : logTab(st);
-  const wars = st.rels.filter((r) => ["war", "warning"].includes(r.state)).length, incoming = st.ops.filter((o) => o.side === "in" && o.status === "flying").length;
+  const wars = st.rels.filter((r) => ["war", "warning"].includes(r.state)).length, inc = st.ops.filter((o) => o.side === "in" && o.status === "flying"), incoming = inc.length, attackers = new Set(inc.map((o) => o.from)).size;
   const keep = $("sheetBody").querySelector(".wr-body")?.scrollTop || 0;
-  sheet(`<h2>⚔️ غرفة العمليات</h2>
-    <p class="wr-sum">${wars ? `🔥 ${ar(wars)} حرب` : "🕊️ ما فيه حرب"} · ${incoming ? `<b class="minus">🚨 ${ar(incoming)} هجوم جاي</b>` : "لا هجمات جاية"} · 💰 ${money(home.money)}</p>
+  sheet(`<div class="wr-head"><span class="wr-radar"><i></i></span><span><h2>غرفة العمليات</h2><small>صراع الجوف · ${ERAS[home.era || 0].name}</small></span></div>
+    <div class="wr-kpis"><div class="${wars ? "hot" : ""}"><b>${ar(wars)}</b><span>🔥 حروب</span></div><div class="${incoming ? "hot" : ""}"><b>${ar(incoming)}</b><span>🚨 ${attackers > 1 ? `هجوم من ${ar(attackers)} مدن` : "هجوم جاي"}</span></div>
+      <div><b>${ar(st.arsenal.intc)}</b><span>🛡️ اعتراض</span></div><div><b>${home.money >= 1e6 ? `${ar((home.money / 1e6).toFixed(1))} م` : money(home.money)}</b><span>💰 الميزانية</span></div></div>
     <div class="wr-strip" id="wrStrip">${stripHtml(st)}</div>
     ${mapHtml(st)}
     <div class="war-tabs wr-tabs">${TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wrtab="${k}">${n}</button>`).join("")}</div>
@@ -209,30 +218,7 @@ function bind(st) {
   q("[data-wrtalk]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalk); warRoom("talk"); }));
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
-  // the batch: pick targets, weapons and how many
-  const pick = ROOM.pick[ROOM.enemy] || {};
-  q("[data-wrpick]").forEach((b) => b.addEventListener("change", () => {
-    const v = pick[b.dataset.wrpick]; v.on = b.checked;
-    if (v.on && Object.values(pick).filter((x) => x.on).length > 6) { v.on = false; toast("الدفعة ٦ أهداف بالكثير", "bad"); }
-    sfx.tap(); warRoom("attack");
-  }));
-  q("[data-wrw]").forEach((s) => s.addEventListener("change", () => { pick[s.dataset.wrw].w = s.value; warRoom("attack"); }));
-  q("[data-wrinc]").forEach((b) => b.addEventListener("click", () => { const v = pick[b.dataset.wrinc]; v.n = Math.min(8, v.n + 1); sfx.tap(); warRoom("attack"); }));
-  q("[data-wrdec]").forEach((b) => b.addEventListener("click", () => { const v = pick[b.dataset.wrdec]; v.n = Math.max(1, v.n - 1); sfx.tap(); warRoom("attack"); }));
   $("wrMapTarget")?.addEventListener("click", () => { closeSheet(); startTargeting(ROOM.enemy); });
-  $("wrFire")?.addEventListener("click", async () => {
-    const targets = Object.entries(pick).filter(([, v]) => v.on).map(([k, v]) => { const [x, y] = k.split(":").map(Number); return { x, y, load: { [v.w]: v.n } }; });
-    $("wrFire").disabled = true;
-    await warSyncNow();
-    const op = `salvo${warReq()}`;
-    let r = await warApi("salvo", { op, to: ROOM.enemy, targets });
-    if (r.error === "ما قدرت أوصل للسيرفر: جرّب بعد شوي") { await new Promise((ok) => setTimeout(ok, 1500)); r = await warApi("salvo", { op, to: ROOM.enemy, targets }); } // the same id: never twice
-    if (r.error) { toast(r.error, "bad"); sfx.deny(); $("wrFire").disabled = false; return; }
-    sfx.goal?.(); toast(`🚀 انطلقت الدفعة: ${ar(r.ops.length)} أهداف · تكلفة ${money(r.charge?.amount || 0)} ريال`, "goal");
-    ROOM.pick[ROOM.enemy] = {};
-    await warPoll(true);
-    warRoom("attack");
-  });
   // defence and refilling
   const buy = async (kind, n) => { const r = await warApi("buy", { req: warReq(), kind, n }); if (r.error) { toast(r.error, "bad"); sfx.deny(); return false; } return r; };
   q("[data-wrbuy]").forEach((b) => b.addEventListener("click", async () => {
