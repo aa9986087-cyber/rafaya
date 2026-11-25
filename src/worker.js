@@ -51,7 +51,7 @@ const CITIZEN_TITLE = "حساب المواطن";
 const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن في ميزانية مدينتك داخل لعبة الرافعية.";
 // The second round (the owner, 2026-11-25): 250 riyals a week for three weeks, to towns under 1,000; it may be taken back later.
 const CITIZEN2_AMOUNT = 250, CITIZEN2_WEEKS = 3, WEEK = 7 * 86400000;
-const CITIZEN2_NOTE = (n) => `💰 حساب المواطن: تم صرف ٢٥٠ ريال في ميزانية مدينتك (الدفعة ${["الأولى", "الثانية", "الثالثة"][n - 1]} من ثلاث، كل أسبوع دفعة) لأن رصيدها أقل من ألف ريال. هذا دعم مؤقت من حساب المواطن، ويمكن نسترده بعدين.`;
+const CITIZEN2_NOTE = () => "💰 مبروك نزلك حساب مواطن بقيمة ٢٥٠ ريال، ويمكن نسترده بعدين 🏃🏻";
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game keeps working. Set back to true to reopen.
@@ -350,7 +350,7 @@ export class Board extends DurableObject {
       }
       this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
       this.news("citizenSupport", plots.length
-        ? (round.round === "c2" ? "💰 صُرفت دفعة حساب المواطن (٢٥٠ ريال) للمدن اللي رصيدها أقل من ألف. دعم مؤقت ويمكن نسترده بعدين." : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
+        ? (round.round === "c2" ? "💰 نزل حساب المواطن بقيمة ٢٥٠ ريال للمدن اللي رصيدها أقل من ألف، ويمكن نسترده بعدين 🏃🏻" : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
         : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.", null, null, false);
       return plots;
     });
