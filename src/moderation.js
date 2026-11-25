@@ -1,4 +1,5 @@
 const protectedNames = ["عايض", "الفرحان", "غوينم", "سكران", "ترازا", "محاميد", "محدا", "رمال", "نمصان"];
+const abusiveNames = ["نياج الخروق", "نياج خروق", "نياك الخروق", "نياك خروق"];
 const insults = [
   "كلب", "كلبه", "حمار", "حماره", "حقير", "حقيره", "غبي", "غبيه", "زباله", "نذل",
   "قحب", "قحبه", "شرموط", "شرموطه", "خرا", "خره", "زق", "ديوث", "خنيث", "زاني", "زانيه",
@@ -17,14 +18,18 @@ function normalize(text) {
 
 // Treat spaces, punctuation and digits inside a term as separators while still matching whole words.
 const separator = "[^\\p{L}]";
-export function createModeration({ names = [], words = [] } = {}) {
+export const nameRuleKey = (text) => normalize(text).replace(/[^\p{L}]/gu, "");
+export function createModeration({ names = [], words = [], nameOnly = [] } = {}) {
   const families = [...protectedNames, ...names];
-  const terms = [...families, ...insults, ...words].map((term) => term.replaceAll(" ", "").split("").join(`${separator}*`));
+  const terms = [...families, ...insults, ...abusiveNames, ...words].map(nameRuleKey).filter(Boolean).map((term) => [...term].join(`${separator}*`));
+  const explicitNames = [...abusiveNames, ...nameOnly].map(nameRuleKey).filter(Boolean);
+  const blockedNames = [...families.map(nameRuleKey).filter(Boolean), ...explicitNames];
   const chatPattern = new RegExp(`(?:^|${separator})(?:[وف])?(?:يا${separator}*)?(?:ال${separator}*){0,2}(?:${terms.join("|")})(?=$|${separator})`, "u");
   const blockedChat = (text) => chatPattern.test(normalize(text));
+  const blockedExplicitName = (text) => { const compact = nameRuleKey(text); return explicitNames.some((name) => compact.includes(name)); };
   const blockedName = (text) => {
-    const compact = normalize(text).replace(/[^\p{L}]/gu, "");
-    return families.some((name) => compact.includes(name)) || blockedChat(text);
+    const compact = nameRuleKey(text);
+    return blockedNames.some((name) => compact.includes(name)) || blockedChat(text);
   };
-  return { blockedChat, blockedName };
+  return { blockedChat, blockedName, blockedExplicitName };
 }

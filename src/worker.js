@@ -33,7 +33,7 @@ import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { pendingSaveMatches } from "../js/save-version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
-import { createModeration } from "./moderation.js";
+import { createModeration, nameRuleKey } from "./moderation.js";
 import { REVIEW_ROUTES, verifyReview } from "./review-access.js";
 import { googleSub } from "./google.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
@@ -100,7 +100,8 @@ export class Board extends DurableObject {
     this.sql.exec("CREATE INDEX IF NOT EXISTS feedback_sender ON feedback (name, at DESC)");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     const configuredModeration = this.sql.exec("SELECT value FROM meta WHERE key = 'private_moderation'").toArray()[0]?.value;
-    this.moderation = createModeration(configuredModeration ? JSON.parse(configuredModeration) : {});
+    this.moderationConfig = configuredModeration ? JSON.parse(configuredModeration) : {};
+    this.moderation = createModeration(this.moderationConfig);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support (day INTEGER PRIMARY KEY, due INTEGER NOT NULL, closes INTEGER NOT NULL, paid_at INTEGER, recipients INTEGER)`);
     try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN amount INTEGER"); } catch { /* already there */ } // empty: the first round's 100
     try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN note TEXT"); } catch { /* already there */ }
@@ -118,6 +119,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN purged INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
     // the owner asks a player to change a name that breaks the rules: player name and/or town (what: "name", "town", "both");
     // not done within a real day, the town is taken off al-Jouf (the request stays until the player changes)
@@ -135,6 +137,9 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS backups (code TEXT PRIMARY KEY, data TEXT, at INTEGER)`);
     this.backupFails = [];
     try { this.sql.exec("ALTER TABLE moves ADD COLUMN code TEXT"); } catch { /* already there */ } // 6 digits to type in the app (24 h)
+    for (const table of ["moves", "backups"]) {
+      try { this.sql.exec(`ALTER TABLE ${table} ADD COLUMN owner TEXT`); } catch { /* already there */ }
+    }
     this.moveFails = [];
     this.sql.exec(`CREATE TABLE IF NOT EXISTS handoff (code TEXT PRIMARY KEY, name TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS keys (name TEXT, secret TEXT, at INTEGER)`);
@@ -287,15 +292,15 @@ export class Board extends DurableObject {
     if (m.t === "ping") { // the game is open and in front (it only pings while visible)
       const a = ws.deserializeAttachment() || {}, now = Date.now();
       // time played: the gap since the last sign of life, at most 45 s (a ping comes every 30 s while in front)
-      if (a.name && a.seen) { const gap = Math.min(45, Math.max(0, Math.round((now - a.seen) / 1000))); if (gap) this.sql.exec("UPDATE players SET played = played + ? WHERE name = ?", gap, a.name); }
+      if (a.name && a.seen) { const gap = Math.min(45, Math.max(0, Math.round((now - a.seen) / 1000))); if (gap) this.sql.exec("UPDATE players SET played = played + ? WHERE name = ? AND banned = 0", gap, a.name); }
       ws.serializeAttachment({ ...a, seen: now });
       try { ws.send('{"t":"pong"}'); } catch { /* gone */ }
       return;
     }
     if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
-      const row = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", clean(m.name, 16)).toArray()[0];
-      const ok = await this.keyOk(clean(m.name, 16), row, m.secret);
-      ws.serializeAttachment({ plot: ok ? row.plot : null, name: ok ? clean(m.name, 16) : null, seen: Date.now() });
+      const row = await this.playerWithKey(clean(m.name, 16), m.secret);
+      const ok = !!row && !row.banned;
+      ws.serializeAttachment({ plot: ok ? row.plot : null, name: ok ? row.name : null, seen: Date.now() });
       try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
     }
   }
@@ -411,6 +416,43 @@ export class Board extends DurableObject {
     // no line in the bulletin: the owner wants removed towns left unannounced (why stays for the caller)
     this.live({ t: "town", plot });
   }
+  /** Called inside the ban transaction. Keep only the moderator's ban record and linked identity hash. */
+  purgePlayer(name, reason) {
+    const exec = (query, ...values) => this.sql.exec(query, ...values);
+    const towns = exec("SELECT plot, town FROM plots WHERE owner = ?", name).toArray();
+    const chat = exec("SELECT id, town FROM chat WHERE name = ?", name).toArray();
+    const labels = new Set([name, ...towns.map((t) => t.town), ...chat.map((r) => r.town)]);
+    for (const { plot } of towns) {
+      const key = String(plot);
+      const matchOps = "FROM war WHERE tbl = 'op' AND (k1 = ? OR k2 = ?)";
+      for (const row of exec(`SELECT DISTINCT CASE WHEN k1 = ? THEN json_extract(data, '$.fromTown') ELSE json_extract(data, '$.toTown') END AS town ${matchOps}`, key, key, key).toArray()) labels.add(row.town);
+      exec(`DELETE FROM war WHERE tbl = 'fly' AND id IN (SELECT id ${matchOps})`, key, key);
+      exec(`DELETE FROM war WHERE tbl IN ('note', 'req')
+        AND coalesce(json_extract(data, '$.op'), json_extract(data, '$.res.op.id')) IN (SELECT id ${matchOps})`, key, key);
+      exec(`DELETE FROM war WHERE k1 = ? OR k2 = ?
+        OR (tbl = 'note' AND json_extract(data, '$.from') = ?)
+        OR (tbl = 'dmg' AND json_extract(data, '$.by') = ?)
+        OR (tbl = 'hit' AND json_extract(data, '$.from') = ?)`, key, key, plot, plot, plot);
+      exec("DELETE FROM pushq WHERE k IN (SELECT k FROM pushsubs WHERE plot = ?)", plot);
+      for (const table of ["pushsubs", "citizen_support_push", "reports", "wnews"]) exec(`DELETE FROM ${table} WHERE plot = ?`, plot);
+      exec("DELETE FROM comments WHERE code = ?", `w${plot}`);
+      exec("DELETE FROM plots WHERE plot = ? AND owner = ?", plot, name);
+    }
+    for (const label of labels) if (label) {
+      const mention = `«${label}»`;
+      exec("DELETE FROM wnews WHERE kind IN ('town', 'move', 'rename', 'removed', 'era', 'pop', 'restart', 'war', 'truce', 'peace', 'hit', 'intercept') AND instr(text, ?) > 0", mention);
+      exec("DELETE FROM pushq WHERE tag GLOB 'war-*' AND instr(body, ?) > 0", mention);
+      // Keep other players' charges and their sequence numbers, with the removed town's name stripped.
+      exec("UPDATE war SET data = json_set(data, '$.why', ?) WHERE tbl = 'charge' AND json_extract(data, '$.why') = ?", "تشغيل عملية على مدينة محذوفة", `تشغيل عملية على ${mention}`);
+    }
+    for (const table of ["chat", "feedback", "namefix", "handoff", "keys"]) exec(`DELETE FROM ${table} WHERE name = ?`, name);
+    for (const table of ["moves", "backups", "awayfix"]) exec(`DELETE FROM ${table} WHERE owner = ?`, name);
+    exec("DELETE FROM comments WHERE author = ?", name);
+    exec("DELETE FROM reports WHERE by = ?", name);
+    exec(`UPDATE players SET banned = 1, purged = 1, ban_reason = ?, plot = NULL, secret = NULL,
+      recovery = NULL, created = 0, played = 0, renamed = 0, chat_warned = 0, chat_muted_until = 0 WHERE name = ?`, reason, name);
+    return { plots: towns.map((t) => t.plot), chatIds: chat.map((r) => r.id) };
+  }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
     if (WORLD_OPEN) {
@@ -449,7 +491,7 @@ export class Board extends DurableObject {
   /** A player's name changes everywhere it is kept. */
   renamePlayer(name, newName) {
     this.sql.exec("UPDATE players SET name = ? WHERE name = ?", newName, name);
-    for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["feedback", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
+    for (const [tbl, col] of [["plots", "owner"], ["moves", "owner"], ["backups", "owner"], ["awayfix", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["feedback", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
   }
   /** Is this town name already used in al-Jouf (by another plot)? */
   nameTaken(town, plot = -1) {
@@ -461,13 +503,19 @@ export class Board extends DurableObject {
     if (request.method !== "POST") return json({ error: "post" }, 405);
     const body = await request.json().catch(() => ({})), now = Date.now();
     this.sql.exec("DELETE FROM moves WHERE at < ?", now - 7 * 86400000);
+    let owner = null;
+    if ((action === "put" || action === "backup") && body.account != null) {
+      const player = await this.playerWithKey(clean(body.account.name, 16), body.account.secret);
+      if (!player || player.banned) return json({ error: "ما تقدر تسوي نسخة بهالحساب" }, 403);
+      owner = player.name;
+    }
     if (action === "put") { // Safari: a fresh copy (the old token, if given, is replaced)
       const data = String(body.data || "");
       if (!data || data.length > 1800000) return json({ error: "كبير" }, 413);
       if (body.old) this.sql.exec("DELETE FROM moves WHERE token = ?", String(body.old).replace(/[^a-f0-9]/g, "").slice(0, 32));
       const token = makeSecret();
       let code; do { code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)); } while (this.sql.exec("SELECT 1 FROM moves WHERE code = ?", code).toArray().length);
-      this.sql.exec("INSERT INTO moves (token, data, at, code) VALUES (?, ?, ?, ?)", token, data, now, code);
+      this.sql.exec("INSERT INTO moves (token, data, at, code, owner) VALUES (?, ?, ?, ?, ?)", token, data, now, code, owner);
       return json({ token, code });
     }
     if (action === "backup") { // a short code for this town's copy (the same phone asking again replaces its last one)
@@ -480,7 +528,7 @@ export class Board extends DurableObject {
         let next;
         do { next = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => abc[b % abc.length]).join(""); }
         while (this.sql.exec("SELECT 1 FROM backups WHERE code = ?", next).toArray().length);
-        this.sql.exec("INSERT INTO backups (code, data, at) VALUES (?, ?, ?)", next, data, now);
+        this.sql.exec("INSERT INTO backups (code, data, at, owner) VALUES (?, ?, ?, ?)", next, data, now, owner);
         if (old) this.sql.exec("DELETE FROM backups WHERE code = ?", old);
         return next;
       });
@@ -577,20 +625,39 @@ export class Board extends DurableObject {
     }
     if (p[0] === "players") {
       const q = `%${clean(new URL(request.url).searchParams.get("q"), 20)}%`;
-      const list = this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray();
+      const list = this.sql.exec("SELECT p.name, p.plot, p.created, p.banned, p.ban_reason, p.purged, t.town, t.pop, t.money, t.era, t.updated FROM players p LEFT JOIN plots t ON t.plot = p.plot WHERE p.name LIKE ? OR t.town LIKE ? ORDER BY t.pop DESC LIMIT 50", q, q).toArray();
       for (const r of list) { // each phone with notifications on: its push service, and the service's last answer (201 = taken)
         r.phones = r.plot == null ? [] : this.sql.exec("SELECT endpoint, created, last_status, last_at, p256dh IS NOT NULL AS keyed FROM pushsubs WHERE plot = ? ORDER BY created DESC", r.plot).toArray()
           .map((x) => { let host = ""; try { host = new URL(x.endpoint).host; } catch { /* blank */ } return { host, created: x.created, status: x.last_status, at: x.last_at, keyed: !!x.keyed }; });
       }
       return json({ list });
     }
-    if (post && p[0] === "ban") {
+    if (post && (p[0] === "ban" || p[0] === "remove")) {
       const nm = clean(body.name, 16);
-      if (!one("SELECT 1 x FROM players WHERE name = ?", nm)) return json({ error: "ما لقيت اللاعب" });
-      this.sql.exec("UPDATE players SET banned = ?, ban_reason = ? WHERE name = ?", body.on ? 1 : 0, clean(body.reason, 100), nm);
-      const dev = one("SELECT device FROM players WHERE name = ?", nm)?.device;
-      if (dev) { if (body.on) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", dev, nm, now); else this.sql.exec("DELETE FROM banned_devices WHERE device = ?", dev); }
-      return json({ ok: true });
+      const player = one("SELECT purged, device FROM players WHERE name = ?", nm);
+      if (!player) return json({ error: "ما لقيت اللاعب" });
+      const reason = clean(body.reason, 100);
+      if (body.purge === true || p[0] === "remove") {
+        if (p[0] === "ban" && body.on !== true) return json({ error: "الحذف لازم يكون مع الحظر" }, 400);
+        const removed = this.ctx.storage.transactionSync(() => {
+          if (player.device) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", player.device, nm, now);
+          return this.purgePlayer(nm, reason);
+        });
+        for (const ws of this.ctx.getWebSockets()) if (ws.deserializeAttachment()?.name === nm) {
+          try { ws.send('{"t":"banned","purged":true}'); ws.close(1008, "Account banned"); } catch { /* already closed */ }
+        }
+        if (removed.chatIds.length) this.live({ t: "chatdel", ids: removed.chatIds });
+        for (const plot of removed.plots) this.live({ t: "town", plot, removed: true });
+        this.live({ t: "news" }); this.live({ t: "war" });
+        return json({ ok: true, purged: true });
+      }
+      this.ctx.storage.transactionSync(() => {
+        if (body.on && player.device) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", player.device, nm, now);
+        if (!body.on) this.sql.exec("DELETE FROM banned_devices WHERE name = ?", nm);
+        if (!body.on && player.purged) this.sql.exec("DELETE FROM players WHERE name = ?", nm);
+        else this.sql.exec("UPDATE players SET banned = ?, ban_reason = ? WHERE name = ?", body.on ? 1 : 0, reason, nm);
+      });
+      return json({ ok: true, freshStart: !body.on && !!player.purged });
     }
     if (!post && p[0] === "gifts") { // the gifts sent, and whether each town's game has taken it yet
       const plots = new Map(this.sql.exec("SELECT plot, town, owner FROM plots").toArray().map((t) => [String(t.plot), t]));
@@ -606,27 +673,39 @@ export class Board extends DurableObject {
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", amount, plot);
       return json({ ok: true, town: t.town });
     }
-    if (post && p[0] === "remove") { // the owner deletes a player: their town leaves al-Jouf quietly, and the name is free no more
-      const nm = clean(body.name, 16), pl = one("SELECT plot, device FROM players WHERE name = ?", nm);
-      if (!pl) return json({ error: "ما لقيت اللاعب" });
-      this.ctx.storage.transactionSync(() => {
-        if (pl.plot != null) this.removeTown(pl.plot, "حذف من الإدارة");
-        this.sql.exec("DELETE FROM wnews WHERE plot = ? AND kind = 'town'", pl.plot ?? -1);
-        this.sql.exec("DELETE FROM chat WHERE name = ?", nm);
-        for (const tbl of ["keys", "handoff", "namefix"]) this.sql.exec(`DELETE FROM ${tbl} WHERE name = ?`, nm);
-        if (pl.device) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", pl.device, nm, now); // deleted for good: the phone stays out
-        this.sql.exec("DELETE FROM players WHERE name = ?", nm);
-      });
-      this.live({ t: "news" });
-      return json({ ok: true });
-    }
     if (post && p[0] === "rename") {
       const plot = int(body.plot), town = clean(body.town, 20), t = one("SELECT town FROM plots WHERE plot = ?", plot);
-      if (!t || town.length < 2) return json({ error: "الاسم ما يصلح" });
+      if (!t || town.length < 2 || badText(town) || this.moderation.blockedName(town)) return json({ error: "الاسم ما يصلح" });
       if (this.nameTaken(town, plot)) return json({ error: "الاسم مأخوذ" });
       this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", town, plot);
       this.live({ t: "town", plot });
       return json({ ok: true });
+    }
+    if (p.length === 1 && p[0] === "name-rules") {
+      if (!owner) return json({ error: "هذي القائمة للإدارة فقط" }, 403);
+      if (post) {
+        if (typeof body.lines !== "string" || body.lines.length > 4000) return json({ error: "القائمة طويلة أو غير صحيحة" }, 400);
+        const entries = new Map();
+        for (const line of body.lines.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+          const key = nameRuleKey(line);
+          if (key.length < 3 || line.length > 40) return json({ error: "كل سطر لازم فيه ٣ حروف على الأقل وبحد أقصى ٤٠ خانة" }, 422);
+          if (!entries.has(key)) entries.set(key, line);
+        }
+        if (entries.size > 100) return json({ error: "الحد ١٠٠ اسم أو عبارة" }, 422);
+        const config = { ...this.moderationConfig, nameOnly: [...entries.values()] };
+        this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('private_moderation', ?)", JSON.stringify(config));
+        this.moderationConfig = config;
+        this.moderation = createModeration(config);
+        this.live({ t: "news" });
+      } else if (request.method !== "GET") return json({ error: "not found" }, 404);
+      const matches = [];
+      const players = this.sql.exec("SELECT p.name, t.town FROM players p LEFT JOIN plots t ON t.plot = p.plot AND t.owner = p.name WHERE p.banned = 0 ORDER BY p.created DESC").toArray();
+      for (const player of players) {
+        const name = this.moderation.blockedName(player.name), town = !!player.town && this.moderation.blockedName(player.town);
+        if (name || town) matches.push({ ...player, what: name && town ? "both" : name ? "name" : "town" });
+        if (matches.length === 30) break;
+      }
+      return json({ rules: this.moderationConfig.nameOnly || [], matches });
     }
     if (p[0] === "namefix") { // ask a player to change their name and/or town's name, with the reasons; cancel; the list
       if (post && body.cancel) { this.sql.exec("DELETE FROM namefix WHERE name = ?", clean(body.cancel, 16)); return json({ ok: true }); }
@@ -675,12 +754,14 @@ export class Board extends DurableObject {
     return json({ error: "not found" }, 404);
   }
   /** Is this the player's key (the first one, or one given to another app by a move code)? */
-  async keyOk(name, row, secret) {
+  async playerWithKey(name, secret) {
     const h = await hash(String(secret || ""));
-    return !!row && (row.secret === h || this.sql.exec("SELECT 1 FROM keys WHERE name = ? AND secret = ?", name, h).toArray().length > 0);
+    return this.sql.exec(`SELECT p.name, p.plot, p.banned FROM players p WHERE p.name = ?
+      AND (p.secret = ? OR EXISTS (SELECT 1 FROM keys k WHERE k.name = p.name AND k.secret = ?))`, name, h, h).toArray()[0];
   }
   /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
   news(kind, text, plot = null, n = null, notify = true) {
+    if (this.moderation.blockedExplicitName(text)) return;
     if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
     this.sql.exec("INSERT INTO wnews (kind, plot, n, text, at) VALUES (?, ?, ?, ?, ?)", kind, plot, n, text, Date.now());
     this.sql.exec("DELETE FROM wnews WHERE id NOT IN (SELECT id FROM wnews ORDER BY id DESC LIMIT 300)");
@@ -722,7 +803,7 @@ export class Board extends DurableObject {
     if (!post && p[0] === "news") {
       const after = int(new URL(request.url).searchParams.get("after"));
       const items = this.sql.exec("SELECT id, kind, plot, text, at FROM wnews WHERE id > ? ORDER BY id DESC LIMIT 60", after).toArray();
-      return json({ items, now: Date.now() });
+      return json({ items: items.filter((item) => !this.moderation.blockedExplicitName(item.text)), now: Date.now() });
     }
     if (!post && p[0] === "manifest") { // the app's manifest, opening at /?link=TOKEN: the home-screen app takes the account over by itself
       const q = new URL(request.url).searchParams, t = String(q.get("t") || "").replace(/[^a-f0-9]/g, "").slice(0, 32), mv = String(q.get("m") || "").replace(/[^a-f0-9]/g, "").slice(0, 32);
@@ -787,20 +868,23 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       return json({ name, secret, recovery });
     }
     if (post && p[0] === "recover") {
-      const name = clean(body.name, 16), row = this.sql.exec("SELECT recovery, plot FROM players WHERE name = ?", name).toArray()[0];
-      if (!row || row.recovery !== (await hash(String(body.recovery || "").toUpperCase().trim()))) return json({ error: "wrong" }, 403);
-      const secret = makeSecret();
-      this.sql.exec("UPDATE players SET secret = ? WHERE name = ?", await hash(secret), name);
+      const name = clean(body.name, 16), secret = makeSecret();
+      const [recovery, key] = await Promise.all([hash(String(body.recovery || "").toUpperCase().trim()), hash(secret)]);
+      const row = this.sql.exec("SELECT recovery, plot, banned FROM players WHERE name = ?", name).toArray()[0];
+      if (!row || row.recovery !== recovery) return json({ error: "wrong" }, 403);
+      if (row.banned) return json({ error: "banned" }, 403);
+      this.sql.exec("UPDATE players SET secret = ? WHERE name = ?", key, name);
       return json({ name, secret, plot: row.plot });
     }
     if (post && p[0] === "google" && p[1] === "login") { // «الدخول بحساب قوقل»: a linked Google account → its player, with a key of its own
       const sub = await googleSub(body.credential);
       if (!sub) return json({ error: "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" }, 403);
-      const pl = this.sql.exec("SELECT name, plot, banned FROM players WHERE google = ?", await hash("g:" + sub)).toArray()[0];
+      const secret = makeSecret();
+      const [google, key] = await Promise.all([hash("g:" + sub), hash(secret)]);
+      const pl = this.sql.exec("SELECT name, plot, banned FROM players WHERE google = ?", google).toArray()[0];
       if (!pl) return json({ error: "none" }, 404); // no player linked to this Google account yet
       if (pl.banned) return json({ error: "banned" }, 403);
-      const secret = makeSecret();
-      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, await hash(secret), Date.now());
+      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, key, Date.now());
       return json({ name: pl.name, secret, plot: pl.plot });
     }
     if (post && p[0] === "handoff" && p[1] === "claim") { // the new app: a move code → this player, with a key of its own
@@ -809,24 +893,27 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (this.handoffFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
       const raw = String(body.code || ""), long = raw.length > 6;
       const code = long ? raw.replace(/[^a-f0-9]/g, "").slice(0, 32) : raw.replace(/\D/g, "").slice(0, 6);
+      const secret = makeSecret(), key = await hash(secret);
       const row = this.sql.exec("SELECT name, at FROM handoff WHERE code = ?", code).toArray()[0];
       if (!row || now - row.at > (long ? 7 * 86400000 : 86400000)) { this.handoffFails.push(now); return json({ error: "الرمز غلط أو انتهى (صالح ٢٤ ساعة)" }); }
       this.sql.exec("DELETE FROM handoff WHERE code = ?", code);
-      const pl = this.sql.exec("SELECT name, plot FROM players WHERE name = ?", row.name).toArray()[0];
+      const pl = this.sql.exec("SELECT name, plot, banned FROM players WHERE name = ?", row.name).toArray()[0];
       if (!pl) return json({ error: "ما لقيت الحساب" });
-      const secret = makeSecret();
-      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, await hash(secret), now);
+      if (pl.banned) return json({ error: "banned" }, 403);
+      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, key, now);
       return json({ name: pl.name, secret, plot: pl.plot });
     }
     // everything below needs the player's own secret
-    const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
-    if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
-    if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    const name = clean(body.name, 16), me = await this.playerWithKey(name, body.secret);
+    if (!me) return json({ error: "who are you" }, 403);
+    if (me.banned) return json({ error: "banned" }, 403);
     if (device) this.sql.exec("UPDATE players SET device = ? WHERE name = ? AND (device IS NULL OR device != ?)", device, name, device);
     if (post && p[0] === "google" && p[1] === "link") { // link this player to a Google account (one account, one player)
       const sub = await googleSub(body.credential);
       if (!sub) return json({ error: "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" }, 403);
-      const g = await hash("g:" + sub), other = this.sql.exec("SELECT name FROM players WHERE google = ?", g).toArray()[0];
+      const g = await hash("g:" + sub), player = await this.playerWithKey(name, body.secret);
+      if (!player || player.banned) return json({ error: "banned" }, 403);
+      const other = this.sql.exec("SELECT name FROM players WHERE google = ?", g).toArray()[0];
       if (other && other.name !== name) return json({ error: `حساب قوقل هذا مربوط بلاعب ثاني («${other.name}»)` }, 409);
       this.sql.exec("UPDATE players SET google = ? WHERE name = ?", g, name);
       return json({ ok: true });
@@ -1027,10 +1114,12 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const okUrl = /^https:\/\//.test(endpoint) || (this.env?.WAR_TEST === "1" && /^http:\/\/localhost/.test(endpoint)); // local tests: a fake push service
       if (!okUrl || endpoint.length > 1000 || me.plot == null) return json({ error: "bad" }, 400);
       if (body.keys != null && !pushKeys(body.keys)) return json({ error: "subscription keys" }, 400);
+      const key = await hash(endpoint);
+      if (!this.sql.exec("SELECT 1 FROM players WHERE name = ? AND plot = ? AND banned = 0", name, me.plot).toArray().length) return json({ error: "no town" }, 403);
       this.sql.exec(`INSERT INTO pushsubs (k, plot, endpoint, created, p256dh, auth) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(k) DO UPDATE SET plot = excluded.plot,
         p256dh = COALESCE(excluded.p256dh, pushsubs.p256dh), auth = COALESCE(excluded.auth, pushsubs.auth)`,
-      await hash(endpoint), me.plot, endpoint, Date.now(), body.keys?.p256dh ?? null, body.keys?.auth ?? null);
+      key, me.plot, endpoint, Date.now(), body.keys?.p256dh ?? null, body.keys?.auth ?? null);
       return json({ ok: true });
     }
     if (p[0] === "rename") {
