@@ -2432,6 +2432,23 @@ async function googleButton(box, onToken) {
     g.accounts.id.renderButton(box, { theme: "outline", size: "large", shape: "pill", text: "continue_with", locale: "ar", width: Math.min(320, box.clientWidth || 300) });
   } catch { box.innerHTML = `<p class="hint">ما قدرنا نفتح قوقل الحين، جرّب بعد شوي.</p>`; }
 }
+/** Once per player, on entering al-Jouf: a screen to link the account to Google (after any screen in front closes). */
+async function googleOffer(tries = 0) {
+  const id = me();
+  if (!worldMode || !id || globalThis.RAFAYA_PREVIEW || !onlineOk() || store.get("rafaya-google-asked") === "1") return;
+  if (sheetFor || visiting || WARX.scene || arrange) { if (tries < 30) setTimeout(() => googleOffer(tries + 1), 15000); return; }
+  let st = null;
+  try { st = await api("/world/me", { name: id.name, secret: id.secret }); } catch { return; }
+  store.set("rafaya-google-asked", "1");
+  if (st?.google || sheetFor) return;
+  sheet(`<h2>🔐 جديد: احفظ حسابك بقوقل</h2>
+    <p>اربط حسابك «${id.name}» بحساب قوقل، ولو ضاع جوالك أو غيرته أو حذفت اللعبة، ترجع لمدينتك بضغطة من أي جوال، بدون كود استرجاع.</p>
+    <p class="hint">ما ناخذ إيميلك ولا اسمك من قوقل، بس رقم حسابك مشفّر. وتقدر تفك الربط متى ما بغيت من الإعدادات.</p>
+    <div id="gBtn" class="g-btn"></div>
+    <div class="sheet-actions keep"><button class="btn block" id="gLater" type="button">بعدين (من الإعدادات)</button></div>`, "google");
+  googleButton($("gBtn"), async (credential) => { await googleLink(credential); if (sheetFor === "google") closeSheet(); });
+  $("gLater").addEventListener("click", closeSheet);
+}
 /** Sign in with Google: the player linked to that Google account, on this phone. */
 async function googleLogin(credential) {
   let r;
@@ -2721,6 +2738,7 @@ async function enterWorldTown() {
   warBack(!!report && gap > 1);
   if (!globalThis.RAFAYA_PREVIEW_SAMPLE) setTimeout(maybeWhatsNew, 1200); // after the deputy's report
   setTimeout(pushOffer, 6000); // waits for the report or any screen in front to close
+  setTimeout(googleOffer, 20000); // after it: once, the Google link
 }
 function deputyReport(r) {
   const h = r.hours, d = Math.round(h / 24), span = h < 24 ? `${ar(h)} ساعة` : d === 1 ? "يوم" : d === 2 ? "يومين" : `${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`;

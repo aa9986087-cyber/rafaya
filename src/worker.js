@@ -103,7 +103,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
     try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
-    try { this.sql.exec("ALTER TABLE players ADD COLUMN google TEXT"); } catch { /* already there */ } // the linked Google account's number, hashed (never the e-mail) // seconds with the game open and in front (counted from the live pings)
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN google TEXT"); } catch { /* already there */ } // the linked Google account's number, hashed (never the e-mail)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
@@ -139,6 +139,12 @@ export class Board extends DurableObject {
     // money a town gained while away beyond the cap, taken back (a record, so the owner can see who and how much)
     this.sql.exec(`CREATE TABLE IF NOT EXISTS awayfix (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, owner TEXT, town TEXT, before INTEGER, after INTEGER, cap INTEGER, taken INTEGER, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS wnews (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, plot INTEGER, n INTEGER, text TEXT, at INTEGER)`);
+    try { // the bulletin says it once: the Google sign-in is here
+      if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'news_google'").toArray().length) {
+        this.news("admin", "🔐 جديد: اربط حسابك بقوقل من «الإعدادات» ← «حسابك وقوقل»، ولو ضاع جوالك أو غيرته ترجع لمدينتك بضغطة من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل».", null, null, false);
+        this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('news_google', ?)", String(Date.now()));
+      }
+    } catch { /* said next time */ }
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
