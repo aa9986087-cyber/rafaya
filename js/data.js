@@ -125,16 +125,17 @@ export const B = {
 
   // Decorations: cheap, no road needed, they cheer up the streets around them.
   // quarter: a small decoration takes a quarter of a tile (up to 4 of the same on one tile, `n` on it)
+  // monument: it can also stand in the middle of a roundabout on the road (the roundabout keeps working)
   // span 2: a big decoration takes 2×2 tiles (its own tile and the ones to its east and south, marked "decopart")
   decopart: { cat: "part", name: "زينة", cost: 0, upkeep: 0, era: 0, text: "جزء من زينة كبيرة." },
   streetpalm: { cat: "deco", quarter: true, name: "نخلة شارع", cost: 40, upkeep: 0, era: 0, radius: 2, happy: 2, text: "نخلة وحدة تزيّن الشارع." },
   flowers: { cat: "deco", quarter: true, name: "حوض زهور", cost: 30, upkeep: 0, era: 0, radius: 2, happy: 2, text: "زهور ملونة على الرصيف." },
   lantern: { cat: "deco", quarter: true, name: "فانوس زينة", cost: 50, upkeep: 1, era: 0, radius: 2, happy: 3, text: "فانوس ينوّر بالليل." },
   fountain: { cat: "deco", name: "نافورة", cost: 260, upkeep: 2, era: 1, radius: 3, happy: 5, text: "ماء وبرودة وسط الحارة." },
-  dallah: { cat: "deco", span: 2, name: "دوّار الدلة", cost: 420, upkeep: 2, era: 1, radius: 4, happy: 6, text: "دوار بوسطه دلة كبيرة، رمز الكرم." },
-  olivetree: { cat: "deco", span: 2, name: "نصب الزيتونة", cost: 600, upkeep: 2, era: 1, radius: 4, happy: 7, text: "زيتونة معمّرة وسط دوار: رمز الجوف." },
-  bigfountain: { cat: "deco", span: 2, name: "نافورة راقصة", cost: 2000, upkeep: 8, era: 2, radius: 6, happy: 11, text: "نافورة كبيرة تنوّر بالليل." },
-  incense: { cat: "deco", span: 2, name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
+  dallah: { cat: "deco", span: 2, monument: true, name: "دوّار الدلة", cost: 420, upkeep: 2, era: 1, radius: 4, happy: 6, text: "دوار بوسطه دلة كبيرة، رمز الكرم." },
+  olivetree: { cat: "deco", span: 2, monument: true, name: "نصب الزيتونة", cost: 600, upkeep: 2, era: 1, radius: 4, happy: 7, text: "زيتونة معمّرة وسط دوار: رمز الجوف." },
+  bigfountain: { cat: "deco", span: 2, monument: true, name: "نافورة راقصة", cost: 2000, upkeep: 8, era: 2, radius: 6, happy: 11, text: "نافورة كبيرة تنوّر بالليل." },
+  incense: { cat: "deco", span: 2, monument: true, name: "مجسم المبخرة", cost: 380, upkeep: 2, era: 1, radius: 4, happy: 6, text: "مبخرة عملاقة تفوح بالطيب." },
 
   // Grand projects: one of each, very dear, and they take days to build.
   mazayen: { cat: "proj", visitors: true, name: "ميدان مزاين الإبل", cost: 4000, upkeep: 25, era: 1, unique: true, buildHours: 72, jobs: 20, radius: 8, happy: 10, income: 120, water: -3, text: "ميدان لمزاين الإبل يجيب الزوار من كل مكان. كل حظيرة عندك تزيد دخله ٥٪." },

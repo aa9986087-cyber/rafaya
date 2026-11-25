@@ -253,6 +253,7 @@ export function cantBuild(s, x, y, id) {
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (def.hq && !s.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة العسكرية أول";
   if (def.max && s.tiles.filter((t) => t.b?.id === id).length >= def.max) return `الحد ${def.max} بالمدينة`;
+  if (def.monument && t.b?.id === "roundabout") return t.b.monument ? "الدوار فيه نصب من قبل" : s.money < def.cost ? "ما يكفي المال" : ""; // in the middle of a roundabout
   if (def.span) { // a big decoration: its 2×2 must all be free and yours
     for (let dy = 0; dy < def.span; dy++) for (let dx = 0; dx < def.span; dx++) {
       if (!dx && !dy) continue;
@@ -285,6 +286,7 @@ export function build(s, x, y, id) {
   const why = cantBuild(s, x, y, id);
   if (why) return why;
   const t = s.tiles[idx(x, y)];
+  if (t.b?.id === "roundabout" && B[id].monument) { changeMoney(s, -priceOf(s, id), "build", B[id].name); t.b.monument = id; return ""; } // set in the roundabout
   if (t.b && t.b.id === id && B[id].quarter) { changeMoney(s, -priceOf(s, id), "build", B[id].name); t.b.n = (t.b.n || 1) + 1; return ""; } // a small decoration: one more on this tile
   const keepRock = B[id].onRock;
   changeMoney(s, -priceOf(s, id), "build", B[id].name);
@@ -650,7 +652,7 @@ export function demolish(s, x, y) {
   if (t.b?.span) dropParts(s, idx(x, y));
   if (t.b) {
     const def = B[t.b.id];
-    changeMoney(s, Math.floor(def.cost / 3), "remove", levelName(t.b));
+    changeMoney(s, Math.floor((def.cost + (B[t.b.monument]?.cost || 0)) / 3), "remove", levelName(t.b));
     s.pop = Math.max(0, s.pop - (t.b.res || 0));
     t.b = null;
     return "";
@@ -797,6 +799,13 @@ export function analyze(s) {
     }
     if (works && def.jobs) a.jobs += Math.round(def.jobs * up.jobs);
     if (t.b.id === "palms") palms.push(t);
+    // A monument in a roundabout cheers its quarter like the decoration it is, and costs its upkeep.
+    const mon = t.b.monument && B[t.b.monument];
+    if (mon) {
+      a.costs.services += mon.upkeep || 0;
+      for (let yy = y - mon.radius; yy <= y + mon.radius; yy++) for (let xx = x - mon.radius; xx <= x + mon.radius; xx++)
+        if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= mon.radius) a.decor[idx(xx, yy)] += mon.happy;
+    }
     // Services and nuisances spread over their radius.
     if (works && def.radius && (def.happy || def.pollute)) {
       const rad = def.radius + (up.radius || 0), cheer = (def.happy || 0) * (up.happy || 1) * many;

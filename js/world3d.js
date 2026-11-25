@@ -651,7 +651,7 @@ export class World {
     this.syncKerbs(s);
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); this.roadMesh.material.dispose(); }
     this.removeAll(this.lampMeshes);
-    const lamps = [], medians = [], islands = [], lights = [], epoles = [];
+    const lamps = [], medians = [], islands = [], lights = [], epoles = [], monuments = {};
     this.streetLights = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
@@ -714,7 +714,8 @@ export class World {
         else if (ns && !ew) { quad(cx - 0.05, cz - 0.5, cx + 0.05, cz + 0.5, 0.009, "#cdbf9f"); for (const xx of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + xx - 0.01, cz + o - 0.07, cx + xx + 0.01, cz + o + 0.07, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
       } else if (kind === "roundabout") {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
-        islands.push(this.place(cx, cz, 0));
+        if (t.b.monument) (monuments[t.b.monument] ||= []).push(this.place(cx, cz, 0, 0.62)); // a decoration set in the roundabout
+        else islands.push(this.place(cx, cz, 0));
         const ringPoint = (r,a) => [cx + Math.cos(a)*r, cz + Math.sin(a)*r];
         const mark = (a,b,d) => {
           c.set("#ded5bb");
@@ -748,7 +749,7 @@ export class World {
         if (link(0, 1) || link(0, -1)) for (const o of [-0.16, 0.16]) quad(cx + o - 0.035, cz - 0.5, cx + o + 0.035, cz + 0.5, 0.007, "#99724f");
       }
     }
-    this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true), ...this.addInstances(model("pole"), epoles, true)];
+    this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true), ...this.addInstances(model("pole"), epoles, true), ...Object.entries(monuments).flatMap(([k, list]) => this.addInstances(model(k), list, true))];
     if (!pos.length) { this.roadMesh = null; return; }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -833,11 +834,14 @@ export class World {
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
       const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
       const many = B[t.b.id]?.quarter ? Math.min(4, t.b.n || 1) : 1;
-      if (many > 1) { // small decorations sharing a tile: one in each quarter, a little smaller (the last one added is the tile's own)
-        const s2 = t.b.id === "flowers" ? 0.5 : 0.75;
+      if (B[t.b.id]?.quarter) { // small decorations: in a row along the road's edge when a road is beside them (like street palms), else one to a quarter
+        const side = [[0, -1], [1, 0], [0, 1], [-1, 0]].find(([dx, dy]) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]));
+        const row = [[0], [-0.22, 0.22], [-0.3, 0, 0.3], [-0.33, -0.11, 0.11, 0.33]][many - 1];
+        const s2 = t.b.id === "flowers" ? (many > 1 ? 0.5 : 0.8) : many > 1 ? 0.8 : 1;
         for (let k = 0; k < many; k++) {
-          const o = [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]][k];
-          m4.compose(new THREE.Vector3(p.x + o[0], p.y, p.z + o[1]), q, new THREE.Vector3(s2, s2, s2));
+          const o = side ? [side[0] * 0.34 + (side[1] ? row[k] : 0), side[1] * 0.34 + (side[0] ? row[k] : 0)] : many > 1 ? [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]][k] : [0, 0];
+          const qq = side ? new THREE.Quaternion().setFromAxisAngle(up, Math.atan2(side[0], side[1]) + (t.b.id === "flowers" ? Math.PI / 2 : 0)) : q;
+          m4.compose(new THREE.Vector3(p.x + o[0], p.y, p.z + o[1]), qq, new THREE.Vector3(s2, s2, s2));
           if (k < many - 1) push(key, t.t, m4.clone(), 1, -1);
           if (t.b.id === "lantern" && k < many - 1) lights.push({ x: p.x + o[0], z: p.z + o[1], width: .5, strength: .32, warmth: .93 });
         }

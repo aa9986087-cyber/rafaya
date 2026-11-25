@@ -1310,12 +1310,9 @@ const MAKERS = {
   },
 
   // ---------- decorations ----------
-  streetpalm(b) {
-    b.cyl(.145,.163,.023,"#a2947c",{},12,"stone");
-    b.cyl(.14,.151,.036,"#c7b49a",{y:.021},12,"stone");
-    b.add(new THREE.TorusGeometry(.133,.006,4,12),"#ddd0ba",{y:.057,rx:Math.PI/2},"stone");
-    b.cyl(0.11, 0.11, 0.01, C.soil, { y: 0.04 }, 10);
-    palm(b, 0, 0, 0.95, 0.15);
+  streetpalm(b) { // straight out of the sand (no planter: the owner wants no kerb under them)
+    b.cyl(0.07, 0.09, 0.012, C.soil, {}, 9);
+    palm(b, 0, 0, 0.95, 0);
   },
   flowers(b) {
     b.box(.552,.018,.357,"#ac9d86",{},"stone");
@@ -1336,8 +1333,7 @@ const MAKERS = {
     for (const x of [-0.18, 0, 0.18]) b.cyl(0.014, 0.014, 0.05, "#e9e4d8", { x, y: 0.905 }, 5, "shiny");
   },
   lantern(b) {
-    b.lathe([[.085,0],[.09,.021],[.069,.043],[.041,.064],[.033,.085]],"#b5a28a",{},10,"stone");
-    b.lathe([[.039,.069],[.024,.115],[.015,.389],[.026,.409],[.044,.425]],"#564d40",{},9,"metal");
+    b.lathe([[.032,0],[.03,.06],[.024,.115],[.015,.389],[.026,.409],[.044,.425]],"#564d40",{},9,"metal"); // the post stands in the ground, no stone base
     b.cyl(.051,.046,.02,"#766049",{y:.42},8,"metal");
     b.cyl(.033,.026,.1,"#d3b48b",{y:.439},8,"matte");
     b.cyl(.034,.029,.102,"#ffd197",{y:.438},8,"lights");

@@ -598,3 +598,18 @@ test("small decorations: four of the same on one tile, each counting", () => {
   const one = analyze({ ...s, tiles: s.tiles.map((t, i) => (i === idx(x0, y0) ? { ...t, b: { ...t.b, n: 1 } } : t)) });
   assert.ok(analyze(s).decor[idx(x0, y0 + 1)] > one.decor[idx(x0, y0 + 1)], "four cheer more than one");
 });
+
+test("a big decoration can be set in a roundabout: the road keeps working and the quarter is cheered", () => {
+  const s = newGame(14);
+  s.money = 1e5; s.era = 2; s.tech.asphalt = true;
+  let at = -1;
+  for (let i = 0; i < N * N && at < 0; i++) if (!cantBuild(s, i % N, Math.floor(i / N), "roundabout")) at = i;
+  s.tech.asphalt = true;
+  assert.equal(build(s, at % N, Math.floor(at / N), "roundabout"), "");
+  const before = analyze(s).decor[at];
+  assert.equal(build(s, at % N, Math.floor(at / N), "dallah"), "");
+  assert.equal(s.tiles[at].b.id, "roundabout");
+  assert.equal(s.tiles[at].b.monument, "dallah");
+  assert.ok(analyze(s).decor[at] > before);
+  assert.ok(cantBuild(s, at % N, Math.floor(at / N), "olivetree"), "one to a roundabout");
+});
