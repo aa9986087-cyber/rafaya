@@ -541,3 +541,12 @@ test("a wish about some homes: said by someone living there, an idle service ask
   assert.ok(n2.noRoad.some((u) => u.svc === "health" && u.list.length), "the clinic without a road is named");
   assert.ok(!n2.uncovered.some((u) => u.svc === "health" && u.list.some((i) => east.includes(i) && Math.abs(i % N - 8) + Math.abs(Math.floor(i / N) - 7) <= 6)), "no 'build a clinic' for homes next to the idle one");
 });
+
+test("every stage has a budget: a town at the last stage keeps real numbers", () => {
+  const s = newGame(9);
+  s.era = 4; s.pop = 9500;
+  const a = analyze(s);
+  assert.ok(Number.isFinite(a.net) && Number.isFinite(a.upkeep), `net ${a.net}`);
+  for (let h = 0; h < 30; h++) step(s, fixedRandom());
+  assert.ok(Number.isFinite(s.money), `money ${s.money}`);
+});

@@ -632,10 +632,9 @@ body.world .speeds { display: none !important; }
 .hud > .timebar, .hud > .goal, .hud > .event { margin-inline-end: var(--rail-space, 0px); max-width: calc(100% - var(--rail-space, 0px)); }
 .backup-code { font: 800 30px/1.2 ui-monospace, monospace; letter-spacing: 3px; text-align: center; padding: 14px; border-radius: 14px; background: rgba(44, 138, 122, .12); color: var(--ink); user-select: all; }
 .menu:has(> .pv-note) { grid-template-rows: auto 1fr auto; } /* the trial note on top: the title keeps the middle */
-/* the next stage: its name and how far the town has come, the chip filling up as it grows */
-.when .next-era { font-size: 11px; padding: 1px 7px; border-radius: 99px; color: #ffe6ad; font-variant-numeric: tabular-nums; white-space: nowrap;
-  background: linear-gradient(90deg, rgba(240, 185, 80, .38) var(--p, 0%), rgba(255, 255, 255, .08) var(--p, 0%)); }
-[dir="rtl"] .when .next-era { background: linear-gradient(270deg, rgba(240, 185, 80, .38) var(--p, 0%), rgba(255, 255, 255, .08) var(--p, 0%)); }
+/* the next stage, under the season: where the town is and how far to the next one */
+.when .next-era { margin-top: 5px; }
+.when .next-era #sNextBar { background: linear-gradient(90deg, #f0b950, #ffd98a); }
 .when .online { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: rgba(63, 191, 95, .18); color: #bff0c8; font-variant-numeric: tabular-nums; }
 .when .online::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-inline-end: 4px; border-radius: 50%; background: #3fbf5f; box-shadow: 0 0 6px #3fbf5f; vertical-align: 1px; }
 #mContinue { background: linear-gradient(135deg, #1f7a52, #2c8a7a); box-shadow: 0 10px 24px -12px rgba(20, 80, 60, .9); }

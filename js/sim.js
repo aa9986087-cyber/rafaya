@@ -786,7 +786,7 @@ export function analyze(s) {
   // Running the town, per hour: the council's own staff (more of them at each stage), cleaning and
   // rubbish for every resident, keeping the water network up, road repairs and street lights, loans.
   const c = a.costs;
-  c.staff = ([3, 25, 90, 250][s.era] + s.pop * 0.02) * (1 + (s.staffRaise || 0));
+  c.staff = ([3, 25, 90, 250, 600][Math.min(4, s.era)] + s.pop * 0.02) * (1 + (s.staffRaise || 0)); // one per stage (the fifth, حاضرة, was missing: its budget turned to NaN)
   c.cleaning = s.pop * 0.05;
   c.waterNet = a.waterUse * 0.04;
   c.roads = a.count.road * 0.05 + a.count.asphalt * 0.15;
@@ -1498,6 +1498,7 @@ export function pack(s) {
 export function unpack(text) {
   const o = JSON.parse(text);
   if (!o || o.v !== 1 || !Array.isArray(o.tiles)) throw new Error("bad save");
+  if (!Number.isFinite(o.money)) o.money = 0; // a budget that went NaN (a town at the last stage, before its staff cost was set) is saved as null
   // Saves from the 30×30 map: the old town goes in the middle, with new land around it to buy.
   const old = Math.round(Math.sqrt(o.tiles.length));
   if (old * old !== o.tiles.length || old > N) throw new Error("bad save");
