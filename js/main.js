@@ -977,13 +977,13 @@ function refresh() {
   $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
   $("sEra").textContent = !S.site || S.site === "main" ? ERAS[S.era].name : S.name;
   { // the next stage and how far the town has come (a tap on the clock shows the details)
-    const nx = ERAS[S.era + 1], chip = $("sNext");
-    chip.hidden = !nx;
+    const nx = ERAS[S.era + 1];
+    $("sNext").hidden = false;
     if (nx) {
       const from = ERAS[S.era].pop, p = Math.max(0, Math.min(99, Math.floor((S.pop - from) / (nx.pop - from) * 100)));
       $("sNextText").textContent = `🏘️ ${ERAS[S.era].name} ← ${nx.name} · باقي ${ar(Math.max(0, nx.pop - S.pop))} نسمة`;
       $("sNextBar").style.width = `${p}%`;
-    }
+    } else { $("sNextText").textContent = `🏙️ ${ERAS[S.era].name} · أعلى مرحلة 👏`; $("sNextBar").style.width = "100%"; }
   }
   const se = seasonOf(S.day);
   // in the world the calendar is shared; the day shown is the town's own (counted from its founding)
