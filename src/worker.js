@@ -27,9 +27,10 @@ import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
 import { ERAS, townNameKey } from "../js/data.js";
-import { AWAY_CAP } from "../js/sim.js";
+import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
+import { blockedChat, blockedName } from "./moderation.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -40,6 +41,9 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
 // The world's clock started here; every town's hour is counted from it (50 seconds an hour).
 const WORLD_EPOCH = Date.UTC(2026, 10, 1);
+const CITIZEN_AMOUNT = 100, CITIZEN_LIMIT = 1000, CITIZEN_DAYS = 3;
+const CITIZEN_TITLE = "حساب المواطن";
+const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن في ميزانية مدينتك داخل لعبة الرافعية.";
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game keeps working. Set back to true to reopen.
@@ -56,6 +60,7 @@ const NAMEFIX_REASONS = {
   fake: "الاسم يوهم إنه من الإدارة أو المطور"
 };
 const DEV_NAME = "🛠️ المطور"; // how the owner's messages show in the world's chat
+const CHAT_MUTE_MS = 10 * 60 * 1000;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
 // never in the repository). A login makes a token for that phone; tokens are kept hashed.
@@ -77,6 +82,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS towns (code TEXT PRIMARY KEY, secret TEXT, name TEXT, mayor TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, author TEXT, text TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS players (name TEXT PRIMARY KEY, secret TEXT, recovery TEXT, created INTEGER, plot INTEGER)`);
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN chat_warned INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN chat_muted_until INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS plots (plot INTEGER PRIMARY KEY, owner TEXT, town TEXT, terrain TEXT, pop INTEGER, happy INTEGER, money INTEGER, era INTEGER, updated INTEGER, snapshot TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, plot INTEGER, by TEXT, reason TEXT, at INTEGER)`);
     // the public chat of the world (newest 500 kept); it never says who is online, only who wrote what
@@ -84,6 +91,8 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, town TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`);
     this.sql.exec("CREATE INDEX IF NOT EXISTS feedback_sender ON feedback (name, at DESC)");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support (day INTEGER PRIMARY KEY, due INTEGER NOT NULL, closes INTEGER NOT NULL, paid_at INTEGER, recipients INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support_push (day INTEGER, plot INTEGER, k TEXT, next_at INTEGER NOT NULL, attempts INTEGER DEFAULT 0, PRIMARY KEY (day, k))`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
@@ -264,10 +273,70 @@ export class Board extends DurableObject {
   async armWar() {
     const war = this.war.nextArrival(), subs = this.sql.exec("SELECT 1 FROM pushsubs LIMIT 1").toArray().length;
     const due = this.sql.exec("SELECT MIN(due) d FROM namefix WHERE removed = 0").toArray()[0]?.d; // a name request running out
-    const next = Math.min(war || Infinity, due || Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
+    const support = WORLD_OPEN ? this.sql.exec(`SELECT MIN(at) at FROM (
+      SELECT MIN(due) at FROM citizen_support WHERE paid_at IS NULL
+      UNION ALL SELECT MIN(next_at) at FROM citizen_support_push
+    )`).toArray()[0]?.at : null;
+    const next = Math.min(war || Infinity, due || Infinity, support ?? Infinity, subs ? Date.now() + (this.env?.WAR_TEST === "1" ? 5000 : 30 * 60000) : Infinity); // reminders: every half hour while anyone has notifications on
     if (!Number.isFinite(next)) return;
     const cur = await this.ctx.storage.getAlarm();
     if (!cur || cur > next) await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next + 200));
+  }
+  /** Start one campaign with the current game day, then the next two shared days at sunrise. */
+  startCitizenSupport(clock, now) {
+    this.ctx.storage.transactionSync(() => {
+      if (this.sql.exec("SELECT 1 FROM citizen_support LIMIT 1").toArray().length) return;
+      const first = dayOf(Math.floor(joufHours(now, clock)) + 3);
+      for (let i = 0; i < CITIZEN_DAYS; i++) {
+        const day = first + i;
+        this.sql.exec("INSERT INTO citizen_support (day, due, closes) VALUES (?, ?, ?)",
+          day, i === 0 ? now : Math.ceil(joufDayStart(day, clock)), Math.ceil(joufDayStart(day + 1, clock)));
+      }
+    });
+  }
+  /** Credit balances, save the player notices and queue phone delivery as one SQLite transaction. */
+  payCitizenSupport(now) {
+    const payout = this.ctx.storage.transactionSync(() => {
+      // A delayed alarm never catches up multiple payments in the same game day.
+      this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = 0 WHERE paid_at IS NULL AND closes <= ?", now, now);
+      const round = this.sql.exec("SELECT day FROM citizen_support WHERE paid_at IS NULL AND due <= ? AND closes > ? ORDER BY day LIMIT 1", now, now).toArray()[0];
+      if (!round) return null;
+      const plots = this.sql.exec("SELECT plot FROM plots WHERE money < ? ORDER BY plot", CITIZEN_LIMIT).toArray().map((row) => row.plot);
+      for (const plot of plots) {
+        const account = this.war.acct(plot);
+        this.war.charge(plot, account, -CITIZEN_AMOUNT, "citizenSupport");
+        this.war.saveAcct(plot, account);
+        this.war.note(plot, "citizenSupport", CITIZEN_NOTE, { amount: CITIZEN_AMOUNT, day: round.day }, false);
+        this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", CITIZEN_AMOUNT, plot);
+        this.sql.exec("INSERT OR IGNORE INTO citizen_support_push (day, plot, k, next_at) SELECT ?, plot, k, ? FROM pushsubs WHERE plot = ?", round.day, now, plot);
+      }
+      this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
+      this.news("citizenSupport", plots.length
+        ? "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف."
+        : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.", null, null, false);
+      return plots;
+    });
+    if (!payout) return;
+    this.live({ t: "news" });
+    const paid = new Set(payout);
+    for (const ws of this.ctx.getWebSockets()) if (paid.has(ws.deserializeAttachment()?.plot)) {
+      try { ws.send('{"t":"war"}'); } catch { /* the next poll reads the saved credit */ }
+    }
+  }
+  async flushCitizenSupport(now) {
+    this.sql.exec(`DELETE FROM citizen_support_push WHERE NOT EXISTS (
+      SELECT 1 FROM pushsubs WHERE pushsubs.k = citizen_support_push.k AND pushsubs.plot = citizen_support_push.plot
+    )`);
+    const rows = this.sql.exec(`SELECT q.day, q.attempts, s.k, s.endpoint, s.p256dh, s.auth
+      FROM citizen_support_push q JOIN pushsubs s ON s.k = q.k
+      WHERE q.next_at <= ? ORDER BY q.next_at, q.k LIMIT 16`, now).toArray();
+    for (const row of rows) this.sql.exec("UPDATE citizen_support_push SET next_at = ?, attempts = attempts + 1 WHERE day = ? AND k = ?", now + 15000, row.day, row.k);
+    await Promise.all(rows.map(async (row) => {
+      const status = await this.sendPush(row, { title: CITIZEN_TITLE, body: CITIZEN_NOTE, tag: `citizen-support-${row.day}` }, "86400");
+      if (row.attempts >= 2 || (status >= 200 && status < 500 && status !== 429)) {
+        this.sql.exec("DELETE FROM citizen_support_push WHERE day = ? AND k = ?", row.day, row.k);
+      }
+    }));
   }
   /** Name requests past their day: the town leaves al-Jouf (the player stays, and must still change the name). */
   namefixSweep() {
@@ -290,6 +359,11 @@ export class Board extends DurableObject {
   }
   async alarm() {
     try { this.war.settle(); } catch { /* the next request settles it */ }
+    if (WORLD_OPEN) {
+      const now = Date.now();
+      this.payCitizenSupport(now);
+      await this.flushCitizenSupport(now);
+    }
     try { this.remind(); } catch { /* next time */ }
     try { this.namefixSweep(); } catch { /* next time */ }
     await this.flush();
@@ -504,11 +578,11 @@ export class Board extends DurableObject {
     return !!row && (row.secret === h || this.sql.exec("SELECT 1 FROM keys WHERE name = ? AND secret = ?", name, h).toArray().length > 0);
   }
   /** One line in the world's bulletin. With n, a town gets that line once (an era or a population mark). */
-  news(kind, text, plot = null, n = null) {
+  news(kind, text, plot = null, n = null, notify = true) {
     if (n != null && this.sql.exec("SELECT 1 FROM wnews WHERE kind = ? AND plot = ? AND n = ?", kind, plot, n).toArray().length) return;
     this.sql.exec("INSERT INTO wnews (kind, plot, n, text, at) VALUES (?, ?, ?, ?, ?)", kind, plot, n, text, Date.now());
     this.sql.exec("DELETE FROM wnews WHERE id NOT IN (SELECT id FROM wnews ORDER BY id DESC LIMIT 300)");
-    this.live({ t: "news" });
+    if (notify) this.live({ t: "news" });
   }
 
   // ---------- the world of al-Jouf ----------
@@ -523,7 +597,15 @@ export class Board extends DurableObject {
       let slowAt = meta("slow_at"), fastAt = meta("fast_at");
       if (!slowAt) { slowAt = Date.now(); setMeta("slow_at", slowAt); }
       if (!fastAt) { fastAt = Date.now(); setMeta("fast_at", fastAt); }
-      return json({ epoch: WORLD_EPOCH, now: Date.now(), gen: WORLD_GEN, slowAt, fastAt });
+      const clock = { epoch: WORLD_EPOCH, slowAt, fastAt }, now = Date.now();
+      this.startCitizenSupport(clock, now);
+      if (this.sql.exec("SELECT 1 FROM citizen_support WHERE paid_at IS NULL AND due <= ? LIMIT 1", now).toArray().length) {
+        await this.armWar();
+        this.payCitizenSupport(Date.now());
+      }
+      const citizenSupport = this.sql.exec("SELECT day, due, paid_at, recipients FROM citizen_support ORDER BY day")
+        .toArray().map(({ day, due, paid_at, recipients }) => ({ day, due, paidAt: paid_at, credited: recipients > 0 }));
+      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport, worldVersion: VERSION });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
@@ -592,7 +674,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     }
     if (post && p[0] === "join") {
       const name = clean(body.name, 16);
-      if (!NAME_RE.test(name) || badText(name)) return json({ error: "bad name" }, 400);
+      if (!NAME_RE.test(name)) return json({ error: "bad name" }, 400);
+      if (badText(name) || blockedName(name)) return json({ error: "اختر لقب مناسب للعبة" }, 422);
       if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", name).toArray().length) return json({ error: "taken" }, 409);
       const secret = makeSecret(), recovery = makeCode() + makeCode();
       this.sql.exec("INSERT INTO players (name, secret, recovery, created, plot) VALUES (?, ?, ?, ?, NULL)", name, await hash(secret), await hash(recovery), Date.now());
@@ -642,12 +725,12 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const wantName = fix.what !== "town", wantTown = fix.what !== "name" && !!t;
       const newName = wantName ? clean(body.newName, 16) : name, newTown = wantTown ? clean(body.newTown, 20) : t?.town;
       if (wantName) {
-        if (!NAME_RE.test(newName) || badText(newName)) return json({ error: "اسمك الجديد ما يصلح" });
+        if (!NAME_RE.test(newName) || badText(newName) || blockedName(newName)) return json({ error: "اسمك الجديد ما يصلح. اختر لقب مناسب للعبة." });
         if (newName === name) return json({ error: "اكتب اسم غير اسمك القديم" });
         if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", newName).toArray().length) return json({ error: "هالاسم مأخوذ، اختر غيره" });
       }
       if (wantTown) {
-        if (newTown.length < 2 || badText(newTown)) return json({ error: "اسم المدينة الجديد ما يصلح" });
+        if (newTown.length < 2 || badText(newTown) || blockedName(newTown)) return json({ error: "اختر اسم مناسب لمدينتك" });
         if (townNameKey(newTown) === townNameKey(t.town)) return json({ error: "اكتب اسم مدينة غير القديم" });
         if (this.nameTaken(newTown, me.plot)) return json({ error: "فيه مدينة بالجوف بهالاسم، اختر غيره" });
       }
@@ -667,7 +750,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     if (p[0] === "claim") {
       const plot = int(body.plot), town = clean(body.town, 20) || "هجرة";
       if (me.plot != null) return json({ error: "you have a town", plot: me.plot }, 409);
-      if (plot < 0 || plot >= 5000 || badText(town)) return json({ error: "bad" }, 400);
+      if (plot < 0 || plot >= 5000 || badText(town) || blockedName(town)) return json({ error: "bad" }, 400);
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", plot).toArray().length) return json({ error: "taken" }, 409);
       if (this.nameTaken(town)) return json({ error: "name taken" }, 422); // every town in al-Jouf has its own name
       this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), Date.now());
@@ -704,8 +787,16 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         const mark = POP_MARKS.filter((m) => pop >= m && (was.pop || 0) < m).pop();
         if (mark) this.news("pop", `👨‍👩‍👧 «${was.town}» وصل عدد سكانها ${mark.toLocaleString("en-US")}`, me.plot, mark);
       }
+      // A sync from a phone that hasn't read the credit yet must keep it in the town's server balance.
+      let seen = body.warSeq;
+      if (!Number.isSafeInteger(seen)) {
+        try { seen = int(JSON.parse(snapshot || "{}").war?.seq); } catch { seen = 0; }
+      }
+      const support = this.sql.exec(`SELECT COALESCE(-SUM(json_extract(data, '$.amount')), 0) total FROM war
+        WHERE tbl = 'charge' AND k1 = ? AND json_extract(data, '$.why') = 'citizenSupport' AND json_extract(data, '$.seq') > ?`,
+        String(me.plot), Math.max(0, seen)).toArray()[0].total;
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
-        int(body.pop), int(body.happy), int(body.money), int(body.era), Date.now(), snapshot, snapshot, me.plot);
+        int(body.pop), int(body.happy), int(body.money) + support, int(body.era), Date.now(), snapshot, snapshot, me.plot);
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (body.ledger && typeof body.ledger === "object") { const lj = JSON.stringify(body.ledger); if (lj.length < 40000) this.sql.exec("UPDATE plots SET ledger = ? WHERE plot = ?", lj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
@@ -766,7 +857,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const town = clean(body.town, 20);
       if (!row) return json({ error: "no town" }, 400);
       if (row.renamed) return json({ error: "غيّرت الاسم قبل، ما يتغير مرة ثانية" }, 200);
-      if (town.length < 2 || badText(town)) return json({ error: "الاسم ما يصلح" }, 200);
+      if (town.length < 2 || badText(town) || blockedName(town)) return json({ error: "اختر اسم مناسب لمدينتك" }, 200);
       if (townNameKey(town) === townNameKey(row.town)) return json({ error: "هذا نفس الاسم" }, 200);
       if (this.nameTaken(town, me.plot)) return json({ error: "الاسم مأخوذ لمدينة ثانية بالجوف، اختر غيره" }, 200);
       this.sql.exec("UPDATE plots SET town = ?, renamed = 1 WHERE plot = ?", town, me.plot);
@@ -795,11 +886,24 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     if (p[0] === "chat") {
       const text = clean(body.text, 200);
       if (!text) return json({ error: "اكتب شي" }, 200);
-      if (badText(text)) return json({ error: "الكلام هذا ما يصير بالشات" }, 200);
+      const now = Date.now();
+      const { chat_warned, chat_muted_until } = this.sql.exec("SELECT chat_warned, chat_muted_until FROM players WHERE name = ?", name).toArray()[0];
+      if (chat_muted_until > now) {
+        const minutes = Math.ceil((chat_muted_until - now) / 60000).toLocaleString("ar-SA");
+        return json({ error: `الشات موقوف عندك مؤقتًا. باقي ${minutes} د.` });
+      }
+      if (blockedChat(text) || badText(text)) {
+        if (chat_warned) {
+          this.sql.exec("UPDATE players SET chat_warned = 0, chat_muted_until = ? WHERE name = ?", now + CHAT_MUTE_MS, name);
+          return json({ error: "تكرر الكلام الممنوع. تم كتمك في الشات لمدة ١٠ دقائق." });
+        }
+        this.sql.exec("UPDATE players SET chat_warned = 1, chat_muted_until = 0 WHERE name = ?", name);
+        return json({ error: "تنبيه: رسالتك فيها اسم أو كلام ممنوع. التكرار يوقف إرسال الشات ١٠ دقائق." });
+      }
       const last = this.sql.exec("SELECT at FROM chat WHERE name = ? ORDER BY id DESC LIMIT 1", name).toArray()[0];
-      if (last && Date.now() - last.at < 6000) return json({ error: "على هونك: رسالة كل ٦ ثواني" }, 200);
+      if (last && now - last.at < 6000) return json({ error: "على هونك: رسالة كل ٦ ثواني" }, 200);
       const town = me.plot != null ? this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0]?.town || "" : "";
-      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, Date.now());
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", name, me.plot, town, text, now);
       this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
       const message = this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
       this.live({ t: "chat", message });

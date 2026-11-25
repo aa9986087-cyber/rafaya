@@ -5,7 +5,8 @@ import { idx, inMap, seasonOf, owns, plotAt, chainLinks, roadNets, springGreen, 
 import { buildingMaterials } from "./building-surfaces.js";
 import { tileLane, lanePosition, ISLAND_RADIUS } from "./traffic-path.js";
 import { worldWater, rainField, wetSurface } from "./world-weather.js";
-import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS, FAIR_WHEEL } from "./models.js";
+import { makeNightLighting, bakeNightLighting, addNightLighting, makeHeadlightMaterial } from "./world-lighting.js";
+import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS, FAIR_WHEEL, STREET_LAMP_HEAD } from "./models.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -125,16 +126,6 @@ function sandTexture(gravel = false) {
   return t;
 }
 
-/** A warm round glow for light pools on the ground at night. */
-function glowTexture() {
-  const S = 64, c = document.createElement("canvas");
-  c.width = c.height = S;
-  const g = c.getContext("2d"), grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  grad.addColorStop(0, "rgba(255,210,140,1)"); grad.addColorStop(0.4, "rgba(255,180,90,0.45)"); grad.addColorStop(1, "rgba(255,160,60,0)");
-  g.fillStyle = grad; g.fillRect(0, 0, S, S);
-  return new THREE.CanvasTexture(c);
-}
-
 /** Soft round cloud shadows that drift over the land. */
 function cloudTexture() {
   const S = 256, c = document.createElement("canvas");
@@ -242,7 +233,9 @@ export class World {
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
     }
-    this.waterWeather = { time: { value: 0 }, rain: { value: 0 }, wet: { value: 0 }, day: { value: 1 } };
+    this.nightLighting = makeNightLighting(N);
+    for (const material of Object.values(this.mats)) if (material.isMeshStandardMaterial && !material.transparent) addNightLighting(material, this.nightLighting);
+    this.waterWeather = { time: { value: 0 }, rain: { value: 0 }, wet: { value: 0 }, day: { value: 1 }, lighting: this.nightLighting };
     this.buildGround();
     this.instances = new Map(); // key -> { matte, shiny, lights }
     this.roadMesh = null;
@@ -292,6 +285,7 @@ export class World {
     this.aggregate = sandTexture(true);
     this.groundNormal = this.quality !== "low" ? normalTex("tex/grain-normal.webp", 1) : null;
     const desert = new THREE.Mesh(outer, wetSurface(new THREE.MeshStandardMaterial({ color: "#d3a577", map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.25, 0.25) }), this.waterWeather, 0.32));
+    addNightLighting(desert.material, this.nightLighting);
     desert.receiveShadow = true;
     this.scene.add(desert);
     this.ground = null;
@@ -416,6 +410,7 @@ export class World {
     g.setIndex(index);
     g.computeVertexNormals();
     this.ground = new THREE.Mesh(g, wetSurface(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.sand, roughness: 1, normalMap: this.groundNormal, normalScale: new THREE.Vector2(0.29, 0.29) }), this.waterWeather, 0.38));
+    addNightLighting(this.ground.material, this.nightLighting);
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
     // A fence along the edge of the land the town owns, and a "for sale" sign on each plot.
@@ -614,6 +609,7 @@ export class World {
     }
     const g = new THREE.BoxGeometry(1, 0.045, 0.07);
     this.kerbs = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ map: this.kerbTex, roughness: 0.8 }), list.length);
+    addNightLighting(this.kerbs.material, this.nightLighting);
     list.forEach((mm, i) => this.kerbs.setMatrixAt(i, mm));
     this.kerbs.receiveShadow = true; this.kerbs.frustumCulled = false;
     this.scene.add(this.kerbs);
@@ -656,7 +652,7 @@ export class World {
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); this.roadMesh.material.dispose(); }
     this.removeAll(this.lampMeshes);
     const lamps = [], medians = [], islands = [], lights = [];
-    this.lampGlows = [];
+    this.streetLights = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
       c.set(color);
@@ -667,14 +663,24 @@ export class World {
       if (!roadAt(t)) continue;
       const kind = t.b.id, paved = kind !== "road";
       const cx = x - HALF + 0.5, cz = y - HALF + 0.5;
+      const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
       if (paved) {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.004, (x + y) % 2 ? "#d9c7a8" : "#cfb896");
-        // a street lamp on every other tile, at a corner without a road
-        if ((x + y) % 3 === 0) { lamps.push(this.place(cx + 0.44, cz + 0.44, Math.PI * 0.75)); this.lampGlows.push([cx + 0.37, cz + 0.37, 1.1]); }
+        // Alternate kerbs, with the arm pointing inwards over the street.
+        if ((x + y) % 3 === 0) {
+          const eastWest = link(1, 0) || link(-1, 0), side = ((x + y) / 3) % 2 ? 1 : -1;
+          const dx = eastWest ? 0 : -side, dz = eastWest ? -side : 0;
+          const poleX = cx - dx * .465, poleZ = cz - dz * .465;
+          lamps.push(this.place(poleX, poleZ, Math.atan2(-dz, dx)));
+          this.streetLights.push({
+            x: poleX + dx * (STREET_LAMP_HEAD + .16), z: poleZ + dz * (STREET_LAMP_HEAD + .16),
+            yaw: eastWest ? 0 : Math.PI / 2, width: .67, length: kind === "avenue" ? 1.29 : 1.09,
+            warmth: kind === "avenue" ? .12 : .28, strength: .76
+          });
+        }
       }
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b39b77");
-      const link = (dx, dy) => inMap(x + dx, y + dy) && roadAt(s.tiles[idx(x + dx, y + dy)]);
       if (paved && kind === "asphalt") {
         if (link(1, 0) && link(-1, 0) && !link(0, 1) && !link(0, -1)) {
           for (const side of [-1, 1]) quad(cx - 0.49, cz + side * 0.352 - 0.007, cx + 0.49, cz + side * 0.352 + 0.007, 0.008, "#d1c8b2");
@@ -750,7 +756,8 @@ export class World {
     }
     g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     g.computeVertexNormals();
-    this.roadMesh = new THREE.Mesh(g, wetSurface(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.aggregate, roughness: 0.92 }), this.waterWeather, 0.48));
+    const roadMaterial = wetSurface(new THREE.MeshStandardMaterial({ vertexColors: true, map: this.aggregate, roughness: 0.92 }), this.waterWeather, 0.48);
+    this.roadMesh = new THREE.Mesh(g, addNightLighting(roadMaterial, this.nightLighting));
     this.roadMesh.receiveShadow = true;
     this.scene.add(this.roadMesh);
   }
@@ -795,7 +802,7 @@ export class World {
     this.smokers = [];
     this.fountains = [];
     this.siteMotion = { pivot_b: [], themepark_b: [] };
-    const seen = new Map(), where = new Map(), glows = [];
+    const seen = new Map(), where = new Map(), lights = [];
     this.anims ||= new Map();
     const feeder = new Map(powerNet(s).wires.map(([from, to]) => [to, from]));
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -825,8 +832,17 @@ export class World {
       seen.set(i, gk);
       where.set(i, { k: gk, i: groups.get(gk).list.length - 1, m: m4.clone() });
       this.siteMotion[key]?.push({ pose: m4.clone(), x: p.x, z: p.z, phase: hash(x, y, 63) * Math.PI * 2 });
-      if (gk === "tent0") glows.push([p.x + Math.sin(angle) * 0.38 + Math.cos(angle) * 0.33, p.z + Math.cos(angle) * 0.38 - Math.sin(angle) * 0.33, 0.8]);
-      else if (gk.startsWith("house") || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "lantern", "gate", "heritage", "tower", "fountain", "dallah"].includes(gk.replace(/[12]$/, ""))) glows.push([p.x + Math.sin(angle) * 0.42, p.z + Math.cos(angle) * 0.42, 0.75]);
+      if (!(t.b.build > 0 || t.b.wd >= 80)) {
+        const id = t.b.id;
+        if (id === "lantern" || id === "bigfountain" || id === "fountain") {
+          lights.push({ x: p.x, z: p.z, width: id === "lantern" ? .62 : .69, strength: .38, warmth: id === "lantern" ? .93 : .29 });
+        } else if (id === "house" || ["mosque", "grocery", "cafe", "mandi", "souq", "bank", "clinic", "hotel", "mall", "bigmosque", "heritage", "library", "hospital"].includes(id)) {
+          const front = key === "tent0" ? .34 : .40;
+          const modern = (id === "house" && t.b.lvl >= 3) || ["hotel", "mall", "clinic", "library", "hospital"].includes(id);
+          lights.push({ x: p.x + Math.sin(angle) * front, z: p.z + Math.cos(angle) * front, width: .31, length: .56,
+            yaw: -angle, warmth: modern ? .46 : .87, strength: modern ? .31 : .39 });
+        }
+      }
       if (this.prevKeys && this.prevKeys.get(i) !== gk) { this.anims.set(i, this.clock); this.puff(p, 16); }
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
       if (!t.b.build && !(t.b.wd >= 80) && ["fountain", "bigfountain", "park"].includes(t.b.id)) {
@@ -861,7 +877,7 @@ export class World {
     this.groups = groups;
     this.syncSmoke();
     this.prevKeys = seen;
-    this.buildingGlows = glows;
+    this.buildingLights = lights;
     this.where = where;
     this.cull(true); // only what the camera sees (and a margin) is drawn
     this.homes = [...where.entries()].filter(([, w]) => w.k === "tent0" || w.k.startsWith("house")).map(([i]) => i);
@@ -887,7 +903,7 @@ export class World {
     if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); this.syncWires(s); }
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
-    this.syncGlows();
+    this.nightLightsDirty = true;
     // Event decorations change only when the events do (sync runs every town hour).
     const eventKey = s.events.map((e) => e.id + (e.mazayen ? "m" : "")).join() + this.roads.length;
     if (eventKey !== this.eventKey) { this.eventKey = eventKey; this.syncFestive(s); }
@@ -1063,6 +1079,18 @@ export class World {
   stepCars(dt) {
     if (!this.carFleet) return;
     const { matrix, child, wheel, q, up, point, scale } = this.carPose;
+    const beamsOn = (this.nightLighting?.nightLightMix.value || 0) > .03;
+    if (beamsOn && !this.headlightBeams) {
+      const geometry = new THREE.PlaneGeometry(.86, .51).rotateX(-Math.PI / 2).translate(.60, .008, 0);
+      const beam = this.headlightBeams = new THREE.InstancedMesh(geometry,
+        makeHeadlightMaterial(this.nightLighting, this.waterWeather), CAR_LIMIT[this.quality] || CAR_LIMIT.medium);
+      beam.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      beam.frustumCulled = false;
+      beam.renderOrder = 3;
+      this.scene.add(beam);
+    }
+    const beams = this.headlightBeams;
+    let beamCount = 0;
     const counts = [0, 0, 0], shown = (this.previewNight ?? this.nightTime) ? Math.ceil(this.cars.length / 3) : this.cars.length;
     this.roundTraffic ||= new Set();
     const occupied = this.roundTraffic;
@@ -1111,6 +1139,7 @@ export class World {
       q.setFromAxisAngle(up, Math.atan2(-tz, tx));
       matrix.compose(point, q, scale);
       this.putVehicleShadow(matrix, car.kind === 0 ? .35 : .33, .206);
+      if (beamsOn && Math.abs(point.x - this.view.x) + Math.abs(point.z - this.view.z) < 13) beams.setMatrixAt(beamCount++, matrix);
       const fleet = this.carFleet[car.kind], slot = counts[car.kind]++;
       fleet[0].setColorAt(slot, this.carColors[car.color]);
       for (const mesh of fleet) mesh.setMatrixAt(slot, matrix);
@@ -1137,6 +1166,11 @@ export class World {
     }
     this.carWheels.count = wheels;
     if (wheels) this.carWheels.instanceMatrix.needsUpdate = true;
+    if (beams) {
+      beams.count = beamCount;
+      beams.visible = beamCount > 0;
+      if (beamCount) beams.instanceMatrix.needsUpdate = true;
+    }
     if (spray) {
       this.tyreMist.visible = sprayCount > 0;
       this.tyreMist.geometry.setDrawRange(0, sprayCount);
@@ -1336,22 +1370,6 @@ export class World {
     f.water.dispose(); f.foam.geometry.dispose();
     this.floodAnim = null;
     if (this.pendingSync) { const p = this.pendingSync; this.pendingSync = null; this.sync(p.s, p.what); }
-  }
-
-  /** Pools of warm light under lamps, by doors and around tent hearths. Seen only at night. */
-  syncGlows() {
-    const all = [...(this.lampGlows || []), ...(this.buildingGlows || [])];
-    if (!this.glowMesh || this.glowMesh.instanceMatrix.count < all.length) {
-      if (this.glowMesh) { this.scene.remove(this.glowMesh); this.glowMesh.dispose(); }
-      const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
-      this.glowMesh = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }), Math.max(64, Math.ceil(all.length * 1.5)));
-      this.glowMesh.frustumCulled = false;
-      this.glowMesh.renderOrder = 2;
-      this.scene.add(this.glowMesh);
-    }
-    all.forEach(([x, z, r], i) => this.glowMesh.setMatrixAt(i, this.place(x, z, 0, r, 0.02)));
-    this.glowMesh.count = all.length;
-    this.glowMesh.instanceMatrix.needsUpdate = true;
   }
 
   // ---------- life: people walking, camels grazing, dust when building ----------
@@ -1769,15 +1787,17 @@ export class World {
     this.night = 1 - day;
     this.waterWeather.day.value = day;
     this.sun.position.set(Math.cos(sunAngle) * 0.86, Math.max(0.22, elev * 0.8 + 0.23), 0.61).normalize().multiplyScalar(40);
-    this.sun.intensity = 0.62 + day * 1.61; // a bright moon at night (players found the nights too dark to play); the day as before
+    this.sun.intensity = .45 + day * 1.78; // night: enough moonlight to read the town (players found it too dark); the day as before
     this.sun.color.set(day < 0.3 ? "#92b5ee" : golden > 0.2 ? "#ffc17c" : "#fff2db");
-    this.hemi.intensity = 0.82 + day * 0.08;
+    this.hemi.intensity = .62 + day * .28;
+    this.hemi.groundColor.copy(this.nightGround ||= new THREE.Color("#7f91ad")).lerp(this.dayGround ||= new THREE.Color("#c4b394"), day);
     const sky = (this.skyColor ||= new THREE.Color()).set("#1b2c43").lerp(this.daySky ||= new THREE.Color("#ecd2ad"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
     const storm = this.waterWeather.rain.value;
     if (storm > 0.01) {
-      sky.lerp(this.stormSky ||= new THREE.Color("#798c9b"), 0.65 * storm);
-      // rain dims the day; at night it barely dims (the town must stay readable under a night storm)
+      const stormSky = (this.stormSky ||= new THREE.Color()).set("#25394b").lerp(this.dayStormSky ||= new THREE.Color("#798c9b"), day);
+      sky.lerp(stormSky, .65 * storm);
+      // rain dims the day; at night it barely dims (players: the town went too dark after rain at night)
       this.sun.intensity *= 1 - 0.73 * storm * (0.3 + 0.7 * day);
       this.hemi.intensity *= 1 - 0.21 * storm * (0.3 + 0.7 * day);
       this.sun.color.lerp(this.stormLight ||= new THREE.Color("#d1e2ef"),storm);
@@ -1788,12 +1808,18 @@ export class World {
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? (golden > 0.2 ? "#f2d9bd" : "#d6e4f2") : "#8fa0d8");
-    this.mats.lights.opacity = Math.min(1, this.night * 1.4);
+    const lights = THREE.MathUtils.smoothstep(this.night, .28, .94);
+    this.mats.lights.opacity = lights * .93;
+    this.mats.lights.visible = lights > .003;
+    this.nightLighting.nightLightMix.value = lights;
+    if (lights > .003 && this.nightLightsDirty) {
+      bakeNightLighting(this.nightLighting, [...(this.streetLights || []), ...(this.buildingLights || [])]);
+      this.nightLightsDirty = false;
+    }
     if (this.envNight !== Math.round(this.night * 20)) { this.envNight = Math.round(this.night * 20); for (const [k, v] of Object.entries(this.envLevel)) this.mats[k].envMapIntensity = v * (1 - this.night * 0.8); }
-    if (this.glowMesh) this.glowMesh.material.opacity = Math.max(0, this.night * 0.95 - 0.15);
     // lamps and headlights shine at night; by day they are plain colours, and only fire and flashes bloom
     // (by day the sun on water and car paint was blooming into white halos)
-    this.mats.glow.color.setScalar(1.2 + 5.8 * this.night);
+    this.mats.glow.color.setScalar(1.15 + 3.65 * lights);
     if (this.bloom) this.bloom.threshold = this.fx?.tasks?.length ? 3.2 : 3.2 + 3.3 * (1 - this.night); // a war scene keeps its flashes
   }
 
@@ -1945,11 +1971,12 @@ export class World {
   cull(force = false) {
     if (!this.groups) return;
     const v = this.view;
-    // zoomed out past this, the far models (fewer faces); a gap between the two edges so it doesn't flicker
-    const far = this.lodOff ? false : this.lodFar ? v.zoom < 0.8 : v.zoom < 0.7;
+    // Use a tile's projected size so the same zoom can retain full curves on a taller screen.
+    const pixelsPerTile = this.h * v.zoom / 9;
+    const far = !this.lodOff && pixelsPerTile < (this.lodFar ? 57 : 49);
     const farChanged = far !== this.lodFar;
     this.lodFar = far;
-    const key = `${v.x.toFixed(1)}|${v.z.toFixed(1)}|${v.zoom.toFixed(2)}|${v.yaw.toFixed(2)}|${this.w}|${this.h}`;
+    const key = `${v.x.toFixed(1)}|${(v.y || 0).toFixed(1)}|${v.z.toFixed(1)}|${v.zoom.toFixed(2)}|${v.yaw.toFixed(2)}|${v.pitch.toFixed(2)}|${this.w}|${this.h}`;
     if (!force && !farChanged && key === this.cullKey) return;
     this.cullKey = key;
     // the ground the camera sees (at the ground and at a tall tower's top), as a box, plus a margin for shadows and pans
@@ -2015,9 +2042,9 @@ export class World {
     weather.wet.value += (wet - weather.wet.value) * (1 - Math.exp(-dt * (wet > weather.wet.value ? 0.29 : 0.043)));
     this.breezeStrength.value = this.quality === "low" ? 0 : 0.026 + weather.rain.value * 0.036;
     const v = this.view;
-    if (this.groups && this.clock - (this.cullAt || 0) > 0.12) { this.cullAt = this.clock; this.cull(); } // what the camera sees, a few times a second
     if (Math.abs(v.yaw - v.yawTarget) > 1e-3) { v.yaw += (v.yawTarget - v.yaw) * Math.min(1, dt * 8); this.updateCamera(); }
-    this.setTimeOfDay(this.dayCycle ? todT : 0.42);
+    if (this.groups && this.clock - (this.cullAt || 0) > 0.12) { this.cullAt = this.clock; this.cull(); } // what the camera sees, a few times a second
+    this.setTimeOfDay(this.dayCycle || this.previewTod != null ? todT : 0.42);
     const shadows = this.vehicleShadows;
     if (shadows) shadows.count = 0;
     this.stepCars(dt);

@@ -196,6 +196,7 @@ function pvRoute(p, body) {
 
 /** A playable sample with an old quarter, a planted avenue, an oasis and a newer district. */
 const PV_SCENES = [
+  { title: "الشارع ليلًا", x: 38, y: 35, zoom: 1.54 },
   { title: "الواحة", x: 37, y: 37, zoom: .88 },
   { title: "الدوار", x: 40, y: 35, zoom: 1.54 },
   { title: "السوق والجامع", x: 36, y: 35, zoom: 1.42 },
@@ -303,7 +304,7 @@ function pvSample() {
 globalThis.RAFAYA_PREVIEW = pvApi;
 globalThis.RAFAYA_PREVIEW_TOWN = pvReadyTown;
 globalThis.RAFAYA_PREVIEW_SAMPLE = pvSample;
-let pvLight = 0;
+let pvLight = 2;
 let pvWeather = 2;
 const pvWeatherModes = [
   { label: "مطر", rain: 1, wet: 1 },
@@ -322,17 +323,16 @@ globalThis.RAFAYA_PREVIEW_RESET = () => {
 {
   document.body.classList.add("visual-preview");
   document.querySelector(".menu-eyebrow").textContent = "تجربة الرافعية الجديدة";
-  document.querySelector(".menu-sub").textContent = "من بيوت الطين إلى أبراج المدينة";
-  const entry = document.getElementById("mWorld");
-  entry.querySelector("b").textContent = "ادخل واحة الرافعية";
-  entry.querySelector("small").textContent = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
+  document.querySelector(".menu-sub").textContent = "جرّب الإضاءة الجديدة بعد الغروب";
+  document.getElementById("mPlayLabel").dataset.start = "ادخل واحة الرافعية";
+  document.getElementById("mPlayHint").dataset.start = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
   const reset = document.createElement("button");
   reset.type = "button"; reset.className = "pv-reset"; reset.textContent = "أعد التجربة من البداية";
   reset.addEventListener("click", () => { if (confirm("ترجع المدينة التجريبية لبدايتها؟")) globalThis.RAFAYA_PREVIEW_RESET(); });
   document.querySelector(".menu-actions").append(reset);
   const lighting = document.createElement("button");
   lighting.type = "button"; lighting.className = "pv-light";
-  lighting.textContent = "الإضاءة · العصر";
+  lighting.textContent = `الإضاءة · ${pvLighting[pvLight].label}`;
   lighting.addEventListener("click", () => {
     pvLight = (pvLight + 1) % pvLighting.length;
     lighting.textContent = `الإضاءة · ${pvLighting[pvLight].label}`;
