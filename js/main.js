@@ -205,7 +205,9 @@ canvas.addEventListener("pointerdown", (e) => {
     drag = null; return;
   }
   if (arrange) { arrDown(e); return; }
-  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill");
+  // a finger paints only when it starts where painting makes sense (on a road or the road being drawn, on the wadi to
+  // fill, on a building to upgrade…); started anywhere else it moves the map, so looking around never lays a road
+  const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill") && paintStarts(world.pick(e.clientX, e.clientY));
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
   if (painting) { drag.pendingBefore = pending.slice(); paintAt(e.clientX, e.clientY); }
 });
@@ -234,6 +236,18 @@ canvas.addEventListener("pointerup", (e) => {
   if (drag && !drag.moved && !drag.painting && pointers.size === 0) tap(e.clientX, e.clientY);
   if (pointers.size === 0) drag = null;
 });
+/** Does a drag that starts on tile t paint (true) or move the map (false)? */
+function paintStarts(t) {
+  if (!inMap(t.x, t.y)) return false;
+  const tile = S.tiles[idx(t.x, t.y)];
+  if (tool.id === "roadup") return ROAD_IDS.includes(tile.b?.id);
+  if (tool.id === "fill") return tile.t === "wadi";
+  if (tool.id === "upgrade") return !!tile.b;
+  if (tool.id === "bulldoze") return !!tile.b || tile.t === "rock";
+  // a road: from a road, from the road being drawn, or from a tile right beside either
+  const isEnd = (x, y) => inMap(x, y) && (ROAD_IDS.includes(S.tiles[idx(x, y)].b?.id) || pending.some((p) => p.x === x && p.y === y));
+  return isEnd(t.x, t.y) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isEnd(t.x + dx, t.y + dy));
+}
 function restoreTapPreview() {
   if (!drag?.pendingBefore || drag.moved || !tool) return;
   pending = drag.pendingBefore;
@@ -376,7 +390,7 @@ function showPending() {
       : !ok.length ? upgradeWhy(pending[0].x, pending[0].y) : `تطوير ${ar(ok.length)} · ${money(cost)} ريال${(() => { let inc = 0, upk = 0, tax = 0; for (const q of ok) { const e = upgradeEffect(S, S.tiles[idx(q.x, q.y)].b); if (!e) continue; if (e.house) tax += e.taxGain; else { inc += e.incomeNext - e.incomeNow; upk += e.upkeepNext - e.upkeepNow; } } return inc || upk || tax ? ` · دخل +${fine(inc + tax)} مصروف +${fine(upk)}` : ""; })()}${cost > S.money ? " · ما يكفي المال" : ""}`;
     return;
   }
-  if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(priceOf(S, tool.id))} ريال${d.cat === "road" ? " · اسحب لترسم" : " · اضغط مكانه"}`;
+  if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(priceOf(S, tool.id))} ريال${d.cat === "road" ? " · اسحب من طريق موجود، أو اضغط مكان البداية واسحب منه" : " · اضغط مكانه"}`;
   else if (tool.id === "bulldoze") $("toolName").textContent = `إزالة ${ar(ok.length)} ${ok.length === 1 ? "شي" : "أشياء"}؟`;
   else if (!ok.length) $("toolName").textContent = cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا";
   else {
