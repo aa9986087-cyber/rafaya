@@ -128,7 +128,7 @@ function pvRoute(p, body) {
     if (!pvState.news.length) for (const t of Object.values(pvState.plots)) pvNews("town", `🏕️ تأسست «${t.town}» بأرض الجوف. حيّاهم الله`, t.plot, 0);
     return { items: pvState.news.slice(-60).reverse(), now: Date.now() };
   }
-  if (!post && p[0] === "players") return { players: Object.values(pvState.players).map((pl, k) => ({ name: pl.name, town: pvState.plots[pl.plot]?.town || "", started: pl.created || Date.now() - (k + 1) * 86400000, played: pl.played ?? ((k * 7919) % 40) * 1800 + 600 })) }; // the trial: its own players
+  if (post && p[0] === "me") { const pl = pvState.players[body?.name]; return { name: body?.name, started: pl?.created || Date.now() - 3 * 86400000, played: pl?.played ?? 4 * 3600 + 25 * 60 }; } // the trial: the player's own time
   if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t) };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];

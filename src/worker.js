@@ -697,10 +697,6 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot != null && Date.now() - (a.seen || 0) < 70000) plots.add(a.plot); }
       return json({ n: plots.size });
     }
-    if (!post && p[0] === "players") { // every player: when they started and how long they have played (the owner chose to show it to all)
-      const list = this.sql.exec("SELECT p.name, p.created, p.played, pl.town FROM players p LEFT JOIN plots pl ON pl.plot = p.plot WHERE COALESCE(p.banned, 0) = 0 ORDER BY p.created LIMIT 3000").toArray();
-      return json({ players: list.map((r) => ({ name: r.name, town: r.town || "", started: r.created || 0, played: r.played || 0 })) });
-    }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
@@ -747,6 +743,10 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    if (p[0] === "me") { // the player's own start and time played (only theirs: the owner wants nobody else's shown)
+      const row = this.sql.exec("SELECT created, played FROM players WHERE name = ?", name).toArray()[0] || {};
+      return json({ name, started: row.created || 0, played: row.played || 0 });
+    }
     if (post && p[0] === "feedback") {
       const text = typeof body.text === "string" ? body.text.trim() : "";
       if (!text) return json({ error: "اكتب ملاحظتك أول" });
