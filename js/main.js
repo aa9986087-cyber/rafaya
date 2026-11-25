@@ -201,6 +201,7 @@ canvas.addEventListener("pointerdown", (e) => {
     const [a, b] = [...pointers.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: world.view.zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
     if (arrange?.held && arrange.dragging) arrDrop(null);
+    arrUnstroke();
     restoreTapPreview();
     drag = null; return;
   }
@@ -643,16 +644,40 @@ function arrDown(e) {
   // so panning over a crowded town never picks up a building by mistake
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && i === arrange.sel && arrMovable(S.tiles[i].b) ? i : -1 };
   // a road from the tray: the finger lays road wherever it goes
-  if (arrange.erase && i >= 0) { drag.erase = true; drag.grab = -1; drag.last = t; arrErase(t); return; }
-  if (arrange.del && i >= 0) { drag.del = true; drag.grab = -1; drag.last = t; arrPush(); if (arrRemove(i)) sfx.remove(); arrSync(); arrRender(); return; }
+  // laying road from the store, removing, lifting roads: nothing on touch-down. A lone finger's move does it (from where
+  // it touched), a tap does it once, and a second finger takes the stroke back, so two fingers always just move the map.
   const h = arrange.held;
-  if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0) { drag.paint = true; drag.grab = -1; drag.last = t; arrPaintOne(t); } // a road in hand: the finger draws it (busy tiles are skipped)
+  const mode = arrange.erase ? "erase" : arrange.del ? "del" : h && h.from < 0 && B[h.b.id].cat === "road" ? "paint" : null;
+  if (mode && i >= 0) { drag.mode = mode; drag.grab = -1; drag.start = t; drag.heldBefore = arrange.held; }
+}
+/** One step of the editor's finger tools at tile t (the stroke has begun). */
+function arrStroke(t) {
+  if (drag.mode === "erase") { arrErase(t); return; }
+  if (drag.mode === "paint") { arrPaint(t); return; }
+  let any = false;
+  for (const c of arrLine(t)) if (inMap(c.x, c.y) && arrRemove(idx(c.x, c.y))) any = true;
+  if (any) { sfx.remove(); arrSync(); arrRender(); }
+}
+function arrBegin() {
+  drag.started = true; drag.pushed = true; arrPush(); // one ↶ takes the whole stroke back
+  drag.last = drag.start;
+  if (drag.mode === "paint") drag.paint = true;
+  if (drag.mode === "erase") drag.erase = true;
+  if (drag.mode === "del") { drag.del = true; if (arrRemove(idx(drag.start.x, drag.start.y))) { sfx.remove(); arrSync(); } }
+  else arrStroke(drag.start);
+}
+/** A second finger landed: take back what this stroke did. */
+function arrUnstroke() {
+  if (!arrange || !drag?.mode || !drag.started || !arrange.hist.length) return;
+  arrRestore(arrange.hist.pop()); arrange.held = drag.heldBefore; arrSync(); arrRender();
 }
 /** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
 function arrMove(e) {
-  if (drag.erase) { arrErase(world.pick(e.clientX, e.clientY)); return true; }
-  if (drag.del) { let any = false; for (const c of arrLine(world.pick(e.clientX, e.clientY))) if (inMap(c.x, c.y) && arrRemove(idx(c.x, c.y))) any = true; if (any) { sfx.remove(); arrSync(); arrRender(); } return true; }
-  if (drag.paint) { arrPaint(world.pick(e.clientX, e.clientY)); return true; }
+  if (drag.mode) {
+    if (!drag.moved) return true;
+    if (!drag.started) arrBegin();
+    arrStroke(world.pick(e.clientX, e.clientY)); return true;
+  }
   if (!drag.moved) return true;
   if (drag.grab >= 0 && !arrange.held) { arrLift(drag.grab); arrange.dragging = true; }
   if (arrange.held && arrange.dragging) {
@@ -668,7 +693,8 @@ function arrMove(e) {
 }
 function arrUp(e) {
   const t = world.pick(e.clientX, e.clientY);
-  if (drag.paint || drag.erase || drag.del) { arrRender(); return; }
+  if (drag.mode && !drag.started && !drag.moved) { arrBegin(); arrRender(); return; } // a tap: once, there
+  if (drag.mode) { arrRender(); return; }
   if (arrange.held && arrange.dragging) { arrDrop(t); return; }
   if (drag.moved) return;
   if (arrange.held) { arrDrop(t); return; } // something from the tray: tap where it goes
