@@ -1349,8 +1349,7 @@ const MAKERS = {
     b.lathe([[.06,0],[.049,.023],[.032,.04],[.013,.058]],"#6e5946",{y:.551},8,"paint");
     b.add(new THREE.SphereGeometry(.013,6,4),"#a9845c",{y:.615},"metal");
   },
-  fountain(b) {
-    stoneApron(b,"#c7b9a0");
+  fountain(b) { // (no paved square under a decoration: it takes only its own size on the ground)
     b.lathe([[.364,.029],[.365,.096],[.349,.108],[.315,.11],[.303,.054]],"#b9a78c",{},20,"stone");
     b.cyl(.308,.308,.008,"#4b8d83",{y:.068},20,"shiny");
     b.lathe([[.089,.077],[.063,.159],[.031,.223],[.04,.276],[.114,.306],[.128,.332],[.12,.342],[.082,.339]],
@@ -1360,11 +1359,9 @@ const MAKERS = {
       const a=i*Math.PI/4,x=Math.sin(a)*.359,z=Math.cos(a)*.359;
       b.box(.019,.025,.011,"#a3967c",{x,z,y:.083,ry:a},"stone");
     }
-    for(const x of [-.366,.366]) civicBench(b,x,.397);
   },
   // A roundabout with a giant dallah (Arabic coffee pot) on a plinth.
   dallah(b) {
-    stoneApron(b,"#bfb49f");
     b.lathe([[.39,.026],[.398,.06],[.38,.079],[.353,.085]],"#d1c1a7",{},20,"stone");
     b.cyl(.339,.339,.012,"#808b63",{y:.072},20);
     b.cyl(.131,.158,.11,"#b8a88c",{y:.081},12,"stone");
@@ -1376,7 +1373,6 @@ const MAKERS = {
   },
   // A giant mabkhara (incense burner) with a wisp of smoke.
   incense(b) {
-    stoneApron(b,"#bfae94");
     b.box(.342,.061,.342,"#b4a387",{y:.026},"stone");
     b.lathe([[.101,0],[.091,.067],[.056,.153],[.065,.208],[.128,.26],[.143,.302],[.132,.32],[.097,.307],[.08,.265]],
       "#92745a",{y:.086,ry:.79},4,"wood");
@@ -1490,13 +1486,11 @@ const MAKERS = {
   olivetree(b) {
     b.cyl(.4,.423,.06,"#b6a287",{},18,"stone");
     b.add(new THREE.TorusGeometry(.385,.017,5,18),"#d6c2a3",{y:.069,rx:Math.PI/2},"stone");
-    for(const x of [-.318,.318]) civicBench(b,x,.211,Math.PI/2);
     b.cyl(0.36, 0.36, 0.02, "#7db35a", { y: 0.06 }, 18);
     for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; b.add(new THREE.SphereGeometry(0.025, 5, 4), i % 2 ? "#f4d03f" : "#ffffff", { x: Math.cos(a) * 0.3, y: 0.09, z: Math.sin(a) * 0.3 }); }
     oliveTree(b, 0, 0, 2.2);
   },
   bigfountain(b) {
-    stoneApron(b,"#c7bba6",.982);
     b.lathe([[.44,.027],[.447,.094],[.425,.119],[.388,.117],[.375,.063]],"#c8b497",{},24,"stone");
     b.cyl(.387,.387,.008,"#498f84",{y:.081},24,"shiny");
     for(let i=0;i<8;i++) {

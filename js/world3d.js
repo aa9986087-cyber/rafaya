@@ -621,7 +621,7 @@ export class World {
     const list = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const b = s.tiles[idx(x, y)].b;
-      if (!b || roadAt(s.tiles[idx(x, y)]) || ["parking", "pole", "streetpalm", "flowers", "lantern"].includes(b.id)) continue;
+      if (!b || roadAt(s.tiles[idx(x, y)]) || ["parking", "pole"].includes(b.id) || B[b.id]?.cat === "deco") continue; // decorations: no square shadow, only their own
       list.push(tileCenter(x, y));
     }
     if (!list.length) return;
