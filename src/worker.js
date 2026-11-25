@@ -110,7 +110,9 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ }
-    try { this.sql.exec("ALTER TABLE players ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ } // the player changed their own name (once only) // stopped by the owner
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN device TEXT"); } catch { /* already there */ } // the phone's own random number, hashed: a ban keeps the phone out (no name, no number)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS banned_devices (device TEXT PRIMARY KEY, name TEXT, at INTEGER)`); // the player changed their own name (once only) // stopped by the owner
     try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN google TEXT"); } catch { /* already there */ } // the linked Google account's number, hashed (never the e-mail)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
@@ -586,6 +588,8 @@ export class Board extends DurableObject {
       const nm = clean(body.name, 16);
       if (!one("SELECT 1 x FROM players WHERE name = ?", nm)) return json({ error: "ما لقيت اللاعب" });
       this.sql.exec("UPDATE players SET banned = ?, ban_reason = ? WHERE name = ?", body.on ? 1 : 0, clean(body.reason, 100), nm);
+      const dev = one("SELECT device FROM players WHERE name = ?", nm)?.device;
+      if (dev) { if (body.on) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", dev, nm, now); else this.sql.exec("DELETE FROM banned_devices WHERE device = ?", dev); }
       return json({ ok: true });
     }
     if (!post && p[0] === "gifts") { // the gifts sent, and whether each town's game has taken it yet
@@ -603,13 +607,14 @@ export class Board extends DurableObject {
       return json({ ok: true, town: t.town });
     }
     if (post && p[0] === "remove") { // the owner deletes a player: their town leaves al-Jouf quietly, and the name is free no more
-      const nm = clean(body.name, 16), pl = one("SELECT plot FROM players WHERE name = ?", nm);
+      const nm = clean(body.name, 16), pl = one("SELECT plot, device FROM players WHERE name = ?", nm);
       if (!pl) return json({ error: "ما لقيت اللاعب" });
       this.ctx.storage.transactionSync(() => {
         if (pl.plot != null) this.removeTown(pl.plot, "حذف من الإدارة");
         this.sql.exec("DELETE FROM wnews WHERE plot = ? AND kind = 'town'", pl.plot ?? -1);
         this.sql.exec("DELETE FROM chat WHERE name = ?", nm);
         for (const tbl of ["keys", "handoff", "namefix"]) this.sql.exec(`DELETE FROM ${tbl} WHERE name = ?`, nm);
+        if (pl.device) this.sql.exec("INSERT OR REPLACE INTO banned_devices (device, name, at) VALUES (?, ?, ?)", pl.device, nm, now); // deleted for good: the phone stays out
         this.sql.exec("DELETE FROM players WHERE name = ?", nm);
       });
       this.live({ t: "news" });
@@ -686,6 +691,8 @@ export class Board extends DurableObject {
   async world(request, p) {
     if (!WORLD_OPEN && this.env?.WAR_TEST !== "1") return json({ error: "maintenance" }, 503); // local tests may open it
     const post = request.method === "POST", body = post ? await request.json() : {};
+    const device = typeof body?.device === "string" && body.device.length >= 16 ? await hash("d:" + body.device.slice(0, 64)) : null;
+    if (device && this.sql.exec("SELECT 1 FROM banned_devices WHERE device = ?", device).toArray().length) return json({ error: "banned" }, 403); // a phone the owner banned
     if (!post && p[0] === "clock") {
       // the day went from 20 to 30 minutes: hours before slowAt were 50 s, after it 75 s (set once, the first time this code runs)
       // and back to 20 minutes at fastAt (set once too): 75 s hours only between the two
@@ -776,7 +783,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (badText(name) || this.moderation.blockedName(name)) return json({ error: "اختر لقب مناسب للعبة" }, 422);
       if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", name).toArray().length) return json({ error: "taken" }, 409);
       const secret = makeSecret(), recovery = makeCode() + makeCode();
-      this.sql.exec("INSERT INTO players (name, secret, recovery, created, plot) VALUES (?, ?, ?, ?, NULL)", name, await hash(secret), await hash(recovery), Date.now());
+      this.sql.exec("INSERT INTO players (name, secret, recovery, created, plot, device) VALUES (?, ?, ?, ?, NULL, ?)", name, await hash(secret), await hash(recovery), Date.now(), device);
       return json({ name, secret, recovery });
     }
     if (post && p[0] === "recover") {
@@ -815,6 +822,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    if (device) this.sql.exec("UPDATE players SET device = ? WHERE name = ? AND (device IS NULL OR device != ?)", device, name, device);
     if (post && p[0] === "google" && p[1] === "link") { // link this player to a Google account (one account, one player)
       const sub = await googleSub(body.credential);
       if (!sub) return json({ error: "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" }, 403);

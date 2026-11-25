@@ -1693,8 +1693,15 @@ function quartersSheet() {
 // ---------- online: the server API and visiting other world towns ----------
 const API = "/api";
 const onlineOk = () => !!globalThis.RAFAYA_PREVIEW || (location.protocol.startsWith("http") && !location.hostname.endsWith("claudeusercontent.com"));
+/** This phone's own random number (made here once, never anything about the person). */
+function deviceId() {
+  let d = store.get("rafaya-device");
+  if (!d || d.length < 16) { d = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""); store.set("rafaya-device", d); }
+  return d;
+}
 async function api(path, body) {
   if (globalThis.RAFAYA_PREVIEW) return globalThis.RAFAYA_PREVIEW(path, body); // the trial copy answers by itself (js/preview.js)
+  if (body && typeof body === "object" && path.startsWith("/world/")) body = { ...body, device: deviceId() }; // so a ban from the owner keeps this phone out
   const r = await fetch(API + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
   if (r.status === 403 && (await r.clone().json().catch(() => null))?.error === "banned" && !api.bannedSaid) { api.bannedSaid = true; toast("⛔ حسابك بعالم الجوف موقوف من الإدارة", "bad"); }
   if (!r.ok) throw new Error(r.status === 503 ? "maintenance" : String(r.status));
