@@ -1,5 +1,6 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION, REQUIRED } from "./version.js";
+import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, houseTop, housePrice, buildHouseAt, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
@@ -2207,6 +2208,7 @@ function pendingSummary(home) {
   return { n: list.length, who: list[0]?.person?.name || "", text: list[0]?.text || "", decision: d?.title || "" };
 }
 const saveRequests = new WeakMap();
+const saveWriters = new WeakMap();
 function ownsActiveSave(home) {
   const id = me();
   return worldMode && id?.plot != null && (visiting?.home ?? S) === home && home?.world?.plot === id.plot && home.world.owner === id.name;
@@ -2217,20 +2219,23 @@ function worldSnapshot(home, compare = false) {
     moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} });
 }
 async function prepareWorldSave(home, id) {
-  if (globalThis.RAFAYA_PREVIEW || typeof home.world.saveVersion === "string") return;
+  if (globalThis.RAFAYA_PREVIEW) return true;
   const local = worldSnapshot(home, true);
   const { state, town } = await readCloudTown(id);
-  if (home.world.syncConflict || town.restarted > (home.world.restartAt || 0) || (town.snapshot && worldSnapshot(state, true) !== local)) {
-    home.world.syncConflict = true;
-    return;
-  }
-  home.world.saveVersion = state.world.saveVersion;
+  const revision = state.world.saveVersion;
+  const sameRestart = (town.restarted || 0) === (home.world.restartAt || 0);
+  const knownRevision = home.world.saveVersion === revision || pendingSaveMatches(revision, home.world.pendingWrites);
+  const sameSnapshot = town.snapshot && worldSnapshot(state, true) === local;
+  if (!sameRestart || (!knownRevision && town.snapshot && !sameSnapshot)) return false;
+  home.world.saveVersion = revision;
+  delete home.world.syncConflict;
+  return true;
 }
 const conflictCopyKey = (id) => `rafaya-world-copy-${id.plot}-${id.name}`;
 function saveConflictSheet() {
   const id = me(), home = visiting?.home ?? S;
   if (!ownsActiveSave(home) || !home.world.syncConflict || sheetFor === "update" || sheetFor === "namefix") return;
-  sheet(`<h2>حفظ مدينتك على جهاز ثاني</h2><p>حفظ هذا الجهاز يختلف عن حفظ السيرفر. وقفنا المزامنة عشان نحافظ على النسختين.</p>
+  sheet(`<h2>تعارض حفظ المدينة</h2><p>حفظ هذا الجهاز يختلف عن حفظ السيرفر. وقفنا المزامنة عشان نحافظ على النسختين.</p>
     <p>إذا فتحت حفظ السيرفر، بنحتفظ بنسخة هذا الجهاز في الإعدادات.</p>
     <div class="sheet-actions keep"><button class="btn go block" id="openServerSave" type="button">افتح حفظ السيرفر</button></div>`, "save-conflict");
   $("openServerSave").addEventListener("click", async (event) => {
@@ -2258,7 +2263,7 @@ function saveConflictSheet() {
 /** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
 function worldSync(force, leaving = false) {
   const id = me();
-  if (!worldMode || id?.plot == null || !onlineOk() || arrange) return;
+  if (!worldMode || id?.plot == null || !onlineOk() || navigator.onLine === false || arrange) return;
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
   if (!ownsActiveSave(mine) || mine.world.syncConflict) return;
   if (leaving && Date.now() - (worldSync.backgroundAt || 0) < 1000) return;
@@ -2281,9 +2286,9 @@ function worldSync(force, leaving = false) {
 }
 async function sendWorldSave(mine, id, leaving) {
   if (typeof mine.world.saveVersion !== "string" && !globalThis.RAFAYA_PREVIEW) {
-    await prepareWorldSave(mine, id);
+    const matched = await prepareWorldSave(mine, id);
     if (!ownsActiveSave(mine) || arrange) return;
-    if (mine.world.syncConflict) { syncReply({ conflict: true }, mine); return; }
+    if (!matched) { syncReply({ conflict: true }, mine); return; }
   }
   lastSync = Date.now();
   // the money moves too, for the owner's statement of this town (what came in, what went out, and why)
@@ -2297,9 +2302,11 @@ async function sendWorldSave(mine, id, leaving) {
     r = await api("/world/sync", data);
   } else {
     const pendingWrites = Array.isArray(mine.world.pendingWrites) ? mine.world.pendingWrites : [];
-    const saveWrite = crypto.randomUUID();
+    let nextWrite = saveWriters.get(mine);
+    if (!nextWrite) { nextWrite = townSaveWriter(); saveWriters.set(mine, nextWrite); }
+    const saveWrite = nextWrite();
     const body = JSON.stringify({ ...data, saveVersion: mine.world.saveVersion, saveWrite, pendingWrites });
-    mine.world.pendingWrites = [...pendingWrites, saveWrite].slice(-8);
+    mine.world.pendingWrites = rememberPendingSave(pendingWrites, saveWrite);
     store.set(WORLD_SAVE, pack(mine)); // remember a background request even if the app closes before it gets a reply
     if (leaving) {
       worldSync.backgroundAt = Date.now();
@@ -2307,6 +2314,13 @@ async function sendWorldSave(mine, id, leaving) {
     }
     const response = await fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body });
     r = await response.json();
+    if (r.conflict && ownsActiveSave(mine) && !arrange) {
+      const matched = await prepareWorldSave(mine, id).catch(() => false);
+      if (matched) {
+        if (ownsActiveSave(mine) && !arrange) store.set(WORLD_SAVE, pack(mine));
+        return;
+      }
+    }
     if (r.ok && r.saveVersion === saveWrite) {
       mine.world.saveVersion = saveWrite;
       delete mine.world.pendingWrites;
@@ -2606,7 +2620,9 @@ async function readOwnTown(id) {
     const local = unpack(store.get(WORLD_SAVE));
     if (local.world?.plot === id.plot) {
       local.world.owner = id.name;
-      if (!local.world.syncConflict) await prepareWorldSave(local, id).catch(() => {});
+      if (local.world.syncConflict || typeof local.world.saveVersion !== "string") {
+        if (await prepareWorldSave(local, id).catch(() => null) === false) local.world.syncConflict = true;
+      }
       return local;
     }
   } catch { /* use the server copy when local storage is missing or unreadable */ }
@@ -3540,8 +3556,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-houses", world: "2026-11-25-houses" },
+  v: { solo: "2026-11-25-houses", world: "2026-11-25-save-reconnect" },
   items: [
+    ["world", "💾", "الحفظ بعد انقطاع الاتصال", "صلّحنا تنبيه تعارض الحفظ اللي كان يظهر أحيانًا من نفس الجوال بعد إغلاق اللعبة أو انقطاع الاتصال. إذا رجعت للعبة، تتعرّف على حفظك السابق وتكمل المزامنة."],
     ["both", "🏠", "ابنِ البيت المطوّر على طول", "• إذا طوّرت بيت لمستوى (طين، شعبي، فيلا، عمارة…)، يطلع هالمستوى في قسم «سكن» بطاقة لحاله، وتبنيه جاهز على طول. • سعره: الخيمة مع كل التطويرات اللي قبله ومواد البناء، نفس لو بنيته وطورته."],
     ["both", "✏️", "وضع التعديل", "• «ترتيب» و«إزالة» صاروا زر واحد: «✏️ تعديل». • اختر أي مبنى: اسحبه لمكان ثاني أو بدّله مع غيره ببلاش، ↻ تلفه، 🗑️ تشيله. • 🗑️ بدون ما تختار شي يفتح وضع الإزالة: اضغط أو اسحب إصبعك على المباني والطرق والصخور. • ↶ تراجع و↷ إعادة لكل شي، وتشوف فوق كم بيرجع لك من الإزالة، وما ينحسب شي إلا إذا ضغطت ✓ (و✕ يرجّع كل شي مثل ما كان)."],
     ["world", "💾", "حفظ المدينة بين الأجهزة", "الحفظ القديم من جهاز ثاني ما يرجّع مبانيك أو رصيدك. إذا اختلف الحفظ، تقدر تفتح حفظ السيرفر وتلقى نسخة هذا الجهاز في الإعدادات."],
