@@ -155,6 +155,8 @@ export class Board extends DurableObject {
         this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('news_google', ?)", String(Date.now()));
       }
     } catch { /* said next time */ }
+    // the owner asked (2026-11-25): the line about «هجرة السكران» being removed comes off the bulletin
+    this.sql.exec("DELETE FROM wnews WHERE kind = 'removed' AND text LIKE '%«هجرة السكران»%'");
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
