@@ -585,3 +585,16 @@ test("a big decoration takes 2×2 tiles; its other tiles go with it; small ones 
   assert.equal(build(s, x0, y0, "streetpalm"), "", "a palm is one tile");
   assert.equal(s.tiles[idx(x0 + 1, y0)].b, null);
 });
+
+test("small decorations: four of the same on one tile, each counting", () => {
+  const s = newGame(13);
+  s.money = 1e5;
+  let x0 = -1, y0 = -1;
+  for (let y = 0; y < N && x0 < 0; y++) for (let x = 0; x < N; x++) if (!cantBuild(s, x, y, "streetpalm")) { x0 = x; y0 = y; break; }
+  for (let k = 0; k < 4; k++) assert.equal(build(s, x0, y0, "streetpalm"), "", `palm ${k + 1}`);
+  assert.equal(s.tiles[idx(x0, y0)].b.n, 4);
+  assert.ok(cantBuild(s, x0, y0, "streetpalm"), "a fifth does not fit");
+  assert.ok(cantBuild(s, x0, y0, "flowers"), "another kind does not share it");
+  const one = analyze({ ...s, tiles: s.tiles.map((t, i) => (i === idx(x0, y0) ? { ...t, b: { ...t.b, n: 1 } } : t)) });
+  assert.ok(analyze(s).decor[idx(x0, y0 + 1)] > one.decor[idx(x0, y0 + 1)], "four cheer more than one");
+});

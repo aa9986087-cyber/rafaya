@@ -260,6 +260,7 @@ export function cantBuild(s, x, y, id) {
       if (!tt || !owns(s, x + dx, y + dy) || tt.b || tt.t === "lake") return "تحتاج ٢×٢ مربعات فاضية: هذا المربع واللي يمينه وتحته";
     }
   }
+  if (t.b && def.quarter && t.b.id === id && (t.b.n || 1) < 4) return s.money < def.cost ? "ما يكفي المال" : ""; // another in the same tile
   if (t.b) {
     // a better road can be laid over an old one
     if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
@@ -284,6 +285,7 @@ export function build(s, x, y, id) {
   const why = cantBuild(s, x, y, id);
   if (why) return why;
   const t = s.tiles[idx(x, y)];
+  if (t.b && t.b.id === id && B[id].quarter) { changeMoney(s, -priceOf(s, id), "build", B[id].name); t.b.n = (t.b.n || 1) + 1; return ""; } // a small decoration: one more on this tile
   const keepRock = B[id].onRock;
   changeMoney(s, -priceOf(s, id), "build", B[id].name);
   if (t.t === "rock" && !keepRock) changeMoney(s, -ROCK_CLEAR, "rock");
@@ -774,7 +776,8 @@ export function analyze(s) {
     const works = (!needsRoad(def) || onRoad(s, x, y)) && !((s.broke || strike) && def.cat === "serv") && !(t.b.ruin > 0);
     const f = condFactor(t.b);
     const up = bizLevel(t.b);
-    a.value += def.cost * (1 + (t.b.lvl && BIZ_LEVELS[t.b.id] ? BIZ_UP.slice(1, t.b.lvl + 1).reduce((n, u) => n + u.cost, 0) : 0));
+    const many = t.b.n || 1; // small decorations: several on one tile
+    a.value += many * def.cost * (1 + (t.b.lvl && BIZ_LEVELS[t.b.id] ? BIZ_UP.slice(1, t.b.lvl + 1).reduce((n, u) => n + u.cost, 0) : 0));
     a.repairBill += repairCost(t.b);
     t.b.works = works;
     const here = idx(x, y);
@@ -783,7 +786,7 @@ export function analyze(s) {
     if (gw) a.groundSupply += def.water * f * a.groundFactor;
     if (def.water > 0) a.waterSupply += def.water * f * (gw ? a.groundFactor : 1); else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
     if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
-    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : def.cat === "mil" ? "military" : "services"] += (def.upkeep || 0) * up.upkeep;
+    a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : def.cat === "mil" ? "military" : "services"] += (def.upkeep || 0) * up.upkeep * many;
     if (t.b.id === "house") {
       a.homes++;
       a.levels[t.b.lvl]++;
@@ -796,7 +799,7 @@ export function analyze(s) {
     if (t.b.id === "palms") palms.push(t);
     // Services and nuisances spread over their radius.
     if (works && def.radius && (def.happy || def.pollute)) {
-      const rad = def.radius + (up.radius || 0), cheer = (def.happy || 0) * (up.happy || 1);
+      const rad = def.radius + (up.radius || 0), cheer = (def.happy || 0) * (up.happy || 1) * many;
       for (let yy = y - rad; yy <= y + rad; yy++) for (let xx = x - rad; xx <= x + rad; xx++) {
         if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > rad) continue;
         const i = idx(xx, yy);

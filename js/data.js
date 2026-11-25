@@ -124,11 +124,12 @@ export const B = {
   university: { cat: "serv", name: "جامعة", cost: 6000, upkeep: 70, era: 3, water: -6, power: -10, radius: 12, happy: 18, service: "school", jobs: 30, text: "جامعة الرافعية. فخر المحافظة." },
 
   // Decorations: cheap, no road needed, they cheer up the streets around them.
+  // quarter: a small decoration takes a quarter of a tile (up to 4 of the same on one tile, `n` on it)
   // span 2: a big decoration takes 2×2 tiles (its own tile and the ones to its east and south, marked "decopart")
   decopart: { cat: "part", name: "زينة", cost: 0, upkeep: 0, era: 0, text: "جزء من زينة كبيرة." },
-  streetpalm: { cat: "deco", name: "نخلة شارع", cost: 40, upkeep: 0, era: 0, radius: 2, happy: 2, text: "نخلة وحدة تزيّن الشارع." },
-  flowers: { cat: "deco", name: "حوض زهور", cost: 30, upkeep: 0, era: 0, radius: 2, happy: 2, text: "زهور ملونة على الرصيف." },
-  lantern: { cat: "deco", name: "فانوس زينة", cost: 50, upkeep: 1, era: 0, radius: 2, happy: 3, text: "فانوس ينوّر بالليل." },
+  streetpalm: { cat: "deco", quarter: true, name: "نخلة شارع", cost: 40, upkeep: 0, era: 0, radius: 2, happy: 2, text: "نخلة وحدة تزيّن الشارع." },
+  flowers: { cat: "deco", quarter: true, name: "حوض زهور", cost: 30, upkeep: 0, era: 0, radius: 2, happy: 2, text: "زهور ملونة على الرصيف." },
+  lantern: { cat: "deco", quarter: true, name: "فانوس زينة", cost: 50, upkeep: 1, era: 0, radius: 2, happy: 3, text: "فانوس ينوّر بالليل." },
   fountain: { cat: "deco", name: "نافورة", cost: 260, upkeep: 2, era: 1, radius: 3, happy: 5, text: "ماء وبرودة وسط الحارة." },
   dallah: { cat: "deco", span: 2, name: "دوّار الدلة", cost: 420, upkeep: 2, era: 1, radius: 4, happy: 6, text: "دوار بوسطه دلة كبيرة، رمز الكرم." },
   olivetree: { cat: "deco", span: 2, name: "نصب الزيتونة", cost: 600, upkeep: 2, era: 1, radius: 4, happy: 7, text: "زيتونة معمّرة وسط دوار: رمز الجوف." },

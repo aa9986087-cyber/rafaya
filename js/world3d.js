@@ -832,6 +832,16 @@ export class World {
       const variants = VARIANTS[key];
       if (variants) { const v = Math.floor(hash(x, y, 77) * (variants.length + 1)); if (v > 0) key = `${key}~${v - 1}`; }
       const gk = key.startsWith("palms") ? `${key}:${t.t}` : key;
+      const many = B[t.b.id]?.quarter ? Math.min(4, t.b.n || 1) : 1;
+      if (many > 1) { // small decorations sharing a tile: one in each quarter, a little smaller (the last one added is the tile's own)
+        const s2 = t.b.id === "flowers" ? 0.5 : 0.75;
+        for (let k = 0; k < many; k++) {
+          const o = [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]][k];
+          m4.compose(new THREE.Vector3(p.x + o[0], p.y, p.z + o[1]), q, new THREE.Vector3(s2, s2, s2));
+          if (k < many - 1) push(key, t.t, m4.clone(), 1, -1);
+          if (t.b.id === "lantern" && k < many - 1) lights.push({ x: p.x + o[0], z: p.z + o[1], width: .5, strength: .32, warmth: .93 });
+        }
+      }
       push(key, t.t, m4.clone(), t.b.wd ? 1 - Math.min(0.5, t.b.wd * 0.006) : 1, idx(x, y));
       const i = idx(x, y);
       seen.set(i, gk);
