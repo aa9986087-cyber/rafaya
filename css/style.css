@@ -656,3 +656,10 @@ body.world .speeds { display: none !important; }
 /* the players list: name and town, the start date under, the time played on the side */
 .row.player span small { display: block; opacity: .75; font-size: 12px; margin-top: 2px; }
 .row.player.me { background: rgba(240, 185, 80, .18); border-radius: 12px; }
+
+/* a building's reach on the map, with its information a tap away */
+.reach-tag { position: fixed; z-index: 7; left: 50%; top: calc(var(--top, 0px) + 150px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 14px; background: var(--ink); color: #fbf3e2; box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .7); white-space: nowrap; max-width: calc(100vw - 24px); }
+.reach-tag[hidden] { display: none; }
+.reach-tag span { display: grid; min-width: 0; overflow: hidden; }
+.reach-tag small { opacity: .8; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.reach-tag button { border: 0; border-radius: 10px; padding: 7px 10px; background: rgba(255, 255, 255, .14); color: inherit; font-weight: 700; }

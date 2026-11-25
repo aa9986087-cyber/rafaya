@@ -474,6 +474,7 @@ function paintAt(sx, sy) {
 
 function tap(sx, sy) {
   const t = world.pick(sx, sy);
+  reachClose(); // a tap anywhere closes the reach view
   if (!inMap(t.x, t.y)) return;
   if (WARX.scene) return;
   if (WARX.targeting) { targetTap(t.x, t.y); return; }
@@ -1576,8 +1577,11 @@ function inspect(x, y) {
   if (d.service === "mosque") { const u = mosqueGaps(); html += u ? `<div class="need">${ar(u)} ${u >= 3 && u <= 10 ? "بيوت" : "بيت"} برا مدى المساجد: ابنِ مسجد قريب منها.</div>` : `<div class="need ok">كل البيوت داخل مدى المساجد ✓</div>`; html += `<button class="btn block" id="showMosques" type="button">🕌 اعرض وين توصل المساجد كلها</button>`; }
   const rNext = roadNext(t.b), rWhy = rNext ? roadUpWhy(x, y) : "";
   html += `</div><div class="sheet-actions">${rNext && !visiting ? `<button class="btn go block" id="roadUpOne" type="button" ${rWhy ? "disabled" : ""}>⬆ طوّره إلى ${B[rNext].name} (${money(B[rNext].cost)} ريال)</button>${rWhy ? `<p class="hint">${rWhy}</p>` : ""}` : ""}${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}${visiting ? "" : `<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(removalRefund(t.b))} ريال)</button>`}</div>`;
+  const reachR = d.cat === "road" ? 0 : (d.radius ? d.radius + (up.radius || 0) : 0) || d.reach || 0; // (a road's cheer reaches only its own neighbours)
+  if (reachR) html = html.replace('<div class="sheet-actions">', `<div class="sheet-actions"><button class="btn block" id="seeReach" type="button">🗺️ شوف مداه على الخريطة</button>`);
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
+  $("seeReach")?.addEventListener("click", () => { sfx.tap(); reachView(x, y, reachR); });
   $("showMosques")?.addEventListener("click", () => { sfx.tap(); mosqueMap(); });
   $("roadUpOne")?.addEventListener("click", () => {
     const why = roadUpWhy(x, y) || build(S, x, y, roadNext(S.tiles[idx(x, y)].b));
@@ -3559,8 +3563,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-updates", world: "2026-11-25-mytime" },
+  v: { solo: "2026-11-25-reach", world: "2026-11-25-reach" },
   items: [
+    ["both", "🗺️", "شوف مدى المبنى على الخريطة", "• اضغط على أي مبنى له مدى (مسجد، مدرسة، بقالة، بئر، مولد، مصنع…) وبمعلوماته زر «🗺️ شوف مداه على الخريطة»: تختفي المعلومات، والخريطة تقرّب عليه وتلوّن مداه كامل، وفوق شريط يقول كم بيت يخدم. • زر «ℹ️ المعلومات» يرجعك لمعلوماته، و✕ أو أي ضغطة على الخريطة تقفله."],
     ["world", "⏱️", "وقتك في اللعبة", "• من «القائمة» ← «⏱️ وقتك في اللعبة» تشوف متى بديت (اليوم والتاريخ والساعة)، ومن كم يوم وأنت معنا، وكم ساعة لعبت. • ما أحد يشوف وقتك غيرك. • وقت اللعب ينحسب واللعبة مفتوحة قدامك، من يوم نزول هالخانة."],
     ["both", "⬆️", "التحديثات توصلك على طول", "• إذا نزل تحديث وأنت داخل اللعبة (حتى لو حاطها تطبيق)، يطلع لك «تحديث جديد» خلال ثواني بعالم الجوف، وخلال دقيقة برا، بدون ما تطلع وترجع."],
     ["world", "💾", "الحفظ بعد انقطاع الاتصال", "صلّحنا تنبيه تعارض الحفظ اللي كان يظهر أحيانًا من نفس الجوال بعد إغلاق اللعبة أو انقطاع الاتصال. إذا رجعت للعبة، تتعرّف على حفظك السابق وتكمل المزامنة."],
@@ -4528,6 +4533,25 @@ async function playersSheet() {
     </div>
     <p class="hint">وقت اللعب ينحسب واللعبة مفتوحة قدامك، من يوم ما نزلت هالخانة. وما أحد غيرك يشوفه.</p>`, "players");
 }
+/**
+ * A building's reach on the map (the sheet out of the way): the camera on it, wide enough for all of it, its reach
+ * tinted, and a tag that says who it serves, with its information a tap away. It stays until ✕ or another tap.
+ */
+function reachView(x, y, r) {
+  const b = S.tiles[idx(x, y)].b, d = b && B[b.id];
+  if (!d) return;
+  closeSheet();
+  world.focus(x, y); world.view.zoom = Math.max(0.5, Math.min(1.6, 9 / (2 * r + 4))); world.updateCamera();
+  setTimeout(() => showReach(x, y, { ...d, radius: d.radius ? r : 0, reach: d.radius ? 0 : r }), 200);
+  const homes = reachHomes([{ x, y }], r);
+  $("reachName").textContent = `مدى «${levelName(b)}»: ${r === 1 ? "مربع واحد" : r === 2 ? "مربعين" : `${ar(r)} ${r <= 10 ? "مربعات" : "مربع"}`}`;
+  $("reachWhat").textContent = d.pollute ? (homes.homes ? `⚠️ يزعج ${ar(homes.homes)} بيت` : "ما حوله بيوت") : d.water > 0 ? "الأزرق يوصله الماء" : d.power > 0 || d.wire ? "البنفسجي توصله الكهرب" : homes.homes ? `يخدم ${ar(homes.homes)} بيت (${ar(homes.people)} ساكن)` : "ما حوله بيوت للحين";
+  $("reachTag").hidden = false;
+  reachView.at = { x, y };
+}
+function reachClose() { if ($("reachTag").hidden) return; $("reachTag").hidden = true; reachView.at = null; if (!tool && !sheetFor) world.setOverlay(null); }
+$("reachStop").addEventListener("click", () => { sfx.tap(); reachClose(); });
+$("reachInfo").addEventListener("click", () => { sfx.tap(); const a = reachView.at; reachClose(); if (a) inspect(a.x, a.y); });
 function pauseMenu() {
   if (visiting) { // looking at someone else's town: a short menu, and the way home
     sheet(`<h2>القائمة</h2><p class="hint">أنت تتفرج على مدينة غيرك. ما تقدر تغيّر فيها شي.</p><div class="rows">
