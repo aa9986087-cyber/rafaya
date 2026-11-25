@@ -976,6 +976,15 @@ function refresh() {
   $("sPowerLabel").textContent = A.grid ? "كهرباء" : "كهرباء —";
   $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
   $("sEra").textContent = !S.site || S.site === "main" ? ERAS[S.era].name : S.name;
+  { // the next stage and how far the town has come (a tap on the clock shows the details)
+    const nx = ERAS[S.era + 1], chip = $("sNext");
+    chip.hidden = !nx;
+    if (nx) {
+      const from = ERAS[S.era].pop, p = Math.max(0, Math.min(99, Math.floor((S.pop - from) / (nx.pop - from) * 100)));
+      chip.textContent = `⬆ ${nx.name} ${ar(p)}٪`; chip.style.setProperty("--p", `${p}%`);
+      chip.title = `باقي ${ar(Math.max(0, nx.pop - S.pop))} نسمة وتصير ${nx.name}`;
+    }
+  }
   const se = seasonOf(S.day);
   // in the world the calendar is shared; the day shown is the town's own (counted from its founding)
   $("sDay").textContent = `اليوم ${ar(S.world?.start != null ? Math.max(1, dayOf(S.day - S.world.start + 3)) : dayOf(S.day))}`;
@@ -3256,6 +3265,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: { solo: "2026-11-25-storm", world: "2026-11-25-storm" },
   items: [
+    ["both", "⬆️", "كم باقي للمرحلة الجاية", "• فوق جنب اسم مرحلتك (قرية، بلدة، مدينة…) تشوف المرحلة الجاية وكم وصلت لها بالنسبة، والشريط يتعبّى كل ما كبرت. • اضغط على الوقت فوق وتشوف كم نسمة باقي بالضبط."],
     ["both", "⚡", "البرق والرعد", "• صوت مطر جديد، ورعد يرعد بعيد وقريب. • وقت المطر ممكن تنزل صاعقة على أرضك: إذا صابت مبنى ينقص من حالته (ترممه عادي، والصاعقة ما تطيّحه)، وإذا صابت أرض فاضية بس تنوّر وتولّع شرار. • السماء تبرق بين وقت وثاني، والمدينة تنوّر مع البرقة."],
     ["both", "☀️", "نهار أطول وليل أوضح", "• النهار صار أطول والليل أقصر بكل الفصول. • الليل صار أوضح، والمدينة تبان حتى تحت المطر."],
     ["both", "💧", "الماء الجوفي يرجع", "• كل سد خالص يرجّع ماء للأرض حتى لو بحيرته صغيرة، وإذا امتلت يرجّع أكثر. • إذا قرب الماء الجوفي يخلص، الآبار تسحب أقل، فيقدر يرجع يرتفع بالسدود والتحلية. • بطاقة «ردم الوادي» تغيّرت صورتها عشان ما تنلخبط مع السد."],
