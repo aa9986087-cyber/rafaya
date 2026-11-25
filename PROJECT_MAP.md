@@ -18,7 +18,7 @@ The owner is Saudi and is not a programmer.
 - **Releasing:** push to `main` (production) **only** when the owner writes «ارفع». Work and pushes on a
   side branch are fine at any time. Every release is mandatory for players. Never add `UPDATE.json`.
 - **Release note:** every player-facing release adds a short Arabic item at the **top** of
-  `WHATS_NEW.items` in `js/main.js` and bumps `WHATS_NEW.v` for each affected mode (`solo`, `world`;
+  `WHATS_NEW.items` in `js/whats-new.js` and bumps `WHATS_NEW.v` for each affected mode (`solo`, `world`;
   use `"both"` for both). Exception: when the owner says it is a secret or surprise, add no item.
   After the release, check that the live build has the note («النشرة ← التحديثات»).
 - **Saves:** never break old saves (local saves or the server snapshots).
@@ -43,7 +43,8 @@ The owner is Saudi and is not a programmer.
 | `index.html`, `css/style.css` | The one page and its styles (sheets, HUD, dock, toasts). |
 | `js/data.js` | Every number and list: buildings `B`, military `MIL`, eras `ERAS`, tech, goals, events, decisions, seasons, terrains, the **world map `WORLD`** and its helpers `worldPlot/worldXY/worldTerrain/worldPlace`, `townNameKey`. |
 | `js/sim.js` | The town simulation, pure (no DOM): `newGame`, `build`, `demolish`, `fillWadi`, `step` (one hour), `analyze` (the town right now), dams/lakes/groundwater, traffic, power, quarters, elections, moving, wear/repair, the deputy while away, **`pack`/`unpack` (saves)**. |
-| `js/main.js` | ~5000 lines: everything on screen. See the section index in §3. |
+| `js/main.js` | ~4850 lines: everything on screen. See the section index in §3. |
+| `js/whats-new.js` | **`WHATS_NEW`**: the release notes (`v` per mode, `items` newest first). Pure data. |
 | `js/world3d.js` | The 3D town: ground, roads, instanced buildings, light, day and night, rain, flood, lightning, hover/overlay marks, `pick` (screen → tile). |
 | `js/models.js` | Every building as a low-poly model built from shapes in code (no model files). `PLACE_STYLE` gives each place of al-Jouf its look. |
 | `js/warfx.js` | War on screen only: moving military parts, damage, the attack scenes. Never decides anything. |
@@ -66,7 +67,7 @@ The owner is Saudi and is not a programmer.
 | `privacy.html` | The Arabic privacy policy, served at `/privacy`. Update it when data collection changes. |
 | `sw.js`, `manifest.webmanifest` | Service worker (notifications) and the home-screen app. |
 | `scripts/copy-site.mjs` | The deploy build: copies the site into `dist/site` and stamps the version. |
-| `scripts/bundle.mjs --preview` | Builds the one-file **trial** `dist/rafaya-trial.html`, with sounds inline. |
+| `scripts/bundle.mjs --preview` | Builds the one-file **trial** `dist/rafaya-trial.html`, with sounds inline. **A new `js/*.js` module must be added to its `mods` list.** |
 | `test/*.test.mjs` | `npm test`: about 60 tests (sim, war, saves, google, push, admin review). `test/balance.mjs` is a money-balance runner. |
 
 ---
@@ -89,7 +90,7 @@ The owner is Saudi and is not a programmer.
 | «صراع الجوف» | War state, the command center, relations, targeting, scenes, damage | `warSyncNow`, `relSheet`, `startTargeting` |
 | the public chat | World chat | |
 | the region | Solo-mode region map | `regionSheet` |
-| what is new | **`WHATS_NEW`** (the release notes) | `whatsNewSheet` |
+| what is new | Shows the notes from `js/whats-new.js` | `whatsNewSheet` |
 | the people of the house, the advisor | Families sheet, the advisor sheet | |
 | settings | Settings, «✏️ اسمك» (the player's own name, once only), «حسابك وقوقل», playtime | `nameSection`, `googleSection` |
 | the clock, asleep, iPhone Safari, start | `runHour` (the game hour: `step` then UI), idle/deputy, boot | `runHour` |
@@ -176,4 +177,4 @@ The owner is Saudi and is not a programmer.
 | Bulletin and chat | `worker.js` `news()`, `chat`; `main.js` نشرة الجوف and chat sections |
 | Citizen support | `worker.js` `startCitizenSupport2`, `payCitizenSupport`, `flushCitizenSupport` |
 | Google sign-in | `src/google.js`; `worker.js` `google/*`; `main.js` Google section |
-| Release notes | `main.js` `WHATS_NEW` |
+| Release notes | `js/whats-new.js` `WHATS_NEW` (shown by `main.js` `whatsNewSheet`) |
