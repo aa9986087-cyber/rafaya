@@ -43,7 +43,8 @@ The owner is Saudi and is not a programmer.
 | `index.html`, `css/style.css` | The one page and its styles (sheets, HUD, dock, toasts). |
 | `js/data.js` | Every number and list: buildings `B`, military `MIL`, eras `ERAS`, tech, goals, events, decisions, seasons, terrains, the **world map `WORLD`** and its helpers `worldPlot/worldXY/worldTerrain/worldPlace`, `townNameKey`. |
 | `js/sim.js` | The town simulation, pure (no DOM): `newGame`, `build`, `demolish`, `fillWadi`, `step` (one hour), `analyze` (the town right now), dams/lakes/groundwater, traffic, power, quarters, elections, moving, wear/repair, the deputy while away, **`pack`/`unpack` (saves)**. |
-| `js/main.js` | ~4850 lines: everything on screen. See the section index in §3. |
+| `js/main.js` | ~1900 lines: the game's **state** (`S`, `A`, `tool`, `worldMode`, `visiting`, `arrange`, `sheetFor`…), the start-up, the event wiring, and every function that **changes** that state. |
+| `js/ui-*.js` | The screens and features around the town, moved out of main.js unchanged (§3). They read main's state through imports; they never assign it. |
 | `js/whats-new.js` | **`WHATS_NEW`**: the release notes (`v` per mode, `items` newest first). Pure data. |
 | `js/world3d.js` | The 3D town: ground, roads, instanced buildings, light, day and night, rain, flood, lightning, hover/overlay marks, `pick` (screen → tile). |
 | `js/models.js` | Every building as a low-poly model built from shapes in code (no model files). `PLACE_STYLE` gives each place of al-Jouf its look. |
@@ -72,7 +73,36 @@ The owner is Saudi and is not a programmer.
 
 ---
 
-## 3. `js/main.js` index (search for these section comments: `// ---------- <name>`)
+## 3. The game's screen code: `js/main.js` + `js/ui-*.js`
+
+**The rule that keeps it working:** the state variables (`let S, A, tool, worldMode, visiting, arrange,
+sheetFor, pending, speed, playing…`) are declared in `main.js`, and **only main.js assigns them**. The
+`ui-*` modules import them from `./main.js` (ES live bindings, so they always read the current value)
+and import each other's functions. So:
+- A function that has to **change** state (e.g. `S = …`, `sheetFor = …`) lives in `main.js`, or main exports a small setter for it.
+- `ui-*` files hold **declarations only** (functions, and consts that are functions or plain data). Nothing
+  in them runs at load. All the start-up and event wiring stays at the end of `main.js`.
+- A new `js/*.js` file must also go in the `mods` list of `scripts/bundle.mjs` (the trial copy).
+- To find any function, search the files: `grep -n "function <name>\|const <name> =" js/*.js`.
+
+| File | What is in it |
+|---|---|
+| `main.js` | State, `save`, `refresh`, `sync`, `setTool`, `apply`, `confirmPending`, `enterArrange`/`leaveArrange`, `sheet`/`closeSheet`, `enterWorldTown`, `worldMapSheet`, `moveSheet`, `chatSheet`, the war actions that change state, the settings sheet, the main loop and start-up |
+| `ui-tools.js` | Touch helpers, `paintStarts`, `canDo`, `whyNot`, `tileCost`, `showPending`, road upgrades |
+| `ui-arrange.js` | The layout editor «✏️ تعديل» helpers: snapshots, undo, removing, painting, the tray |
+| `ui-build.js` | The build dock (`renderCards`), the HUD face, `toast`, landmarks and place names |
+| `ui-news.js` | نشرة الرافعية (posts, replies, promises) and نشرة الجوف (`WNEWS`) |
+| `ui-online.js` | `api` (adds `device`), `deviceId`, `me`, `worldSync`, world ids and saves, visiting, push notifications, the iPhone app move, `versionCheck`, live hints (`LIVE`) |
+| `ui-account.js` | Name-fix requests (`namefixSheet`), «✏️ اسمك» (`nameSection`), `openWorld` and the join screen, Google sign-in (`googleLogin`, `googleButton`), the world closed and removed screens |
+| `ui-war.js` | «صراع الجوف» on screen: `WARX`, `warSyncNow`, the command, relations, targeting, scenes, damage in the building sheet |
+| `ui-chat.js` | Chat polling and counts, the developer note, the war card |
+| `ui-region.js` | The solo region map, neighbours, elections |
+| `ui-whatsnew.js` | `whatsNewSheet`, the "new" dot, sharing, the main menu backdrop |
+| `ui-people.js` | Families of a house, production info, `advisorSheet` |
+| `ui-settings.js` | How to play, `pauseMenu`, `reachView` |
+| `ui-idle.js` | `runHour` (one game hour: `step` and then the screen), idle and the deputy, the FPS watch |
+
+---------- <name>`)
 
 | Section | What is there | Key functions |
 |---|---|---|
@@ -172,9 +202,9 @@ The owner is Saudi and is not a programmer.
 | World map and places | `data.js` `WORLD`; `main.js` `worldMapSheet`; `models.js` `PLACE_STYLE` |
 | Moving a town (once) | `worker.js` `move`; `warserver.js` `moveTown`; `main.js` `moveSheet` |
 | Names (player once, town once), bad names | `worker.js` `newname`, `rename`, `namefix`; `src/moderation.js` |
-| Bans and device bans | `worker.js` `ban`, `remove`, `banned_devices`; `main.js` `deviceId` |
-| War | `war.js` (rules), `warserver.js` (decides), `main.js` war sections, `warfx.js` (show) |
-| Bulletin and chat | `worker.js` `news()`, `chat`; `main.js` نشرة الجوف and chat sections |
+| Bans and device bans | `worker.js` `ban`, `remove`, `banned_devices`; `ui-online.js` `deviceId` |
+| War | `war.js` (rules), `warserver.js` (decides), `ui-war.js` + `main.js` (screen), `warfx.js` (show) |
+| Bulletin and chat | `worker.js` `news()`, `chat`; `ui-news.js`, `ui-chat.js`, `main.js` `chatSheet` |
 | Citizen support | `worker.js` `startCitizenSupport2`, `payCitizenSupport`, `flushCitizenSupport` |
-| Google sign-in | `src/google.js`; `worker.js` `google/*`; `main.js` Google section |
-| Release notes | `js/whats-new.js` `WHATS_NEW` (shown by `main.js` `whatsNewSheet`) |
+| Google sign-in | `src/google.js`; `worker.js` `google/*`; `ui-account.js` |
+| Release notes | `js/whats-new.js` `WHATS_NEW` (shown by `ui-whatsnew.js` `whatsNewSheet`) |
