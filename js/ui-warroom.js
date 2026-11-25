@@ -37,22 +37,28 @@ function stripHtml(st) {
       <div class="wr-gl">${g.map(chip).join("")}</div></div>`;
   }).join("");
 }
-/** The front: our town in the middle, the towns we are in conflict with, and every operation moving between. */
+/**
+ * The front, drawn as a plan (not to scale, so names never overlap): our town on the right, the towns we are
+ * in conflict with spread down the left, and every operation in the air on its own curved path.
+ */
 function mapHtml(st) {
   const mine = me()?.plot, rels = (st?.rels || []).filter((r) => r.state !== "peace");
-  const plots = new Set([mine, ...rels.map((r) => r.other), ...liveOps(st).flatMap((o) => [o.from, o.to])].filter((p) => p != null));
-  const pts = [...plots].map((p) => [p, ...worldXY(p)]);
-  const xs = pts.map((p) => p[1]), ys = pts.map((p) => p[2]);
-  const x0 = Math.min(...xs) - 2, x1 = Math.max(...xs) + 2, y0 = Math.min(...ys) - 2, y1 = Math.max(...ys) + 2;
-  const W = 340, H = 130, sx = W / Math.max(4, x1 - x0), sy = H / Math.max(4, y1 - y0), s = Math.min(sx, sy);
-  const at = (p) => { const [x, y] = worldXY(p); return [(x - (x0 + x1) / 2) * s + W / 2, (y - (y0 + y1) / 2) * s + H / 2]; };
+  const others = [...new Set([...rels.map((r) => r.other), ...liveOps(st).flatMap((o) => [o.from, o.to]).filter((p) => p !== mine)])];
+  const W = 340, H = Math.max(120, 46 + others.length * 40);
+  const me0 = [W - 62, H / 2];
+  const pos = new Map(others.map((p, i) => [p, [70, others.length === 1 ? H / 2 : 30 + i * ((H - 60) / Math.max(1, others.length - 1))]]));
+  pos.set(mine, me0);
   const name = (p) => p === mine ? "مدينتي" : rels.find((r) => r.other === p)?.town || liveOps(st).find((o) => o.from === p)?.fromTown || liveOps(st).find((o) => o.to === p)?.toTown || "";
-  const lines = liveOps(st).filter((o) => o.status === "flying").map((o) => {
-    const [ax, ay] = at(o.from), [bx, by] = at(o.to);
-    return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wr-line ${o.side}"/><circle r="4" class="wr-dot ${o.side}" data-from="${ax},${ay}" data-to="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
+  const flying = liveOps(st).filter((o) => o.status === "flying");
+  const lines = flying.map((o, i) => {
+    const [ax, ay] = pos.get(o.from) || me0, [bx, by] = pos.get(o.to) || me0;
+    // incoming arc above, outgoing below, and each one a little apart from the others
+    const lift = (o.side === "in" ? -1 : 1) * (18 + (i % 4) * 9), cx = (ax + bx) / 2, cy = (ay + by) / 2 + lift;
+    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${o.side}"/><circle r="4.5" class="wr-dot ${o.side}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
   }).join("");
-  const towns = [...plots].map((p) => { const [x, y] = at(p), rel = rels.find((r) => r.other === p); return `<g class="wr-town ${p === mine ? "me" : rel?.state || ""}"><circle cx="${x}" cy="${y}" r="${p === mine ? 7 : 5.5}"/><text x="${x}" y="${y - 10}">${name(p)}</text></g>`; }).join("");
-  return `<svg class="wr-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="خريطة الجبهة">${lines}${towns}</svg>`;
+  const towns = [...pos].map(([p, [x, y]]) => { const rel = rels.find((r) => r.other === p), in_ = flying.filter((o) => o.from === p).length, out = flying.filter((o) => o.to === p).length;
+    return `<g class="wr-town ${p === mine ? "me" : rel?.state || ""}"><circle cx="${x}" cy="${y}" r="${p === mine ? 10 : 8}"/><text x="${x}" y="${y + (p === mine ? 24 : 21)}">${name(p)}</text>${in_ || out ? `<text class="wr-count" x="${x}" y="${y - 13}">${in_ ? `🔴${ar(in_)}` : ""}${out ? ` 🟢${ar(out)}` : ""}</text>` : ""}</g>`; }).join("");
+  return `<svg class="wr-map" viewBox="0 0 ${W} ${H}" style="height:${Math.round(H * 0.95)}px" role="img" aria-label="خريطة الجبهة">${lines}${towns}</svg>`;
 }
 /** Every second while the room is open: the countdowns and the dots move (the tabs are left alone). */
 function tick() {
@@ -67,9 +73,9 @@ function tick() {
   });
   const now = warNow();
   document.querySelectorAll(".wr-dot").forEach((d) => {
-    const [ax, ay] = d.dataset.from.split(",").map(Number), [bx, by] = d.dataset.to.split(",").map(Number), t0 = Number(d.dataset.t0), t1 = Number(d.dataset.t1);
-    const k = Math.max(0, Math.min(1, (now - t0) / Math.max(1, t1 - t0)));
-    d.setAttribute("cx", ax + (bx - ax) * k); d.setAttribute("cy", ay + (by - ay) * k);
+    const [ax, ay] = d.dataset.a.split(",").map(Number), [cx, cy] = d.dataset.c.split(",").map(Number), [bx, by] = d.dataset.b.split(",").map(Number), t0 = Number(d.dataset.t0), t1 = Number(d.dataset.t1);
+    const k = Math.max(0, Math.min(1, (now - t0) / Math.max(1, t1 - t0))), q = 1 - k;
+    d.setAttribute("cx", q * q * ax + 2 * q * k * cx + k * k * bx); d.setAttribute("cy", q * q * ay + 2 * q * k * cy + k * k * by);
   });
   if (liveOps(WARX.st).some((o) => o.status === "flying" && o.arriveAt < now - 1500) && !ROOM.polling) { ROOM.polling = true; warPoll(true).then(() => { ROOM.polling = false; if (sheetFor === "warroom") warRoom(ROOM.tab); }); }
 }

@@ -276,25 +276,30 @@ export class WarFX {
       m.rotation.x = -Math.PI / 2; m.renderOrder = 4; m.userData = { strike: true, own: true }; return m;
     };
     for (const h of hit || []) {
-      const c = tileCenter(h.x, h.y), m = flat(0.94, 0.94, new THREE.Color(1.6, 0.25, 0.15), 0.25 + h.f * 0.35);
-      m.position.set(c.x, 0.04, c.z); m.userData.pulse = 0.25 + h.f * 0.35; this.marks.add(m);
+      const c = tileCenter(h.x, h.y), m = flat(0.9, 0.9, new THREE.Color(1.5, 0.2, 0.12), 0.15 + h.f * 0.2);
+      m.position.set(c.x, 0.04, c.z); m.userData.pulse = 0.15 + h.f * 0.2; this.marks.add(m);
     }
     points.forEach((p, i) => {
-      const c = tileCenter(p.x, p.y), d = (p.r * 2 + 1) * 1.02;
-      const ring = flat(d, d, p.on ? new THREE.Color(2.4, 0.3, 0.2) : new THREE.Color(1.7, 0.8, 0.3), p.on ? 0.7 : 0.5, fxTexture("ring"));
-      ring.position.set(c.x, 0.06, c.z); ring.userData.spin = p.on ? 0.9 : 0.35; this.marks.add(ring);
-      const inner = flat(0.7, 0.7, new THREE.Color(2.4, 0.5, 0.35), 0.9, fxTexture("ring"));
-      inner.position.set(c.x, 0.07, c.z); inner.userData.spin = -2.2; this.marks.add(inner);
-      for (const rot of [0, Math.PI / 2]) { const bar = flat(d * 0.98, 0.035, new THREE.Color(2.4, 0.5, 0.35), 0.75); bar.rotation.z = rot; bar.position.set(c.x, 0.075, c.z); this.marks.add(bar); }
-      // the beam: a tall thin column of light marking the spot from afar
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.09, 3.2, 8, 1, true), new THREE.MeshBasicMaterial({ color: p.on ? new THREE.Color(2.6, 0.5, 0.35) : new THREE.Color(1.8, 1.0, 0.45), transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
-      beam.position.set(c.x, 1.6, c.z); beam.renderOrder = 6; beam.userData = { strike: true, own: true, pulse: 0.45 }; this.marks.add(beam);
-      // its number, floating at the top of the beam
+      const c = tileCenter(p.x, p.y), R = p.r + 0.5, on = p.on;
+      const col = on ? new THREE.Color(2.6, 0.35, 0.25) : new THREE.Color(1.9, 1.2, 0.45);
+      // a thin ring where the blast reaches, a faint disc inside it, four ticks and a dot at the centre
+      const ring = new THREE.Mesh(new THREE.RingGeometry(R - (on ? 0.07 : 0.045), R, 48), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: on ? 0.95 : 0.55, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(c.x, 0.07, c.z); ring.renderOrder = 4; ring.userData = { strike: true, own: true, pulse: on ? 0.95 : 0 };
+      this.marks.add(ring);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(R, 40), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: on ? 0.1 : 0.05, depthWrite: false, toneMapped: false }));
+      disc.rotation.x = -Math.PI / 2; disc.position.set(c.x, 0.05, c.z); disc.renderOrder = 3; disc.userData = { strike: true, own: true };
+      this.marks.add(disc);
+      for (let k = 0; k < 4; k++) { const t = flat(0.28, 0.04, col, on ? 0.9 : 0.5); const a = k * Math.PI / 2; t.position.set(c.x + Math.cos(a) * (R - 0.14), 0.075, c.z + Math.sin(a) * (R - 0.14)); t.rotation.z = -a; this.marks.add(t); }
+      const dot = flat(0.16, 0.16, col, 0.95, fxTexture("ring")); dot.position.set(c.x, 0.08, c.z); dot.userData.spin = -2; this.marks.add(dot);
+      // the chosen one stands out: a beam of light over it, the others a short marker
+      const h = on ? 2.4 : 0.9;
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.02, on ? 0.06 : 0.035, h, 8, 1, true), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: on ? 0.55 : 0.35, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+      beam.position.set(c.x, h / 2, c.z); beam.renderOrder = 6; beam.userData = { strike: true, own: true, pulse: on ? 0.55 : 0 }; this.marks.add(beam);
       const cv = document.createElement("canvas"); cv.width = cv.height = 64;
-      const g = cv.getContext("2d"); g.fillStyle = p.on ? "#d63b2f" : "#b5852e"; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
+      const g = cv.getContext("2d"); g.fillStyle = on ? "#d63b2f" : "#8f6a24"; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
       g.strokeStyle = "#fff"; g.lineWidth = 4; g.stroke(); g.fillStyle = "#fff"; g.font = "bold 34px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(i + 1).replace(/\d/g, (x) => "٠١٢٣٤٥٦٧٨٩"[x]), 32, 34);
       const tex = new THREE.CanvasTexture(cv), sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-      sp.position.set(c.x, 3.25, c.z); sp.scale.set(0.42, 0.42, 1); sp.renderOrder = 8; sp.userData = { strike: true, own: true, bob: Math.random() * 6, target: true, high: 3.25 };
+      sp.position.set(c.x, h + 0.2, c.z); sp.scale.set(on ? 0.46 : 0.34, on ? 0.46 : 0.34, 1); sp.renderOrder = 8; sp.userData = { strike: true, own: true, bob: Math.random() * 6, target: true, high: h + 0.2 };
       this.marks.add(sp);
     });
   }
