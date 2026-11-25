@@ -6,6 +6,7 @@
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "preview_urls": false,
+  "vars": { "REVIEW_PUBLIC_KEY": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEY2BBwwE++PWOH+y+T6Uk0JcTLGaNJgnGM51LkQNH02gHEHl3ceS7iDGAaboXGEEizFRk2mpFC+OYwWKlMb3X2w==" },
   // Copy just the game (index.html, icon, css, js, vendor/three.js) into dist/site before each deploy.
   "build": { "command": "node scripts/copy-site.mjs" },
   // The game's files, served as they are; /api/* goes to the Worker below (leaderboard, visits).
