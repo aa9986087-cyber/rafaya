@@ -1959,6 +1959,54 @@ export class World {
     this.buildFxOn = list.length > 0;
   }
   /** Another town takes the screen (the menu's, yours, a visit): nothing in it is "just built", so no build animation. */
+  /**
+   * A bolt of lightning onto a tile: a jagged white channel from the clouds with a few branches, flickering twice,
+   * a flash over the whole town, sparks and dust where it lands. Looks only (the rules decided the hit).
+   */
+  lightning(tile) {
+    const g = tileCenter(tile % N, Math.floor(tile / N)), top = g.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, 16, (Math.random() - 0.5) * 4));
+    const jag = (a, b, n, spread) => {
+      const pts = [a.clone()];
+      for (let k = 1; k < n; k++) { const p = a.clone().lerp(b, k / n); p.x += (Math.random() - 0.5) * spread; p.z += (Math.random() - 0.5) * spread; pts.push(p); }
+      pts.push(b.clone());
+      return pts;
+    };
+    const group = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.5, 5.8, 7.5), toneMapped: false, transparent: true, depthWrite: false, fog: false });
+    const tube = (pts, r) => { const path = new THREE.CurvePath(); for (let k = 1; k < pts.length; k++) path.add(new THREE.LineCurve3(pts[k - 1], pts[k])); return new THREE.Mesh(new THREE.TubeGeometry(path, pts.length * 2, r, 4, false), mat); };
+    const main = jag(top, g.clone().setY(0.05), 16, 0.9);
+    group.add(tube(main, 0.045));
+    for (let b = 0; b < 3; b++) { const from = main[3 + Math.floor(Math.random() * 8)]; group.add(tube(jag(from, from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, -2 - Math.random() * 3, (Math.random() - 0.5) * 5)), 6, 0.6), 0.02)); }
+    group.renderOrder = 6;
+    this.scene.add(group);
+    (this.bolts ||= []).push({ group, mat, t: 0 });
+    this.flashT = 0.5; this.flashBig = 1;
+    if (this.fx) {
+      const at = g.clone().setY(0.25);
+      this.fx.emit("flash", at, { size: 3, life: 0.35 });
+      for (let k = 0; k < 16; k++) { const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5; this.fx.emit("spark", at, { v: new THREE.Vector3(Math.cos(a) * sp, 1.5 + Math.random() * 2.5, Math.sin(a) * sp) }); }
+      for (let k = 0; k < 4; k++) this.fx.emit("smoke", at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0, (Math.random() - 0.5) * 0.4)), { size: 0.4, life: 2.4, color: "#4a4540" });
+    }
+    this.puff?.(g, 10);
+  }
+  /** Lightning far off, in the clouds: only the flash. */
+  skyFlash() { this.flashT = 0.45; this.flashBig = 0.45; }
+  /** Each frame: the bolts flicker and go; the flash lights the town. */
+  stepLightning(dt) {
+    if (this.bolts?.length) this.bolts = this.bolts.filter((b) => {
+      b.t += dt;
+      b.mat.opacity = b.t < 0.07 ? 1 : b.t < 0.12 ? 0.15 : b.t < 0.26 ? 1 : Math.max(0, 1 - (b.t - 0.26) / 0.2);
+      if (b.t < 0.5) return true;
+      this.scene.remove(b.group); for (const m of b.group.children) m.geometry.dispose(); b.mat.dispose();
+      return false;
+    });
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      const t = 0.5 - this.flashT, f = (t < 0.06 ? 1 : t < 0.11 ? 0.2 : t < 0.24 ? 0.85 : Math.max(0, 1 - (t - 0.24) / 0.26)) * this.flashBig;
+      this.hemi.intensity += 2.6 * f; this.sun.intensity += 1.2 * f;
+      this.scene.background?.isColor && this.scene.background.lerp(this.flashSky ||= new THREE.Color("#c9d6ea"), 0.55 * f);
+    }
+  }
+
   newTown() { this.prevKeys = null; this.anims?.clear(); this.buildFxOn && this.drawBuildFx([]); }
   /** Play the build animation on a tile again (the showcase and tests). */
   playBuild(tile) { if (this.where?.has(tile)) { this.anims ||= new Map(); this.anims.set(tile, this.clock); } }
@@ -2060,6 +2108,7 @@ export class World {
     this.stepWeather(dt);
     this.stepFlood(dt);
     this.fx?.step(dt);
+    this.stepLightning(dt);
     this.sun.target.position.set(v.x, 0, v.z);
     this.sun.position.add(this.sun.target.position);
     if (this.renderer.shadowMap.enabled && (this.shadowDirty || this.clock >= (this.nextShadow || 0))) {

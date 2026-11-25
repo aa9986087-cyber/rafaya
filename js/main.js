@@ -3254,8 +3254,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-players", world: "2026-11-25-players" },
+  v: { solo: "2026-11-25-storm", world: "2026-11-25-storm" },
   items: [
+    ["both", "⚡", "البرق والرعد", "• صوت مطر جديد، ورعد يرعد بعيد وقريب. • وقت المطر ممكن تنزل صاعقة على أرضك: إذا صابت مبنى ينقص من حالته (ترممه عادي، والصاعقة ما تطيّحه)، وإذا صابت أرض فاضية بس تنوّر وتولّع شرار. • السماء تبرق بين وقت وثاني، والمدينة تنوّر مع البرقة."],
     ["both", "☀️", "نهار أطول وليل أوضح", "• النهار صار أطول والليل أقصر بكل الفصول. • الليل صار أوضح، والمدينة تبان حتى تحت المطر."],
     ["both", "💧", "الماء الجوفي يرجع", "• كل سد خالص يرجّع ماء للأرض حتى لو بحيرته صغيرة، وإذا امتلت يرجّع أكثر. • إذا قرب الماء الجوفي يخلص، الآبار تسحب أقل، فيقدر يرجع يرتفع بالسدود والتحلية. • بطاقة «ردم الوادي» تغيّرت صورتها عشان ما تنلخبط مع السد."],
     ["both", "🏫", "سبب واضح للمبنى الواقف", "• إذا مبنى ما يشتغل، يقول لك السبب الصحيح: طريق، أو إفلاس البلدية، أو إضراب، أو خراب. قبل كان يقول «يحتاج طريق» دايم."],
@@ -4212,6 +4213,7 @@ function runHour() {
       world.playFlood(m.lost, m.damaged); sfx.flood(); toast(m.text, "bad"); continue;
     }
     if (m.kind === "collapse") { toast(m.text, "bad"); sfx.remove(); continue; }
+    if (m.kind === "bolt") { world.lightning(m.i); sfx.thunder(0.95, 0.05); if (m.text) toast(m.text, "bad"); continue; }
     if (m.kind === "election") { electionSheet(m); continue; }
     toast(m.kind === "season" ? m.text : m.title ? `${m.title}: ${m.text}` : m.text, m.kind === "goal" ? "goal" : m.kind === "era" ? "era" : m.kind === "season" ? `season ${seasonOf(S.day).id}` : "");
     (m.kind === "era" ? sfx.era : m.kind === "goal" ? sfx.goal : m.kind === "event" || m.kind === "season" ? sfx.event : sfx.coin)();
@@ -4329,6 +4331,8 @@ function frame(now) {
   if (playing && S.decision && $("sheet").hidden) decisionSheet();
   if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); onlinePoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
+  // lightning far off while it rains: a flash in the clouds, the rumble a moment later
+  if (playing && world.raining && !document.hidden && Math.random() < dt / 22) { world.skyFlash(); sfx.thunder(0.15 + Math.random() * 0.25, 1 + Math.random() * 2.5); }
   if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
   const t0 = performance.now();
   const previewLight = globalThis.RAFAYA_PREVIEW_LIGHT?.(), previewWeather = globalThis.RAFAYA_PREVIEW_WEATHER?.();

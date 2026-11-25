@@ -1,4 +1,7 @@
 // Small sounds made in the browser (no files): taps, building, coins, a fanfare for a new stage.
+import { rainLoop, thunder } from "./rain-sound.js";
+/** The rain the owner chose (js/rain-sound.js RAIN_KINDS). */
+const RAIN_KIND = "soft";
 let ctx = null;
 let on = true;
 try { on = localStorage.getItem("rafaya-sound") !== "0"; } catch { /* default on */ }
@@ -38,7 +41,12 @@ function startAmbience() {
     src.connect(f).connect(g).connect(a.destination); src.start();
     return g;
   };
-  amb = { wind: make("bandpass", 420, 0.6), rain: make("highpass", 1800, 0.4), nextChirp: 0 };
+  // the rain: a few seconds drawn once (js/rain-sound.js), looped
+  const loop = rainLoop(a.sampleRate, RAIN_KIND), buf = a.createBuffer(2, loop.left.length, a.sampleRate);
+  buf.getChannelData(0).set(loop.left); buf.getChannelData(1).set(loop.right);
+  const rs = a.createBufferSource(); rs.buffer = buf; rs.loop = true;
+  const rg = a.createGain(); rg.gain.value = 0; rs.connect(rg).connect(a.destination); rs.start();
+  amb = { wind: make("bandpass", 420, 0.6), rain: rg, nextChirp: 0 };
 }
 export const ambience = {
   /** Call a few times a second with what is going on. */
@@ -49,7 +57,7 @@ export const ambience = {
       const t = ctx.currentTime;
       // wind: strong in a dust storm, cold and loud on winter nights
       amb.wind.gain.setTargetAtTime(dusty ? 0.08 : season === "winter" ? (night ? 0.03 : 0.04) : night ? 0.012 : 0.03, t, 1.5);
-      amb.rain.gain.setTargetAtTime(raining ? 0.05 : 0, t, 1);
+      amb.rain.gain.setTargetAtTime(raining ? 0.32 : 0, t, 1);
       if (night && !raining && season !== "winter" && t > amb.nextChirp) { // no crickets in the winter cold // crickets: three quick high chirps
         for (let i = 0; i < 3; i++) tone(4300 + Math.random() * 300, 0.035, { type: "sine", vol: 0.012, at: i * 0.06 });
         amb.nextChirp = t + 0.6 + Math.random() * 1.6;
@@ -81,6 +89,16 @@ export const sfx = {
       src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + 7);
     } catch { /* no audio */ }
     tone(90, 0.8, { type: "sawtooth", vol: 0.04, slide: -40 });
+  },
+  /** Thunder: near 0..1 (a near strike cracks first), after `delay` seconds (light comes before sound). */
+  thunder(near = 0.5, delay = 0) {
+    if (!on) return;
+    try {
+      const a = ac(), th = thunder(a.sampleRate, near, Math.floor(Math.random() * 1e6)), buf = a.createBuffer(2, th.left.length, a.sampleRate);
+      buf.getChannelData(0).set(th.left); buf.getChannelData(1).set(th.right);
+      const src = a.createBufferSource(), g = a.createGain(); src.buffer = buf; g.gain.value = 0.55;
+      src.connect(g).connect(a.destination); src.start(a.currentTime + delay);
+    } catch { /* no audio */ }
   },
   prayer() { [294, 392, 349].forEach((f, i) => tone(f, 0.7, { type: "sine", vol: 0.035, at: i * 0.45 })); },
   levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },

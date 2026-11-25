@@ -1,5 +1,5 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
-import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES } from "./data.js";
+import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES, LIGHTNING } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -1226,6 +1226,20 @@ export function step(s, r = Math.random) {
       s.lastFlood = s.day;
       const names = [...new Set(lost.filter((x) => !ROAD_IDS.includes(x.id)).map((x) => B[x.id].name))].slice(0, 3);
       msgs.push({ kind: "flood", lost: lost.map((x) => x.i), damaged, text: `سيل جارف نزل الوادي! راح ${lost.length} مبنى وطريق${names.length ? ` (منها ${names.join("، ")})` : ""}، وتضرر ${damaged.length}.${refund ? ` التأمين عوّضك ${refund} ريال.` : s.insured ? "" : " ما كان فيه تأمين."}` });
+    }
+  }
+  // Lightning, now and then while it rains: a bolt hits somewhere on the town's own land. A building it hits loses
+  // part of its condition (repairable; the bolt itself never knocks it down); open ground is only scorched.
+  if (raining && r() < LIGHTNING.chance * (s.away ? 0.3 : 1)) {
+    const land = [];
+    s.tiles.forEach((t, i) => { if (t.t !== "lake" && owns(s, i % N, Math.floor(i / N))) land.push(i); });
+    if (land.length) {
+      const i = land[Math.floor(r() * land.length)], b = s.tiles[i].b;
+      if (wears(b) && b.cond > 1) {
+        const hit = Math.min(b.cond - 1, Math.round(LIGHTNING.min + r() * (LIGHTNING.max - LIGHTNING.min)));
+        b.cond -= hit;
+        msgs.push({ kind: "bolt", i, hit, text: `⚡ صاعقة ضربت «${B[b.id].name}» وتضرر ${Math.round(hit)}٪. اضغط عليه ورمّمه.` });
+      } else msgs.push({ kind: "bolt", i });
     }
   }
   // Investments come due: the trader pays double, or the money is gone.

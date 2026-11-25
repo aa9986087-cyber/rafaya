@@ -267,6 +267,8 @@ export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
 
 // Groundwater under the town: wells and tanks pump it, rain and dam lakes refill it.
 // Below LOW the wells give less water, down to 35% when it is empty.
+/** Lightning while it rains: the chance of a bolt each rainy hour, and how much of a building's condition it takes (repairable). */
+export const LIGHTNING = { chance: 0.12, min: 15, max: 35 };
 export const GROUND = { start: 100, low: 40, pump: 0.0003, pivot: 0.06, base: 0.05, rain: 0.5, lake: 0.2, dam: 0.12, spring: 0.03 };
 /** Price of filling a tile of wadi ground with earth (no more floods there, no more fertile ground). */
 export const FILL_COST = 80;
