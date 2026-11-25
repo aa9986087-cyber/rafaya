@@ -49,8 +49,8 @@ const WORLD_EPOCH = Date.UTC(2026, 10, 1);
 const CITIZEN_AMOUNT = 100, CITIZEN_LIMIT = 1000, CITIZEN_DAYS = 3;
 const CITIZEN_TITLE = "حساب المواطن";
 const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن في ميزانية مدينتك داخل لعبة الرافعية.";
-// The second round (the owner, 2026-11-25): 250 riyals a week for three weeks, to towns under 1,000; it may be taken back later.
-const CITIZEN2_AMOUNT = 250, CITIZEN2_WEEKS = 3, WEEK = 7 * 86400000;
+// The second round (the owner, 2026-11-25): 250 riyals a game week (7 days of al-Jouf) for three weeks, to towns under 1,000; it may be taken back later.
+const CITIZEN2_AMOUNT = 250, CITIZEN2_WEEKS = 3;
 const CITIZEN2_NOTE = () => "💰 مبروك نزلك حساب مواطن بقيمة ٢٥٠ ريال، ويمكن نسترده بعدين 🏃🏻";
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
@@ -321,14 +321,25 @@ export class Board extends DurableObject {
       }
     });
   }
-  /** The second round: three weekly payments, the first now (once only, kept in meta). */
+  /** The second round: three payments a game week apart (7 days of al-Jouf), the first now. */
   startCitizenSupport2(clock, now) {
     this.ctx.storage.transactionSync(() => {
-      if (this.sql.exec("SELECT 1 FROM citizen_support WHERE round = 'c2' LIMIT 1").toArray().length) return;
-      for (let i = 0; i < CITIZEN2_WEEKS; i++) {
-        const due = now + i * WEEK, day = Math.max(dayOf(Math.floor(joufHours(due, clock))), (this.sql.exec("SELECT MAX(day) d FROM citizen_support").toArray()[0]?.d || 0) + 1);
-        this.sql.exec("INSERT INTO citizen_support (day, due, closes, amount, note, round) VALUES (?, ?, ?, ?, ?, 'c2')", day, due, due + 3 * 86400000, CITIZEN2_AMOUNT, CITIZEN2_NOTE(i + 1));
+      const rows = this.sql.exec("SELECT day, due, paid_at FROM citizen_support WHERE round = 'c2' ORDER BY due").toArray();
+      if (!rows.length) {
+        const first = Math.max(dayOf(Math.floor(joufHours(now, clock))), (this.sql.exec("SELECT MAX(day) d FROM citizen_support").toArray()[0]?.d || 0) + 1);
+        for (let i = 0; i < CITIZEN2_WEEKS; i++) {
+          const day = first + i * 7, due = i ? Math.ceil(joufDayStart(day, clock)) : now;
+          this.sql.exec("INSERT INTO citizen_support (day, due, closes, amount, note, round) VALUES (?, ?, ?, ?, ?, 'c2')", day, due, Math.ceil(joufDayStart(day + 1, clock)), CITIZEN2_AMOUNT, CITIZEN2_NOTE(i + 1));
+        }
+        return;
       }
+      // the round first went out a real week apart; the owner wants a week of the game: the payments still to come move closer
+      rows.slice(1).forEach((r, i) => {
+        if (r.paid_at) return;
+        const day = rows[0].day + (i + 1) * 7;
+        if (r.day === day) return;
+        this.sql.exec("UPDATE citizen_support SET day = ?, due = ?, closes = ? WHERE day = ?", day, Math.ceil(joufDayStart(day, clock)), Math.ceil(joufDayStart(day + 1, clock)), r.day);
+      });
     });
   }
   /** Credit balances, save the player notices and queue phone delivery as one SQLite transaction. */
