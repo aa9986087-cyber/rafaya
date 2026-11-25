@@ -1,5 +1,6 @@
 import { BAD_WORD_LIST } from "./badwords.js";
 const protectedNames = ["عايض", "الفرحان", "غوينم", "سكران", "ترازا", "محاميد", "محدا", "رمال", "نمصان"];
+const WHOLE_WORD_FAMILIES = new Set(["رمال"]);
 const abusiveNames = ["نياج الخروق", "نياج خروق", "نياك الخروق", "نياك خروق"];
 const insults = [
   "كلب", "كلبه", "حمار", "حماره", "حقير", "حقيره", "غبي", "غبيه", "زباله", "نذل",
@@ -24,7 +25,8 @@ export function createModeration({ names = [], words = [], nameOnly = [] } = {})
   const families = [...protectedNames, ...names];
   const terms = [...families, ...insults, ...BAD_WORD_LIST, ...abusiveNames, ...words].map(nameRuleKey).filter(Boolean).map((term) => [...term].join(`${separator}*`));
   const explicitNames = [...abusiveNames, ...nameOnly].map(nameRuleKey).filter(Boolean);
-  const blockedNames = [...families.map(nameRuleKey).filter(Boolean), ...explicitNames];
+  // «رمال» is blocked as a word of its own (رمال، الرمال), not inside another name: «الرمالي» is a family name (the owner, 2026-11-25)
+  const blockedNames = [...families.filter((f) => !WHOLE_WORD_FAMILIES.has(f)).map(nameRuleKey).filter(Boolean), ...explicitNames];
   const chatPattern = new RegExp(`(?:^|${separator})(?:[وف])?(?:يا${separator}*)?(?:ال${separator}*){0,2}(?:${terms.join("|")})(?=$|${separator})`, "u");
   const blockedChat = (text) => chatPattern.test(normalize(text));
   const blockedExplicitName = (text) => { const compact = nameRuleKey(text); return explicitNames.some((name) => compact.includes(name)); };

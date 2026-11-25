@@ -189,3 +189,10 @@ test("the bad-word bank blocks bad names and chat, but not normal names", async 
   for (const bad of ["شرموطة", "يا كلب", "كسمك", "sharmoota", "ك س م ك", "قحــــبه"]) assert.equal(m.blockedChat(bad) || m.blockedName(bad), true, bad);
   for (const ok of ["عبدالله", "كساب", "مصطفى", "الكسوة", "فرج الله", "هجرة الخير", "الرافعية", "كلبي ضاع", "Scunthorpe", "class"]) assert.equal(m.blockedName(ok), false, ok);
 });
+
+test("«الرمالي» is a name of its own; «رمال» and «الرمال» stay blocked", async () => {
+  const { createModeration } = await import("../src/moderation.js");
+  const m = createModeration();
+  for (const ok of ["الرمالي", "الرمالى", "عبيد الرمالي"]) assert.equal(m.blockedName(ok), false, ok);
+  for (const bad of ["رمال", "الرمال", "هجرة الرمال"]) assert.equal(m.blockedName(bad), true, bad);
+});
