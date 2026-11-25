@@ -1769,20 +1769,22 @@ export class World {
     this.night = 1 - day;
     this.waterWeather.day.value = day;
     this.sun.position.set(Math.cos(sunAngle) * 0.86, Math.max(0.22, elev * 0.8 + 0.23), 0.61).normalize().multiplyScalar(40);
-    this.sun.intensity = 0.35 + day * 1.88;
+    this.sun.intensity = 0.62 + day * 1.61; // a bright moon at night (players found the nights too dark to play); the day as before
     this.sun.color.set(day < 0.3 ? "#92b5ee" : golden > 0.2 ? "#ffc17c" : "#fff2db");
-    this.hemi.intensity = 0.48 + day * 0.42;
+    this.hemi.intensity = 0.82 + day * 0.08;
     const sky = (this.skyColor ||= new THREE.Color()).set("#1b2c43").lerp(this.daySky ||= new THREE.Color("#ecd2ad"), day);
     if (golden > 0.2) sky.lerp(new THREE.Color("#f3b77a"), golden * 0.5);
     const storm = this.waterWeather.rain.value;
     if (storm > 0.01) {
       sky.lerp(this.stormSky ||= new THREE.Color("#798c9b"), 0.65 * storm);
-      this.sun.intensity *= 1 - 0.73 * storm;
-      this.hemi.intensity *= 1 - 0.21 * storm;
+      // rain dims the day; at night it barely dims (the town must stay readable under a night storm)
+      this.sun.intensity *= 1 - 0.73 * storm * (0.3 + 0.7 * day);
+      this.hemi.intensity *= 1 - 0.21 * storm * (0.3 + 0.7 * day);
       this.sun.color.lerp(this.stormLight ||= new THREE.Color("#d1e2ef"),storm);
     }
     // a dust storm: the sky goes ochre and the light dims
     if (this.dusty) { sky.lerp(new THREE.Color("#c9a46a"), 0.55); this.sun.intensity *= 0.6; this.sun.color.lerp(new THREE.Color("#e0b070"), 0.6); }
+    this.renderer.toneMappingExposure = 1.02 + 0.2 * this.night; // a little brighter by night
     this.scene.background = sky;
     this.scene.fog.color.copy(sky);
     this.hemi.color.set(day > 0.5 ? (golden > 0.2 ? "#f2d9bd" : "#d6e4f2") : "#8fa0d8");

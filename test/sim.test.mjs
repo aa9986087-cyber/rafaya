@@ -39,7 +39,7 @@ test("a house without a road houses nobody", () => {
   build(s, spot % N, Math.floor(spot / N), "house");
   const a = analyze(s);
   assert.equal(a.unconnected, 1);
-  assert.equal(houseBlocker(s, a, spot % N, Math.floor(spot / N)), "يحتاج طريق");
+  assert.equal(houseBlocker(s, a, spot % N, Math.floor(spot / N)), "يحتاج طريق لاصق فيه من جنب (مو بالزاوية)");
 });
 
 test("research takes days and stays", () => {

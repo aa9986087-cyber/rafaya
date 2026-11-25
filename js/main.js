@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
@@ -761,7 +761,7 @@ function apply(x, y, quiet) {
     road ? sfx.road() : sfx.build();
     sync(road);
     clearPreview(quiet);
-    if (!road && !["util", "farm"].includes(B[tool.id].cat) && !nearRoad(x, y)) toast("يحتاج طريق جنبه عشان يشتغل", "bad");
+    if (!road && !["util", "farm"].includes(B[tool.id].cat) && !nearRoad(x, y)) toast("يحتاج طريق لاصق فيه من جنب (مو بالزاوية) عشان يشتغل", "bad");
   }
   refresh();
 }
@@ -888,7 +888,7 @@ function renderCards() {
   };
   UP_CARDS.serv = { key: modelKey("mosque", 2), name: "تطوير الخدمات", from: upgradeCost({ id: "mosque", lvl: 0 }), path: "مسجد ← بمنارتين ← جامع · مستشفى ← تخصصي ← مدينة طبية" };
   UP_CARDS.road = { key: modelKey("avenue", 0), name: "تطوير الطرق", from: B.asphalt.cost, path: "ترابي ← مسفلت ← شارع رئيسي", tool: "roadup" };
-  UP_CARDS.util = { key: "dam", name: "ردم الوادي", from: FILL_COST, path: "يحمي من السيل · للمربع", tool: "fill" };
+  UP_CARDS.util = { key: "rock", name: "ردم الوادي (مو السد)", from: FILL_COST, path: "يحمي من السيل · للمربع", tool: "fill" };
   const uc = UP_CARDS[openCat];
   const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === (uc.tool || "upgrade") && (uc.tool || tool.cat === openCat) ? "on" : ""}" data-build="${uc.tool || "upgrade"}" style="--i:0">
       <img alt="" src="${thumbnail(uc.key)}"><b>${uc.name}</b><span class="price">من ${money(uc.from)} ريال</span><span class="hours">${uc.path}</span></button>` : "";
@@ -1368,7 +1368,7 @@ function inspect(x, y) {
   if (t.b.build > 0) {
     const pct = Math.round((1 - t.b.build / d.buildHours) * 100);
     html += `<div class="need ok">تحت الإنشاء: باقي ${ar(t.b.build)} ساعة (${ar(Math.ceil(t.b.build / 24))} يوم)</div><i class="prog"><i style="width:${pct}%"></i></i>`;
-  } else if (!works) html += `<div class="need">ما يشتغل: يحتاج طريق جنبه.</div>`;
+  } else if (!works) html += `<div class="need">ما يشتغل: ${idleWhy(S, x, y) || "يحتاج طريق جنبه"}.</div>`;
   if (t.b.id === "house") {
     const cap = Math.round(d.levels[t.b.lvl].cap * (S.tech.concrete ? 1.25 : 1));
     html += row("السكان", `${ar(t.b.res || 0)} من ${ar(cap)}`);
@@ -3241,8 +3241,11 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2027-02-14", world: "2027-02-14" },
+  v: { solo: "2027-02-16", world: "2027-02-16" },
   items: [
+    ["both", "☀️", "نهار أطول وليل أوضح", "• النهار صار أطول والليل أقصر بكل الفصول. • الليل صار أوضح، والمدينة تبان حتى تحت المطر."],
+    ["both", "💧", "الماء الجوفي يرجع", "• كل سد خالص يرجّع ماء للأرض حتى لو بحيرته صغيرة، وإذا امتلت يرجّع أكثر. • إذا قرب الماء الجوفي يخلص، الآبار تسحب أقل، فيقدر يرجع يرتفع بالسدود والتحلية. • بطاقة «ردم الوادي» تغيّرت صورتها عشان ما تنلخبط مع السد."],
+    ["both", "🏫", "سبب واضح للمبنى الواقف", "• إذا مبنى ما يشتغل، يقول لك السبب الصحيح: طريق، أو إفلاس البلدية، أو إضراب، أو خراب. قبل كان يقول «يحتاج طريق» دايم."],
     ["both", "🏥", "طلبات الأهالي صارت أدق", "• اللي يطلب مستوصف أو مدرسة أو مسجد أو شرطة أو ماء، بيته فعلاً ما توصله الخدمة، وزر «📍 بيته» يوريك مكانه. • إذا الخدمة موجودة بس ما عليها طريق، يطلبون الطريق مو مبنى ثاني. • تنبني الخدمة عند اللي طلبوها؟ ينحسب الوعد وفيته، حتى لو حارة ثانية للحين تبي. • شكوى السرقات ما تجي إلا إذا فيه بيوت فعلاً برا مدى الشرطة."],
     ["both", "🏗️", "البناء صار أطول وأحلى", "• انميشن البناء صار ١٠ ثواني: السقالات، والمبنى يرتفع دور دور، وبعدها تنزل السقالات. • المبنى يشتغل من أول لحظة مثل قبل."],
     ["both", "🎨", "الرافعية بحلّة جديدة", "• أكثر من ٩٠ مبنى بتصاميم جديدة: البيوت والفلل والعماير، والمساجد، والأسواق بالحجر، والمدارس والمستشفيات، والمصانع ومحطات الماء والكهرباء، والمشاريع الكبرى. • خامات حقيقية: حجر بمداميك، ولياسة، وخشب. • أرض فيها كثبان وحصى، والنخل يتحرك مع الريح، والإسفلت يلمع إذا تبلل، وبرك ماء بالمطر. • سيارات وناس بتصاميم جديدة. • مواقف بمظلات، وكافرات أصفر وأسود على الشوارع، وإشارات مرور حقيقية، وبيت الشعر بالمجلس والدلة. • وخط جديد للعبة: العناوين بخط المسيري، والكلام بخط المراعي."],

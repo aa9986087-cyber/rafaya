@@ -491,7 +491,12 @@ function stepGround(s, a, raining, msgs) {
   const share = a.waterSupply ? Math.min(1, a.groundSupply / a.waterSupply) : 0;
   const pumped = Math.min(a.waterUse, a.waterSupply) * share;
   const lakes = (s.lake || 0) > 10 ? a.count.dam : 0;
-  const delta = -pumped * GROUND.pump * (s.terrain === "plain" ? 0.6 : 1) - a.count.pivot * GROUND.pivot + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0) + (s.tech.recharge ? GROUND.base * 1.5 + (raining ? GROUND.rain * 0.5 : 0) : 0);
+  // every finished dam soaks some water into the ground, more with its lake full; a nearly dry aquifer is
+  // pumped less (there is little left to draw), so a town that adds dams or desalination can climb back
+  const dams = s.tiles.reduce((n, t) => n + (t.b?.id === "dam" && !(t.b.build > 0) ? 1 : 0), 0);
+  const thin = before < 10 ? 0.5 : 1;
+  const delta = -pumped * GROUND.pump * thin * (s.terrain === "plain" ? 0.6 : 1) - a.count.pivot * GROUND.pivot * thin + GROUND.base + (raining ? GROUND.rain : 0) + lakes * GROUND.lake + dams * GROUND.dam + (seasonOf(s.day).id === "spring" ? GROUND.spring : 0) + (s.tech.recharge ? GROUND.base * 1.5 + (raining ? GROUND.rain * 0.5 : 0) : 0);
+  s.aquiferRate = delta; // shown on the water sheet (how fast it rises or falls)
   s.aquifer = Math.max(0, Math.min(100, before + delta));
   if (before >= GROUND.low && s.aquifer < GROUND.low) msgs.push({ kind: "event", title: "الماء الجوفي", text: `الآبار بدت تنشف: الماء الجوفي نزل لـ${Math.round(s.aquifer)}٪، والآبار تعطي أقل. ابنِ سد يجمع المطر أو خفف الضخ.` });
   if (before >= 15 && s.aquifer < 15) msgs.push({ kind: "event", title: "الماء الجوفي", text: "الماء الجوفي قرب يخلص! الآبار والخزانات صارت تعطي ثلث ماها. تحتاج سدود أو تحلية." });
@@ -662,6 +667,20 @@ export function onRoad(s, x, y) {
 
 /** Needs a road to work: homes, shops and services. Farms and utilities work on their own. */
 const needsRoad = (def) => ["home", "shop", "serv"].includes(def.cat) || def.jobs && def.cat !== "farm";
+/**
+ * Why a building stands idle, in the player's words ("" when it works). A service also closes when the council
+ * is broke or its staff strike: then the road is not the reason, and saying so sent players looking for a road they had.
+ */
+export function idleWhy(s, x, y) {
+  const b = s.tiles[idx(x, y)]?.b, def = b && B[b.id];
+  if (!b || b.works !== false) return "";
+  if (b.build > 0) return "تحت الإنشاء";
+  if (b.ruin > 0) return "خربان: رمّمه عشان يرجع يشتغل";
+  if (needsRoad(def) && !onRoad(s, x, y)) return "يحتاج طريق لاصق فيه من جنب (مو بالزاوية)";
+  if (def.cat === "serv" && s.broke) return "مقفل لأن البلدية مفلسة: الموظفين ما استلموا رواتبهم. رجّع الميزانية فوق الصفر ويفتح";
+  if (def.cat === "serv" && s.events.some((e) => e.strike)) return "مقفل لأن الموظفين مضربين: ينفتح إذا خلص الإضراب";
+  return "";
+}
 
 // Events come from the EVENTS list, or are boosts made by a decision (they carry their own numbers).
 const eventDef = (e) => (e.id === "boost" ? e : EVENTS.find((x) => x.id === e.id) || {});
@@ -917,7 +936,7 @@ export function houseBlocker(s, a, x, y) {
   if (!next) return "أعلى مستوى";
   if (next.era && s.era < next.era) return `تحتاج الرافعية تصير ${ERAS[next.era].name}`;
   const n = next.needs || {};
-  if (n.road && !t.b.works) return "يحتاج طريق";
+  if (n.road && !t.b.works) return idleWhy(s, x, y) || "يحتاج طريق";
   const tile = idx(x, y);
   if (n.water && !a.watered[tile]) return "ما يوصله ماء: ابنِ بئر قريب منه (البئر يوصل لين ٥ مربعات)";
   if (n.water && a.waterRatio < 0.95) return "الماء ما يكفي البلد: زد الآبار";
@@ -991,7 +1010,7 @@ export function bizBlocker(s, a, x, y) {
   if (!next) return "أعلى مستوى";
   if (b.build > 0) return "تحت الإنشاء";
   if (b.ruin > 0 || (b.cond ?? 100) < 40) return "رمّمه أول";
-  if (b.works === false) return "ما يشتغل: يحتاج طريق";
+  if (b.works === false) return `ما يشتغل: ${idleWhy(s, x, y) || "يحتاج طريق"}`;
   if (next.era && s.era < next.era) return `يحتاج تصير الرافعية ${ERAS[next.era].name}`;
   const here = idx(x, y), farm = B[b.id].cat === "farm" && b.id !== "workshop";
   if (next.era && farm && !a.watered[here]) return "ما يوصله ماء: ابنِ بئر قريب منه";

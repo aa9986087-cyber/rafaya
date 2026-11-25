@@ -30,17 +30,17 @@ export const ERAS = [
 /**
  * Time: the town moves forward one hour at a time (one simulation step = one hour),
  * 24 hours make a day, and the year turns through four seasons of SEASON_DAYS days.
- * daylight: share of the day with the sun up (long summer days, long winter nights).
+ * daylight: share of the day with the sun up (long summer days, longer winter nights; the players asked for long days and short nights).
  */
 export const HOURS = 24;
 /** A town's name for comparing: two towns in al-Jouf may not share it (spaces, tatweel, hamzas, ة/ه and ى/ي, case all ignored). */
 export const townNameKey = (name) => String(name || "").toLowerCase().replace(/[\s_ـ]+/g, "").replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[\u064B-\u0652]/g, "");
 export const SEASON_DAYS = 7; // a week a season (was 3: the owner found the seasons and the year too short)
 export const SEASONS = [
-  { id: "spring", name: "الربيع", daylight: 0.5, start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
-  { id: "summer", name: "الصيف", daylight: 0.6, start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
-  { id: "autumn", name: "الخريف", daylight: 0.5, start: "دخل الخريف: خفّ الحر وبدأ الصِّرام." },
-  { id: "winter", name: "الشتاء", daylight: 0.4, start: "دخل الشتاء: برد وليالي طويلة. الربيع جاي بعده." }
+  { id: "spring", name: "الربيع", daylight: 0.62, start: "دخل الربيع: الفيضة اخضرّت ونوّرت، والناس طلعوا يكشتون." },
+  { id: "summer", name: "الصيف", daylight: 0.7, start: "دخل الصيف: الحر شديد، والبيوت تبي ماء أكثر، والفيضة يبست." },
+  { id: "autumn", name: "الخريف", daylight: 0.62, start: "دخل الخريف: خفّ الحر وبدأ الصِّرام." },
+  { id: "winter", name: "الشتاء", daylight: 0.55, start: "دخل الشتاء: برد وليالي طويلة. الربيع جاي بعده." }
 ];
 
 // Building categories shown in the build bar.
@@ -267,7 +267,7 @@ export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
 
 // Groundwater under the town: wells and tanks pump it, rain and dam lakes refill it.
 // Below LOW the wells give less water, down to 35% when it is empty.
-export const GROUND = { start: 100, low: 40, pump: 0.0003, pivot: 0.06, base: 0.05, rain: 0.5, lake: 0.08, spring: 0.03 };
+export const GROUND = { start: 100, low: 40, pump: 0.0003, pivot: 0.06, base: 0.05, rain: 0.5, lake: 0.2, dam: 0.12, spring: 0.03 };
 /** Price of filling a tile of wadi ground with earth (no more floods there, no more fertile ground). */
 export const FILL_COST = 80;
 
