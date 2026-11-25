@@ -350,7 +350,7 @@ export class Board extends DurableObject {
       }
       this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
       this.news("citizenSupport", plots.length
-        ? (round.round === "c2" ? "💰 نزل حساب المواطن بقيمة ٢٥٠ ريال للمدن اللي رصيدها أقل من ألف، ويمكن نسترده بعدين 🏃🏻" : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
+        ? (round.round === "c2" ? "💰 نزل حساب المواطن للي رصيدهم أقل من ألف 🏃🏻" : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
         : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.", null, null, false);
       return plots;
     });
