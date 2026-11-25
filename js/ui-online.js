@@ -1,7 +1,7 @@
 // Online: the API, visiting towns, the world account, phone notifications, the iPhone app, updates, live hints.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { menuBackdrop } from "./ui-whatsnew.js";
-import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, leaveArrange, leaveVisit, leaveWorld, playing, refreshVisit, save, sendWorldSave, sheet, sheetFor, showMenu, standalone, store, storePrefix, visiting, worldClock, worldMapSheet, worldMode } from "./main.js";
+import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, leaveArrange, leaveVisit, leaveWorld, playing, recoverWorldSave, refreshVisit, save, sendWorldSave, sheet, sheetFor, showMenu, standalone, store, storePrefix, visiting, worldClock, worldMapSheet, worldMode } from "./main.js";
 import { FIX, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { joufHours, newGame, pack } from "./sim.js";
@@ -10,7 +10,6 @@ import { WARX, warKey, warPoll, warSyncNow } from "./ui-war.js";
 import { REQUIRED, VERSION } from "./version.js";
 import { CHAT, chatCount, chatPoll } from "./ui-chat.js";
 import { wnewsPoll, worldNewsSheet } from "./ui-news.js";
-import { readCloudTown } from "./ui-account.js";
 import { pendingSaveMatches } from "./save-version.js";
 
 export const API = "/api";
@@ -407,26 +406,28 @@ export function worldSnapshot(home, compare = false) {
   return pack({ ...home, world: online, savedAt: compare ? undefined : home.savedAt, cam: compare ? undefined : home.cam,
     moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} });
 }
-export async function prepareWorldSave(home, id) {
-  if (globalThis.RAFAYA_PREVIEW) return true;
-  const local = worldSnapshot(home, true);
-  const { state, town } = await readCloudTown(id);
+export function prepareWorldSave(home, { state, town }) {
   const revision = state.world.saveVersion;
   const sameRestart = (town.restarted || 0) === (home.world.restartAt || 0);
   const knownRevision = home.world.saveVersion === revision || pendingSaveMatches(revision, home.world.pendingWrites);
-  const sameSnapshot = town.snapshot && worldSnapshot(state, true) === local;
-  if (!sameRestart || (!knownRevision && town.snapshot && !sameSnapshot)) return false;
+  if (!sameRestart || (!knownRevision && town.snapshot && worldSnapshot(state, true) !== worldSnapshot(home, true))) return false;
   home.world.saveVersion = revision;
   delete home.world.syncConflict;
   return true;
 }
 export const conflictCopyKey = (id) => `rafaya-world-copy-${id.plot}-${id.name}`;
+export function keepDeviceSave(home, id) {
+  const copy = pack(home), key = conflictCopyKey(id);
+  store.set(key, copy);
+  return store.get(key) === copy;
+}
 /** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
 export function worldSync(force, leaving = false) {
   const id = me();
   if (!worldMode || id?.plot == null || !onlineOk() || navigator.onLine === false || arrange) return;
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
-  if (!ownsActiveSave(mine) || mine.world.syncConflict) return;
+  if (!ownsActiveSave(mine)) return;
+  if (mine.world.syncConflict) return leaving ? undefined : recoverWorldSave(mine);
   if (leaving && Date.now() - (worldSync.backgroundAt || 0) < 1000) return;
   if (!force) {
     clearTimeout(worldSync.soon);

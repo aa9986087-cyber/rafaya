@@ -30,7 +30,7 @@ export const secLeft = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); re
 export async function warApi(action, body = {}) {
   const id = me();
   if (!id || id.plot == null) return { error: "سجّل وأسس مدينتك بعالم الجوف أول" };
-  if (action !== "state" && worldMode && (visiting?.home ?? S).world?.syncConflict) return { error: "افتح حفظ السيرفر أول عشان ترجع مزامنة مدينتك" };
+  if (action !== "state" && worldMode && (visiting?.home ?? S).world?.syncConflict) return { error: "مدينتك قيد المزامنة، جرّب بعد شوي" };
   try { return await api(`/world/war/${action}`, { name: id.name, secret: id.secret, ...body }); } catch (e) { return { error: e.message === "maintenance" ? "عالم الجوف تحت الصيانة" : "ما قدرت أوصل للسيرفر: جرّب بعد شوي" }; }
 }
 /** The buildings as the server last saw them: when they changed, send the town before any war action (the server only trusts what it has). */
