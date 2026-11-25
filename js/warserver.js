@@ -16,6 +16,7 @@ import {
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState
 } from "./war.js";
 
+const SALVO_MAX = 6; // targets in one «دفعة»
 const pairId = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 let noteN = 0; // keeps two notes of the same millisecond apart (never uses the dice: results must not depend on it)
 const cleanReq = (v) => String(v ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
@@ -151,6 +152,7 @@ export class WarServer {
       case "buy": return this.once(me.plot, body.req, () => this.buy(body, me));
       case "rel": return this.once(me.plot, body.req, () => this.relAct(body, me));
       case "launch": return this.once(me.plot, body.op, () => this.launch(body, me));
+      case "salvo": return this.once(me.plot, body.op, () => this.salvo(body, me));
       case "op": return this.opView(String(body.op || ""), me);
       case "repair": return this.once(me.plot, body.req, () => this.repair(body, me));
       case "settings": return this.settings(body, me);
@@ -300,7 +302,7 @@ export class WarServer {
 
   // ---------- attacking ----------
   /** Everything that stops this launch, before anything is spent. Returns { error } or the plan. */
-  plan(body, me) {
+  plan(body, me, opt = {}) {
     const now = this.now(), to = Math.round(Number(body.to)), x = Math.round(Number(body.x)), y = Math.round(Number(body.y));
     const mine = this.townInfo(me.plot), them = this.townInfo(to);
     if (!mine?.snap.list.length) return { error: "زامن مدينتك أول" };
@@ -336,6 +338,8 @@ export class WarServer {
     const drones = (load.drone || 0) + (load.drone2 || 0), missiles = (load.missile || 0) + (load.missile2 || 0);
     const readyBases = p.bases.filter((b) => b.wd < 85 && (a.reload[`b${b.x}:${b.y}`] || 0) <= now);
     const readyPads = p.pads.filter((b) => b.wd < 85 && (a.reload[`p${b.x}:${b.y}`] || 0) <= now);
+    const slowest = Object.keys(load).reduce((n, w) => Math.max(n, flightMs(me.plot, to, w, this.cfg)), 0);
+    if (opt.batch) return { now, to, x, y, target, load, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, fee: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].fee * k, 0), value: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].price * k, 0) };
     if (drones) {
       if (!readyBases.length) return { error: `قواعد المسيّرات تتجهز: باقي ${minutesText(Math.min(...p.bases.map((b) => a.reload[`b${b.x}:${b.y}`] || now)) - now)}` };
       const salvo = Math.max(...readyBases.map((b) => milStat("dronebase", b.lvl).salvo));
@@ -346,15 +350,79 @@ export class WarServer {
       if (!readyPads.length) return { error: `المنصات تتجهز: باقي ${minutesText(Math.min(...p.pads.map((b) => a.reload[`p${b.x}:${b.y}`] || now)) - now)}` };
       if (missiles > room) return { error: `المنصات الجاهزة تطلق ${nf(room)} صواريخ بس` };
     }
-    const flyingOut = this.db.list("op", { k1: String(me.plot), limit: 50 }).filter((o) => o.status === "flying").length;
     const ops = milStat("milhq", p.hq.lvl).ops;
-    if (flyingOut >= ops) return { error: `القيادة تدير ${nf(ops)} عملية بالجو بس` };
-    const flyingIn = this.db.list("op", { k2: String(to), limit: 50 }).filter((o) => o.status === "flying").length;
-    if (flyingIn >= this.cfg.caps.inFlightTo) return { error: "الجو فوق المدينة زحمة عمليات: جرّب بعد شوي" };
+    if (this.flying({ k1: String(me.plot) }) >= ops) return { error: `القيادة تدير ${nf(ops)} عملية بالجو بس` };
+    if (this.flying({ k2: String(to) }) >= this.cfg.caps.inFlightTo) return { error: "الجو فوق المدينة زحمة عمليات: جرّب بعد شوي" };
     const fee = Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].fee * k, 0);
     if (this.available(mine, a) < fee) return { error: "ما يكفي المال لتشغيل العملية" };
-    const slowest = Object.keys(load).reduce((n, w) => Math.max(n, flightMs(me.plot, to, w, this.cfg)), 0);
     return { now, to, x, y, target, load, fee, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, value: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].price * k, 0) };
+  }
+
+  /** Operations in the air (a salvo counts once: it was launched as one). */
+  flying(q) {
+    const list = this.db.list("op", { ...q, limit: 80 }).filter((o) => o.status === "flying");
+    return new Set(list.map((o) => o.salvo || o.id)).size;
+  }
+
+  /**
+   * «دفعة»: several targets in one town, each with its own weapons, launched together. The whole batch is
+   * checked first (ammunition, ready launchers, money, the operations in the air) and nothing is spent unless
+   * all of it can go. It counts as one operation in the air; each target is its own result.
+   */
+  salvo(body, me) {
+    const id = cleanReq(body.op);
+    if (!id) return { error: "no operation id" };
+    const list = (Array.isArray(body.targets) ? body.targets : []).slice(0, SALVO_MAX);
+    if (!list.length) return { error: "اختر هدف واحد على الأقل" };
+    const seen = new Set(), plans = [];
+    for (const t of list) {
+      const key = `${Math.round(Number(t.x))}:${Math.round(Number(t.y))}`;
+      if (seen.has(key)) return { error: "نفس الهدف مكرر بالدفعة" };
+      seen.add(key);
+      const pl = this.plan({ to: body.to, x: t.x, y: t.y, load: t.load }, me, { batch: true });
+      if (pl.error) return { error: pl.target ? `«${B[pl.target.id]?.name}»: ${pl.error}` : pl.error };
+      plans.push(pl);
+    }
+    const { now, to, a, p, mine, them, readyBases, readyPads } = plans[0];
+    const need = {};
+    for (const pl of plans) for (const [w, n] of Object.entries(pl.load)) need[w] = (need[w] || 0) + n;
+    for (const [w, n] of Object.entries(need)) if (a.arsenal[w] < n) return { error: `الدفعة تحتاج ${nf(n)} ${WEAPONS[w].name} وعندك ${nf(a.arsenal[w])}` };
+    const drones = plans.reduce((n, pl) => n + pl.drones, 0), missiles = plans.reduce((n, pl) => n + pl.missiles, 0);
+    const droneRoom = readyBases.reduce((n, b) => n + milStat("dronebase", b.lvl).salvo, 0), padRoom = readyPads.reduce((n, b) => n + milStat("missilepad", b.lvl).cap, 0);
+    if (drones && !readyBases.length) return { error: "قواعد المسيّرات تتجهز" };
+    if (drones > droneRoom) return { error: `القواعد الجاهزة تطلق ${nf(droneRoom)} مسيّرات بالدفعة` };
+    if (missiles && !readyPads.length) return { error: "المنصات تتجهز" };
+    if (missiles > padRoom) return { error: `المنصات الجاهزة تطلق ${nf(padRoom)} صواريخ بالدفعة` };
+    const ops = milStat("milhq", p.hq.lvl).ops;
+    if (this.flying({ k1: String(me.plot) }) >= ops) return { error: `القيادة تدير ${nf(ops)} عملية بالجو بس` };
+    if (this.flying({ k2: String(to) }) >= this.cfg.caps.inFlightTo) return { error: "الجو فوق المدينة زحمة عمليات: جرّب بعد شوي" };
+    const fee = plans.reduce((n, pl) => n + pl.fee, 0);
+    if (this.available(mine, a) < fee) return { error: "ما يكفي المال لتشغيل الدفعة" };
+    // spend: the ammunition, and the launchers that fired (only as many as the batch needed)
+    for (const [w, n] of Object.entries(need)) a.arsenal[w] -= n;
+    let left = drones;
+    for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = now + milStat("dronebase", b.lvl).reload * 60000; }
+    left = missiles;
+    for (const b of readyPads.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = now + milStat("missilepad", b.lvl).reload * 60000; }
+    const ch = this.charge(me.plot, a, fee, `دفعة على «${them.town}» (${nf(plans.length)} أهداف)`);
+    this.saveAcct(me.plot, a);
+    const detected = detects(this.profileOf(them));
+    const out = plans.map((pl, i) => {
+      const op = {
+        id: `${id}-${i}`, salvo: id, from: me.plot, to, fromTown: mine.town, toTown: them.town, x: pl.x, y: pl.y, bid: pl.target.id, blvl: pl.target.lvl, bname: B[pl.target.id].name,
+        load: pl.load, launchAt: now, arriveAt: now + pl.flight, status: "flying", fee: pl.fee, value: pl.value, detected,
+        pads: readyPads.map((b) => [b.x, b.y]).slice(0, 2), bases: readyBases.map((b) => [b.x, b.y]).slice(0, 1)
+      };
+      this.db.put("op", op.id, op, { k1: String(me.plot), k2: String(to), at: now });
+      this.db.put("fly", op.id, { id: op.id, at: op.arriveAt }, { at: op.arriveAt });
+      return op;
+    });
+    if (detected) {
+      const da = this.acct(to); if (da.settings.refill) this.deputy(them, da, now, true);
+      const first = Math.min(...out.map((o) => o.arriveAt));
+      this.note(to, "incoming", `🚨 إنذار عسكري: دفعة من ${nf(out.length)} ضربات من «${mine.town}» متجهة نحو مدينتك! أولها يوصل بعد ${minutesText(first - now)}.`, { op: out[0].id, from: me.plot });
+    }
+    return { ok: true, ops: out.map((o) => this.opPublic(o, me)), charge: ch, arsenal: a.arsenal, now };
   }
 
   launch(body, me) {

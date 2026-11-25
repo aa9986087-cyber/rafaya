@@ -1,4 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
+import { ROOM, warRoom } from "./ui-warroom.js";
 import { VERSION, REQUIRED } from "./version.js";
 import { WHATS_NEW } from "./whats-new.js";
 import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
@@ -1555,7 +1556,8 @@ $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 
 // ---------- المستشار المالي: a paid reading of the town (js/advisor.js), the first one free ----------
 $("advisorBtn").addEventListener("click", () => { sfx.tap(); advisorSheet(); });
-$("warBtn").addEventListener("click", async () => { sfx.tap(); sheet(`<h2>⚔️ القيادة العسكرية</h2><p class="hint">نحمّل…</p>`, "war"); await warPoll(true); warSheet(); });
+$("warBtn").addEventListener("click", async () => { sfx.tap(); warRoom(); }); // «غرفة العمليات»: the whole war in one screen
+$("warAlert").addEventListener("click", () => { sfx.tap(); warRoom(ROOM.tab); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
 
 $("goal").addEventListener("click", () => { sfx.tap(); goals(); });

@@ -304,3 +304,29 @@ test("حق الرد: a much bigger town never starts a war, but answers one the 
   const r = W.war.handle("launch", { op: "r1", to: small.plot, x: t % 72, y: Math.floor(t / 72), load: { drone: 1 } }, big);
   assert.equal(r.error, undefined, r.error);
 });
+
+test("«دفعة»: several targets in one batch, checked as a whole, one operation in the air, a result for each", () => {
+  const W = makeWorld();
+  const a = W.addTown(1, "المهاجمة", { era: 3, mil: [[20, 20, "milhq", 2], [22, 20, "dronebase", 1], [24, 20, "missilepad", 1], [26, 20, "radar"], [28, 20, "airdef"]] });
+  const b = W.addTown(2, "الهدف", { era: 3, mil: [[20, 20, "milhq"], [22, 20, "dronebase"], [24, 20, "missilepad"], [26, 20, "radar"], [28, 20, "airdef"], [30, 30, "generator"]] });
+  atWar(W, a, b);
+  const acct = W.war.acct(a.plot); acct.arsenal.drone = 4; acct.arsenal.missile = 2; W.war.saveAcct(a.plot, acct);
+  // too much for the ready launchers: nothing is spent
+  const tooMuch = W.war.handle("salvo", { op: "s0", to: b.plot, targets: [{ x: 22, y: 20, load: { drone: 4 } }, { x: 24, y: 20, load: { drone: 4 } }] }, a);
+  assert.ok(tooMuch.error);
+  assert.equal(W.war.acct(a.plot).arsenal.drone, 4);
+  // a duplicate target is refused
+  assert.match(W.war.handle("salvo", { op: "s1", to: b.plot, targets: [{ x: 22, y: 20, load: { drone: 1 } }, { x: 22, y: 20, load: { drone: 1 } }] }, a).error, /مكرر/);
+  // three targets: drones on two, a missile on the third
+  const r = W.war.handle("salvo", { op: "s2", to: b.plot, targets: [{ x: 22, y: 20, load: { drone: 1 } }, { x: 26, y: 20, load: { drone: 1 } }, { x: 30, y: 30, load: { missile: 1 } }] }, a);
+  assert.equal(r.error, undefined, r.error);
+  assert.equal(r.ops.length, 3);
+  assert.equal(W.war.acct(a.plot).arsenal.drone, 2);
+  assert.equal(W.war.acct(a.plot).arsenal.missile, 1);
+  assert.equal(W.war.flying({ k1: String(a.plot) }), 1); // one operation in the air
+  // the same request again is answered the same, never launched twice
+  assert.deepEqual(W.war.handle("salvo", { op: "s2", to: b.plot, targets: [] }, a).ops.map((o) => o.id), r.ops.map((o) => o.id));
+  W.tick(30 * MIN); W.war.settle();
+  const done = r.ops.map((o) => W.db.get("op", o.id));
+  assert.ok(done.every((o) => o.status === "done" && o.result));
+});

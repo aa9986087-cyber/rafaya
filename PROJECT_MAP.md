@@ -95,6 +95,7 @@ and import each other's functions. So:
 | `ui-news.js` | نشرة الرافعية (posts, replies, promises) and نشرة الجوف (`WNEWS`) |
 | `ui-online.js` | `api` (adds `device`), `deviceId`, `me`, `worldSync`, world ids and saves, visiting, push notifications, the iPhone app move, `versionCheck`, live hints (`LIVE`) |
 | `ui-account.js` | Name-fix requests (`namefixSheet`), «✏️ اسمك» (`nameSection`), `openWorld` and the join screen, Google sign-in (`googleLogin`, `googleButton`), the world closed and removed screens |
+| `ui-warroom.js` | **«غرفة العمليات»** (the war button opens it): live strip of operations, front map, tabs for the batch attack (`salvo`), defence and refill, enemies, negotiation, log and repairs. Alerts never close it; a watched scene returns to it (`roomAfterScene`). |
 | `ui-war.js` | «صراع الجوف» on screen: `WARX`, `warSyncNow`, the command, relations, targeting, scenes, damage in the building sheet |
 | `ui-chat.js` | Chat polling and counts, the developer note, the war card |
 | `ui-region.js` | The solo region map, neighbours, elections |
@@ -204,7 +205,7 @@ and import each other's functions. So:
 | Moving a town (once) | `worker.js` `move`; `warserver.js` `moveTown`; `main.js` `moveSheet` |
 | Names (player once, town once), bad names | `worker.js` `newname`, `rename`, `namefix`; `src/moderation.js` |
 | Bans and device bans | `worker.js` `ban`, `remove`, `banned_devices`; `ui-online.js` `deviceId` |
-| War | `war.js` (rules), `warserver.js` (decides), `ui-war.js` + `main.js` (screen), `warfx.js` (show) |
+| War | `war.js` (rules; `conflictBlocker` has حق الرد), `warserver.js` (decides; `salvo` = several targets as one operation), `ui-war.js` + `main.js` (screen), `warfx.js` (show) |
 | Bulletin and chat | `worker.js` `news()`, `chat`; `ui-news.js`, `ui-chat.js`, `main.js` `chatSheet` |
 | Citizen support | `worker.js` `startCitizenSupport2`, `payCitizenSupport`, `flushCitizenSupport` |
 | Google sign-in | `src/google.js`; `worker.js` `google/*`; `ui-account.js` |

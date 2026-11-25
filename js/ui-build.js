@@ -82,7 +82,7 @@ export function toast(text, kind = "") {
 }
 /** The town's own name in place of «الرافعية» (the default town's name) in what its people and council say. */
 // sheets that show what players wrote (al-Jouf's map, the chat, war screens): «الرافعية» there is a real name, never your town's
-export const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "share-game", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "developer-note", "war", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
+export const NAME_KEEP = new Set(["wnews", "news-up", "whatsnew", "share-game", "settings", "settings-menu", "how", "region", "budget", "world", "chat", "developer-note", "war", "warroom", "war-rel", "war-strike", "war-report", "war-back", "online", "namefix", "removed"]);
 export function here(text) {
   const n = S?.name;
   // a landmark keeps its place's name (بوابة الرافعية is the gate of the place on al-Jouf's map, not of the town)

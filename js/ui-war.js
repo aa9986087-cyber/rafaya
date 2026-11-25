@@ -1,5 +1,6 @@
 // «صراع الجوف» on the game's side: the command, relations, targeting, scenes, war damage.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
+import { roomAfterScene, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
 import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, canTarget, damageState, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, warFactor, weaponBlocker } from "./war.js";
@@ -87,7 +88,8 @@ export function warWatch(st) {
     if (o.status !== "done" || played.has(o.id) || WARX.watched.has(o.id)) continue;
     if (Date.now() - (o.doneAt - WARX.offset) > 15 * 60000) { markPlayed(o.id); continue; } // old news: in the log only
     WARX.watched.add(o.id);
-    if (o.side === "in" && !visiting && !WARX.scene && sheetFor !== "decision") { warDefenseScene(o); }
+    if (o.side === "in" && sheetFor === "warroom") { toast(`${o.result?.dmg ? "💥" : "🛡️"} ${o.bname}: ${o.result?.blocked ? "ما أصابت" : o.result?.dmg ? `إصابة ${ar(o.result.dmg)}٪` : "انعترضت"} · اضغطها بالشريط تشوف المشهد`, o.result?.dmg ? "bad" : "goal"); } // the war room is never closed by an alert
+    else if (o.side === "in" && !visiting && !WARX.scene && sheetFor !== "decision") { warDefenseScene(o); }
     else if (o.side === "out" && !WARX.scene) { markPlayed(o.id); toast(`📋 نتيجة عمليتك على «${o.toTown}» وصلت`, o.result.dmg ? "goal" : ""); }
   }
   // an attack on its way: a countdown at the top
@@ -96,6 +98,7 @@ export function warWatch(st) {
   const next = (st.ops || []).filter((o) => o.status === "flying").sort((a, b) => a.arriveAt - b.arriveAt)[0];
   if (next) WARX.arriveTimer = setTimeout(() => warPoll(true), Math.max(1500, next.arriveAt - warNow() + 1500));
   warAlertBar(incoming);
+  warRoomBadge(st);
 }
 export function warAlertBar(op) {
   const bar = $("warAlert");
@@ -356,7 +359,7 @@ export function sceneUi(on) {
   const ui = $("warScene");
   ui.hidden = !on;
   document.body.classList.toggle("war-scene", !!on);
-  if (!on) { $("warBanner").hidden = true; $("warMap").hidden = true; }
+  if (!on) { $("warBanner").hidden = true; $("warMap").hidden = true; roomAfterScene(); }
 }
 export function banner(text, cls = "") {
   const b = $("warBanner");

@@ -668,3 +668,43 @@ body.world .speeds { display: none !important; }
 .g-btn { display: flex; justify-content: center; min-height: 44px; margin: 8px 0; }
 .g-or { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; opacity: .7; font-size: 13px; }
 .g-or::before, .g-or::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .35; }
+
+/* «غرفة العمليات»: the whole war in one screen (full height, a dark command-room top) */
+.sheet.warroom { padding-top: 0; }
+.sheet.warroom .sheet-box { max-height: 100%; height: 100%; border-radius: 0; padding-top: calc(var(--top, 0px) + 14px); }
+.wr-sum { font-size: 13px; margin: 0 0 8px; }
+.wr-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: none; min-height: 64px; }
+.wr-strip .wr-quiet { align-self: center; margin: 0; }
+.wr-chip { flex: none; min-width: 150px; text-align: start; border-radius: 14px; padding: 8px 10px; border: 0; font: inherit; color: #fff; display: grid; gap: 2px; box-shadow: 0 2px 6px #0003; }
+.wr-chip.in { background: linear-gradient(135deg, #a3332b, #7a1f1a); }
+.wr-chip.out { background: linear-gradient(135deg, #2f6b4f, #1f4a37); }
+.wr-chip.done { opacity: .78; }
+.wr-chip.fly i { animation: wrPulse 1.2s ease-in-out infinite; }
+.wr-chip b { font-size: 13px; } .wr-chip small { font-size: 11px; opacity: .9; } .wr-chip i { font-style: normal; font-weight: 800; font-size: 14px; }
+.wr-map { width: 100%; height: 130px; background: radial-gradient(circle at 50% 50%, #3b3a2b, #22231c); border-radius: 14px; margin-bottom: 8px; }
+.wr-map text { fill: #f3e6c4; font: 700 9px Almarai, system-ui; text-anchor: middle; }
+.wr-town circle { fill: #c9a64a; stroke: #fff6; stroke-width: 1; }
+.wr-town.me circle { fill: #f2c94c; stroke: #fff; stroke-width: 2; }
+.wr-town.war circle, .wr-town.warning circle { fill: #d8463a; }
+.wr-town.hostile circle, .wr-town.tension circle { fill: #e08a3c; }
+.wr-town.truce circle { fill: #e9e3d2; }
+.wr-line { stroke-width: 1.5; stroke-dasharray: 4 3; } .wr-line.in { stroke: #ff6a5a; } .wr-line.out { stroke: #5fd39a; }
+.wr-dot.in { fill: #ff6a5a; } .wr-dot.out { fill: #5fd39a; }
+.wr-tabs { position: sticky; top: -14px; background: var(--paper); z-index: 2; padding-top: 6px; }
+.wr-enemies { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
+.wr-enemies button { flex: none; border: 1px solid var(--line, #e2d3b5); background: transparent; border-radius: 12px; padding: 6px 10px; font: inherit; font-weight: 700; font-size: 13px; color: inherit; display: grid; }
+.wr-enemies button.on { background: var(--red); color: #fff; border-color: var(--red); }
+.wr-enemies small { font-weight: 500; font-size: 11px; }
+.wr-targets { display: grid; gap: 6px; margin-bottom: 10px; }
+.wr-target { border: 1px solid var(--line, #e2d3b5); border-radius: 12px; padding: 8px 10px; display: grid; gap: 6px; }
+.wr-target.on { border-color: var(--red); background: rgba(198, 58, 47, .06); }
+.wr-target label { display: flex; gap: 10px; align-items: center; }
+.wr-target label input { width: 20px; height: 20px; accent-color: var(--red); }
+.wr-target label span { display: grid; } .wr-target small { font-size: 12px; color: var(--ink-2); }
+.wr-load { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.wr-load select { flex: 1; min-width: 0; border-radius: 10px; padding: 6px; font: inherit; font-size: 13px; }
+.wr-buy { display: flex; gap: 6px; } .wr-buy .btn { padding: 6px 10px; font-size: 13px; }
+.wr-enemy { margin-bottom: 10px; } .wr-acts { display: flex; gap: 8px; margin-top: 8px; } .wr-acts .btn { flex: 1; }
+#warBtn.wr-hot { background: #a3332b; color: #fff; animation: wrPulse 1.4s ease-in-out infinite; }
+@keyframes wrPulse { 50% { opacity: .55; } }
+body:has(#sheet:not([hidden])) #pvScenarios { display: none; } /* the trial's scenario button never covers a screen */
