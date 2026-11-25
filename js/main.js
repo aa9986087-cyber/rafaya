@@ -2130,9 +2130,10 @@ function updateSheet(v) {
   });
 }
 versionCheck();
-setInterval(versionCheck, 5 * 60000);
+setInterval(versionCheck, 60000); // every minute (a small request), so an installed app notices a release without being reopened
 addEventListener("pageshow", () => { versionCheck(); checkPush(); });
 addEventListener("online", versionCheck);
+addEventListener("focus", versionCheck); // installed apps on some phones come back without a visibility change
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   versionCheck();
@@ -2155,6 +2156,8 @@ function liveOpen() {
     if (id) ws.send(JSON.stringify({ t: "hello", name: id.name, secret: id.secret }));
     clearInterval(LIVE.ping); LIVE.ping = setInterval(() => { if (!document.hidden) try { ws.send('{"t":"ping"}'); } catch { /* closing */ } }, 30000); // phones drop quiet sockets; only while in front (the server sends no phone notification then)
     warPoll(true); chatPoll(true); wnewsPoll(true); // catch up on what happened while not connected
+    if (LIVE.was) versionCheck(); // back after a drop: a new release restarts the server, so the update shows at once
+    LIVE.was = true;
   };
   ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } liveHint(m); };
   ws.onclose = () => { LIVE.ws = null; LIVE.ok = false; clearInterval(LIVE.ping); liveRetry(); };
