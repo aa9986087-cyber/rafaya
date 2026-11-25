@@ -565,3 +565,23 @@ test("the electrified road carries power along it from a generator and lights wh
   a = analyze(s);
   assert.ok(!a.powered[idx(40, 32)], "a plain road carries no power");
 });
+
+test("a big decoration takes 2×2 tiles; its other tiles go with it; small ones and old saves stay one tile", () => {
+  const s = newGame(12);
+  s.money = 1e6; s.era = 2;
+  let x0 = -1, y0 = -1;
+  for (let y = 0; y < N - 1 && x0 < 0; y++) for (let x = 0; x < N - 1; x++) if (!cantBuild(s, x, y, "bigfountain")) { x0 = x; y0 = y; break; }
+  assert.ok(x0 >= 0, "there is room for it");
+  assert.equal(build(s, x0, y0, "bigfountain"), "");
+  assert.equal(s.tiles[idx(x0 + 1, y0 + 1)].b.id, "decopart");
+  assert.ok(cantBuild(s, x0 + 1, y0, "streetpalm"), "its other tiles are taken");
+  for (let h = 0; h < 50; h++) step(s, fixedRandom());
+  assert.equal(s.tiles[idx(x0 + 1, y0)].b?.cond, 100, "the other tiles do not wear");
+  assert.equal(demolish(s, x0 + 1, y0 + 1), "", "removing a piece removes the whole");
+  for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) assert.equal(s.tiles[idx(x0 + dx, y0 + dy)].b, null);
+  // an old one-tile big decoration (built before) keeps working on its own tile
+  s.tiles[idx(x0, y0)].b = { id: "dallah", lvl: 0, res: 0, cond: 100 };
+  assert.equal(demolish(s, x0, y0), "");
+  assert.equal(build(s, x0, y0, "streetpalm"), "", "a palm is one tile");
+  assert.equal(s.tiles[idx(x0 + 1, y0)].b, null);
+});

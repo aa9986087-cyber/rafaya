@@ -253,6 +253,13 @@ export function cantBuild(s, x, y, id) {
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (def.hq && !s.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة العسكرية أول";
   if (def.max && s.tiles.filter((t) => t.b?.id === id).length >= def.max) return `الحد ${def.max} بالمدينة`;
+  if (def.span) { // a big decoration: its 2×2 must all be free and yours
+    for (let dy = 0; dy < def.span; dy++) for (let dx = 0; dx < def.span; dx++) {
+      if (!dx && !dy) continue;
+      const tt = inMap(x + dx, y + dy) && s.tiles[idx(x + dx, y + dy)];
+      if (!tt || !owns(s, x + dx, y + dy) || tt.b || tt.t === "lake") return "تحتاج ٢×٢ مربعات فاضية: هذا المربع واللي يمينه وتحته";
+    }
+  }
   if (t.b) {
     // a better road can be laid over an old one
     if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
@@ -282,6 +289,15 @@ export function build(s, x, y, id) {
   if (t.t === "rock" && !keepRock) changeMoney(s, -ROCK_CLEAR, "rock");
   if (t.t === "rock" && !keepRock) t.t = "sand";
   t.b = { id, lvl: 0, res: 0, day: s.day, cond: 100 };
+  if (B[id].span) { // the other tiles of a big decoration (rocks under them are cleared, at the usual price)
+    t.b.span = B[id].span;
+    for (let dy = 0; dy < t.b.span; dy++) for (let dx = 0; dx < t.b.span; dx++) {
+      if (!dx && !dy) continue;
+      const tt = s.tiles[idx(x + dx, y + dy)];
+      if (tt.t === "rock") { changeMoney(s, -ROCK_CLEAR, "rock"); tt.t = "sand"; }
+      tt.b = { id: "decopart", of: idx(x, y), cond: 100 };
+    }
+  }
   if (B[id].buildHours) t.b.build = B[id].buildHours; // a grand project: a building site for a while
   return "";
 }
@@ -583,6 +599,7 @@ export function moveBlocker(s, fx, fy, tx, ty) {
   const from = inMap(fx, fy) && s.tiles[idx(fx, fy)].b;
   if (!from) return "ما فيه مبنى هنا";
   if (ROAD_IDS.includes(from.id)) return "الطرق ما تنقل: أزلها وارسمها من جديد";
+  if (from.span || from.id === "decopart") return "الزينة الكبيرة ما تنقل: أزلها وابنها من جديد";
   if (from.build > 0) return "تحت الإنشاء: انتظر لين يخلص";
   if (from.wd > 0) return "فيه ضرر عسكري: أصلحه قبل تنقله";
   if (!inMap(tx, ty)) return "خارج الأرض";
@@ -626,6 +643,9 @@ export function moveBuilding(s, fx, fy, tx, ty) {
 export function demolish(s, x, y) {
   const t = s.tiles[idx(x, y)];
   if (!owns(s, x, y)) return "الأرض هذي مو لك";
+  if (t.b?.id === "decopart" && s.tiles[t.b.of]?.b?.span) return demolish(s, t.b.of % N, Math.floor(t.b.of / N)); // a piece of a big decoration: the whole of it
+  if (t.b?.id === "decopart") { t.b = null; return ""; }
+  if (t.b?.span) dropParts(s, idx(x, y));
   if (t.b) {
     const def = B[t.b.id];
     changeMoney(s, Math.floor(def.cost / 3), "remove", levelName(t.b));
@@ -643,7 +663,7 @@ export function demolish(s, x, y) {
 // ---------- wear, repairs and insurance ----------
 
 /** Buildings that wear out (roads and tents do not; tents are mended by their families). */
-const wears = (b) => b && !ROAD_IDS.includes(b.id) && b.id !== "parking" && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
+const wears = (b) => b && !ROAD_IDS.includes(b.id) && b.id !== "parking" && b.id !== "decopart" && !(b.id === "house" && b.lvl === 0) && !(b.build > 0);
 /** A worn building (below the WEAK line) works at 60%. */
 export const condFactor = (b) => ((b?.cond ?? 100) < UPKEEP_RULES.weak ? 0.6 : 1) * warWorks(b?.wd);
 /** War damage (world of al-Jouf, kept apart from wear in b.wd, 0 … 100) slows a building; from 85 it stands idle. */
@@ -666,7 +686,10 @@ export function repairAll(s) {
   return { n, spent };
 }
 /** A building is lost (fire, flood, collapse): insurance pays part of it back. Returns the refund. */
+/** Clear the other tiles of a big decoration. */
+function dropParts(s, at) { for (const t of s.tiles) if (t.b?.id === "decopart" && t.b.of === at) t.b = null; }
 export function lose(s, t) {
+  if (t.b?.span) dropParts(s, s.tiles.indexOf(t));
   const refund = s.insured && t.b ? Math.round(B[t.b.id].cost * UPKEEP_RULES.insurePays) : 0;
   changeMoney(s, refund, "insurance", t.b ? levelName(t.b) : "");
   t.b = null;

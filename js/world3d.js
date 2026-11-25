@@ -621,7 +621,7 @@ export class World {
     const list = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const b = s.tiles[idx(x, y)].b;
-      if (!b || roadAt(s.tiles[idx(x, y)]) || ["parking", "pole"].includes(b.id) || B[b.id]?.cat === "deco") continue; // decorations: no square shadow, only their own
+      if (!b || roadAt(s.tiles[idx(x, y)]) || ["parking", "pole", "decopart"].includes(b.id) || B[b.id]?.cat === "deco") continue; // decorations: no square shadow, only their own
       list.push(tileCenter(x, y));
     }
     if (!list.length) return;
@@ -817,13 +817,14 @@ export class World {
         if (t.t === "rock") { q.setFromAxisAngle(up, ((x * 7 + y * 13) % 8) * 0.8); m4.compose(p, q, sc); push("rock", "sand", m4.clone(), 1, idx(x, y)); }
         continue;
       }
-      if (roadAt(t)) continue;
+      if (roadAt(t) || t.b.id === "decopart") continue; // (a big decoration's other tiles: drawn with it)
       // Face the road, then any quarter turns the mayor gave it.
       let angle = this.faceAngle(s, x, y) + (t.b.rot || 0) * Math.PI / 2;
       if (t.b.id === "pole") { const f = feeder.get(idx(x, y)); angle = f === undefined ? 0 : Math.atan2((f % N) - x, Math.floor(f / N) - y); } // the cross arm stands across its wire
       if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
       if (t.b.wd >= 25) { const [tx, tz] = warTilt(t.b.wd, x, y); q.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(tx, 0, tz))); sc.set(1, warSquash(t.b.wd), 1); }
+      if (t.b.span) { p.x += (t.b.span - 1) / 2; p.z += (t.b.span - 1) / 2; sc.multiplyScalar(t.b.span); } // a big decoration: across its 2×2, at twice the size
       m4.compose(p, q, sc);
       sc.set(1, 1, 1);
       // Building sites, and a colour variant per house so streets do not look copied.
@@ -851,7 +852,7 @@ export class World {
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
       if (!t.b.build && !(t.b.wd >= 80) && ["fountain", "bigfountain", "park"].includes(t.b.id)) {
         const height = { fountain: 0.34, bigfountain: 0.43, park: 0.08 }[t.b.id];
-        this.fountains.push({ x: p.x, z: p.z, height, ring: t.b.id === "bigfountain" });
+        this.fountains.push({ x: p.x, z: p.z, height: height * (t.b.span || 1), ring: t.b.id === "bigfountain" });
       }
     }
     // Reuse or rebuild the instanced meshes.

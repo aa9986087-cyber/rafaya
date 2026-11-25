@@ -478,7 +478,7 @@ function confirmPending() {
 // A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom; a tap
 // on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
 // ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
-const arrMovable = (b) => !!b && !(b.build > 0) && !(b.wd > 0); // war damage is kept by place on the server: repair first // everything moves, roads too (like walls in a base editor)
+const arrMovable = (b) => !!b && !(b.build > 0) && !(b.wd > 0) && !b.span && b.id !== "decopart"; // (a big decoration's 2×2 stays put) // war damage is kept by place on the server: repair first // everything moves, roads too (like walls in a base editor)
 const arrSync = () => world.sync(S, { tiles: false, roads: true, buildings: true });
 /** Lay the next one of the same kind from the tray (roads are laid by dragging a finger along). */
 function arrNext(id) {
@@ -1366,6 +1366,7 @@ function plotSheet(id) {
 }
 
 function inspect(x, y) {
+  if (S.tiles[idx(x, y)].b?.id === "decopart") { const of = S.tiles[idx(x, y)].b.of; x = of % N; y = Math.floor(of / N); } // a big decoration's other tiles: the decoration
   const t = S.tiles[idx(x, y)];
   if (!owns(S, x, y)) { sfx.tap(); plotSheet(plotAt(x, y)); return; }
   if (t.b?.id === "bank" && !t.b.build) { sfx.tap(); bankSheet(); return; }
@@ -3269,7 +3270,7 @@ const WHATS_NEW = {
   v: { solo: "2026-11-25-storm", world: "2026-11-25-storm" },
   items: [
     ["both", "⚡", "طريق مكهرب", "• طريق جديد بقسم الطرق: مسفلت ومعه أعمدة كهرب. إذا اتصل بمولد أو محطة أو عمود، ينقل الكهرب على طوله ويوصّلها للمباني لين مربعين من جنبه. سعره أغلى من المسفلت."],
-    ["both", "🌴", "الزينة صارت تفرق", "• النخل والزهور والفوانيس والنوافير صار لها أثر خاص فوق أثر الخدمات، فتزيد رضا البيوت حولها حتى في الحارات المخدومة. • الزينة صارت على قد حجمها بالأرض: بدون بلاط ولا ظل مربع حولها."],
+    ["both", "🌴", "الزينة صارت تفرق", "• النخل والزهور والفوانيس والنوافير صار لها أثر خاص فوق أثر الخدمات، فتزيد رضا البيوت حولها حتى في الحارات المخدومة. • الزينة الكبيرة (النافورة الراقصة، دوار الدلة، نصب الزيتونة، مجسم المبخرة) صارت تاخذ ٢×٢ مربعات بحجم أكبر، والصغيرة مربع واحد. اللي مبنية من قبل تبقى مثل ما هي."],
     ["both", "🏗️", "الردم ما يعلّق", "• ردم مربعات كثيرة مرة وحدة صار سريع وما يعلّق الجوال."],
     ["both", "⬆️", "كم باقي للمرحلة الجاية", "• تحت الوقت فوق تشوف مرحلتك والمرحلة الجاية وكم نسمة باقي لها، وشريط ذهبي يتعبّى كل ما كبرت. • وصلّحنا خطأ كان بيخرّب ميزانية أي مدينة توصل «حاضرة»."],
     ["both", "⚡", "البرق والرعد", "• صوت مطر حقيقي مسجّل، ورعد حقيقي: قريب مع الصاعقة، وبعيد يدوّي بالسما. • وقت المطر ممكن تنزل صاعقة على أرضك: إذا صابت مبنى ينقص من حالته (ترممه عادي، والصاعقة ما تطيّحه)، وإذا صابت أرض فاضية بس تنوّر وتولّع شرار. • السماء تبرق بين وقت وثاني، والمدينة تنوّر مع البرقة."],
