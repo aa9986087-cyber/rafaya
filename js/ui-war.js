@@ -389,8 +389,17 @@ export function targetTap(x, y) {
   sfx.tap(); warSfx?.lock?.();
   targetBar();
 }
+/** The screen flashes at a hit: white heat, then red, fading (stronger for heavier weapons). */
+function screenFlash(k) {
+  let el = document.getElementById("warFlash");
+  if (!el) { el = document.createElement("div"); el.id = "warFlash"; document.body.append(el); }
+  el.style.setProperty("--k", String(k));
+  el.classList.remove("on"); void el.offsetWidth; el.classList.add("on");
+  if (navigator.vibrate) try { navigator.vibrate(Math.round(60 + k * 120)); } catch { /* no vibration */ }
+}
 export function sceneUi(on) {
   const ui = $("warScene");
+  if (world.fx) world.fx.onFlash = screenFlash;
   ui.hidden = !on;
   document.body.classList.toggle("war-scene", !!on);
   if (!on) { $("warBanner").hidden = true; $("warMap").hidden = true; roomAfterScene(); setTimeout(() => { if (!WARX.scene && WARX.st && sheetFor !== "war-report") warWatch(WARX.st); }, 1500); }

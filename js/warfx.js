@@ -86,7 +86,7 @@ export class WarFX {
     this.missileStock = null;
     this.alertT = 0;
     this.reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.maxParts = world.quality === "low" ? 50 : world.quality === "medium" ? 110 : 180;
+    this.maxParts = world.quality === "low" ? 80 : world.quality === "medium" ? 200 : 320;
     this.repairs = new Map(); // "x:y" → { start, end } (from the server)
     // one light for blasts and rocket flames (always in the scene, so nothing recompiles when it shines)
     this.light = new THREE.PointLight("#ffa04a", 0, 7, 1.6); this.light.position.set(0, -50, 0); world.scene.add(this.light);
@@ -320,7 +320,7 @@ export class WarFX {
     return sp;
   }
   emit(kind, p, o = {}) {
-    if (this.parts3.length >= this.maxParts && kind !== "flash") return;
+    if (this.parts3.length >= this.maxParts * (o.keep ? 1.4 : 1) && kind !== "flash") return; // the smoke column (keep) still rises when the sky is full
     const fire = kind === "fire" || kind === "flash" || kind === "spark" || kind === "flame";
     const color = o.color || { smoke: "#5a554f", dust: "#d8c39a", fire: "#ff8a2a", flash: "#fff3c4", spark: "#ffd27a", flame: "#ffb347", trail: "#d9d6cf" }[kind];
     const sp = this.sprite(kind, color, fire ? THREE.AdditiveBlending : THREE.NormalBlending);
@@ -408,6 +408,10 @@ export class WarFX {
       const live = missiles.filter(Boolean);
       const at = (m, z) => m.localToWorld(new THREE.Vector3(0, 0, z));
       if (live.length) {
+        if (o.wid === "missile2") live.forEach((m, i) => { // the tube holds a heavy missile: the one that slides out is that missile
+          const heavy = this.mesh("wMissile2"); heavy.position.copy(m.position); heavy.quaternion.copy(m.quaternion); m.parent.add(heavy);
+          m.visible = false; heavy.userData = { ...m.userData, swap: m }; live[i] = heavy;
+        });
         for (const m of live) { m.visible = true; m.userData.z0 = m.position.z; }
         for (const m of live) {
           const mouth = at(m, 0.3), rear = at(m, -0.3), out = mouth.clone().sub(rear).normalize();
@@ -423,7 +427,8 @@ export class WarFX {
         // the missile leaves its rail: from the arm to the world
         const fly = this.mesh(o.wid === "missile2" ? "wMissile2" : "wMissile");
         const start = new THREE.Vector3(), q = new THREE.Quaternion();
-        if (m) { m.getWorldPosition(start); m.getWorldQuaternion(q); m.visible = false; m.position.z = m.userData.z0 ?? m.position.z; m.userData.loaded = false; } else { start.set(c.x, 0.4, c.z); q.setFromEuler(new THREE.Euler(-1.2, 0, 0)); }
+        const mm = m?.userData.swap ? live.find((x) => x.userData.swap === m) || m : live.find((x) => x.userData.swap === m) || m;
+        if (mm) { mm.getWorldPosition(start); mm.getWorldQuaternion(q); mm.visible = false; if (mm.userData.swap) { mm.parent?.remove(mm); } else { mm.position.z = mm.userData.z0 ?? mm.position.z; } (mm.userData.swap || mm).userData.loaded = false; } else { start.set(c.x, 0.4, c.z); q.setFromEuler(new THREE.Euler(-1.2, 0, 0)); }
         fly.position.copy(start); fly.quaternion.copy(q);
         this.flyers.add(fly);
         flying.push({ fly, start, delay: i * 0.45, dirUp: new THREE.Vector3(0, 0, 1).applyQuaternion(q) });
@@ -503,9 +508,9 @@ export class WarFX {
       if (g) { v.x += (g.x - v.x) * k; v.z += (g.z - v.z) * k; }
       // fit: the spread on the screen should take about 60% of it (never closer than 1.6 or further than 0.55)
       const need = Math.max((x1 - x0) / 1.25, (y1 - y0) / 1.15, 0.2);
-      const want = Math.max(0.55, Math.min(1.6, v.zoom / need));
+      const want = Math.max(0.85, Math.min(1.7, v.zoom / need));
       v.zoom += (want - v.zoom) * k * 0.7;
-      v.y = (v.y || 0) + (0.4 - (v.y || 0)) * k;
+      v.y = (v.y || 0) * (1 - k); // look at the ground itself: a lifted look point shifts what is centred
       this.w.updateCamera();
     };
   }
@@ -519,10 +524,14 @@ export class WarFX {
     // the camera takes in every spot (and the batteries that fire)
     const live = new Set();
     this.inScene = true;
+    this.pitch0 ??= this.w.view.pitch;
+    this.tween(1.0, (k) => { this.w.view.pitch = fxLerp(this.pitch0, 1.12, fxEase(k)); this.w.updateCamera(); }); // looking down between the towers
     strikes.forEach((st) => { st.left = st.weapons.length; });
     const pending = () => strikes.filter((st) => st.left > 0).map((st) => st.top);
     // the shot follows what flies and what waits for its hit (and the batteries when they defend)
-    this.direct(() => [...[...live].map((m) => m.position), ...pending(), ...(defends && live.size ? ads.filter((a) => a.used).map((a) => a.p) : [])]);
+    // (a weapon joins the shot once it is near: far off it would only make everything small)
+    const near = (m) => strikes.some((st) => Math.hypot(m.position.x - st.c.x, m.position.z - st.c.z) < 6);
+    this.direct(() => [...[...live].filter(near).map((m) => m.position), ...pending(), ...(defends && live.size ? ads.filter((a) => a.used && strikes.some((st) => a.p.distanceTo(st.c) < 6)).map((a) => a.p) : [])]);
     await this.wait(1.0);
     if (ads.length && !defends && o.noAmmo) { o.banner?.("🛡️ الدفاع الجوي بلا صواريخ اعتراضية!", "bad"); await this.wait(1.2); }
     if (o.detected) {
@@ -571,9 +580,11 @@ export class WarFX {
         fly.scale.setScalar(Math.max(1.3, 2.1 / Math.max(0.5, this.w.view.zoom))); // big enough to follow when the shot is wide
         if (missile) fly.lookAt(next); else { fly.lookAt(new THREE.Vector3(next.x, p.y, next.z)); rotor.rotation.y += 0.9; }
         if (missile) {
-          const back = p.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.3));
-          this.emit("flame", back, { size: 0.34 }); this.emit("flame", back.clone().add(p.clone().sub(next).normalize().multiplyScalar(0.1)), { size: 0.2, life: 0.08 });
-          if (Math.random() < 0.85) this.emit("trail", back, { size: 0.28, life: 1.8 });
+          const aft = p.clone().sub(next).normalize(), sc = fly.scale.x, back = p.clone().addScaledVector(aft, 0.3 * sc);
+          this.emit("flame", back, { size: 0.42 * sc }); this.emit("flame", back.clone().addScaledVector(aft, 0.12 * sc), { size: 0.26 * sc, life: 0.08 });
+          this.emit("flash", back, { size: 0.5 * sc, life: 0.05, color: "#ffd9a0", alpha: 0.9 }); // the motor's glare
+          if ((kk * dur * 3) % 1 < 0.15) this.emit("flash", p.clone().addScaledVector(aft, -0.25 * sc), { size: 0.22 * sc, life: 0.07, color: "#ff2a1a" }); // the red light at its nose
+          if (Math.random() < 0.9) this.emit("trail", back, { size: 0.3 * sc, life: 2.6, color: "#e9e5dd", alpha: 0.8 });
           if (k === 0) { this.light.position.copy(back); this.light.intensity = 3; this.lightT = 0.12; }
         } else {
           if (Math.random() < 0.3) this.emit("trail", p, { size: 0.12, alpha: 0.3 });
@@ -630,6 +641,8 @@ export class WarFX {
     await Promise.all(runs);
     this.director = null; this.inScene = false;
     this.showStrike(null);
+    const p0 = this.pitch0; this.pitch0 = undefined;
+    if (p0 != null) this.tween(1.2, (k) => { this.w.view.pitch = fxLerp(1.12, p0, fxEase(k)); this.w.updateCamera(); });
     await this.wait(hits ? 1.8 : 0.8);
     this.skipping = false;
   }
@@ -647,7 +660,17 @@ export class WarFX {
    */
   blast(st, missile, h) {
     const r = Math.max(0.7, st.r || 0.7), big = missile ? 0.9 + r * 0.35 : 0.7 + r * 0.3;
+    this.onFlash?.(missile ? Math.min(1, 0.45 + r * 0.25) : 0.35);
     this.explode(st.top.clone().setY(0.35), big, false);
+    const c = st.c, q = this.w.quality === "low" ? 0.5 : 1;
+    // the fireball, rolling up
+    for (let i = 0; i < Math.round(14 * big * q); i++) this.emit("fire", c.clone().add(new THREE.Vector3((Math.random() - 0.5) * r * 0.6, 0.2 + Math.random() * 0.4, (Math.random() - 0.5) * r * 0.6)), { size: (0.6 + Math.random() * 0.6) * big, life: 1.1 + Math.random() * 0.8, grow: 1.6, v: new THREE.Vector3((Math.random() - 0.5) * 0.8, 1.2 + Math.random() * 1.4, (Math.random() - 0.5) * 0.8) });
+    // the column of black smoke climbing high and spreading at the top
+    for (let i = 0; i < Math.round(18 * big * q); i++) { const t = i / 18; this.wait(0.15 + t * 0.9).then(() => this.emit("smoke", c.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.5 + t * 0.8, (Math.random() - 0.5) * 0.4)), { keep: true, size: 0.7 + t * 1.1, life: 5 + Math.random() * 2, color: i % 3 ? "#1f1b18" : "#3a332d", alpha: 0.9, grow: 2.2, v: new THREE.Vector3((Math.random() - 0.5) * 0.25 + 0.15, 0.9 + t * 0.5, (Math.random() - 0.5) * 0.25) })); }
+    // the dust wave rushing out along the ground
+    for (let i = 0; i < Math.round(26 * q); i++) { const a = (i / 26) * Math.PI * 2; this.emit("dust", c.clone().setY(0.08), { size: 0.55, life: 1.8, color: "#c9b48c", v: new THREE.Vector3(Math.cos(a) * (2.2 + r), 0.25, Math.sin(a) * (2.2 + r)) }); }
+    // burning pieces thrown high
+    for (let i = 0; i < Math.round(10 * big * q); i++) { const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 2.5; this.emit("fire", c.clone().setY(0.4), { size: 0.18, life: 1.6, grow: -0.3, v: new THREE.Vector3(Math.cos(a) * sp, 3 + Math.random() * 3, Math.sin(a) * sp) }); }
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: fxTexture("shock"), color: new THREE.Color(1.8, 1.1, 0.7), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(st.c.x, 0.07, st.c.z); ring.renderOrder = 4;
     this.flyers.add(ring); this.rings.push({ m: ring, t: 0, size: (r * 2 + 1) * 1.15 });
@@ -746,6 +769,7 @@ export class WarFX {
 
   /** Drop the scene's flyers and particles (leaving a scene early). */
   clear() {
+    if (this.pitch0 != null) { this.w.view.pitch = this.pitch0; this.pitch0 = undefined; }
     this.director = null; this.speed = 1; this.inScene = false;
     this.skip(); this.skipping = false;
     for (const q of this.parts3) { this.flyers.remove(q.sp); this.pool.push(q.sp); }
