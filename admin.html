@@ -143,7 +143,7 @@ async function players(q = lastQ) {
     ${list.map((p) => `<div class="card"><div class="row"><span><b>${esc(p.town || "بدون مدينة")}</b> <small>${esc(p.name)}</small></span>${p.banned ? `<span class="tag">محظور</span>` : ""}</div>
       <small>${p.town ? `${n(p.pop)} ساكن · ${ERAS[p.era] || ""} · ${n(p.money)} ريال · آخر دخول ${ago(p.updated)}` : "ما أسس مدينة"}${p.banned && p.ban_reason ? ` · السبب: ${esc(p.ban_reason)}` : ""}</small>
       ${p.town ? `<div><small>🔔 ${(p.phones || []).length ? p.phones.map((x) => `<span dir="ltr">${esc(x.host)}</span> · ${x.status == null ? "ما انرسل له شي للحين" : x.status >= 200 && x.status < 300 ? `✅ آخر تنبيه انقبل (${x.status}) ${ago(x.at)}` : `❌ آخر تنبيه انرفض (${x.status || "ما وصل للمزوّد"}) ${ago(x.at)}`} · اشترك ${ago(x.created)}`).join("<br>🔔 ") : "التنبيهات مو مشغّلة"}</small></div>` : ""}
-      <div class="acts">${p.banned ? `<button class="btn go" data-unban="${esc(p.name)}">فك الحظر</button>` : `<button class="btn bad" data-ban="${esc(p.name)}">⛔ احظر</button>`}
+      <div class="acts">${p.banned ? `<button class="btn go" data-unban="${esc(p.name)}">فك الحظر</button>` : `<button class="btn bad" data-ban="${esc(p.name)}">⛔ احظر</button>`}<button class="btn bad" data-remove="${esc(p.name)}">🗑️ احذف اللاعب ومدينته</button>
       <button class="btn" data-fix="${esc(p.name)}">✏️ اطلب تغيير الاسم</button>
       ${p.plot != null ? `<button class="btn" data-stmt="${p.plot}">🧾 كشف الحساب</button>` : ""}
       ${p.plot != null ? `<button class="btn" data-gift="${p.plot}" data-town="${esc(p.town)}">🎁 هدية</button><button class="btn" data-rename="${p.plot}" data-town="${esc(p.town)}">✏️ اسم المدينة</button>` : ""}</div></div>`).join("") || `<p class="muted">ما لقيت أحد</p>`}`);
@@ -255,6 +255,10 @@ function bindActs() {
     const reason = prompt(`ليش تحظر «${b.dataset.ban}»؟ (يطلع لك أنت بس)`, "كلام مسيء");
     if (reason === null) return;
     const r = await api("ban", { name: b.dataset.ban, on: true, reason }); toast(r.error || "انحظر ⛔"); show();
+  }));
+  document.querySelectorAll("[data-remove]").forEach((b) => (b.onclick = async () => {
+    if (!confirm(`تحذف «${b.dataset.remove}» ومدينته نهائيًا؟ ما يرجع.`)) return;
+    const r = await api("remove", { name: b.dataset.remove }); toast(r.error || "انحذف 🗑️"); show();
   }));
   document.querySelectorAll("[data-unban]").forEach((b) => (b.onclick = async () => { const r = await api("ban", { name: b.dataset.unban, on: false }); toast(r.error || "انفك الحظر ✓"); show(); }));
   document.querySelectorAll("[data-gift]").forEach((b) => (b.onclick = async () => {

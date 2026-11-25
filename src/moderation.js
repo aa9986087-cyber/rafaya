@@ -3,12 +3,14 @@ const insults = [
   "كلب", "كلبه", "حمار", "حماره", "حقير", "حقيره", "غبي", "غبيه", "زباله", "نذل",
   "قحب", "قحبه", "شرموط", "شرموطه", "خرا", "خره", "زق", "ديوث", "خنيث", "زاني", "زانيه",
   "كس امك", "يلعن امك", "يلعن ابوك", "ابن الكلب", "ولد الكلب",
+  "نيك", "نياك", "نايك", "منيوك", "منيوكه", "نياج", "نايج", "منيوج", "منيوجه", "خروق", "زب", "طيز", "عير", "كس", "شرج", "لوطي",
   "fuck", "fucking", "fucker", "shit", "bullshit", "bitch", "bastard", "asshole"
 ];
 
 function normalize(text) {
   return text.normalize("NFKC").toLowerCase()
     .replace(/[\p{M}\p{Cf}ـ]/gu, "")
+    .replace(/چ/g, "ج").replace(/[گڭ]/g, "ك").replace(/ڤ/g, "ف").replace(/پ/g, "ب") // Persian letters some type for Gulf sounds
     .replace(/[أإآٱ]/g, "ا").replace(/[ىئ]/g, "ي").replace(/ة/g, "ه")
     .replace(/(\p{Script=Arabic})\1{2,}/gu, "$1");
 }

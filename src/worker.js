@@ -157,6 +157,7 @@ export class Board extends DurableObject {
     } catch { /* said next time */ }
     // the owner asked (2026-11-25): no town's removal is announced, and the old lines come off the bulletin
     this.sql.exec("DELETE FROM wnews WHERE kind = 'removed'");
+    this.sql.exec("DELETE FROM wnews WHERE text LIKE '%نياچ%' OR text LIKE '%نياج%' OR text LIKE '%الخروق%'"); // a foul town name the owner removed
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
@@ -600,6 +601,19 @@ export class Board extends DurableObject {
       this.war.fine(plot, -amount, "gift", `🎁 هدية من إدارة الجوف: ${amount.toLocaleString("en-US")} ريال${msg ? ` · «${msg}»` : ""}`, "gift", { amount, text: msg });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", amount, plot);
       return json({ ok: true, town: t.town });
+    }
+    if (post && p[0] === "remove") { // the owner deletes a player: their town leaves al-Jouf quietly, and the name is free no more
+      const nm = clean(body.name, 16), pl = one("SELECT plot FROM players WHERE name = ?", nm);
+      if (!pl) return json({ error: "ما لقيت اللاعب" });
+      this.ctx.storage.transactionSync(() => {
+        if (pl.plot != null) this.removeTown(pl.plot, "حذف من الإدارة");
+        this.sql.exec("DELETE FROM wnews WHERE plot = ? AND kind = 'town'", pl.plot ?? -1);
+        this.sql.exec("DELETE FROM chat WHERE name = ?", nm);
+        for (const tbl of ["keys", "handoff", "namefix"]) this.sql.exec(`DELETE FROM ${tbl} WHERE name = ?`, nm);
+        this.sql.exec("DELETE FROM players WHERE name = ?", nm);
+      });
+      this.live({ t: "news" });
+      return json({ ok: true });
     }
     if (post && p[0] === "rename") {
       const plot = int(body.plot), town = clean(body.town, 20), t = one("SELECT town FROM plots WHERE plot = ?", plot);
