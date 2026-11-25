@@ -1,7 +1,17 @@
 // Small sounds made in the browser (no files): taps, building, coins, a fanfare for a new stage.
 import { rainLoop, thunder } from "./rain-sound.js";
-/** The rain the owner chose (js/rain-sound.js RAIN_KINDS). */
+/** If a recording cannot load, the rain made in code (js/rain-sound.js RAIN_KINDS) stands in. */
 const RAIN_KIND = "soft";
+// The owner's own recordings (vendor/sound/): rain looping, a near clap for a strike, far rumbles. Loaded when first needed.
+const soundUrl = (name) => globalThis.RAFAYA_ASSETS?.[name] || `./vendor/${name}`;
+const recs = {};
+function recording(name) {
+  return (recs[name] ||= (async () => {
+    const a = ac(), url = soundUrl(name);
+    const buf = url.startsWith("data:") ? Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0)).buffer : await (await fetch(url)).arrayBuffer();
+    return await new Promise((res, rej) => a.decodeAudioData(buf, res, rej));
+  })().catch(() => null));
+}
 let ctx = null;
 let on = true;
 try { on = localStorage.getItem("rafaya-sound") !== "0"; } catch { /* default on */ }
@@ -41,11 +51,13 @@ function startAmbience() {
     src.connect(f).connect(g).connect(a.destination); src.start();
     return g;
   };
-  // the rain: a few seconds drawn once (js/rain-sound.js), looped
-  const loop = rainLoop(a.sampleRate, RAIN_KIND), buf = a.createBuffer(2, loop.left.length, a.sampleRate);
-  buf.getChannelData(0).set(loop.left); buf.getChannelData(1).set(loop.right);
-  const rs = a.createBufferSource(); rs.buffer = buf; rs.loop = true;
-  const rg = a.createGain(); rg.gain.value = 0; rs.connect(rg).connect(a.destination); rs.start();
+  // the rain: the owner's recording, looped (the rain made in code while it loads, or if it cannot)
+  const rg = a.createGain(); rg.gain.value = 0; rg.connect(a.destination);
+  const play = (buf) => { const rs = a.createBufferSource(); rs.buffer = buf; rs.loop = true; rs.connect(rg); rs.start(); return rs; };
+  const made = rainLoop(a.sampleRate, RAIN_KIND), mb = a.createBuffer(2, made.left.length, a.sampleRate);
+  mb.getChannelData(0).set(made.left); mb.getChannelData(1).set(made.right);
+  const first = play(mb);
+  recording("sound/rain.mp3").then((buf) => { if (buf) { first.stop(); play(buf); } });
   amb = { wind: make("bandpass", 420, 0.6), rain: rg, nextChirp: 0 };
 }
 export const ambience = {
@@ -93,12 +105,15 @@ export const sfx = {
   /** Thunder: near 0..1 (a near strike cracks first), after `delay` seconds (light comes before sound). */
   thunder(near = 0.5, delay = 0) {
     if (!on) return;
-    try {
-      const a = ac(), th = thunder(a.sampleRate, near, Math.floor(Math.random() * 1e6)), buf = a.createBuffer(2, th.left.length, a.sampleRate);
-      buf.getChannelData(0).set(th.left); buf.getChannelData(1).set(th.right);
-      const src = a.createBufferSource(), g = a.createGain(); src.buffer = buf; g.gain.value = 0.55;
-      src.connect(g).connect(a.destination); src.start(a.currentTime + delay);
-    } catch { /* no audio */ }
+    const name = near > 0.6 ? "sound/thunder-near.mp3" : Math.random() < 0.5 ? "sound/thunder-far.mp3" : "sound/thunder-far2.mp3";
+    recording(name).then((rec) => {
+      try {
+        const a = ac(); let buf = rec;
+        if (!buf) { const th = thunder(a.sampleRate, near, Math.floor(Math.random() * 1e6)); buf = a.createBuffer(2, th.left.length, a.sampleRate); buf.getChannelData(0).set(th.left); buf.getChannelData(1).set(th.right); }
+        const src = a.createBufferSource(), g = a.createGain(); src.buffer = buf; g.gain.value = near > 0.6 ? 0.8 : 0.35 + near;
+        src.connect(g).connect(a.destination); src.start(a.currentTime + delay);
+      } catch { /* no audio */ }
+    });
   },
   prayer() { [294, 392, 349].forEach((f, i) => tone(f, 0.7, { type: "sine", vol: 0.035, at: i * 0.45 })); },
   levelUp() { [784, 988, 1175].forEach((f, i) => tone(f, 0.12, { type: "sine", vol: 0.04, at: i * 0.06 })); },

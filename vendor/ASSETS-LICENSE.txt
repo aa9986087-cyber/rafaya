@@ -10,3 +10,5 @@ Open assets used by the game (all free to use):
   Copyright (c) Lucide Icons and Contributors. Permission to use, copy, modify, and/or distribute this software
   for any purpose with or without fee is hereby granted, provided that the above copyright notice and this
   permission notice appear in all copies.
+- vendor/sound/: the rain and thunder recordings given by the game's owner for the game (rain.mp3 cut from the owner's
+  rain recording; thunder-near.mp3 from the owner's thunder clip; thunder-far*.mp3 from the rain recording's own rumbles).
