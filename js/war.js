@@ -2,7 +2,7 @@
 // same rules run on the server (src/worker.js through js/warserver.js, which decides every result)
 // and in the game (to show prices, reasons and what an attack could do before asking the server).
 // Nothing here is real-world: speeds, ranges and damage are game balance values.
-import { B, MIL, ERAS, MAP_SIZE, worldXY } from "./data.js";
+import { B, MIL, ERAS, GREATER_CITY_STAGE, MAP_SIZE, worldXY } from "./data.js";
 
 const WAR_MIN = 60000, WAR_HOUR = 60 * WAR_MIN;
 const warClamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -236,6 +236,7 @@ export function conflictBlocker(a, b, now, cfg = WAR) {
   if (now - (b.created || 0) < cfg.newPlayer) return "لاعب جديد: محمي فترة البداية";
   if (now - (a.created || 0) < cfg.newPlayer) return `أنت لاعب جديد: تقدر تدخل الحروب بعد ${minutesText(cfg.newPlayer - (now - a.created))}`;
   if (now - (b.updated || 0) > cfg.sleep) return "المدينة نايمة (صاحبها غايب من زمان): محمية";
-  if ((a.era || 0) - (b.era || 0) >= cfg.bully) return "مدينتك أكبر منها بكثير: ما يصير تتعدى على الصغار";
+  const warEra = (town) => Math.min(town.era || 0, GREATER_CITY_STAGE - 1);
+  if (warEra(a) - warEra(b) >= cfg.bully) return "مدينتك أكبر منها بكثير: ما يصير تتعدى على الصغار";
   return "";
 }

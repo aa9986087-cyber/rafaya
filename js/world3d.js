@@ -731,10 +731,14 @@ export class World {
       }
       if (kind === "avenue") {
         // a full-width avenue: two lanes each way and a palm median along the way it runs
-        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
+        quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, t.b.lvl > 0 ? "#393c44" : "#45474d");
         const ew = link(1, 0) || link(-1, 0), ns = link(0, 1) || link(0, -1);
         if (ew && !ns) { quad(cx - 0.5, cz - 0.05, cx + 0.5, cz + 0.05, 0.009, "#cdbf9f"); for (const zz of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + o - 0.07, cz + zz - 0.01, cx + o + 0.07, cz + zz + 0.01, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
         else if (ns && !ew) { quad(cx - 0.05, cz - 0.5, cx + 0.05, cz + 0.5, 0.009, "#cdbf9f"); for (const xx of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + xx - 0.01, cz + o - 0.07, cx + xx + 0.01, cz + o + 0.07, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
+        if (t.b.lvl > 0) { // شارع سريع (الحاضرة الكبرى): solid edge lines and a yellow line by the median, so it reads as a highway
+          if (ew && !ns) for (const zz of [-0.44, 0.44, -0.075, 0.075]) quad(cx - 0.5, cz + zz - 0.008, cx + 0.5, cz + zz + 0.008, 0.0105, Math.abs(zz) < .1 ? "#e0b23c" : "#f3efe6");
+          else if (ns && !ew) for (const xx of [-0.44, 0.44, -0.075, 0.075]) quad(cx + xx - 0.008, cz - 0.5, cx + xx + 0.008, cz + 0.5, 0.0105, Math.abs(xx) < .1 ? "#e0b23c" : "#f3efe6");
+        }
       } else if (kind === "roundabout") {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
         if (t.b.monument) {

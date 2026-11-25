@@ -13,7 +13,7 @@ import { achievementsSheet } from "./ui-build.js";
 
 /** The guide: how to play, how the town grows into a city, and how to upgrade. */
 export function howTo(fromMenu) {
-  const next = ERAS[S.era + 1];
+  const next = ERAS[S.era + 1]?.worldOnly && !worldMode ? null : ERAS[S.era + 1];
   const pct = next ? Math.min(100, Math.round((S.pop / next.pop) * 100)) : 100;
   const opens = (e) => Object.values(B).filter((d) => d.era === e.id && d.cat !== "road" && d.cat !== "deco").map((d) => d.name).slice(0, 6).join("، ");
   const step = (n, text) => `<div class="row g-step"><b class="g-n">${ar(n)}</b><span>${text}</span></div>`;

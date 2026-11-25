@@ -1,5 +1,6 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
 import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES, LIGHTNING } from "./data.js";
+import { CENTRAL_VAULT_LEVEL, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -47,6 +48,7 @@ function recordMoney(s, amount, kind, detail = "", operating) {
 }
 
 export function changeMoney(s, amount, kind, detail) {
+  if (!Number.isFinite(amount)) return;
   s.money += amount;
   recordMoney(s, amount, kind, detail);
 }
@@ -241,6 +243,51 @@ function addFayda(tiles, r, count = 5) {
 
 export function techUnlocked(s, def) { return !def.tech || s.tech[def.tech]; }
 
+const isCivicProject = (id) => Object.hasOwn(GREATER_CITY_PROJECTS, id);
+const buildingReady = (b) => !(b.build > 0) && !(b.ruin > 0) && (b.cond ?? 100) > 0 && warWorks(b.wd) > 0;
+const civicOperating = (s, x, y, b) => buildingReady(b) && onRoad(s, x, y);
+
+/** Operating treasury capacity and project status in this town. */
+export function greaterCityProgress(s) {
+  let central = 0, hasTreasury = false, upgradedTowers = false;
+  const projects = new Map();
+  for (let i = 0; i < s.tiles.length; i++) {
+    const { b } = s.tiles[i];
+    if (!b) continue;
+    if (b.id === "vault") {
+      if (!buildingReady(b)) continue;
+      if (b.lvl >= CENTRAL_VAULT_LEVEL - 1) hasTreasury = true;
+      if (b.lvl === CENTRAL_VAULT_LEVEL) central++;
+    } else if (b.id === "skyline" && b.lvl > 0) {
+      upgradedTowers = civicOperating(s, i % N, Math.floor(i / N), b);
+    } else if (isCivicProject(b.id)) {
+      const state = b.build > 0 ? "building" : civicOperating(s, i % N, Math.floor(i / N), b) ? "open" : "stopped";
+      projects.set(b.id, state);
+    }
+  }
+  return { central, hasTreasury, upgradedTowers, projects };
+}
+
+export function greaterCityProjectBlocker(s, id) {
+  if (!isCivicProject(id) || id === "civic_offices") return "";
+  const { central, hasTreasury, upgradedTowers, projects } = greaterCityProgress(s);
+  if (id === "civic_expo" && !hasTreasury) return "طوّر خزنة إلى خزينة الحاضرة";
+  if (id === "civic_freight" && central < 1) return "تحتاج خزنة مركزية";
+  if ((id === "civic_water" || id === "civic_energy") && central < 2) return "تحتاج خزنتين مركزيتين";
+  if ((id === "civic_tower" || id === "civic_culture") && central < B.vault.max)
+    return `الخزائن المركزية الشغّالة: ${central} من ${B.vault.max}`;
+  if ((id === "civic_energy" || id === "civic_tower") && projects.get("civic_water") !== "open") return "تحتاج مجمّع المياه شغّال";
+  if (id === "civic_tower" && projects.get("civic_energy") !== "open") return "تحتاج مجمّع الطاقة شغّال";
+  if (id === "civic_culture") {
+    if (!upgradedTowers) return "طوّر وشغّل أبراج الرافعية الكبرى";
+    for (const project of Object.keys(GREATER_CITY_PROJECTS)) {
+      if (project === id || projects.get(project) === "open") continue;
+      return projects.get(project) === "stopped" ? `شغّل «${B[project].name}» أول` : `أكمل بناء «${B[project].name}» أول`;
+    }
+  }
+  return "";
+}
+
 /** Why a building cannot go here ("" when it can). */
 export function cantBuild(s, x, y, id) {
   const def = B[id];
@@ -249,6 +296,8 @@ export function cantBuild(s, x, y, id) {
   if (!owns(s, x, y)) return "الأرض هذي مو لك: اضغط عليها عشان تشتريها";
   if (def.worldOnly && !s.world) return "هذا بعالم الجوف بس";
   if (def.era > s.era) return `تحتاج الرافعية تصير ${ERAS[def.era].name}`;
+  const civicLock = greaterCityProjectBlocker(s, id);
+  if (civicLock) return civicLock;
   if (!techUnlocked(s, def)) return `تحتاج بحث «${TECH[def.tech].name}»`;
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (def.hq && !s.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة العسكرية أول";
@@ -341,7 +390,7 @@ export function powerNet(s) {
       poles.set(i, b.id);
       topology.push(i * 4 + (B[b.id].wire ? 1 : 0));
     } else if (B[b.id]?.power > 0 && B[b.id]?.reach) {
-      const active = !b.ruin && warWorks(b.wd) > 0;
+      const active = isCivicProject(b.id) ? civicOperating(s, i % N, Math.floor(i / N), b) : !b.ruin && warWorks(b.wd) > 0;
       sources.set(i, active);
       topology.push(i * 4 + (active ? 2 : 3));
     }
@@ -432,7 +481,7 @@ function traffic(s, a) {
     if (isRoad(t)) {
       const x = i % N, y = Math.floor(i / N);
       const ways = near4.filter(([dx, dy]) => inMap(x + dx, y + dy) && isRoad(s.tiles[idx(x + dx, y + dy)])).length;
-      cap[i] = (def.cap || 45) * (ways >= 3 && !def.junction ? TRAFFIC.crossing : 1) * (s.tech?.transit ? 1.3 : 1);
+      cap[i] = (def.cap || 45) * (bizLevel(t.b).capacity || 1) * (ways >= 3 && !def.junction ? TRAFFIC.crossing : 1) * (s.tech?.transit ? 1.3 : 1);
       return;
     }
     if (t.b.id === "parking") {
@@ -646,7 +695,7 @@ export function voteShare(s) {
  */
 export function provinceFee(s) {
   const fh = s.feeHours || {}, counted = Object.values(fh).reduce((n, v) => n + v, 0);
-  const base = Object.entries(fh).reduce((n, [e, h]) => n + PROVINCE_FEES[e] * h / YEAR_HOURS, 0) + PROVINCE_FEES[s.era] * Math.max(0, YEAR_HOURS - counted) / YEAR_HOURS;
+  const base = Object.entries(fh).reduce((n, [e, h]) => n + (PROVINCE_FEES[e] ?? 0) * h / YEAR_HOURS, 0) + (PROVINCE_FEES[s.era] ?? 0) * Math.max(0, YEAR_HOURS - counted) / YEAR_HOURS;
   return Math.round(base * (s.feeX || 1));
 }
 export const hoursToElection = (s) => YEAR_HOURS - ((s.day - 1) % YEAR_HOURS);
@@ -776,6 +825,7 @@ export function idleWhy(s, x, y) {
   if (!b || b.works !== false) return "";
   if (b.build > 0) return "تحت الإنشاء";
   if (b.ruin > 0) return "خربان: رمّمه عشان يرجع يشتغل";
+  if ((isCivicProject(b.id) || b.id === "skyline" && b.lvl > 0) && warWorks(b.wd) === 0) return "فيه ضرر عسكري: أصلحه عشان يرجع يشتغل";
   if (needsRoad(def) && !onRoad(s, x, y)) return "يحتاج طريق لاصق فيه من جنب (مو بالزاوية)";
   if (def.cat === "serv" && s.broke) return "مقفل لأن البلدية مفلسة: الموظفين ما استلموا رواتبهم. رجّع الميزانية فوق الصفر ويفتح";
   if (def.cat === "serv" && s.events.some((e) => e.strike)) return "مقفل لأن الموظفين مضربين: ينفتح إذا خلص الإضراب";
@@ -807,6 +857,7 @@ export function analyze(s) {
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const b = s.tiles[idx(x, y)].b, def = b && B[b.id];
     if (!def?.reach || b.build > 0 || b.ruin) continue;
+    if (isCivicProject(b.id) && !civicOperating(s, x, y, b)) continue;
     const mark = def.water > 0 ? a.watered : def.power > 0 && warWorks(b.wd) > 0 ? a.powered : null;
     if (!mark) continue;
     for (let yy = y - def.reach; yy <= y + def.reach; yy++) for (let xx = x - def.reach; xx <= x + def.reach; xx++)
@@ -831,8 +882,10 @@ export function analyze(s) {
     a.count[t.b.id]++;
     if (t.b.build > 0) { t.b.works = false; a.costs.sites += Math.round((def.upkeep || 0) / 4); continue; } // still being built
     // A bankrupt council cannot pay the people who run its services: they close.
-    const works = (!needsRoad(def) || onRoad(s, x, y)) && !((s.broke || strike) && def.cat === "serv") && !(t.b.ruin > 0);
-    const f = condFactor(t.b);
+    const civic = isCivicProject(t.b.id) || t.b.id === "skyline" && t.b.lvl > 0;
+    const works = civic ? civicOperating(s, x, y, t.b)
+      : (!needsRoad(def) || onRoad(s, x, y)) && !((s.broke || strike) && def.cat === "serv") && !(t.b.ruin > 0);
+    const f = civic && !works ? 0 : condFactor(t.b);
     const up = bizLevel(t.b);
     const many = t.b.n || 1; // small decorations: several on one tile
     a.value += many * def.cost * (1 + (t.b.lvl && BIZ_LEVELS[t.b.id] ? BIZ_UP.slice(1, t.b.lvl + 1).reduce((n, u) => n + u.cost, 0) : 0));
@@ -842,8 +895,8 @@ export function analyze(s) {
     // only places the pipes and wires reach draw water and power
     const gw = t.b.id === "well" || t.b.id === "tank";
     if (gw) a.groundSupply += def.water * f * a.groundFactor;
-    if (def.water > 0) a.waterSupply += def.water * f * (gw ? a.groundFactor : 1); else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
-    if (def.power > 0) a.powerSupply += def.power * f; else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
+    if (def.water > 0) a.waterSupply += def.water * f * (up.capacity || 1) * (gw ? a.groundFactor : 1); else if (def.water && works && a.watered[here]) a.waterUse -= def.water;
+    if (def.power > 0) a.powerSupply += def.power * f * (up.capacity || 1); else if (def.power && works && a.powered[here]) a.powerUse -= def.power;
     a.costs[def.cat === "util" ? "utilities" : def.cat === "shop" || def.cat === "farm" ? "business" : def.cat === "mil" ? "military" : "services"] += (def.upkeep || 0) * up.upkeep * many;
     if (t.b.id === "house") {
       a.homes++;
@@ -1044,6 +1097,7 @@ export function houseBlocker(s, a, x, y) {
   const t = s.tiles[idx(x, y)];
   const next = B.house.levels[t.b.lvl + 1];
   if (!next) return "أعلى مستوى";
+  if (next.era === GREATER_CITY_STAGE && !s.world) return "أعلى مستوى";
   if (next.era && s.era < next.era) return `تحتاج الرافعية تصير ${ERAS[next.era].name}`;
   const n = next.needs || {};
   if (n.road && !t.b.works) return idleWhy(s, x, y) || "يحتاج طريق";
@@ -1054,12 +1108,16 @@ export function houseBlocker(s, a, x, y) {
   if (n.power && a.powerRatio < 0.95) return "الكهرباء ما تكفي: زد المولدات";
   const here = s.happy + (t.b.local || 0) * 0.6;
   if (n.happy && here < n.happy) return "يحتاج رضا أكثر (خدمات قريبة، حدائق، مساجد)";
-  if (n.services && a.services[idx(x, y)].size < n.services) return `يحتاج ${n.services} خدمات قريبة (مسجد، مدرسة، مستوصف، أمن)`;
+  if (n.services && a.services[tile].size < n.services) return `يحتاج ${n.services} خدمات قريبة (مسجد، مدرسة، مستوصف، أمن)`;
   return "";
 }
 
 /** Building materials the next level needs. */
-export const upgradeMats = (b) => (b?.id === "vault" ? 0 : b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : MIL[b?.id] ? MAT.biz[b.lvl + 2] || 0 : 0);
+export function upgradeMats(b) {
+  const civic = greaterCityUpgrade(b);
+  if (civic && b.lvl === civic.from) return civic.mats || 0;
+  return b?.id === "house" ? MAT.house[b.lvl + 1] || 0 : BIZ_LEVELS[b?.id] ? MAT.biz[b.lvl + 1] || 0 : MIL[b?.id] ? MAT.biz[b.lvl + 2] || 0 : 0;
+}
 /** Everything the next level costs now: money, plus whatever materials are short, bought from outside. */
 export function upgradePrice(s, b) {
   const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0));
@@ -1077,7 +1135,7 @@ function payUpgrade(s, b) {
 export function moneyCap(s) {
   if (!s.world) return Infinity;
   let cap = BASE_VAULT[Math.min(BASE_VAULT.length - 1, s.era)] ?? BASE_VAULT[0];
-  for (const t of s.tiles) if (t.b?.id === "vault" && !(t.b.build > 0) && (t.b.wd || 0) < 85) cap += VAULT[t.b.lvl || 0]?.cap || 0;
+  for (const t of s.tiles) if (t.b?.id === "vault" && buildingReady(t.b)) cap += VAULT[t.b.lvl || 0]?.cap || 0;
   return cap;
 }
 /** Hourly money into the town: up to the cap (money already above it stays; nothing is taken). */
@@ -1088,15 +1146,29 @@ function earn(s, amount, a) {
   return amount - got; // what was lost to a full vault
 }
 /** What the next level of this house costs (0 at the top). */
-export const upgradeCost = (b) => (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
+export const upgradeCost = (b) => b && greaterCityUpgrade(b)?.from === b.lvl ? greaterCityUpgrade(b).cost : (b?.id === "house" ? B.house.levels[b.lvl + 1]?.cost || 0
   : b?.id === "vault" ? VAULT[b.lvl + 1]?.up || 0
   : MIL[b?.id] ? (MIL[b.id][b.lvl + 1] ? Math.round(B[b.id].cost * MIL_UP[b.lvl + 1].cost) : 0)
   : BIZ_LEVELS[b?.id] && BIZ_UP[b.lvl + 1] ? Math.round(B[b.id].cost * BIZ_UP[b.lvl + 1].cost) : 0);
 /** Can this building be upgraded at all (a house, a farm, a shop, a workshop, a military building with levels)? */
-export const upgradable = (b) => b?.id === "house" || b?.id === "vault" || !!BIZ_LEVELS[b?.id] || (MIL[b?.id]?.length || 0) > 1;
+export const upgradable = (b) => b?.id === "house" || b?.id === "vault" || !!greaterCityUpgrade(b) || !!BIZ_LEVELS[b?.id] || (MIL[b?.id]?.length || 0) > 1;
 /** Why this farm, shop or workshop cannot move up a level now, or "". */
 export function bizBlocker(s, a, x, y) {
   const b = s.tiles[idx(x, y)]?.b;
+  const civic = greaterCityUpgrade(b);
+  if (civic && b.lvl >= civic.from) {
+    if (b.lvl > civic.from || !s.world) return "أعلى مستوى";
+    if (s.era < GREATER_CITY_STAGE) return BIZ_LEVELS[b.id] ? "أعلى مستوى" : "تحتاج الحاضرة الكبرى";
+    if (b.build > 0) return "تحت الإنشاء";
+    if (b.wd > 0) return "فيه ضرر عسكري: أصلحه أول";
+    if (b.ruin || (b.cond ?? 100) < 40) return "رمّمه أول";
+    if (b.id === "skyline") {
+      const { central } = greaterCityProgress(s);
+      if (central < B.vault.max) return `الخزائن المركزية الشغّالة: ${central} من ${B.vault.max}`;
+      if (!onRoad(s, x, y)) return "يحتاج طريق لاصق فيه من جنب";
+    }
+    return "";
+  }
   if (b?.id === "vault") {
     const next = VAULT[b.lvl + 1];
     if (!next) return "أعلى مستوى";
@@ -1159,21 +1231,28 @@ export function upgradeEffect(s, b) {
     if (!MIL[b.id][b.lvl + 1]) return null;
     return { mil: true, upkeepNow: (def.upkeep || 0) * MIL_UP[b.lvl].upkeep, upkeepNext: (def.upkeep || 0) * MIL_UP[b.lvl + 1].upkeep, now: MIL[b.id][b.lvl], next: MIL[b.id][b.lvl + 1] };
   }
-  if (!BIZ_LEVELS[b.id] || !BIZ_UP[b.lvl + 1]) return null;
+  const civic = greaterCityUpgrade(b), nextCivic = civic && b.lvl === civic.from;
+  if (!nextCivic && (!BIZ_LEVELS[b.id] || !BIZ_UP[b.lvl + 1])) return null;
   const u0 = bizLevel(b), u1 = BIZ_UP[b.lvl + 1];
+  const next = nextCivic ? bizLevel({ id: b.id, lvl: b.lvl + 1 }) : u1;
+  if (nextCivic && civic.capacity) {
+    const output = def.water || def.power || def.cap;
+    return { utility: true, output, outputNext: Math.round(output * civic.capacity), upkeepNow: def.upkeep * u0.upkeep, upkeepNext: def.upkeep * next.upkeep };
+  }
   return {
-    incomeNow: (def.income || 0) * u0.income, incomeNext: (def.income || 0) * u1.income,
-    upkeepNow: (def.upkeep || 0) * u0.upkeep, upkeepNext: (def.upkeep || 0) * u1.upkeep,
-    jobsNow: Math.round((def.jobs || 0) * u0.jobs), jobsNext: Math.round((def.jobs || 0) * u1.jobs),
-    happyNow: (def.happy || 0) * (u0.happy || 1), happyNext: (def.happy || 0) * (u1.happy || 1),
+    incomeNow: (def.income || 0) * u0.income, incomeNext: (def.income || 0) * next.income,
+    upkeepNow: (def.upkeep || 0) * u0.upkeep, upkeepNext: (def.upkeep || 0) * next.upkeep,
+    jobsNow: Math.round((def.jobs || 0) * u0.jobs), jobsNext: Math.round((def.jobs || 0) * next.jobs),
+    happyNow: (def.happy || 0) * (u0.happy || 1), happyNext: (def.happy || 0) * (next.happy || 1),
     // reach only matters for what cheers or bothers its neighbours
-    radiusNow: def.radius && (def.happy || def.pollute) ? def.radius + (u0.radius || 0) : 0, radiusNext: def.radius && (def.happy || def.pollute) ? def.radius + (u1.radius || 0) : 0
+    radiusNow: def.radius && (def.happy || def.pollute) ? def.radius + (u0.radius || 0) : 0, radiusNext: def.radius && (def.happy || def.pollute) ? def.radius + (next.radius || 0) : 0
   };
 }
 /** Upgrade whatever is on this tile. */
 export const upgradeAt = (s, x, y, a = analyze(s)) => (s.tiles[idx(x, y)]?.b?.id === "house" ? upgradeHouse(s, x, y, a) : upgradeBiz(s, x, y, a));
 /** The name of a building at its level. */
-export const levelName = (b) => (b.id === "house" ? B.house.levels[b.lvl].name : b.id === "vault" ? VAULT[b.lvl || 0]?.name || B.vault.name : MIL[b.id]?.length > 1 ? MIL[b.id][b.lvl]?.name || B[b.id].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
+export const levelName = (b) => b.lvl > greaterCityUpgrade(b)?.from ? greaterCityUpgrade(b).name :
+  (b.id === "house" ? B.house.levels[b.lvl].name : b.id === "vault" ? VAULT[b.lvl || 0]?.name || B.vault.name : MIL[b.id]?.length > 1 ? MIL[b.id][b.lvl]?.name || B[b.id].name : BIZ_LEVELS[b.id]?.[b.lvl] || B[b.id].name);
 
 /** The mayor upgrades a house one level. Returns why not, or "". */
 export function upgradeHouse(s, x, y, a = analyze(s)) {
@@ -1204,6 +1283,8 @@ export function housePrice(s, lvl) {
 }
 export function buildHouseAt(s, x, y, lvl) {
   if (!lvl) return build(s, x, y, "house");
+  const era = B.house.levels[lvl]?.era;
+  if (!B.house.levels[lvl] || (era === GREATER_CITY_STAGE && (!s.world || s.era < era))) return "تحتاج الحاضرة الكبرى";
   if (lvl > houseTop(s)) return "طوّر بيت لهالمستوى أول عشان ينفتح";
   const why = cantBuild(s, x, y, "house");
   if (why && why !== "ما يكفي المال") return why;
@@ -1383,7 +1464,7 @@ export function step(s, r = Math.random) {
   // Contractors sometimes run late.
   for (const t of s.tiles) if (t.b?.build > 0 && r() < 0.003) { t.b.build += 24; msgs.push({ kind: "event", title: "تأخير", text: `المقاول تعثّر في «${B[t.b.id].name}»، والمشروع تأخر يوم.` }); }
   // Stage of the town never goes back.
-  for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
+  for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era && (!e.worldOnly || s.world)) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
   // Bankruptcy: deep in debt the council stops paying its services; back above zero they reopen.
   const limit = 1500 + a.upkeep * 12;
   if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
@@ -1400,7 +1481,7 @@ export function step(s, r = Math.random) {
     if (!s.decision && s.pop >= 30) { s.decision = { id: "raise" }; msgs.push({ kind: "decision", text: "علاوة" }); }
     if (s.pop >= 30) {
       const share = voteShare(s), won = share >= 0.5, year = Math.floor((s.day - 1) / YEAR_HOURS);
-      const grant = won ? ELECTION_GRANT[s.era] : 0;
+      const grant = won ? (ELECTION_GRANT[s.era] ?? 0) : 0;
       if (won) { changeMoney(s, grant, "election"); s.events.push({ id: "boost", name: "فرحة الفوز بالانتخابات", left: 48, hours: 48, happy: 6 }); s.feeX = 1; }
       else { s.events.push({ id: "boost", name: "زعل بعد الانتخابات", left: 48, hours: 48, happy: -5 }); s.feeX = 2; s.trust = Math.max(s.trust ?? 60, 50); }
       s.elections = [...(s.elections || []), { year, share: Math.round(share * 100), won }].slice(-10);
@@ -1563,7 +1644,7 @@ export function catchUp(s, now = Date.now()) {
 /** Standing orders the mayor leaves the deputy. */
 export const DEPUTY = { repair: true, floor: 2000, tax: true };
 /** The most a town can gain while its mayor is away, by its stage (قرية … حاضرة); losses are not capped (the shield guards them). */
-export const AWAY_CAP = [5000, 10000, 20000, 40000, 80000];
+export const AWAY_CAP = [5000, 10000, 20000, 40000, 80000, 80000];
 /** How many hours the deputy runs the town in full; after that the town is kept steady. */
 export const DEPUTY_FULL_HOURS = 168;
 /** After this long away (a week of real time, in town hours) the town sleeps: nothing changes. */
@@ -1672,7 +1753,8 @@ export function unpack(text) {
   o.tiles = o.tiles.map((str) => {
     const [t, id, lvl, res, build, cond, rot, wd, ext] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
-    const maxLevel = (B[id]?.levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || (id === "vault" ? VAULT.length : 1)) - 1;
+    const civic = greaterCityUpgrade({ id });
+    const maxLevel = civic ? civic.from + 1 : (B[id]?.levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || (id === "vault" ? VAULT.length : 1)) - 1;
     const level = id === "house" && toTents ? 0 : clamp(Math.floor(Number(lvl) || 0), 0, maxLevel);
     const b = id && B[id] ? { id, lvl: level, res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);

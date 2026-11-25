@@ -281,7 +281,7 @@ export const SEASON_NOTES = {
 };
 export function whenSheet() {
   const se = seasonOf(S.day), next = SEASONS[(se.i + 1) % 4], h = hourOf(S.day), D = se.daylight * HOURS;
-  const era = ERAS[S.era], nextEra = ERAS[S.era + 1];
+  const era = ERAS[S.era], nextEra = ERAS[S.era + 1]?.worldOnly && !worldMode ? null : ERAS[S.era + 1];
   const prayers = PRAYERS.map((p) => ({ ...p, h: p.at(D) % HOURS }));
   const upcoming = prayers.map((p) => ({ ...p, in: (p.h - h + HOURS) % HOURS || HOURS })).sort((a, b) => a.in - b.in)[0];
   const toElect = hoursToElection(S);

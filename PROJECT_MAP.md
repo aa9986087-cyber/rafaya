@@ -47,7 +47,7 @@ The owner is Saudi and is not a programmer.
 | `js/ui-*.js` | The screens and features around the town, moved out of main.js unchanged (§3). They read main's state through imports; they never assign it. |
 | `js/whats-new.js` | **`WHATS_NEW`**: the release notes (`v` per mode, `items` newest first). Pure data. |
 | `js/world3d.js` | The 3D town: ground, roads, instanced buildings, light, day and night, rain, flood, lightning, hover/overlay marks, `pick` (screen → tile). |
-| `js/models.js` | Every building as a low-poly model built from shapes in code (no model files). `PLACE_STYLE` gives each place of al-Jouf its look. |
+| `js/models.js` | Every building as a low-poly model built from shapes in code (no model files). `PLACE_STYLE` gives each place of al-Jouf its look. The «الحاضرة الكبرى» landmarks, towers and upgrades are in the section `// ---------- الحاضرة الكبرى` (helpers `gc*`, palette `GC`, `GC_UPGRADE`); tower colour variants are in `VARIANTS`. |
 | `js/warfx.js` | War on screen only: moving military parts, damage, the attack scenes. Never decides anything. |
 | `js/world-weather.js`, `js/world-lighting.js`, `js/building-surfaces.js`, `js/traffic-path.js` | Rendering helpers: wet surfaces, night light map, wall textures, car paths. |
 | `js/news.js` | «نشرة الرافعية»: the residents' posts in solo play. |
@@ -58,7 +58,7 @@ The owner is Saudi and is not a programmer.
 | `js/warserver.js` | The war **server logic** (decides every result). It runs inside the Durable Object, and inside `preview.js` for the trial. Tables: acct, charge, rel, op, fly, dmg, hit, note, req. `moveTown` moves all of a town's war rows. |
 | `js/save-version.js` | Save revision ids, so two phones can't overwrite each other. |
 | `js/version.js` | `VERSION`/`REQUIRED`. They are `"dev"` in the repo; the deploy stamps them. |
-| `js/preview.js` | The **trial copy only**: a fake al-Jouf server in the page, with bot towns. It answers `/api/world/*` itself. **Every new server route needs a twin here**, or the trial breaks. |
+| `js/preview.js` | The **trial copy only** (opens in a ready «الحاضرة الكبرى» district, `pvGreaterCity`): a fake al-Jouf server in the page, with bot towns. It answers `/api/world/*` itself. **Every new server route needs a twin here**, or the trial breaks. |
 | `src/worker.js` | The server: static files plus `/api/world/*` (players) and `/api/admin/*` (owner). One Durable Object `Board` holds all SQLite tables (§4). |
 | `src/moderation.js` | The bad-word and protected-family-name filter for names and chat. It normalises Arabic letters, including Persian چ/گ/ڤ/پ. The owner can add private rules from the admin panel, kept in `meta` `private_moderation`. |
 | `src/badwords.js` | **The bank of bad words** (Arabic, Gulf, Arabizi, English LDNOOBW), approved by the owner. Add new words to the right group. Test against normal names (`test/player-moderation.test.mjs`). |

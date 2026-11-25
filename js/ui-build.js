@@ -1,8 +1,8 @@
 // The build dock, the HUD, toasts and sheets (screens): the parts of main.js that draw them.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
-import { ACHIEVEMENTS, B, CATS, ERAS, EVENTS, FILL_COST, GOALS, MAP_SIZE as N, SUBSIDY, TECH, VAULT } from "./data.js";
+import { ACHIEVEMENTS, B, CATS, ERAS, EVENTS, FILL_COST, GOALS, GREATER_CITY_STAGE, MAP_SIZE as N, SUBSIDY, TECH, VAULT } from "./data.js";
 import { $, S, ar, money, openCat, scheduleLayout, setTool, sheet, sheetFor, speed, tool, world, worldMode } from "./main.js";
-import { housePrice, houseTop, priceOf, techUnlocked, upgradeCost } from "./sim.js";
+import { greaterCityProjectBlocker, housePrice, houseTop, priceOf, techUnlocked, upgradeCost } from "./sim.js";
 import { PLACE_STYLE, modelKey, setLandStyle } from "./models.js";
 import { thumbnail } from "./world3d.js";
 import { sfx } from "./sound.js";
@@ -18,6 +18,8 @@ export function lockReason(id) {
   if (d.hq && !S.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة أول";
   if (d.max && S.tiles.filter((t) => t.b?.id === id).length >= d.max) return `الحد ${ar(d.max)}`;
   if (d.era > S.era) return `تنفتح لما تصير ${ERAS[d.era].name}`;
+  const civicLock = greaterCityProjectBlocker(S, id);
+  if (civicLock) return ar(civicLock);
   if (!techUnlocked(S, d)) return `تحتاج بحث «${TECH[d.tech].name}»`;
   return "";
 }
@@ -25,7 +27,7 @@ export function renderCards() {
   scheduleLayout();
   const box = $("cards");
   if (!openCat) { box.hidden = true; return; }
-  const ids = Object.keys(B).filter((k) => B[k].cat === openCat);
+  const ids = Object.keys(B).filter((k) => B[k].cat === openCat && (B[k].era !== GREATER_CITY_STAGE || (worldMode && S.era >= GREATER_CITY_STAGE - 1)));
   box.hidden = false;
   const UP_CARDS = {
     home: { key: modelKey("house", 2), name: "تطوير البيوت", from: B.house.levels[1].cost, path: "خيمة ← طين ← شعبي ← فيلا ← عمارة" },
@@ -40,9 +42,9 @@ export function renderCards() {
       <img alt="" src="${thumbnail(uc.key)}"><b>${uc.name}</b><span class="price">من ${money(uc.from)} ريال</span><span class="hours">${uc.path}</span></button>` : "";
   // houses already upgraded to a level: that level is a card of its own, to build straight away
   const levelCards = openCat === "home" ? Array.from({ length: houseTop(S) }, (_, k) => k + 1).map((lvl) => {
-    const p = housePrice(S, lvl), L = B.house.levels[lvl];
+    const p = housePrice(S, lvl), L = B.house.levels[lvl], cap = Math.round(L.cap * (S.tech.concrete ? 1.25 : 1));
     return `<button type="button" class="card ${tool?.id === "house" && tool.lvl === lvl ? "on" : ""} ${S.money < p.total ? "poor" : ""}" data-build="house" data-lvl="${lvl}">
-      <img alt="" src="${thumbnail(modelKey("house", lvl))}"><b>${L.name}</b><span class="price">${money(p.total)} ريال</span><span class="hours">جاهز على طول · يسكن ${ar(L.cap)}</span></button>`;
+      <img alt="" src="${thumbnail(modelKey("house", lvl))}"><b>${L.name}</b><span class="price">${money(p.total)} ريال</span><span class="hours">جاهز على طول · يسكن ${ar(cap)}</span></button>`;
   }).join("") : "";
   box.innerHTML = upgradeCard + levelCards + ids.map((id, i) => {
     const lock = lockReason(id);

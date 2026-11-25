@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { ISLAND_RADIUS } from "./traffic-path.js";
 import { BUILDING_SURFACES } from "./building-surfaces.js";
+import { CENTRAL_VAULT_LEVEL, GREATER_CITY_UPGRADES } from "./data.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 const C = {
@@ -1864,6 +1865,17 @@ export const VARIANTS = {
   house2: [{ "#dfceb6": "#dbc4a1", "#c6ab8e": "#aa9277" }, { "#e9dbc5": "#e6e1d6", "#c6ab8e": "#bbafa1" }],
   house3: [{ "#f5f0e7": "#e3ddd2" }, { "#f5f0e7": "#ecece7" }],
   house4: [{ "#ddd8ce": "#e6e2d8" }, { "#ddd8ce": "#bfcac7" }],
+  // الحاضرة الكبرى: the towers take other glass and cladding, so a district of them is never all one blue
+  house6: [
+    { "#3f6f80": "#8a7a55", "#2e5566": "#6e6040", "#7fa3ad": "#b3a27a", "#f1ece2": "#dccab0" },
+    { "#3f6f80": "#3f7468", "#2e5566": "#2c5a52", "#7fa3ad": "#86aea2", "#f1ece2": "#e6e2d8" },
+    { "#3f6f80": "#76858b", "#2e5566": "#55636a", "#7fa3ad": "#a9b5b8", "#f1ece2": "#b08d5b" }
+  ],
+  house7: [
+    { "#3f6f80": "#7d8f96", "#2e5566": "#5c6e75", "#7fa3ad": "#b8c4c6", "#f1ece2": "#b08d5b" },
+    { "#3f6f80": "#8a7a55", "#2e5566": "#6e6040", "#7fa3ad": "#b3a27a", "#f1ece2": "#e9dfcb" },
+    { "#3f6f80": "#3a6a7e", "#2e5566": "#22465a", "#7fa3ad": "#6f97a8", "#f1ece2": "#cfc3ad" }
+  ],
 };
 
 function recolor(geo, swaps) {
@@ -1885,7 +1897,7 @@ export function model(key, ground = "sand") {
     if (v !== undefined) {
       const src = model(base, ground), swaps = VARIANTS[base]?.[Number(v)];
       if (!src || !swaps) return src;
-      cache.set(k,Object.fromEntries(SETS.map((set) => [set,["matte","shiny",...BUILDING_SURFACES].includes(set)
+      cache.set(k,Object.fromEntries(SETS.map((set) => [set,["matte","shiny","glass","metal","paint",...BUILDING_SURFACES].includes(set)
         ? recolor(src[set],swaps) : src[set]])));
       return cache.get(k);
     }
@@ -1906,7 +1918,7 @@ export function modelFar(key, ground = "sand") {
     if (v !== undefined) {
       const src = modelFar(base, ground), swaps = VARIANTS[base]?.[Number(v)];
       if (!src || !swaps) return src;
-      cache.set(k, Object.fromEntries(Object.entries(src).map(([set, g]) => [set, g && (set === "matte" || set === "shiny" || BUILDING_SURFACES.includes(set)) ? recolor(g, swaps) : g])));
+      cache.set(k, Object.fromEntries(Object.entries(src).map(([set, g]) => [set, g && (["matte", "shiny", "glass", "metal", "paint"].includes(set) || BUILDING_SURFACES.includes(set)) ? recolor(g, swaps) : g])));
       return cache.get(k);
     }
     const maker = MAKERS[key];
@@ -2581,9 +2593,469 @@ for (const style of Object.keys(ST)) {
   MAKERS[`skyline_${style}`] = (b) => officeQuarter(b, style);
   MAKERS[`airport_${style}`] = (b) => airportTerminal(b, style);
 }
+
+// ---------- الحاضرة الكبرى: the last stage of al-Jouf ----------
+// Contemporary Saudi architecture with touches of al-Jouf: tinted glass, bronze and pearl metal cladding,
+// smooth sand concrete, mashrabiya fins that cast shade, Najdi triangles cut in metal at the crowns, and
+// stone only at entrances and squares. Every landmark has its own silhouette, so the town reads as the
+// top stage from afar; at night the entrances, the squares and the crowns light up.
+const GC = {
+  pearl: "#f1ece2", sand: "#dccab0", sandDark: "#bfa98a", bronze: "#b08d5b", bronzeDark: "#8a6c45",
+  graphite: "#3d4649", glass: "#3f6f80", glassDeep: "#2e5566", glassLight: "#7fa3ad", glassGold: "#8a7a55",
+  green: "#5f7f4c", water: "#3b8aa3", lamp: "#ffe2a6", stone: "#cdbb9c", paving: "#d6cbb7", pavingDark: "#b9ad97"
+};
+/** A paved civic deck with a woven pattern of darker stone and planters at the edges. */
+function gcPlaza(b, { w = .96, d = .96, color = GC.paving } = {}) {
+  b.box(w, .024, d, color, {}, "stone");
+  for (let i = -3; i <= 3; i++) {
+    b.box(.006, .004, d * .96, GC.pavingDark, { x: i * w / 8, y: .024 });
+    b.box(w * .96, .004, .006, GC.pavingDark, { z: i * d / 8, y: .024 });
+  }
+}
+/** Small round lights set into the ground: pools of light on the pavement at night. */
+function gcGroundLights(b, points) {
+  for (const [x, z] of points) {
+    b.cyl(.018, .018, .006, "#f5e7c4", { x, z, y: .024 }, 8, "lights");
+    b.cyl(.05, .05, .002, "#a8875a", { x, z, y: .025 }, 12, "lights");
+  }
+}
+/** A slim lamp post with a warm head. */
+function gcLamp(b, x, z, h = .2) {
+  b.cyl(.006, .008, h, GC.graphite, { x, z, y: .024 }, 6, "metal");
+  b.box(.03, .012, .03, GC.graphite, { x, z, y: .024 + h }, "metal");
+  b.box(.024, .006, .024, GC.lamp, { x, z, y: .02 + h }, "lights");
+}
+/** A planter box with a small tree (olive, the tree of al-Jouf). */
+function gcPlanter(b, x, z, s = .5) {
+  b.box(.11 * s * 2, .04, .11 * s * 2, GC.sandDark, { x, z, y: .024 }, "stone");
+  oliveTree(b, x, z, s);
+}
+/** Vertical bronze fins over a facade (a modern mashrabiya): face +z, or +x when side. */
+function gcFins(b, { x = 0, z = 0, y = 0, w, h, n, side = false, color = GC.bronze, depth = .03 }) {
+  for (let i = 0; i < n; i++) {
+    const u = -w / 2 + (i + .5) * w / n;
+    b.box(side ? depth : .012, h, side ? .012 : depth, color, side ? { x, z: z + u, y } : { x: x + u, z, y }, "metal");
+  }
+}
+/** Najdi triangles cut in metal: a crown line of small pyramids. */
+function gcTriangles(b, { x = 0, z = 0, y, w, d, size = .045, color = GC.bronze }) {
+  const nx = Math.max(2, Math.round(w / (size * 1.6))), nz = Math.max(2, Math.round(d / (size * 1.6)));
+  for (let i = 0; i < nx; i++) for (const s of [-1, 1]) b.cone(size * .62, size, color, { x: x - w / 2 + (i + .5) * w / nx, z: z + s * d / 2, y, ry: Math.PI / 4 }, 4, "metal");
+  for (let i = 1; i < nz - 1; i++) for (const s of [-1, 1]) b.cone(size * .62, size, color, { x: x + s * w / 2, z: z - d / 2 + (i + .5) * d / nz, y, ry: Math.PI / 4 }, 4, "metal");
+}
+/**
+ * A tower shaft: glass between pearl floor bands, lit windows in a pattern that varies by floor
+ * (never a flat grid), optional balconies with glass rails on the front, a parapet on top.
+ */
+function gcShaft(b, { x = 0, z = 0, y = 0, w, d, h, floors, glass = GC.glass, balconies = false, band = GC.pearl, seed = 1 }) {
+  b.box(w, h, d, glass, { x, z, y }, "glass");
+  const fh = h / floors;
+  let r = seed * 9301 + 49297;
+  const rand = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  for (let i = 1; i <= floors; i++) {
+    const yy = y + fh * i - .006;
+    b.box(w + .016, .012, d + .016, band, { x, z, y: yy }, "metal");
+    if (balconies && i < floors) {
+      b.box(w * .82, .01, .06, band, { x, z: z + d / 2 + .03, y: yy }, "paint");
+      b.box(w * .82, .028, .004, GC.glassLight, { x, z: z + d / 2 + .058, y: yy + .01 }, "glass");
+    }
+    // lit rooms: a few windows on two faces, a different set each floor
+    if (i < floors) for (let k = 0; k < 3; k++) {
+      const u = (rand() - .5) * w * .8, lit = rand() > .45;
+      if (lit) b.box(w * .16, fh * .55, .004, "#f4d39a", { x: x + u, z: z + d / 2 + .003, y: yy - fh * .75 }, "lights");
+      const v = (rand() - .5) * d * .8;
+      if (rand() > .5) b.box(.004, fh * .55, d * .16, "#f4d39a", { x: x + w / 2 + .003, z: z + v, y: yy - fh * .75 }, "lights");
+    }
+  }
+  b.box(w + .02, .05, d + .02, band, { x, z, y: y + h }, "paint");
+}
+/** A building's base on the street: sand concrete podium, a glazed lobby and a lit canopy over the door. */
+function gcLobby(b, { x = 0, z = 0, w, d, h = .17, front = .02 }) {
+  b.box(w, h, d, GC.sand, { x, z, y: .024 }, "stone");
+  b.box(w * .7, h * .72, .012, GC.glassDeep, { x, z: z + d / 2 + .004, y: .03 }, "glass");
+  b.box(w * .5, h * .5, .006, "#f2cf8c", { x, z: z + d / 2 + .008, y: .036 }, "lights");
+  b.box(w * .62, .018, .12 + front, GC.bronze, { x, z: z + d / 2 + .06, y: h * .82 }, "metal");
+  b.box(w * .4, .004, .08, "#ffe5ae", { x, z: z + d / 2 + .06, y: h * .82 - .004 }, "lights");
+}
+/** A short beacon on top (aircraft red light). */
+function gcBeacon(b, x, y, z, h = .22) {
+  b.cyl(.006, .014, h, GC.graphite, { x, z, y }, 6, "metal");
+  b.box(.018, .018, .018, "#ff6a4d", { x, z, y: y + h }, "lights");
+}
+
+Object.assign(MAKERS, {
+  // برج سكني شاهق: a slim tower that steps back twice, balconies on its face, a crown of Najdi triangles
+  house6(b) {
+    gcPlaza(b);
+    gcLobby(b, { x: -.02, z: .02, w: .62, d: .5 });
+    gcShaft(b, { x: -.02, z: -.02, y: .19, w: .5, d: .46, h: 1.45, floors: 10, balconies: true, seed: 6 });
+    gcShaft(b, { x: -.02, z: -.04, y: 1.69, w: .42, d: .38, h: .95, floors: 7, balconies: true, seed: 16, glass: GC.glassDeep });
+    gcShaft(b, { x: -.02, z: -.06, y: 2.69, w: .32, d: .3, h: .62, floors: 4, seed: 26 });
+    gcFins(b, { x: -.02 + .25, z: -.02, y: .19, w: .4, h: 1.45, n: 7, side: true });
+    gcTriangles(b, { x: -.02, z: -.06, y: 3.36, w: .32, d: .3, size: .04 });
+    b.box(.2, .014, .18, GC.lamp, { x: -.02, z: -.06, y: 3.35 }, "lights");
+    gcBeacon(b, -.02, 3.36, -.06, .24);
+    for (const [x, z] of [[-.4, .4], [.38, .4], [.4, -.38]]) gcPlanter(b, x, z, .5);
+    civicBench(b, .3, .36);
+    gcGroundLights(b, [[-.15, .42], [.12, .42]]);
+  },
+  // مجمّع أبراج سكنية: three towers of different heights round a garden court with a pool, a sky bridge between two
+  house7(b) {
+    gcPlaza(b, { color: "#d9cfbd" });
+    // the court: a lawn, a pool and palms, framed by a low podium on three sides
+    b.box(.4, .012, .34, "#6b8f55", { x: .05, z: .12, y: .024 }, "matte");
+    b.box(.2, .014, .11, GC.water, { x: .07, z: .14, y: .03 }, "glass");
+    b.box(.22, .01, .13, GC.pearl, { x: .07, z: .14, y: .024 }, "paint");
+    for (const [x, z] of [[-.1, .26], [.22, .02]]) palm(b, x, z, .45);
+    b.box(.92, .14, .2, GC.sand, { z: -.36, y: .024 }, "stone");
+    b.box(.2, .14, .55, GC.sand, { x: -.36, z: .02, y: .024 }, "stone");
+    b.box(.7, .1, .012, GC.glassDeep, { x: .05, z: -.255, y: .04 }, "glass");
+    // the towers
+    gcShaft(b, { x: -.29, z: -.27, y: .16, w: .3, d: .32, h: 3.0, floors: 20, balconies: true, seed: 7 });
+    gcShaft(b, { x: .28, z: -.28, y: .16, w: .3, d: .3, h: 2.25, floors: 15, balconies: true, seed: 17, glass: GC.glassDeep });
+    gcShaft(b, { x: -.32, z: .2, y: .16, w: .26, d: .26, h: 1.55, floors: 10, balconies: true, seed: 27, glass: GC.glassLight });
+    // terraces with planters on the setbacks
+    for (const [x, z, y] of [[-.29, -.27, 3.21], [.28, -.28, 2.46], [-.32, .2, 1.76]]) {
+      b.box(.18, .03, .18, GC.green, { x, z, y }, "matte");
+      gcLamp(b, x + .06, z + .06, .06);
+    }
+    // the sky bridge, lit underneath
+    b.box(.34, .09, .1, GC.pearl, { x: 0, z: -.28, y: 1.62 }, "paint");
+    b.box(.32, .05, .104, GC.glassLight, { x: 0, z: -.28, y: 1.64 }, "glass");
+    b.box(.28, .004, .07, GC.lamp, { x: 0, z: -.28, y: 1.615 }, "lights");
+    gcTriangles(b, { x: -.29, z: -.27, y: 3.24, w: .3, d: .32, size: .035 });
+    gcBeacon(b, -.29, 3.25, -.27);
+    gcGroundLights(b, [[.3, .4], [-.05, .42], [.4, .2]]);
+    gcLamp(b, .42, .42);
+  },
+  // الخزنة المركزية: a polished granite strongroom wrapped in a bronze lattice, gold at the door
+  vaultCentral(b) {
+    gcPlaza(b, { color: "#cfc4b1" });
+    b.rbox(.7, .42, .56, .02, "#4a4644", { z: -.06, y: .024 }, "stone");
+    gcFins(b, { z: -.06 + .29, y: .04, w: .66, h: .36, n: 15 });
+    gcFins(b, { x: .36, z: -.06, y: .04, w: .52, h: .36, n: 11, side: true });
+    gcFins(b, { x: -.36, z: -.06, y: .04, w: .52, h: .36, n: 11, side: true });
+    b.box(.76, .05, .62, GC.bronzeDark, { z: -.06, y: .44 }, "metal");
+    gcTriangles(b, { z: -.06, y: .49, w: .7, d: .56, size: .045, color: "#d6b464" });
+    b.rbox(.2, .25, .03, .01, "#d6b464", { z: .235, y: .024 }, "metal");
+    b.cyl(.055, .055, .012, "#f0cf73", { y: .15, z: .26, rx: Math.PI / 2 }, 14, "metal");
+    b.box(.3, .006, .05, GC.lamp, { z: .27, y: .3 }, "lights");
+    for (const x of [-.3, .3]) b.box(.05, .5, .05, GC.pearl, { x, z: .26, y: .024 }, "stone");
+    gcGroundLights(b, [[-.2, .4], [.2, .4]]);
+  },
+  // مجمّع الأعمال: three glass headquarters joined by bridges round a shaded reception plaza
+  civic_offices(b) {
+    gcPlaza(b);
+    gcShaft(b, { x: -.27, z: -.2, y: .024, w: .34, d: .46, h: 1.35, floors: 9, seed: 31, glass: GC.glassLight });
+    gcShaft(b, { x: .2, z: -.26, y: .024, w: .44, d: .38, h: 2.05, floors: 13, seed: 32 });
+    gcShaft(b, { x: .26, z: .18, y: .024, w: .32, d: .3, h: .95, floors: 6, seed: 33, glass: GC.glassDeep });
+    gcFins(b, { x: .2, z: -.26 + .2, y: .03, w: .42, h: 2.0, n: 9 });
+    for (const [x, z, y, w] of [[-.02, -.22, .95, .15], [.25, -.03, .62, .1]]) {
+      b.box(w, .08, .08, GC.pearl, { x, z, y }, "paint");
+      b.box(w * .9, .004, .06, GC.lamp, { x, z, y: y - .004 }, "lights");
+    }
+    // the shaded reception: a thin slatted roof on slender columns
+    for (const [x, z] of [[-.38, .12], [-.06, .12], [-.38, .4], [-.06, .4]]) b.cyl(.008, .008, .26, GC.graphite, { x, z, y: .024 }, 6, "metal");
+    b.box(.38, .012, .34, GC.pearl, { x: -.22, z: .26, y: .28 }, "paint");
+    for (let i = 0; i < 9; i++) b.box(.36, .01, .012, GC.bronze, { x: -.22, z: .1 + i * .04, y: .27 }, "metal");
+    b.box(.26, .004, .2, GC.lamp, { x: -.22, z: .26, y: .262 }, "lights");
+    b.box(.12, .03, .06, "#1f5f4f", { x: -.22, z: .26, y: .024 }, "paint");
+    gcBeacon(b, .2, 2.1, -.26);
+    gcGroundLights(b, [[-.3, .3], [-.12, .3], [.1, .42]]);
+    gcPlanter(b, .02, .4, .45);
+  },
+  // مركز معارض الجوف: two wide halls under a folded roof like the ridges of a Bedouin tent, a glass hall across the front
+  civic_expo(b) {
+    gcPlaza(b);
+    b.box(.9, .2, .56, GC.sand, { z: -.16, y: .024 }, "stone");
+    b.box(.84, .1, .012, GC.glassDeep, { z: .124, y: .05 }, "glass");
+    // the folded roof: ridges and valleys (a tent's peaks), pearl metal with bronze edges
+    for (let i = 0; i < 6; i++) {
+      const x = -.375 + i * .15;
+      for (const s of [-1, 1]) b.box(.082, .012, .6, GC.pearl, { x: x + s * .036, z: -.16, y: .25, rz: -s * .45 }, "paint");
+      b.box(.008, .012, .6, GC.bronze, { x, z: -.16, y: .282 }, "metal");
+      b.box(.05, .004, .5, GC.lamp, { x, z: -.16, y: .22 }, "lights");
+    }
+    // the lobby across the front: a tall glass hall with a bronze frame and the name
+    b.box(.34, .3, .2, "#5d8e9c", { z: .17, y: .024 }, "glass");
+    for (let i = 0; i <= 6; i++) b.box(.006, .3, .006, GC.pearl, { x: -.17 + i * .0567, z: .272, y: .024 }, "metal");
+    for (const y of [.12, .22]) b.box(.34, .006, .006, GC.pearl, { z: .272, y }, "metal");
+    b.box(.38, .025, .24, GC.pearl, { z: .17, y: .324 }, "paint");
+    b.box(.3, .004, .18, GC.lamp, { z: .17, y: .32 }, "lights");
+    b.box(.24, .18, .004, "#f4d6a0", { z: .266, y: .05 }, "lights");
+    b.box(.26, .045, .012, GC.bronze, { z: .29, y: .35 }, "metal");
+    // flags of the exhibitors
+    for (let i = 0; i < 5; i++) {
+      const x = -.4 + i * .2;
+      b.cyl(.004, .004, .3, GC.pearl, { x, z: .44, y: .024 }, 5, "metal");
+      b.box(.05, .03, .003, ["#1f7a52", "#b2453a", "#2c5d8f", "#c79a3b", "#1f7a52"][i], { x: x + .025, z: .44, y: .28 }, "paint");
+    }
+    gcGroundLights(b, [[-.25, .36], [0, .38], [.25, .36]]);
+  },
+  // مركز شحن الجوف: warehouses with numbered doors, a container yard under a gantry crane, a teal roof seen from afar
+  civic_freight(b) {
+    b.box(.97, .02, .97, "#6a6a66", {}, "stone");
+    for (let i = 0; i < 5; i++) b.box(.004, .004, .3, "#e3d28a", { x: -.4 + i * .2, z: .28, y: .022 });
+    // the warehouse with its dock
+    b.box(.9, .26, .34, "#c9ccc6", { z: -.3, y: .02 }, "paint");
+    b.box(.92, .03, .36, "#2b8a8a", { z: -.3, y: .28 }, "paint");
+    b.box(.3, .004, .2, "#f1f1e8", { x: -.2, z: -.3, y: .312 });
+    for (let i = 0; i < 4; i++) {
+      const x = -.33 + i * .22;
+      rollerBay(b, x, -.13, .14, .15, ["#2b8a8a", "#c76a2e", "#2b8a8a", "#c76a2e"][i]);
+      b.box(.05, .04, .004, GC.pearl, { x, z: -.11, y: .21 }, "paint");
+      b.box(.04, .025, .002, "#1d1d1d", { x, z: -.106, y: .218 });
+      b.box(.12, .006, .05, GC.lamp, { x, z: -.1, y: .22 }, "lights");
+    }
+    b.box(.92, .03, .06, "#7f7f7a", { z: -.1, y: .02 }, "stone");
+    // the container yard and its gantry
+    const box = ["#b2453a", "#2c5d8f", "#c79a3b", "#2b8a8a", "#6a7d45", "#d9d4c6"];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < (i + j) % 3 + 1; k++)
+      b.box(.17, .07, .07, box[(i * 3 + j + k) % 6], { x: -.33 + i * .2, z: .12 + j * .09, y: .022 + k * .072 }, "paint");
+    for (const x of [-.44, .44]) for (const z of [.04, .34]) b.box(.025, .36, .025, "#e0a530", { x, z, y: .02 }, "paint");
+    for (const z of [.04, .34]) b.box(.92, .04, .03, "#e0a530", { z, y: .37 }, "paint");
+    b.box(.06, .06, .34, "#d29622", { x: .05, z: .19, y: .33 }, "paint");
+    b.box(.02, .14, .02, GC.graphite, { x: .05, z: .19, y: .19 }, "metal");
+    for (const x of [-.44, .44]) b.box(.02, .012, .02, "#ff6a4d", { x, z: .04, y: .4 }, "lights");
+    for (const x of [-.3, .2]) gcLamp(b, x, .44, .3);
+  },
+  // مجمّع المياه: round clarifiers full of water with their bridges, a mushroom water tower in the Saudi way, pipes and a plant hall
+  civic_water(b) {
+    gcPlaza(b, { color: "#cfc6b2" });
+    for (const [x, z, r] of [[-.25, .2, .2], [.2, .25, .17]]) {
+      b.cyl(r + .02, r + .025, .09, "#d9d4c4", { x, z, y: .024 }, 20, "stone");
+      b.cyl(r, r, .006, GC.water, { x, z, y: .108 }, 20, "glass");
+      b.cyl(.03, .03, .12, GC.pearl, { x, z, y: .024 }, 10, "paint");
+      b.box(r * 2, .014, .02, "#9aa3a3", { x, z, y: .13 }, "metal");
+      b.box(r * 1.6, .004, .012, GC.lamp, { x, z, y: .124 }, "lights");
+    }
+    // the water tower: a slender shaft and a bulb, a band of light under the rim
+    b.cyl(.04, .06, .9, GC.pearl, { x: .26, z: -.24, y: .024 }, 14, "paint");
+    b.lathe([[0, 0], [.08, .01], [.2, .1], [.22, .17], [.19, .24], [.08, .28], [0, .29]], "#e9e4d8", { x: .26, z: -.24, y: .9 }, 20, "paint");
+    b.cyl(.205, .205, .02, "#2e7c94", { x: .26, z: -.24, y: 1.05 }, 20, "glass");
+    b.cyl(.208, .208, .008, GC.lamp, { x: .26, z: -.24, y: 1.03 }, 20, "lights");
+    gcBeacon(b, .26, 1.19, -.24, .1);
+    // the plant hall with pipes into the basins
+    b.box(.36, .22, .3, GC.sand, { x: -.24, z: -.26, y: .024 }, "stone");
+    glassWall(b, -.24, -.105, .05, .3, .12, 4, GC.glassDeep);
+    gcFins(b, { x: -.24, z: -.1, y: .19, w: .34, h: .05, n: 10 });
+    processPipe(b, [[-.1, .1, -.2], [0, .1, -.05], [-.1, .1, .1], [-.2, .1, .2]], .014, "#3e8fb0");
+    processPipe(b, [[-.08, .08, -.22], [.1, .08, -.08], [.2, .08, .1], [.2, .08, .22]], .012, "#3e8fb0");
+    gcGroundLights(b, [[0, .42], [-.42, .0]]);
+  },
+  // مجمّع الطاقة: a substation yard with transformers, a lattice pylon, battery halls and a field of solar panels
+  civic_energy(b) {
+    b.box(.97, .02, .97, "#a9a294", {}, "stone");
+    // solar rows
+    for (let i = 0; i < 4; i++) for (const x of [-.25, .1]) {
+      b.box(.01, .05, .01, GC.graphite, { x, z: .1 + i * .1, y: .02 }, "metal");
+      b.box(.32, .01, .07, "#25435a", { x, z: .1 + i * .1, y: .07, rx: -.35 }, "glass");
+    }
+    // transformers with cooling fins and the yard fence
+    for (const x of [-.3, -.08]) {
+      b.box(.14, .14, .12, "#8f9895", { x, z: -.2, y: .02 }, "metal");
+      for (let k = 0; k < 5; k++) b.box(.004, .1, .13, "#717a77", { x: x - .06 + k * .03, z: -.2, y: .04 }, "metal");
+      for (const dx of [-.03, .03]) b.cyl(.01, .014, .08, "#e8e2d2", { x: x + dx, z: -.2, y: .16 }, 6, "paint");
+    }
+    // the lattice pylon carrying the lines away
+    const px = .3, pz = -.25;
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.box(.012, 1.0, .012, "#9aa0a0", { x: px + dx * .06, z: pz + dz * .06, y: .02, rx: -dz * .05, rz: dx * .05 }, "metal");
+    for (const y of [.25, .5, .75]) b.box(.13 - y * .06, .008, .13 - y * .06, "#9aa0a0", { x: px, z: pz, y }, "metal");
+    for (const y of [.8, .95]) b.box(.4, .014, .02, "#9aa0a0", { x: px, z: pz, y }, "metal");
+    for (const y of [.8, .95]) for (const dx of [-.18, .18]) b.cyl(.008, .008, .05, "#e8e2d2", { x: px + dx, z: pz, y: y - .05 }, 6, "paint");
+    b.box(.014, .014, .014, "#ff6a4d", { x: px, z: pz, y: 1.03 }, "lights");
+    // battery halls in white with a green band (the energy is stored here)
+    for (const z of [-.4, -.02]) {
+      b.box(.16, .12, .14, "#eeeee8", { x: .32, z: z + .2, y: .02 }, "paint");
+      b.box(.162, .02, .142, "#2b9a5e", { x: .32, z: z + .2, y: .1 }, "paint");
+    }
+    // the control building: bronze fins over glass
+    b.box(.3, .2, .16, GC.sand, { x: -.2, z: -.4, y: .02 }, "stone");
+    glassWall(b, -.2, -.315, .05, .26, .11, 4, GC.glassDeep);
+    gcFins(b, { x: -.2, z: -.31, y: .05, w: .26, h: .14, n: 9 });
+    b.box(.2, .004, .05, GC.lamp, { x: -.2, z: -.3, y: .2 }, "lights");
+    for (const x of [-.44, .44]) gcLamp(b, x, .44, .26);
+  },
+  // برج الحاضرة: a twisting tower of glass plates that turns as it rises, an open crown and a spire, a square with a fountain
+  civic_tower(b) {
+    gcPlaza(b, { color: "#ddd2bd" });
+    b.cyl(.36, .38, .06, GC.sand, { z: -.05, y: .024 }, 24, "stone");
+    const floors = 34, top = 4.2;
+    for (let i = 0; i < floors; i++) {
+      const t = i / floors, s = .44 - t * .17, y = .084 + i * (top / floors), a = t * Math.PI * .5;
+      b.box(s, top / floors - .012, s, i % 6 === 5 ? GC.glassGold : GC.glass, { z: -.05, y, ry: a }, "glass");
+      b.box(s + .022, .012, s + .022, GC.pearl, { z: -.05, y: y + top / floors - .012, ry: a }, "metal");
+      if (i % 3 === 1) b.box(s * .5, .05, .004, "#f4d39a", { z: -.05 + Math.cos(a) * (s / 2 + .002), x: Math.sin(a) * (s / 2 + .002), y: y + .02, ry: a }, "lights");
+    }
+    // the crown: four leaning blades round an open lantern, and the spire
+    const cy = .084 + top;
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI * .5 + k * Math.PI / 2;
+      b.box(.03, .55, .1, GC.bronze, { x: Math.sin(a) * .1, z: -.05 + Math.cos(a) * .1, y: cy, ry: a, rx: Math.cos(a) * -.12, rz: Math.sin(a) * .12 }, "metal");
+    }
+    b.cyl(.07, .1, .3, "#f6e3b5", { z: -.05, y: cy }, 12, "lights");
+    b.cyl(.004, .02, .7, GC.pearl, { z: -.05, y: cy + .3 }, 8, "metal");
+    b.box(.02, .02, .02, "#ff6a4d", { z: -.05, y: cy + 1.0 }, "lights");
+    // the square: a fountain, palms, benches and a lit ring
+    b.cyl(.08, .09, .03, GC.stone, { x: .3, z: .32, y: .024 }, 14, "stone");
+    b.cyl(.065, .065, .004, GC.water, { x: .3, z: .32, y: .055 }, 14, "glass");
+    b.cyl(.01, .01, .08, "#d8eef2", { x: .3, z: .32, y: .055 }, 6, "glass");
+    for (const [x, z] of [[-.38, .38], [.4, -.36], [-.4, -.36]]) palm(b, x, z, .5);
+    civicBench(b, .05, .4); civicBench(b, -.18, .4);
+    b.add(new THREE.TorusGeometry(.37, .006, 4, 40), "#e9c88a", { z: -.05, y: .087, rx: Math.PI / 2 }, "lights");
+    gcGroundLights(b, [[.15, .42], [-.3, .42], [.42, .1]]);
+  },
+  // المجمّع الثقافي: a civic square framed by a round theatre, a stepped museum and a hall under a lattice dome
+  civic_culture(b) {
+    gcPlaza(b, { color: "#ddd1b9" });
+    // the theatre: a drum of sand concrete with a band of glass and a bronze ring
+    b.cyl(.22, .24, .3, GC.sand, { x: -.24, z: -.22, y: .024 }, 24, "stone");
+    b.cyl(.225, .225, .07, GC.glassDeep, { x: -.24, z: -.22, y: .2 }, 24, "glass");
+    b.cyl(.245, .245, .025, GC.bronze, { x: -.24, z: -.22, y: .325 }, 24, "metal");
+    b.cyl(.235, .2, .05, GC.pearl, { x: -.24, z: -.22, y: .35 }, 24, "paint");
+    b.cyl(.2, .2, .006, "#f2d39b", { x: -.24, z: -.22, y: .21 }, 24, "lights");
+    // the museum: stepped terraces with planting, a tall glass slot as its door
+    for (let i = 0; i < 4; i++) {
+      b.box(.4 - i * .07, .1, .36 - i * .06, i % 2 ? "#e6d8bf" : GC.sand, { x: .22, z: -.2 - i * .015, y: .024 + i * .1 }, "stone");
+      b.box(.4 - i * .07, .012, .02, GC.green, { x: .22, z: -.2 - i * .015 + (.36 - i * .06) / 2, y: .124 + i * .1 }, "matte");
+    }
+    b.box(.06, .3, .01, GC.glassLight, { x: .22, z: -.015, y: .024 }, "glass");
+    b.box(.04, .26, .004, "#f4d6a0", { x: .22, z: -.008, y: .03 }, "lights");
+    // the hall under a lattice dome: a canopy of bronze arcs on a ring
+    b.cyl(.16, .16, .14, "#efe3cc", { x: .05, z: .22, y: .024 }, 18, "stone");
+    b.add(new THREE.SphereGeometry(.25, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), GC.pearl, { x: .05, z: .22, y: .12, sy: .55 }, "paint");
+    for (let k = 0; k < 12; k++) b.add(new THREE.TorusGeometry(.252, .006, 4, 20, Math.PI / 2.4), GC.bronze, { x: .05, z: .22, y: .12, ry: k * Math.PI / 6, rz: Math.PI / 2 - Math.PI / 2.4 + .0, sy: .55 }, "metal");
+    b.cyl(.27, .27, .012, GC.pearl, { x: .05, z: .22, y: .12 }, 24, "paint");
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; b.cyl(.006, .006, .12, GC.graphite, { x: .05 + Math.cos(a) * .25, z: .22 + Math.sin(a) * .25, y: .02 }, 5, "metal"); }
+    b.cyl(.15, .15, .005, "#f3dcab", { x: .05, z: .22, y: .02 }, 18, "lights");
+    // the square: lanterns, olive trees, a lit line to the doors
+    for (const [x, z] of [[-.42, .1], [-.42, .42], [.42, .42]]) gcPlanter(b, x, z, .45);
+    for (const [x, z] of [[-.25, .1], [-.05, -.02], [.3, .1]]) gcLamp(b, x, z, .18);
+    gcGroundLights(b, [[-.24, .04], [.22, .02], [.05, .44], [-.2, .3]]);
+  }
+});
+
+/**
+ * The upgrades of الحاضرة الكبرى: each one changes the building itself, so it reads as the big version
+ * from afar (the base model is drawn a little smaller, and the new parts stand round and on top of it).
+ */
+const GC_UPGRADE = {
+  // مول الجوف الكبير: a glass atrium roof, a grand canopy over the doors and a parking deck
+  mall(b) {
+    b.box(.5, .1, .3, GC.glassLight, { z: -.05, y: .52 }, "glass");
+    for (let i = 0; i < 6; i++) b.box(.008, .1, .3, GC.bronze, { x: -.22 + i * .088, z: -.05, y: .52 }, "metal");
+    b.box(.52, .01, .32, GC.lamp, { z: -.05, y: .5 }, "lights");
+    b.box(.7, .016, .16, GC.pearl, { z: .38, y: .2 }, "paint");
+    for (const x of [-.33, .33]) b.cyl(.01, .01, .18, GC.graphite, { x, z: .44, y: .02 }, 6, "metal");
+    b.box(.5, .004, .12, GC.lamp, { z: .38, y: .196 }, "lights");
+  },
+  // مستشفى إقليمي: a new glass wing, a helipad on the roof and an ambulance canopy
+  hospital(b) {
+    b.box(.2, .55, .3, GC.glassLight, { x: .36, z: -.1, y: .02 }, "glass");
+    for (let y = .1; y < .56; y += .09) b.box(.21, .01, .31, GC.pearl, { x: .36, z: -.1, y }, "metal");
+    b.cyl(.13, .13, .02, "#4a4f52", { x: .36, z: -.1, y: .58 }, 16, "paint");
+    b.box(.1, .004, .018, "#f2f2ea", { x: .36, z: -.1, y: .601 });
+    for (const dx of [-.04, .04]) b.box(.018, .004, .09, "#f2f2ea", { x: .36 + dx, z: -.1, y: .601 });
+    b.cyl(.13, .13, .004, "#f3dcab", { x: .36, z: -.1, y: .6 }, 16, "lights");
+    b.box(.26, .014, .14, "#c33a32", { x: -.25, z: .4, y: .18 }, "paint");
+    b.box(.2, .004, .1, GC.lamp, { x: -.25, z: .4, y: .176 }, "lights");
+  },
+  // جامعة الجوف البحثية: a research tower with an observatory dome and a solar canopy over the yard
+  university(b) {
+    b.box(.18, .9, .18, GC.sand, { x: .34, z: -.32, y: .02 }, "stone");
+    gcFins(b, { x: .34, z: -.32 + .095, y: .05, w: .16, h: .8, n: 6 });
+    b.dome(.1, "#e8e8e0", { x: .34, z: -.32, y: .92 }, "metal");
+    b.box(.02, .06, .14, GC.graphite, { x: .34, z: -.32, y: .95, ry: .5 }, "metal");
+    b.box(.46, .012, .18, "#25435a", { x: -.1, z: .38, y: .24, rx: -.2 }, "glass");
+    for (const x of [-.3, .1]) b.cyl(.008, .008, .22, GC.graphite, { x, z: .38, y: .02 }, 6, "metal");
+  },
+  // مدينة ألعاب كبرى: a roller coaster loop and a drop tower over the park
+  themepark(b) {
+    b.add(new THREE.TorusGeometry(.2, .012, 6, 28), "#c0392b", { x: .25, z: .2, y: .26, ry: .6 }, "paint");
+    b.add(new THREE.TorusGeometry(.2, .004, 4, 28), GC.lamp, { x: .25, z: .2, y: .26, ry: .6 }, "lights");
+    for (const s of [-1, 1]) b.box(.012, .26, .012, "#7a7a7a", { x: .25 + s * .1, z: .2 - s * .07, y: .02 }, "metal");
+    b.cyl(.03, .035, 1.0, "#e9e4d8", { x: -.35, z: .35, y: .02 }, 10, "paint");
+    b.cyl(.07, .07, .06, "#2c5d8f", { x: -.35, z: .35, y: .6 }, 12, "paint");
+    b.box(.02, .02, .02, "#ff6a4d", { x: -.35, z: .35, y: 1.03 }, "lights");
+    for (let y = .15; y < 1; y += .2) b.cyl(.036, .036, .01, GC.lamp, { x: -.35, z: .35, y }, 10, "lights");
+  },
+  // مطار دولي: a control tower, a long wave roof over the terminal and jet bridges
+  airport(b) {
+    b.cyl(.025, .035, .9, GC.pearl, { x: .38, z: -.38, y: .02 }, 10, "paint");
+    b.cyl(.075, .05, .08, GC.glassDeep, { x: .38, z: -.38, y: .92 }, 12, "glass");
+    b.cyl(.085, .085, .02, GC.pearl, { x: .38, z: -.38, y: 1.0 }, 12, "paint");
+    b.cyl(.07, .07, .006, GC.lamp, { x: .38, z: -.38, y: .94 }, 12, "lights");
+    gcBeacon(b, .38, 1.02, -.38, .1);
+    for (let i = 0; i < 8; i++) b.box(.11, .014, .4, GC.pearl, { x: -.4 + i * .1, z: -.25, y: .3 + Math.sin(i * .8) * .03, rz: Math.cos(i * .8) * .25 }, "paint");
+    b.box(.78, .004, .3, GC.lamp, { x: -.05, z: -.25, y: .28 }, "lights");
+    for (const x of [-.3, -.05, .2]) b.box(.04, .04, .18, "#d9d9d2", { x, z: -.02, y: .12 }, "paint");
+  },
+  // محطة قطار الجوف الكبرى: long curved canopies over the platforms and tracks
+  station(b) {
+    // gull-wing canopies on a row of columns over two platforms, a train waiting between them
+    for (const z of [.2, .42]) {
+      for (let i = 0; i < 5; i++) b.cyl(.008, .008, .19, GC.graphite, { x: -.4 + i * .2, z, y: .024 }, 6, "metal");
+      b.box(.94, .014, .02, GC.bronze, { z, y: .21 }, "metal");
+      for (const sd of [-1, 1]) b.box(.94, .008, .07, GC.pearl, { z: z + sd * .036, y: .215 + .012, rx: sd * .22 }, "paint");
+      b.box(.88, .004, .05, GC.lamp, { z, y: .205 }, "lights");
+      b.box(.94, .03, .06, "#cfc6b4", { z, y: .024 }, "stone");
+    }
+    for (const dz of [-.02, .02]) b.box(.96, .006, .006, "#8d8d88", { z: .31 + dz, y: .025 }, "metal");
+    b.rbox(.8, .07, .06, .02, "#f1efe8", { x: -.05, z: .31, y: .03 }, "paint");
+    b.box(.78, .025, .062, "#2b5d73", { x: -.05, z: .31, y: .06 }, "glass");
+    b.box(.8, .008, .062, "#1f7a52", { x: -.05, z: .31, y: .04 }, "paint");
+    b.box(.7, .012, .004, GC.lamp, { x: -.05, z: .342, y: .068 }, "lights");
+  },
+
+  // استاد الجوف الكبير: a ring roof over the stands and four floodlight masts
+  bigstadium(b) {
+    b.add(new THREE.TorusGeometry(.38, .045, 6, 32), GC.pearl, { y: .34, rx: Math.PI / 2, sy: 1, sz: .25 }, "paint");
+    b.add(new THREE.TorusGeometry(.38, .008, 4, 32), GC.lamp, { y: .32, rx: Math.PI / 2 }, "lights");
+    for (const [x, z] of [[-.44, -.44], [.44, -.44], [-.44, .44], [.44, .44]]) {
+      b.cyl(.01, .014, .55, GC.graphite, { x, z, y: .02 }, 6, "metal");
+      b.box(.08, .05, .02, "#f6f2df", { x, z, y: .56, ry: Math.atan2(x, z) }, "lights");
+    }
+  },
+  // أبراج الرافعية الكبرى: the towers take crowns of bronze triangles, a sky bridge and a lit spire
+  skyline(b) {
+    b.box(.4, .08, .1, GC.pearl, { x: 0, z: -.18, y: 1.5 }, "paint");
+    b.box(.38, .04, .102, GC.glassLight, { x: 0, z: -.18, y: 1.52 }, "glass");
+    b.box(.34, .004, .08, GC.lamp, { x: 0, z: -.18, y: 1.497 }, "lights");
+    gcTriangles(b, { x: -.2, z: -.19, y: 2.48, w: .26, d: .24, size: .035 });
+    gcTriangles(b, { x: .2, z: -.17, y: 2.03, w: .23, d: .21, size: .03 });
+    b.cyl(.004, .016, .6, GC.bronze, { x: -.2, z: -.19, y: 2.5 }, 8, "metal");
+    b.box(.02, .02, .02, "#ff6a4d", { x: -.2, z: -.19, y: 3.1 }, "lights");
+  },
+  // محطة تحلية كبرى: a row of big storage tanks and a pipe rack
+  desal(b) {
+    for (const x of [-.32, -.1, .12]) {
+      b.cyl(.09, .09, .22, "#e8e4d8", { x, z: .36, y: .02 }, 14, "paint");
+      b.cyl(.092, .092, .02, "#2e7c94", { x, z: .36, y: .16 }, 14, "paint");
+    }
+    processPipe(b, [[-.42, .26, .26], [.4, .26, .26]], .012, "#3e8fb0");
+    for (const x of [-.4, 0, .4]) b.box(.012, .26, .012, GC.graphite, { x, z: .26, y: .02 }, "metal");
+  },
+  // محطة كهرباء كبرى: a cooling tower with its plume of white and a second tall stack
+  powerplant(b) {
+    b.lathe([[.16, 0], [.12, .2], [.1, .35], [.115, .48]], "#dcd8cc", { x: .3, z: .3, y: .02 }, 22, "paint");
+    b.cyl(.12, .12, .01, "#f3dcab", { x: .3, z: .3, y: .5 }, 16, "lights");
+    b.cyl(.03, .035, .95, "#d9d4c8", { x: -.38, z: .38, y: .02 }, 10, "paint");
+    for (const y of [.75, .85]) b.cyl(.036, .036, .03, "#c0392b", { x: -.38, z: .38, y }, 10, "paint");
+    b.box(.02, .02, .02, "#ff6a4d", { x: -.38, z: .38, y: .98 }, "lights");
+  }
+};
+for (const [id, upgrade] of Object.entries(GREATER_CITY_UPGRADES)) {
+  if (id === "avenue") continue; // the boulevard is drawn as a road: its upgrade shows on the road itself
+  MAKERS[`civic_up_${id}`] = (b, ground, seed) => {
+    const draw = MAKERS[modelKey(id, upgrade.from)];
+    graft(b, (base) => draw(base, ground, seed), { s: .9, z: -.02 });
+    GC_UPGRADE[id]?.(b);
+  };
+}
 export function modelKey(id, lvl) {
+  if (id !== "avenue" && lvl > GREATER_CITY_UPGRADES[id]?.from) return `civic_up_${id}`;
   if (landStyle && STYLED.includes(id)) return `${id}_${landStyle}`;
-  if (id === "vault") return lvl >= 3 ? "vault2" : lvl >= 1 ? "vault1" : "vault";
+  if (id === "vault") return lvl >= CENTRAL_VAULT_LEVEL ? "vaultCentral" : lvl >= 3 ? "vault2" : lvl >= 1 ? "vault1" : "vault";
   if (id === "house") return lvl === 0 ? "tent0" : `house${lvl}`;
   if (lvl > 0 && BIZ.includes(id)) return `${id}${lvl}`;
   if (lvl > 0 && MIL_MODELS.includes(id)) return `${id}${Math.min(2, lvl)}`;

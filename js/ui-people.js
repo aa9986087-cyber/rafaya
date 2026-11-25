@@ -2,10 +2,10 @@
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, money, refresh, save, sheet, tool, visiting, world } from "./main.js";
 import { familiesAt, familyDay, jobOf, wishOf } from "./people.js";
-import { changeMoney, districtName, districtOf, doorOf, idx, roadPath, upgradeEffect } from "./sim.js";
+import { changeMoney, districtName, districtOf, doorOf, greaterCityProgress, idx, roadPath, upgradeEffect } from "./sim.js";
 import { sfx } from "./sound.js";
 import { row, toast } from "./ui-build.js";
-import { B, CHAINS, GOALS, GROUND, MAP_SIZE as N, MAT, bizLevel } from "./data.js";
+import { B, CHAINS, GOALS, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, GROUND, MAP_SIZE as N, MAT, ROAD_IDS, bizLevel } from "./data.js";
 import { ADVISOR_FEE, ADVISOR_HOURS, advise } from "./advisor.js";
 
 export const kidsWord = (n) => (n === 1 ? "عيل واحد" : n === 2 ? "عيالين" : `${ar(n)} عيال`);
@@ -43,6 +43,10 @@ export function effectHtml(b) {
     return `<div class="row eff"><span>${label}</span><b class="${cls}">${fine(a)} ← ${fine(z)}${unit} <small>(${up ? "+" : "−"}${fine(Math.abs(d))})</small></b></div>`;
   };
   if (e.vault) return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch("تشيل", e.capNow, e.capNext, true, " ريال")}${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}</div></div>`;
+  if (e.utility) {
+    const label = ROAD_IDS.includes(b.id) ? "سعة الطريق" : B[b.id].water > 0 ? "إنتاج الماء" : "إنتاج الكهرباء";
+    return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch(label, e.output, e.outputNext)}${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}</div></div>`;
+  }
   if (e.mil) {
     const n = e.next, stat = n.ops ? `عمليات بالجو: ${ar(n.ops)}` : n.salvo ? `سعة ${ar(n.cap)} · ${ar(n.salvo)} بالعملية · تجهيز ${ar(n.reload)} د` : n.cap ? `صواريخ ${ar(n.cap)} · تجهيز ${ar(n.reload)} د` : n.detect ? `دقة الدفاع ×${ar(n.detect)}` : n.vsDrone ? `ضد المسيّرات ${ar(Math.round(n.vsDrone * 100))}٪ · ضد الصواريخ ${ar(Math.round(n.vsMissile * 100))}٪ · ${ar(n.intc)} اعتراضية` : "";
     return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}<div class="row eff"><span>القدرة العسكرية</span><b class="plus">${stat}</b></div></div></div>`;
@@ -154,8 +158,20 @@ export function advisorSheet() {
   }));
 }
 export function goals() {
+  const progress = S.world && S.era === GREATER_CITY_STAGE ? greaterCityProgress(S) : null;
+  const statuses = { open: "شغّال ✓", building: "قيد الإنشاء", stopped: "متوقف" };
+  const civic = !progress ? "" : `<h3>مشاريع الحاضرة الكبرى</h3>
+    <div class="rows">
+      ${row("الخزائن المركزية الشغّالة", `${ar(progress.central)} من ${ar(B.vault.max)}`)}
+      ${row("توسعة أبراج الرافعية", progress.upgradedTowers ? "شغّالة ✓" : progress.central < B.vault.max ? "تحتاج ٤ خزائن مركزية شغّالة" : "بانتظار التوسعة والتشغيل", progress.upgradedTowers ? "plus" : "")}
+      ${Object.entries(GREATER_CITY_PROJECTS).map(([id, project]) => {
+        const status = progress.projects.get(id);
+        return row(project.name, statuses[status] || `${money(project.cost)} ريال`, status === "open" ? "plus" : status === "stopped" ? "minus" : "");
+      }).join("")}
+    </div>`;
   const done = GOALS.slice(0, S.goal).map((x) => `<div class="row done"><span>${x.text}</span><b class="plus">✓</b></div>`).join("");
   const early = S.goalsEarly || [];
   const next = GOALS.slice(S.goal, S.goal + 3).map((x, i) => early.includes(S.goal + i) ? `<div class="row done"><span>${x.text}</span><b class="plus">✓ استلمت ${money(x.reward)}</b></div>` : `<div class="row ${i ? "" : "now"}"><span>${x.text}</span><b>${money(x.reward)} ريال</b></div>`).join("");
-  sheet(`<h2>المهام</h2><p>كل مهمة تعطيك مكافأة، ولو خلّصت وحدة من اللي تحت قبل اللي فوقها تستلمها على طول. أنجزت ${ar(S.goal + early.length)} من ${ar(GOALS.length)}.</p><div class="rows">${next}${done}</div>`, "goals");
+  const rules = progress ? "" : "كل مهمة تعطيك مكافأة، ولو خلّصت وحدة من اللي تحت قبل اللي فوقها تستلمها على طول. ";
+  sheet(`<h2>المهام</h2>${civic}<p>${rules}أنجزت ${ar(S.goal + early.length)} من ${ar(GOALS.length)} من مهام المدينة.</p><div class="rows">${next}${done}</div>`, "goals");
 }

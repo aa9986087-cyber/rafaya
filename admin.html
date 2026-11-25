@@ -55,7 +55,7 @@ const n = (v) => Number(v || 0).toLocaleString("ar-SA");
 const esc = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
 const purgeButton = (name) => `<button class="btn bad" data-purge="${esc(name)}">حظر وحذف المحتوى</button>`;
 const ago = (at) => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "الحين" : m < 60 ? `قبل ${n(m)} د` : m < 1440 ? `قبل ${n(Math.round(m / 60))} س` : `قبل ${n(Math.round(m / 1440))} يوم`; };
-const ERAS = ["قرية", "بلدة", "مدينة", "محافظة", "حاضرة"];
+const ERAS = ["قرية", "بلدة", "مدينة", "محافظة", "حاضرة", "الحاضرة الكبرى"];
 let token = localStorage.getItem("rafaya-admin") || "", tab = "home", lastQ = ""; // lastQ: the players search stays after an action
 function toast(t) { const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = "none"; }, 2500); }
 async function api(path, body) {

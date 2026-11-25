@@ -4,6 +4,7 @@ import { A, RENDER, S, lastTouch, money, openCat, perfSet, refresh, save, sheetF
 import { hourEffects, renderCards, toast } from "./ui-build.js";
 import { AWAY_CAP, changeMoney, hourOf, prayerNow, seasonOf, step } from "./sim.js";
 import { council, hourNews } from "./ui-news.js";
+import { goals } from "./ui-people.js";
 import { budget } from "./ui-whatsnew.js";
 import { sfx } from "./sound.js";
 import { HOURS, MAP_SIZE as N, REGION } from "./data.js";
@@ -76,6 +77,7 @@ export function runHour() {
   hourNews(msgs);
   if (sheetFor === "budget") budget();
   if (sheetFor === "council") council();
+  if (sheetFor === "goals" && msgs.some((m) => ["goal", "collapse", "era"].includes(m.kind))) goals();
 }
 /**
  * The adaptive quality. It watches, over seconds and not single frames:

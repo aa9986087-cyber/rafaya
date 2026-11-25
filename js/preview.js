@@ -2,8 +2,8 @@
 // page, so the owner can try «صراع الجوف» from one file before anything goes live. It answers the
 // game's /api/world/* calls itself, with the same war server (js/warserver.js) the live site runs,
 // shorter waits, and three rival towns played by simple bots. Nothing here is ever sent anywhere.
-const PV_KEY = "rafaya-visual-preview-v4";
-globalThis.RAFAYA_PREVIEW_STORAGE = "rafaya-visual-preview-v4:";
+const PV_KEY = "rafaya-visual-preview-v5"; // v5: the trial opens in الحاضرة الكبرى
+globalThis.RAFAYA_PREVIEW_STORAGE = "rafaya-visual-preview-v5:";
 const PV_CFG = fastWar(20);
 Object.assign(WAR, PV_CFG); // the game shows the same short waits the trial server uses
 const pvLoad = () => { try { return JSON.parse(localStorage.getItem(PV_KEY) || "null"); } catch { return null; } };
@@ -252,7 +252,7 @@ function pvReadyTown(s) {
   const put = (x, y, id, lvl = 0) => {
     const t = s.tiles[idx(x, y)];
     t.t = "sand";
-    const res = id === "house" ? [3, 6, 10, 16, 42, 92][lvl] : 0;
+    const res = id === "house" ? [3, 6, 10, 16, 42, 92, 170, 255][lvl] : 0;
     t.b = { id, lvl, res, cond: 100 };
   };
   for (let x = 29; x <= 44; x++) {
@@ -316,10 +316,49 @@ function pvReadyTown(s) {
   s.tiles[idx(47,34)].t = "rock";
   s.tiles[idx(44,40)].t = "wadi";
   s.lake = 84;
-  s.era = 4; s.money = 44000; s.pop = s.tiles.reduce((sum, t) => sum + (t.b?.res || 0), 0);
+  pvGreaterCity(s, put);
+  s.pop = s.tiles.reduce((sum, t) => sum + (t.b?.res || 0), 0);
   s.tech = { ...s.tech, asphalt: true, wind: true, desal: true };
-  s.cam = { x: 1.15, z: 1.1, zoom: innerWidth < 560 ? 0.84 : 0.96, yawTarget: 0.79 };
+  s.cam = { x: 2, z: -15.5, zoom: innerWidth < 560 ? 0.62 : 0.74, yawTarget: 0.79 };
   return s;
+}
+
+/**
+ * الحاضرة الكبرى for the owner's review: a district north of the old town with every new landmark and the
+ * new towers along a highway, the old landmarks in their big versions, and some left to upgrade by hand
+ * (a vault, houses, a desalination and a power plant, the old avenue), with money to do it.
+ */
+function pvGreaterCity(s, put) {
+  for (const p of PLOTS) (s.owned ||= {})[p.id] = true;
+  for (let y = 13; y <= 22; y++) for (let x = 23; x <= 50; x++) { const t = s.tiles[idx(x, y)]; t.b = null; if (t.t !== "sand") t.t = "sand"; }
+  for (let x = 23; x <= 50; x++) { put(x, 18, "avenue", 1); put(x, 15, "asphalt"); put(x, 21, "asphalt"); }
+  for (const x of [23, 30, 40, 50]) for (let y = 15; y <= (x === 40 ? 23 : 22); y++) if (y !== 18) put(x, y, "asphalt");
+  [
+    [24,16,"house",6], [25,16,"house",7], [26,16,"house",6], [27,16,"house",7], [28,16,"house",6], [29,16,"house",7],
+    [24,17,"house",7], [25,17,"streetpalm"], [26,17,"civic_tower"], [27,17,"lantern"], [28,17,"house",6], [29,17,"house",6],
+    [31,16,"civic_offices"], [32,16,"house",6], [33,16,"house",7], [34,16,"civic_culture"], [35,16,"house",7], [36,16,"house",6],
+    [31,17,"house",7], [32,17,"olivetree"], [33,17,"house",6], [34,17,"flowers"], [35,17,"house",5], [36,17,"house",5],
+    [37,16,"civic_expo"], [38,16,"house",6], [39,16,"house",7], [37,17,"house",5], [38,17,"streetpalm"], [39,17,"house",6],
+    [41,16,"house",7], [42,16,"house",6], [43,16,"house",7], [44,16,"house",6], [45,16,"house",7], [46,16,"house",6],
+    [41,17,"house",6], [42,17,"bigfountain"], [44,17,"house",7], [45,17,"lantern"], [46,17,"house",6],
+    [47,16,"house",7], [48,16,"house",6], [49,16,"lantern"], [47,17,"house",6], [48,17,"house",7], [49,17,"house",6],
+    [24,19,"vault",5], [25,19,"vault",5], [26,19,"vault",5], [27,19,"vault",5], [28,19,"vault",4],
+    [24,20,"mosque"], [25,20,"school"], [26,20,"clinic"], [27,20,"park"], [28,20,"house",5], [29,19,"house",6], [29,20,"police"],
+    [31,19,"civic_water"], [33,19,"civic_energy"], [35,19,"civic_freight"], [32,19,"pole"], [34,19,"pole"],
+    [31,20,"house",6], [32,20,"house",7], [33,20,"house",6], [34,20,"house",7], [35,20,"house",6], [36,19,"mosque"], [36,20,"house",6],
+    [37,19,"school"], [38,19,"clinic"], [39,19,"police"], [37,20,"house",7], [38,20,"house",6], [39,20,"house",7],
+    [41,19,"house",6], [42,19,"house",7], [43,19,"house",6], [44,19,"house",7], [45,19,"house",6], [46,19,"house",7],
+    [41,20,"house",7], [42,20,"house",6], [43,20,"house",7], [44,20,"house",6], [45,20,"house",7], [46,20,"house",6],
+    [47,19,"house",7], [48,19,"house",6], [49,19,"house",7], [47,20,"house",6], [48,20,"house",7], [49,20,"house",6],
+    [24,22,"house",6], [25,22,"house",7], [26,22,"house",6], [27,22,"house",7], [28,22,"house",6], [29,22,"house",7],
+    [31,22,"house",6], [32,22,"house",7], [33,22,"house",6], [34,22,"house",7], [35,22,"house",6], [36,22,"house",7],
+    [41,22,"house",7], [42,22,"house",6], [43,22,"house",7], [44,22,"house",6], [45,22,"house",7], [46,22,"house",6],
+  ].forEach((args) => put(...args));
+  // the old landmarks in their big versions (left at the old level: one desalination, one power plant, the town's avenue)
+  for (const [x, y, id, lvl] of [[33,25,"mall",1], [36,23,"hospital",4], [34,23,"university",1], [22,43,"airport",1], [25,43,"station",1],
+    [28,43,"bigstadium",1], [40,47,"skyline",1], [37,47,"themepark",1], [52,35,"desal",1], [48,38,"powerplant",1]]) put(x, y, id, lvl);
+  for (let x = 35; x <= 42; x++) put(x, 48, "avenue", 1);
+  s.era = 5; s.money = 3000000;
 }
 
 function pvSample() {
@@ -355,8 +394,8 @@ globalThis.RAFAYA_PREVIEW_RESET = () => {
 {
   document.body.classList.add("visual-preview");
   document.querySelector(".menu-eyebrow").textContent = "تجربة الرافعية الجديدة";
-  document.querySelector(".menu-sub").textContent = "جرّب الإضاءة الجديدة بعد الغروب";
-  document.getElementById("mPlayLabel").dataset.start = "ادخل واحة الرافعية";
+  document.querySelector(".menu-sub").textContent = "تجربة الحاضرة الكبرى: لف وقرّب، وجرّب الليل والنهار";
+  document.getElementById("mPlayLabel").dataset.start = "ادخل الحاضرة الكبرى";
   document.getElementById("mPlayHint").dataset.start = "مدينة جاهزة للاستكشاف والبناء • حفظ محلي";
   const reset = document.createElement("button");
   reset.type = "button"; reset.className = "pv-reset"; reset.textContent = "أعد التجربة من البداية";

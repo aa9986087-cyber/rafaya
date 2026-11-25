@@ -18,13 +18,15 @@ export const PLOTS = RING_NAMES.flatMap((name, k) => SIDES.flatMap(([side, halve
 /** Each plot costs more than the last one bought. */
 export const PLOT_PRICES = [3000, 4500, 6000, 7500, 9000, 11000, 13000, 15000, 18000, 21000, 24000, 28000, 32000, 36000, 41000, 46000, 52000, 58000, 65000, 72000, 80000, 90000, 100000, 115000];
 
+export const GREATER_CITY_STAGE = 5;
 /** Town stages: reaching the population opens the stage and its buildings. */
 export const ERAS = [
   { id: 0, name: "قرية", pop: 0 },
   { id: 1, name: "بلدة", pop: 250 },
   { id: 2, name: "مدينة", pop: 1200 },
   { id: 3, name: "محافظة", pop: 4000 },
-  { id: 4, name: "حاضرة", pop: 9000 }
+  { id: 4, name: "حاضرة", pop: 9000 },
+  { id: GREATER_CITY_STAGE, name: "الحاضرة الكبرى", pop: 15000, worldOnly: true }
 ];
 
 /**
@@ -72,9 +74,11 @@ export const B = {
       { name: "بيت شعبي", cap: 10, cost: 700, needs: { road: 1, water: 1, happy: 45 } },
       { name: "فيلا", cap: 16, cost: 2000, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
       { name: "عمارة", cap: 48, cost: 6000, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 },
-      { name: "برج سكني", cap: 120, cost: 16000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 5 }, era: 3 }
+      { name: "برج سكني", cap: 120, cost: 16000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 4 }, era: 3 },
+      { name: "برج سكني شاهق", cap: 180, cost: 32000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 4 }, era: GREATER_CITY_STAGE },
+      { name: "مجمّع أبراج سكنية", cap: 270, cost: 64000, needs: { road: 1, water: 1, power: 1, happy: 80, services: 4 }, era: GREATER_CITY_STAGE }
     ],
-    text: "تنصبها خيمة، وأنت اللي تطورها: بيت طين، ثم شعبي، ثم فيلا، ثم عمارة. كل مستوى له سعر، ويحتاج طريق وماء واصل، والأعلى يحتاج كهرباء وخدمات قريبة."
+    text: "طوّر السكن من خيمة إلى بيت ثم عمارة وبرج. المستويات الأعلى تحتاج طريق وماء وكهرباء وخدمات قريبة."
   },
   grocery: { cat: "shop", name: "بقالة", cost: 120, upkeep: 2, era: 0, jobs: 4, income: 14, water: -1, power: -1, radius: 4, happy: 3, text: "وظائف ودخل بسيط، والبيوت اللي حولها (لين ٤ مربعات) مرتاحة إن البقالة قريبة." },
   cafe: { cat: "shop", name: "مقهى", cost: 220, upkeep: 4, era: 0, jobs: 5, income: 22, water: -2, power: -2, radius: 3, happy: 6, text: "وظائف ويفرّح الحارة اللي حوله." },
@@ -179,6 +183,20 @@ for (const d of Object.values(B)) {
   if (SUBSIDY[d.cat]) { d.fullCost = d.cost; d.cost = Math.round(d.cost * (1 - SUBSIDY[d.cat])); }
 }
 
+// These are final prices after the ordinary catalog's price adjustments.
+export const GREATER_CITY_PROJECTS = {
+  civic_offices: { name: "مجمّع الأعمال", cost: 280000, upkeep: 650, jobs: 350, income: 1200, power: -45, water: -30, buildHours: 48, text: "مكاتب وشركات توفر وظائف للمدينة." },
+  civic_expo: { name: "مركز معارض الجوف", cost: 550000, upkeep: 1350, jobs: 360, income: 1000, visitors: true, power: -85, water: -50, buildHours: 72, text: "معارض تجيب الزوار وتخدم سياحة المدينة." },
+  civic_freight: { name: "مركز شحن الجوف", cost: 1000000, upkeep: 2100, jobs: 460, income: 1700, power: -90, water: -40, buildHours: 96, text: "مركز لشحن بضائع المصانع والمزارع ويوفر وظائف." },
+  civic_water: { name: "مجمّع المياه", cost: 950000, upkeep: 2200, jobs: 100, water: 2600, power: -180, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالمياه." },
+  civic_energy: { name: "مجمّع الطاقة", cost: 1050000, upkeep: 2000, jobs: 120, power: 2200, water: -55, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالكهرباء. ينبني بعد تشغيل مجمّع المياه." },
+  civic_tower: { name: "برج الحاضرة", cost: 1400000, upkeep: 3100, jobs: 330, income: 1900, visitors: true, power: -120, water: -70, radius: 16, happy: 20, buildHours: 144, text: "معلم يظهر من بعيد. يحتاج تشغيل خزائن الحاضرة الأربع ومجمّعي المياه والطاقة." },
+  civic_culture: { name: "المجمّع الثقافي", cost: 2100000, upkeep: 2800, jobs: 230, income: 1800, visitors: true, power: -140, water: -90, radius: 18, happy: 24, buildHours: 168, text: "مسرح ومتاحف وساحات تفرّح أهل المدينة وتجيب زوار." }
+};
+for (const [id, project] of Object.entries(GREATER_CITY_PROJECTS)) {
+  B[id] = { ...project, cat: "proj", unique: true, worldOnly: true, era: GREATER_CITY_STAGE };
+}
+
 // Farms, shops and workshops grow in place: each step costs part of the building's price and
 // earns more (with more staff and running costs). The last step needs a town (بلدة) and, for shops and
 // workshops, electricity reaching the building; for farms, water reaching it.
@@ -206,7 +224,25 @@ export const BIZ_UP = [
   { cost: 1.4, income: 2.3, jobs: 1.8, upkeep: 2, happy: 1.7, radius: 2, era: 1 },
   { cost: 2.6, income: 3.3, jobs: 2.3, upkeep: 2.7, happy: 2.1, radius: 3, era: 3 }
 ];
-export const bizLevel = (b) => (b?.id === "vault" ? { ...BIZ_UP[0], upkeep: VAULT[b.lvl || 0]?.upkeepX || 1 } : MIL[b?.id] ? MIL_UP[b.lvl || 0] : BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0]) || BIZ_UP[0];
+export const GREATER_CITY_UPGRADES = {
+  mall: { name: "مول الجوف الكبير", from: 0, cost: 21840, income: 1.45, jobs: 1.45, upkeep: 1.5, happy: 1.2, radius: 1 },
+  hospital: { name: "مستشفى إقليمي", from: 3, cost: 71820, mats: 57, jobs: 2.9, upkeep: 3.4, happy: 2.4, radius: 5 },
+  university: { name: "جامعة الجوف البحثية", from: 0, cost: 18000, jobs: 1.55, upkeep: 1.55, happy: 1.3, radius: 2 },
+  themepark: { name: "مدينة ألعاب كبرى", from: 0, cost: 90000, income: 1.45, jobs: 1.4, upkeep: 1.5, happy: 1.2, radius: 1 },
+  airport: { name: "مطار دولي", from: 0, cost: 135000, income: 1.5, jobs: 1.5, upkeep: 1.6 },
+  station: { name: "محطة قطار الجوف الكبرى", from: 0, cost: 165000, income: 1.45, jobs: 1.4, upkeep: 1.45, radius: 1 },
+  bigstadium: { name: "استاد الجوف الكبير", from: 0, cost: 210000, income: 1.5, jobs: 1.45, upkeep: 1.55, happy: 1.25, radius: 1 },
+  skyline: { name: "أبراج الرافعية الكبرى", from: 0, cost: 420000, income: 1.55, jobs: 1.5, upkeep: 1.7, happy: 1.25, radius: 1 },
+  desal: { name: "محطة تحلية كبرى", from: 0, cost: 13500, capacity: 1.65, upkeep: 1.55 },
+  powerplant: { name: "محطة كهرباء كبرى", from: 0, cost: 15000, capacity: 1.65, upkeep: 1.55 },
+  avenue: { name: "شارع سريع", from: 0, cost: 120, capacity: 1.6, upkeep: 1.4 }
+};
+export const greaterCityUpgrade = (b) => GREATER_CITY_UPGRADES[b?.id];
+export const bizLevel = (b) => {
+  const civic = greaterCityUpgrade(b);
+  if (civic && b.lvl > civic.from) return { ...BIZ_UP[0], ...civic };
+  return (b?.id === "vault" ? { ...BIZ_UP[0], upkeep: VAULT[b.lvl || 0]?.upkeepX || 1 } : MIL[b?.id] ? MIL_UP[b.lvl || 0] : BIZ_UP[(BIZ_LEVELS[b?.id] && b.lvl) || 0]) || BIZ_UP[0];
+};
 
 /**
  * Money storage in al-Jouf (world only): the council's own strongroom holds BASE_VAULT for its stage, and
@@ -216,7 +252,8 @@ export const bizLevel = (b) => (b?.id === "vault" ? { ...BIZ_UP[0], upkeep: VAUL
  * a year's province fee; the dearest projects (27k at بلدة, 90k مدينة, 210k محافظة, 420k حاضرة) need vaults.
  * `up` is the price of reaching that level; upkeepX × the vault's upkeep (2) an hour.
  */
-export const BASE_VAULT = [5000, 15000, 50000, 150000, 400000];
+export const BASE_VAULT = [5000, 15000, 50000, 150000, 400000, 400000];
+export const CENTRAL_VAULT_LEVEL = 5;
 // Prices (2026-11-24, the owner: "not easy, but fair"): about 40% of the capacity a level adds, roughly a
 // game day of a careful town's net income at that stage, and always less than the stage's own strongroom
 // holds (so nobody is stuck unable to pay). Each extra vault costs half as much again (VAULT_MORE).
@@ -225,7 +262,8 @@ export const VAULT = [
   { name: "خزنة حديد", era: 1, cap: 15000, up: 6000, upkeepX: 2 },
   { name: "خزنة مصفّحة", era: 2, cap: 40000, up: 18000, upkeepX: 4 },
   { name: "بيت المال", era: 3, cap: 120000, up: 50000, upkeepX: 7.5 },
-  { name: "خزينة الحاضرة", era: 4, cap: 350000, up: 140000, upkeepX: 15 }
+  { name: "خزينة الحاضرة", era: 4, cap: 350000, up: 140000, upkeepX: 15 },
+  { name: "الخزنة المركزية", era: GREATER_CITY_STAGE, cap: 700000, up: 700000, upkeepX: 30 }
 ];
 export const VAULT_MORE = 0.5;
 
@@ -268,7 +306,7 @@ export const DISTRICT_NAMES = ["الحارة الشمالية الغربية", "
 
 // Elections for the municipal council, at the end of every year. Winning brings a grant from the
 // province; losing doubles next year's province fee (the province sends an inspector).
-export const ELECTION_GRANT = [1500, 5000, 15000, 40000];
+export const ELECTION_GRANT = [1500, 5000, 15000, 40000, 40000, 40000];
 
 // Groundwater under the town: wells and tanks pump it, rain and dam lakes refill it.
 // Below LOW the wells give less water, down to 35% when it is empty.
@@ -290,7 +328,7 @@ export const CHAINS = [
 ];
 // Building materials: quarries and block factories make them; upgrades use them. What is missing is
 // bought from outside at MAT_PRICE a unit; the store holds MAT_CAP, and the rest is sold at MAT_SELL.
-export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80, 260], biz: [0, 0, 12, 45] };
+export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80, 260, 364, 728], biz: [0, 0, 12, 45] };
 
 // Everything a car can drive on.
 export const ROAD_IDS = ["road", "asphalt", "powerroad", "avenue", "roundabout", "signal"];
@@ -636,7 +674,7 @@ export const DECISIONS = [
  */
 export const UPKEEP_RULES = { decay: 100 / (24 * 24), mudDecay: 100 / (24 * 16), weak: 40, repair: 0.2, ruinHours: 48, insure: 0.0003, insurePays: 0.7 };
 /** Paid once a year (12 days) to the province, by stage. */
-export const PROVINCE_FEES = [0, 1500, 6000, 20000].map((f) => Math.round(f * SEASON_DAYS / 3)); // a yearly fee: the year got longer, so the fee grew with it (the same per hour)
+export const PROVINCE_FEES = [0, 1500, 6000, 20000, 20000, 20000].map((f) => Math.round(f * SEASON_DAYS / 3)); // a yearly fee: the year got longer, so the fee grew with it (the same per hour)
 export const YEAR_HOURS = 24 * 4 * SEASON_DAYS;
 
 /** Achievements: test(s, a) with the town state and its analysis. */

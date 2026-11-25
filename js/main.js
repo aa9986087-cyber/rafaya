@@ -2,6 +2,7 @@
 import { VERSION, REQUIRED } from "./version.js";
 import { WHATS_NEW } from "./whats-new.js";
 import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
+import { GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
 import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, houseTop, housePrice, buildHouseAt, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
@@ -604,7 +605,7 @@ export function refresh() {
   $("statUtil")?.setAttribute("title", `${A.dryHomes ? `${A.dryHomes} بيت بلا ماء` : "الماء واصل للكل"}${A.grid ? (A.darkHomes ? ` · ${A.darkHomes} بيت بلا كهرباء` : "") : " · ما فيه كهرباء بعد"}`);
   $("sEra").textContent = !S.site || S.site === "main" ? ERAS[S.era].name : S.name;
   { // the next stage and how far the town has come (a tap on the clock shows the details)
-    const nx = ERAS[S.era + 1];
+    const nx = ERAS[S.era + 1]?.worldOnly && !worldMode ? null : ERAS[S.era + 1];
     $("sNext").hidden = false;
     if (nx) {
       const from = ERAS[S.era].pop, p = Math.max(0, Math.min(99, Math.floor((S.pop - from) / (nx.pop - from) * 100)));
@@ -620,7 +621,7 @@ export function refresh() {
   $("sSeasonBar").style.width = `${Math.round(se.progress * 100)}%`;
   $("sSeasonBar").dataset.s = se.id;
   const goal = GOALS[S.goal];
-  $("goal").innerHTML = goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : here("<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!");
+  $("goal").innerHTML = S.world && S.era === GREATER_CITY_STAGE ? "مشاريع الحاضرة الكبرى" : goal ? `<i>المهمة</i> ${goal.text} <b>${money(goal.reward)}</b>` : here("<i>أنجزت كل المهام</i> كمّل تكبير الرافعية!");
   // The banner shows the main event, or else the strongest boost from a decision.
   const main = S.events.find((e) => e.id !== "boost"), boost = S.events.find((e) => e.id === "boost");
   const ev = main ? { ...EVENTS.find((e) => e.id === main.id), ...(main.name ? { name: main.name } : {}) } : boost ? { name: boost.name, text: `${boost.happy > 0 ? "الناس مبسوطين" : boost.happy < 0 ? "الناس متضايقين" : "شغّال"} · باقي ${ar(boost.left)} ساعة` } : null;
@@ -721,19 +722,25 @@ export function inspect(x, y) {
     const i = idx(x, y);
     html += row("الماء", A.watered[i] ? "واصل ✓" : "ما يوصله ✕", A.watered[i] ? "plus" : "minus");
     if (A.grid || t.b.lvl >= 2) html += row("الكهرباء", A.powered[i] ? "واصلة ✓" : "ما توصله ✕", A.powered[i] ? "plus" : "minus");
-    const levels = d.levels.map((l, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${l.name}</i>`).join("");
+    const levels = d.levels.filter((l) => l.era !== GREATER_CITY_STAGE || (S.world && S.era >= GREATER_CITY_STAGE)).map((l, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${l.name}</i>`).join("");
     html += `<div class="ladder">${levels}</div>`;
     const block = houseBlocker(S, A, x, y), next = d.levels[t.b.lvl + 1];
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next.name}»: ${block}</div>`;
     else if (!visiting) { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`; }
   }
-  if (BIZ_LEVELS[t.b.id] && !t.b.build) {
-    const names = BIZ_LEVELS[t.b.id], next = names[t.b.lvl + 1];
-    html += `<div class="ladder">${names.map((n, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${n}</i>`).join("")}</div>`;
+  const civic = S.world && S.era === GREATER_CITY_STAGE ? greaterCityUpgrade(t.b) : null;
+  const baseUpgradeNames = t.b.id === "vault" ? VAULT.filter((level) => level.era <= 4 || S.era === GREATER_CITY_STAGE).map((level) => level.name) : BIZ_LEVELS[t.b.id];
+  const upgradeNames = civic ? [...(baseUpgradeNames || [d.name]), civic.name] : baseUpgradeNames;
+  if (upgradeNames && !t.b.build) {
+    const next = upgradeNames[t.b.lvl + 1];
+    html += `<div class="ladder">${upgradeNames.map((n, k) => `<i class="${k <= t.b.lvl ? "on" : ""}">${n}</i>`).join("")}</div>`;
     const block = upgradeBlocker(S, A, x, y), pr = upgradePrice(S, t.b), cost = pr.total;
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
-    else if (block) html += `<div class="need">عشان تطوره «${next}»: ${block}</div>`;
+    else if (block) {
+      const nextName = next || (t.b.id === "vault" ? VAULT[t.b.lvl + 1]?.name : "");
+      html += `<div class="need">عشان تطوره «${nextName}»: ${ar(block)}</div>`;
+    }
     else if (!visiting) html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < cost ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(cost)} ريال</button></div>
       ${effectHtml(t.b)}${matsNote(pr)}`;
   }
@@ -762,8 +769,8 @@ export function inspect(x, y) {
   if (d.income) html += row("الدخل بالساعة (تقريبًا)", `${money(Math.round(d.income * up.income))} ريال`, "plus");
   if (d.upkeep) html += row("المصروف بالساعة", `${money(Math.round(d.upkeep * up.upkeep))} ريال`, "minus");
   if (t.b.id === "vault") { html += row("تشيل", `${money(VAULT[t.b.lvl || 0].cap)} ريال`, "plus"); html += row("الخزنة كلها (مع البلدية)", `${money(Math.max(0, S.money))} من ${money(moneyCap(S))}`); }
-  if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
-  if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
+  if (d.water > 0) html += row("يعطي ماء", ar(Math.round(d.water * (up.capacity || 1))), "plus");
+  if (d.power > 0) html += row("يعطي كهرباء", ar(Math.round(d.power * (up.capacity || 1))), "plus");
   if (d.pole || d.wire) {
     const live = A.poles.live.has(idx(x, y));
     html += row("الكهرباء في الخط", live ? "واصلة ✓" : "تحتاج مولد أو خط شغّال", live ? "plus" : "minus");
@@ -790,7 +797,7 @@ export function inspect(x, y) {
   $("upgradeOne")?.addEventListener("click", () => {
     const why = upgradeAt(S, x, y, A);
     if (why) { toast(why, "bad"); sfx.deny(); return; }
-    sfx.levelUp(); A = analyze(S); sync(false); refresh(); save();
+    sfx.levelUp(); A = analyze(S); sync(ROAD_IDS.includes(t.b.id)); refresh(); save();
     floatAt(x, y, `⬆ ${levelName(S.tiles[idx(x, y)].b)}`, "up");
     inspect(x, y);
   });
