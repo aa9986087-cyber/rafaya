@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
+import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
@@ -88,7 +88,7 @@ function watch(o) {
   ROOM.back = true;
   if (o.status === "flying" && o.side === "out") warSalvoScene(salvoOf(o), false);
   else if (o.status === "flying") { toast(`🚨 ${o.bname}: يوصل بعد ${secLeft(o.arriveAt - warNow())}. تشوف المشهد لا وصل`, ""); ROOM.back = false; }
-  else if (o.side === "in") warDefenseScene(o);
+  else if (o.side === "in") warDefenseScene(o, true);
   else replayOp(o);
 }
 /** Called when a war scene ends: back to the room if the mayor came from it. */
@@ -149,6 +149,9 @@ function defTab(st) {
     <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
       ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}
       ${row("النائب يعبّي ويصلّح", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>
+    <h3>🎬 عرض الهجمات عليك</h3>
+    <div class="wr-modes">${[["full", "مشاهد كاملة", "كل الهجمات بمشهد واحد"], ["fast", "مشاهد سريعة", "نفس المشهد بضعف السرعة"], ["off", "التقرير بس", "بدون مشاهد"]].map(([k, n, t]) => `<button type="button" class="${sceneMode() === k ? "on" : ""}" data-wrmode="${k}"><b>${n}</b><small>${t}</small></button>`).join("")}</div>
+    <p class="hint">كل اللي يوصلك من هجمات، من مدينة وحدة أو أكثر، ينعرض مرة وحدة مع بعض، وبعده تقرير واحد.</p>
     <button class="btn block" type="button" id="wrDeputy">⚙️ أوامر النائب والقيادة التفصيلية</button>`;
 }
 function enemiesTab(st) {
@@ -252,6 +255,7 @@ function bind(st) {
     await warPoll(true); warRoom("def");
   });
   $("wrDeputy")?.addEventListener("click", () => warSheet("deputy"));
+  q("[data-wrmode]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); setSceneMode(b.dataset.wrmode); toast({ full: "🎬 المشاهد كاملة", fast: "⏩ المشاهد سريعة", off: "📋 التقرير بس، بدون مشاهد" }[b.dataset.wrmode], "goal"); warRoom("def"); }));
   // negotiation
   q("[data-wract]").forEach((b) => b.addEventListener("click", async () => {
     if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }

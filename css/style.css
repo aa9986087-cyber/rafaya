@@ -774,3 +774,7 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 .war-arm .ic .w-ic { width: 52px; height: 26px; }
 .tb-w { flex-wrap: wrap; } .tb-w button { min-width: 64px; gap: 1px; padding: 4px 6px; } .tb-w button b { font-size: 11px; }
 .tb-w button .w-ic { width: 40px; height: 18px; } .tb-pts .w-ic { width: 26px; height: 14px; }
+.wr-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px; }
+.wr-modes button { border: 1px solid var(--wr-line); background: var(--wr-card); color: var(--wr-ink); border-radius: 12px; padding: 8px 4px; font: inherit; display: grid; gap: 2px; }
+.wr-modes button b { font-size: 13px; } .wr-modes button small { font-size: 10px; }
+.wr-modes button.on { background: linear-gradient(180deg, #e0bd72, #b8913f); color: #1a1408; border-color: #e7c983; } .wr-modes button.on small { color: #3a2c10 !important; }

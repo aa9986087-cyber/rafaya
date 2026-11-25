@@ -89,6 +89,8 @@ export function warWatch(st) {
     if (o.salvo && (st.ops || []).some((x) => x.salvo === o.salvo && x.status === "flying")) continue; // a salvo plays once all of it has landed
     if (Date.now() - (o.doneAt - WARX.offset) > 15 * 60000) { markPlayed(o.id); continue; } // old news: in the log only
     if (o.side === "in" && (WARX.scene || sheetFor === "war-report")) continue; // a scene or its report is on: this one plays after (next poll)
+    // another attack on us lands within half a minute: wait for it, so they play together (but never more than 45 s)
+    if (o.side === "in" && Date.now() - (o.doneAt - WARX.offset) < 45000 && (st.ops || []).some((x) => x.side === "in" && x.status === "flying" && x.arriveAt - warNow() < 30000)) { clearTimeout(WARX.gatherT); WARX.gatherT = setTimeout(() => warPoll(true), 4000); continue; }
     WARX.watched.add(o.id);
     if (o.side === "in" && WARX.targeting) { WARX.watched.delete(o.id); continue; } // choosing targets: the scene waits until they are done
     if (o.side === "in" && sheetFor === "warroom") { toast(`${o.result?.dmg ? "💥" : "🛡️"} ${o.bname}: ${o.result?.blocked ? "ما أصابت" : o.result?.dmg ? `إصابة ${ar(o.result.dmg)}٪` : "انعترضت"} · اضغطها بالشريط تشوف المشهد`, o.result?.dmg ? "bad" : "goal"); } // the war room is never closed by an alert
@@ -456,7 +458,7 @@ export function salvoOpts(ops, prof) {
   return {
     x: first.x, y: first.y, dir: dirFrom(first.from, first.to), detected: ops.some((op) => op.detected),
     strikes: live.map((op) => ({
-      x: op.x, y: op.y, r: Math.max(...Object.keys(op.load).map((w) => WEAPONS[w].blast || 0.7)),
+      x: op.x, y: op.y, dir: dirFrom(op.from, op.to), r: Math.max(...Object.keys(op.load).map((w) => WEAPONS[w].blast || 0.7)),
       weapons: op.result.hits.map((h) => ({ ...h, kind: WEAPONS[h.w].kind })), area: op.result.area || [{ x: op.x, y: op.y, dmg: op.result.dmg, after: op.result.after }],
       onHit: (dmg) => {
         let changed = false;
@@ -474,6 +476,15 @@ export function salvoOpts(ops, prof) {
 function salvoBefore(ops) {
   for (const op of ops) for (const a of op.result?.area || []) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b) { if (a.before) t.b.wd = a.before; else delete t.b.wd; } }
   world.sync(S, { buildings: true });
+}
+/** How the attacks on us are shown (the mayor's choice, kept on the phone): "full", "fast" or "off" (the report only). */
+export const sceneMode = () => store.get("rafaya-war-scenes") || "full";
+export const setSceneMode = (m) => store.set("rafaya-war-scenes", m);
+/** Every attack on us that landed and was not shown yet (from every town), or just this one's salvo. */
+function landedOnUs(op) {
+  const played = warPlayed(), st = WARX.st;
+  const all = (st?.ops || []).filter((o) => o.side === "in" && o.status === "done" && !played.has(o.id) && !(o.salvo && st.ops.some((x) => x.salvo === o.salvo && x.status === "flying")));
+  return all.length ? all.slice(0, 24) : salvoOf(op).filter((o) => o.status === "done");
 }
 /** The operations launched with this one (a salvo), or just it. */
 export const salvoOf = (op) => (op.salvo ? (WARX.st?.ops || []).filter((o) => o.salvo === op.salvo) : [op]);
@@ -516,14 +527,19 @@ export async function warOpScene(op, launch) {
   }
 }
 /** An attack on us that just landed, played in our own town. */
-export async function warDefenseScene(op) {
+export async function warDefenseScene(op, replay = false) {
   if (WARX.scene) return;
-  const ops = salvoOf(op).filter((o) => o.status === "done");
-  WARX.scene = { op };
+  // everything that landed on us plays together in one scene (several towns, many missiles), then one report
+  const ops = replay ? salvoOf(op).filter((o) => o.status === "done") : landedOnUs(op);
   for (const o of ops) { markPlayed(o.id); WARX.watched.add(o.id); }
+  const mode = replay ? "full" : sceneMode();
+  if (mode === "off") { if (sheetFor !== "warroom") salvoReport(ops, true); else toast(`📋 وصلت ${ar(ops.length)} ضربات: التقرير بالسجل`, "bad"); return; }
+  WARX.scene = { op };
   sceneUi(true); closeSheet(); setTool(null);
+  world.fx.speed = mode === "fast" ? 2.2 : 1;
   try {
-    banner(ops.length > 1 ? `🚨 دفعة من ${ar(ops.length)} ضربات من «${op.fromTown}»!` : `🚨 هجوم من «${op.fromTown}»!`, "bad");
+    const towns = [...new Set(ops.map((o) => o.fromTown))];
+    banner(towns.length > 1 ? `🚨 هجمات من ${towns.map((t) => `«${t}»`).join(" و")}!` : ops.length > 1 ? `🚨 ${ar(ops.length)} ضربات من «${towns[0]}»!` : `🚨 هجوم من «${towns[0]}»!`, "bad");
     const keys = ops.flatMap((o) => (o.result.area || [{ x: o.x, y: o.y }]).map((a) => `${a.x}:${a.y}`)), reps = keys.map((k) => [k, world.fx.repairs.get(k)]).filter(([, r]) => r);
     for (const [k] of reps) world.fx.repairs.delete(k); // the deputy's repairs start after the hit, not before
     salvoBefore(ops);
@@ -539,6 +555,7 @@ export async function warSalvoScene(ops, launch) {
   WARX.scene = { op: ops[0] };
   ROOM.back = true; ROOM.tab = "log";
   sceneUi(true); closeSheet(); setTool(null);
+  world.fx.speed = sceneMode() === "fast" ? 2.2 : 1;
   try {
     if (launch) {
       if (visiting) leaveVisit();
@@ -571,18 +588,33 @@ export async function warSalvoScene(ops, launch) {
     if (visiting && !WARX.targeting) leaveVisit();
   }
 }
+/** Watch again everything in a report together (an attack of several towns). */
+async function warReplayAll(ops) {
+  if (WARX.scene) return;
+  WARX.scene = { op: ops[0], replay: true };
+  sceneUi(true); closeSheet();
+  const keep = new Map();
+  try {
+    if (visiting) leaveVisit();
+    for (const o of ops) for (const a of o.result?.area || [{ x: o.x, y: o.y }]) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b) keep.set(`${a.x}:${a.y}`, t.b.wd); }
+    salvoBefore(ops);
+    if (ops.some((o) => o.result && !o.result.blocked)) await world.fx.playIncoming(salvoOpts(ops.filter((o) => o.result), defenceOf(S)));
+    for (const [k, wd] of keep) { const [x, y] = k.split(":").map(Number), t = S.tiles[idx(x, y)]; if (t?.b) { if (wd) t.b.wd = wd; else delete t.b.wd; } }
+    world.sync(S, { buildings: true });
+  } finally { world.fx.clear(); sceneUi(false); WARX.scene = null; salvoReport(ops); }
+}
 /** The report of a salvo: every spot with what it reached. */
 export function salvoReport(ops, fresh) {
   const out = ops[0].side === "out" || ops[0].from === me()?.plot;
   const area = ops.reduce((n, o) => n + (o.result?.area?.length || 0), 0), people = ops.reduce((n, o) => n + (o.result?.displaced || 0), 0);
   const stopped = ops.reduce((n, o) => n + (o.result?.hits.filter((h) => h.intercepted).length || 0), 0), sent = ops.reduce((n, o) => n + (o.result?.hits.length || 0), 0);
-  sheet(`<h2>📋 تقرير الدفعة</h2>
+  sheet(`<h2>📋 ${out ? "تقرير الدفعة" : "تقرير الهجمات عليك"}</h2>
     <div class="war-grid"><div><b>${ar(ops.length)}</b><span>📍 أماكن</span></div><div><b>${ar(area)}</b><span>🏚️ مباني تضررت</span></div><div><b>${ar(stopped)}<small>/${ar(sent)}</small></b><span>🛡️ انعترض</span></div><div><b>${ar(people)}</b><span>🧳 نزحوا</span></div></div>
-    <div class="rows">${row(out ? "المدينة المستهدفة" : "المهاجم", `«${out ? ops[0].toTown : ops[0].fromTown}»`)}
-      ${ops.map((o, i) => { const r = o.result; return row(`${ar(i + 1)}. ${o.bname} · ${weaponsText(o.load)}`, !r ? "بالجو" : r.blocked ? "ما أصابت" : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت", r?.dmg ? (out ? "plus" : "minus") : ""); }).join("")}</div>
+    <div class="rows">${row(out ? "المدينة المستهدفة" : ops.length > 1 && new Set(ops.map((o) => o.from)).size > 1 ? "المهاجمين" : "المهاجم", out ? `«${ops[0].toTown}»` : [...new Set(ops.map((o) => o.fromTown))].map((t) => `«${t}»`).join(" · "))}
+      ${ops.map((o, i) => { const r = o.result; return row(`${ar(i + 1)}. ${out || new Set(ops.map((x) => x.from)).size === 1 ? "" : `«${o.fromTown}» ← `}${o.bname} · ${weaponsText(o.load)}`, !r ? "بالجو" : r.blocked ? "ما أصابت" : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت", r?.dmg ? (out ? "plus" : "minus") : ""); }).join("")}</div>
     ${!out && area ? `<div class="need">💡 الإصلاح من «غرفة العمليات ← السجل والأضرار»: كل مبنى وجنبه «صلّح».</div>` : ""}
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="srReplay">🎬 شاهد الإعادة</button><button class="btn block" type="button" id="srRoom">⚔️ غرفة العمليات</button>${fresh ? `<button class="btn block" type="button" id="srOk">تمام</button>` : ""}</div>`, "war-report");
-  $("srReplay").addEventListener("click", () => replayOp(ops[0]));
+  $("srReplay").addEventListener("click", () => (out ? replayOp(ops[0]) : warReplayAll(ops)));
   $("srRoom").addEventListener("click", () => warRoom("log"));
   $("srOk")?.addEventListener("click", closeSheet);
 }
