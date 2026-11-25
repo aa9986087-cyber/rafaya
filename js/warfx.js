@@ -398,15 +398,26 @@ export class WarFX {
       await this.tween(1.8, (k) => { if (pivot) pivot.rotation.x = -1.2 * fxEase(k); lamp.material.opacity = 0.4 + 0.6 * (Math.sin(k * 30) > 0 ? 1 : 0); });
       this.flyers.remove(lamp); this.pool.push(lamp);
       await this.wait(0.35);
-      const missiles = (part?.missiles || []).filter((m) => m.userData.loaded).slice(0, Math.max(1, o.n || 1));
+      // the tubes it fires from: loaded ones first, then any (the store may already count them as gone)
+      const all = part?.missiles || [], want = Math.max(1, Math.min(o.n || 1, all.length || 1));
+      const missiles = [...all.filter((m) => m.userData.loaded), ...all.filter((m) => !m.userData.loaded)].slice(0, want);
       const flying = [];
       if (!missiles.length) missiles.push(null);
-      // the canister caps blow off and the missiles slide out of their tubes
+      // each canister fires in turn: its cap blows off, fire and smoke burst at the mouth, the back blast
+      // comes out of its rear, and the missile slides out of the tube
       const live = missiles.filter(Boolean);
+      const at = (m, z) => m.localToWorld(new THREE.Vector3(0, 0, z));
       if (live.length) {
-        for (const m of live) { m.visible = true; m.userData.z0 = m.position.z; const w = new THREE.Vector3(); m.getWorldPosition(w); for (let j = 0; j < 3; j++) this.emit("smoke", w.clone().add(new THREE.Vector3(0, 0.05, 0)), { color: "#e3ddd1", size: 0.35 }); }
-        this.emit("flash", (() => { const w = new THREE.Vector3(); live[0].getWorldPosition(w); return w; })(), { size: 0.7, life: 0.2 });
-        await this.tween(0.45, (k) => { for (const m of live) m.position.z = m.userData.z0 + fxEaseIn(k) * 0.32; });
+        for (const m of live) { m.visible = true; m.userData.z0 = m.position.z; }
+        for (const m of live) {
+          const mouth = at(m, 0.3), rear = at(m, -0.3), out = mouth.clone().sub(rear).normalize();
+          this.emit("flash", mouth, { size: 0.8, life: 0.18 });
+          for (let j = 0; j < 4; j++) this.emit("fire", mouth.clone(), { size: 0.22, life: 0.3, v: out.clone().multiplyScalar(0.8 + Math.random()) });
+          for (let j = 0; j < 6; j++) this.emit("smoke", rear.clone(), { color: "#e3ddd1", size: 0.4, life: 1.8, v: out.clone().multiplyScalar(-1.2 - Math.random()).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.2, (Math.random() - 0.5) * 0.6)) });
+          for (let j = 0; j < 3; j++) this.emit("smoke", mouth.clone(), { color: "#ece7dc", size: 0.3, v: out.clone().multiplyScalar(0.4) });
+        }
+        this.light.position.copy(at(live[0], 0.3)); this.light.intensity = 3.2; this.lightT = 0.3;
+        await this.tween(0.45, (k) => { for (const m of live) { m.position.z = m.userData.z0 + fxEaseIn(k) * 0.32; if (Math.random() < 0.6) this.emit("flame", at(m, -0.25), { size: 0.22, life: 0.08 }); } });
       }
       for (const [i, m] of missiles.entries()) {
         // the missile leaves its rail: from the arm to the world

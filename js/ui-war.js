@@ -171,7 +171,7 @@ export async function warSheet(tab = "home") {
   } else if (tab === "arms") {
     body = `<p class="hint">الأسعار من ميزانية مدينتك. المسيّرات تنحفظ بالقاعدة، والصواريخ على المنصات${p.armory ? "، والمستودع يزيد السعة ٥٠٪" : ""}.</p><div class="rows">` + WEAPON_IDS.map((w) => {
       const W = WEAPONS[w], why = weaponBlocker(p, w), kind = W.kind === "drone" ? "drones" : "missiles", room = caps[kind] - (W.kind === "drone" ? drones : missiles);
-      return `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${W.icon}</b><span><b>${W.name}</b><small>${W.text}</small><small>القوة ${ar(W.power)} · السعر ${money(W.price)} ريال · تشغيل ${money(W.fee)} · عندك <b>${ar(ars[w])}</b></small>${why ? `<small class="minus">${why}</small>` : ""}</span>
+      return `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${weaponIcon(w)}</b><span><b>${W.name}</b><small>${W.text}</small><small>القوة ${ar(W.power)} · السعر ${money(W.price)} ريال · تشغيل ${money(W.fee)} · عندك <b>${ar(ars[w])}</b></small>${why ? `<small class="minus">${why}</small>` : ""}</span>
         ${why ? "" : `<button class="btn go" type="button" data-buy="${w}" ${room <= 0 || home.money < W.price ? "disabled" : ""}>+١</button>`}</div>`;
     }).join("") + `</div><p class="hint">مكان للمسيّرات: ${ar(Math.max(0, caps.drones - drones))} · للصواريخ: ${ar(Math.max(0, caps.missiles - missiles))}</p>`;
   } else if (tab === "def") {
@@ -288,6 +288,21 @@ export async function startTargeting(plot) {
 }
 /** The weapons ready for this town's attack, best first (missiles before drones). */
 const readyWeapons = () => { const st = WARX.st, p = st?.profile; return p ? ["missile2", "missile", "drone2", "drone"].filter((w) => !weaponBlocker(p, w) && st.arsenal[w] > 0) : []; };
+
+/** Each weapon drawn in its own shape (inline SVG, coloured by the button it sits in). */
+const WEAPON_SVG = {
+  // صاروخ طويق: a slim missile, pointed nose, four fins
+  missile: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M6 12 L16 7 H50 L60 12 L50 17 H16 Z" fill="#e9e4d6"/><path d="M50 7 L60 12 L50 17 Z" fill="#c8463a"/><rect x="22" y="7" width="3" height="10" fill="#8a7a55"/><path d="M8 12 L2 3 L12 7 Z M8 12 L2 21 L12 17 Z" fill="#8a8f8c"/><path d="M6 10 H0 V14 H6 Z" fill="#ffb347"/></svg>`,
+  // صاروخ النفود: heavy, thick body, red band, big fins
+  missile2: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M8 12 L16 5 H48 L62 12 L48 19 H16 Z" fill="#d9d2c0"/><path d="M48 5 L62 12 L48 19 Z" fill="#8a2a22"/><rect x="30" y="5" width="5" height="14" fill="#c8463a"/><path d="M10 12 L1 1 L16 5 Z M10 12 L1 23 L16 19 Z" fill="#6f746f"/><path d="M8 9 H0 V15 H8 Z" fill="#ff8a2a"/></svg>`,
+  // مسيّرة شاهين: a delta wing seen from above
+  drone: `<svg viewBox="0 0 48 32" aria-hidden="true"><path d="M44 16 L6 2 L12 16 L6 30 Z" fill="#c9c2b0"/><rect x="10" y="14" width="30" height="4" rx="2" fill="#8a8f8c"/><path d="M8 11 L4 16 L8 21 Z" fill="#5a5f5c"/><circle cx="6" cy="16" r="3.5" fill="none" stroke="#5a5f5c" stroke-width="1.5"/></svg>`,
+  // مسيّرة صقر: long swept wings and a tail, like a falcon
+  drone2: `<svg viewBox="0 0 48 32" aria-hidden="true"><path d="M40 16 L22 15 L14 2 L10 2 L15 15 L6 15 L2 10 H0 L3 16 L0 22 H2 L6 17 L15 17 L10 30 L14 30 L22 17 Z" fill="#b8b2a0"/><path d="M40 16 L46 16 L40 13 Z" fill="#c8463a"/><rect x="18" y="14" width="24" height="4" rx="2" fill="#7a7f7c"/></svg>`,
+  // صاروخ اعتراضي: a slim white dart
+  intc: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M8 12 L14 9 H54 L62 12 L54 15 H14 Z" fill="#f4f6f2"/><path d="M54 9 L62 12 L54 15 Z" fill="#2c6fb0"/><path d="M12 12 L6 5 L16 9 Z M12 12 L6 19 L16 15 Z" fill="#2c6fb0"/><path d="M8 10.5 H2 V13.5 H8 Z" fill="#ffd27a"/></svg>`
+};
+export const weaponIcon = (w) => `<i class="w-ic w-ic-${w}">${WEAPON_SVG[w] || ""}</i>`;
 /** What each chosen spot would reach, drawn on the town. */
 function strikeView() {
   const tg = WARX.targeting; if (!tg) return;
@@ -309,9 +324,9 @@ export function targetBar() {
   const ready = (st?.profile ? launcherTimes(st) : []).filter((x) => x.left > 0);
   bar.innerHTML = `<div class="tb-strike">
     <div class="tb-head"><b>🎯 «${tg.town}»</b><small>${tg.points.length ? `${ar(tg.points.length)} أماكن · ${ar(hit?.size || 0)} مبنى بالمدى` : "اضغط أي مكان بالمدينة (٦ أماكن بالكثير)"}</small></div>
-    ${tg.points.length ? `<div class="tb-pts">${tg.points.map((p, i) => `<button type="button" class="${i === tg.sel ? "on" : ""}" data-pt="${i}">${ar(i + 1)} · ${WEAPONS[p.w].icon}${p.n > 1 ? `×${ar(p.n)}` : ""}</button>`).join("")}</div>` : ""}
+    ${tg.points.length ? `<div class="tb-pts">${tg.points.map((p, i) => `<button type="button" class="${i === tg.sel ? "on" : ""}" data-pt="${i}">${ar(i + 1)} ${weaponIcon(p.w)}${p.n > 1 ? `×${ar(p.n)}` : ""}</button>`).join("")}</div>` : ""}
     ${sel ? `<div class="tb-sel"><span><b>${ar(tg.sel + 1)}. ${near[0] && near[0].d < 0.5 ? B[near[0].id].name : "أرض"}</b><small>يوصل لـ${ar(near.length)} مبنى · نصف قطر ${ar(WEAPONS[sel.w].blast)} مربع</small></span>
-      <span class="tb-w">${weapons.map((w) => { const l = (ars[w] || 0) - tg.points.reduce((n, p) => n + (p !== sel && p.w === w ? p.n : 0), 0); return `<button type="button" class="${w === sel.w ? "on" : ""} ${l < 1 ? "out" : ""}" data-tw="${w}">${WEAPONS[w].icon}<small>${ar(Math.max(0, l))}</small></button>`; }).join("")}</span>
+      <span class="tb-w">${weapons.map((w) => { const l = (ars[w] || 0) - tg.points.reduce((n, p) => n + (p !== sel && p.w === w ? p.n : 0), 0); return `<button type="button" class="${w === sel.w ? "on" : ""} ${l < 1 ? "out" : ""}" data-tw="${w}">${weaponIcon(w)}<b>${WEAPONS[w].name.replace(/^(صاروخ|مسيّرة) /, "")}</b><small>${ar(Math.max(0, l))} باقي</small></button>`; }).join("")}</span>
       <span class="step"><button type="button" id="tbDec">−</button><b>${ar(sel.n)}</b><button type="button" id="tbInc">+</button></span><button type="button" class="tb-del" id="tbDel" aria-label="شيل المكان">✕</button></div>` : ""}
     <small class="tb-hint">اضغط على المدينة تضيف مكان · اضغط المكان المختار مرة ثانية تشيله</small>
     ${ready.length ? `<small class="tb-ready">⏳ ${ready.map((x) => `${x.name}: ${secLeft(x.left)}`).join(" · ")}</small>` : ""}
@@ -603,7 +618,7 @@ export function opReport(op, fresh) {
   sheet(`<h2>📋 تقرير العملية العسكرية</h2>
     <div class="rows">${row("المدينة المهاجمة", `«${op.fromTown}»`)}${row("المدينة المستهدفة", `«${op.toTown}»`)}${row("السلاح", weaponsText(op.load))}${row("الهدف", op.bname)}
       ${row("النتيجة", verdict, r ? (r.dmg ? (out ? "plus" : "minus") : out ? "minus" : "plus") : "")}
-      ${r && !r.blocked ? row("الاعتراض", r.hits.filter((h) => h.tried).length ? r.hits.map((h) => `${WEAPONS[h.w].icon} ${h.intercepted ? "✅ انعترض" : h.tried ? "❌ فشل الاعتراض" : "ما انعترض"}`).join(" · ") : r.airdef ? "الدفاع الجوي بلا صواريخ اعتراضية" : "ما فيه دفاع جوي") : ""}
+      ${r && !r.blocked ? row("الاعتراض", r.hits.filter((h) => h.tried).length ? r.hits.map((h) => `${weaponIcon(h.w)} ${h.intercepted ? "✅ انعترض" : h.tried ? "❌ فشل الاعتراض" : "ما انعترض"}`).join(" · ") : r.airdef ? "الدفاع الجوي بلا صواريخ اعتراضية" : "ما فيه دفاع جوي") : ""}
       ${!out && r && !r.blocked && r.airdef && !r.hits.some((h) => h.tried) ? `<div class="need">💡 بطاريتك ما ردّت لأن ما عندها صواريخ اعتراضية: اشترِ من «القيادة ← الدفاع»، أو خلّ النائب يعبيها.</div>` : ""}
       ${r?.dmg ? row("الضرر", `${ar(r.dmg)}٪ (صار ${ar(Math.round(r.after))}٪)`, out ? "plus" : "minus") : ""}
       ${r && !r.blocked ? row("الحالة", r.state) : ""}
@@ -626,12 +641,13 @@ export function warDamageHtml(b) {
     <p class="hint">يستغرق ${fmtLeft(ms)}، ويرجّع كفاءة المبنى ١٠٠٪ تدريجيًا. ما يحتاج مواد بناء.</p>`;
   return html;
 }
-export async function warRepairAt(x, y) {
+export async function warRepairAt(x, y, quiet = false) {
   const r = await warApi("repair", { req: warReq(), x, y });
-  if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+  if (r.error) { toast(r.error, "bad"); sfx.deny(); return r; }
   sfx.build(); toast(`🔧 بدأ الإصلاح (${money(r.charge?.amount || 0)} ريال)`, "goal");
   await warPoll(true);
-  inspect(x, y);
+  if (!quiet) inspect(x, y); // from the war room the row changes in place instead (no other screen opens)
+  return r;
 }
 /** The levels of a military building and what they do, for its sheet. */
 export function milHtml(b) {

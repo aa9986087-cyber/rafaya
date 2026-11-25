@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
+import { WARX, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
@@ -124,7 +124,7 @@ function launchersHtml(st) {
 async function attackTab(st) {
   const wars = st.rels.filter((r) => r.state === "war");
   const ars = st.arsenal, p = st.profile;
-  const stock = WEAPON_IDS.filter((w) => !weaponBlocker(p, w)).map((w) => `<span class="wr-stock">${WEAPONS[w].icon} ${WEAPONS[w].name} <b>${ar(ars[w])}</b><small>مدى ${ar(WEAPONS[w].blast)}</small></span>`).join("");
+  const stock = WEAPON_IDS.filter((w) => !weaponBlocker(p, w)).map((w) => `<span class="wr-stock">${weaponIcon(w)} ${WEAPONS[w].name} <b>${ar(ars[w])}</b><small>مدى ${ar(WEAPONS[w].blast)}</small></span>`).join("");
   if (!wars.length) return `<h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}<p class="hint">ما فيه حرب الحين. الهجوم يفتح لا صار بينك وبين مدينة حرب: من «🤝 تفاوض» أو خريطة الجوف.</p>`;
   if (!wars.some((r) => r.other === ROOM.enemy)) ROOM.enemy = wars[0].other;
   const enemy = wars.find((r) => r.other === ROOM.enemy);
@@ -144,8 +144,8 @@ function defTab(st) {
       <div><b>${ar(drones)}<small>/${ar(caps.drones)}</small></b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}<small>/${ar(caps.missiles)}</small></b><span>🚀 صواريخ</span></div>
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">⚡ عبّي كل شي مرة وحدة</button></div>
-    <div class="rows">${p.airdefs.length ? line("intc", WAR.interceptor.name, "🛡️", WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
-      ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, WEAPONS[w].icon, WEAPONS[w].price, weaponBlocker(p, w))).join("")}</div>
+    <div class="rows">${p.airdefs.length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
+      ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), WEAPONS[w].price, weaponBlocker(p, w))).join("")}</div>
     <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
       ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}
       ${row("النائب يعبّي ويصلّح", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>
@@ -265,7 +265,13 @@ function bind(st) {
     await warPoll(true); warRoom("talk");
   }));
   // repairs and replays
-  q("[data-wrfix]").forEach((b) => b.addEventListener("click", async () => { const [x, y] = b.dataset.wrfix.split(":").map(Number); b.disabled = true; await warRepairAt(x, y); await warPoll(true); warRoom("log"); }));
+  q("[data-wrfix]").forEach((b) => b.addEventListener("click", async () => {
+    const [x, y] = b.dataset.wrfix.split(":").map(Number);
+    b.disabled = true; b.textContent = "…";
+    const r = await warRepairAt(x, y, true);
+    if (r?.error) { b.disabled = false; b.textContent = "صلّح"; return; }
+    b.replaceWith(Object.assign(document.createElement("small"), { className: "wr-fixing", textContent: "🔧 يتصلّح" })); // the row changes in place: no redraw, no blink
+  }));
 }
 
 /** The war button: red and pulsing while there is a war or an attack on its way. */
@@ -273,5 +279,9 @@ export function warRoomBadge(st) {
   const btn = $("warBtn"); if (!btn || !st) return;
   const hot = st.rels?.some((r) => ["war", "warning"].includes(r.state)) || st.ops?.some((o) => o.side === "in" && o.status === "flying");
   btn.classList.toggle("wr-hot", !!hot);
+  // the room is drawn again only when something it shows changed (relations, operations, ammunition, damage)
+  const sig = JSON.stringify([st.rels?.map((r) => [r.other, r.state, r.offer?.at]), st.ops?.map((o) => [o.id, o.status]), st.arsenal, (visiting ? visiting.home : S)?.tiles.reduce((n, t) => n + (t.b?.wd ? 1 : 0), 0)]);
+  if (sig === ROOM.sig) return;
+  ROOM.sig = sig;
   if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }
 }
