@@ -31,7 +31,6 @@ import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
 import { createModeration } from "./moderation.js";
-import { applyModerationUpdate } from "./moderation-update.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -350,14 +349,13 @@ export class Board extends DurableObject {
     }
   }
   /** Take a town off the map: its land is free again; the player keeps the account and may found a new one. */
-  removeTown(plot, why, announce = true) {
+  removeTown(plot, why) {
     const t = this.sql.exec("SELECT town FROM plots WHERE plot = ?", plot).toArray()[0];
     this.war.resetTown(plot);
     this.sql.exec("DELETE FROM plots WHERE plot = ?", plot);
     this.sql.exec("UPDATE players SET plot = NULL WHERE plot = ?", plot);
     this.sql.exec("DELETE FROM pushsubs WHERE plot = ?", plot);
     this.sql.exec("DELETE FROM comments WHERE code = ?", `w${plot}`);
-    if (!announce) return;
     if (t) this.news("removed", `🗑️ «${t.town}» انحذفت من عالم الجوف (${why})`, plot);
     this.live({ t: "town", plot });
   }
@@ -451,9 +449,6 @@ export class Board extends DurableObject {
 
   // ---------- the owner's control panel ----------
   async admin(request, p) {
-    if (p.length === 1 && p[0] === "moderation-update" && request.method === "POST") {
-      return await applyModerationUpdate(this, request, hash, json);
-    }
     const post = request.method === "POST", body = post ? await request.json().catch(() => ({})) : {};
     const now = Date.now();
     if (post && p[0] === "login") {
