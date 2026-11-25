@@ -190,45 +190,27 @@ async function reviewAccess() {
   if (result.error) throw new Error(result.error);
   renderReviewAccess(result);
 }
-function renderReviewAccess({ expires, token: reviewCode }) {
-  const active = expires > Date.now();
+function renderReviewAccess({ configured, enabled }) {
   frame(`<h2>وصول للمراجعة</h2>
     <div class="card">
-      <p>الرمز يفتح قوائم الإدارة وكشوف الحساب وملاحظات اللاعبين لمدة ١٥ دقيقة للقراءة فقط.</p>
-      <p class="muted" role="status">${active ? `الرمز الحالي ينتهي ${when(expires)}. إنشاء رمز جديد يلغي الحالي.` : "ما فيه رمز مراجعة فعّال."}</p>
-      ${reviewCode && active ? `<label for="reviewCode">رمز المراجعة</label><input id="reviewCode" dir="ltr" readonly>
-        <p class="muted">يظهر الرمز مرة وحدة. شاركه مع الشخص اللي تبي يراجع القوائم.</p>
-        <button class="btn block" id="copyReview" type="button">انسخ رمز المراجعة</button>` : ""}
-      <div class="acts"><button class="btn go" id="createReview" type="button">أنشئ رمز مراجعة</button>
-        ${active ? '<button class="btn bad" id="revokeReview" type="button">ألغِ الوصول</button>' : ""}</div>
+      <p>هوية المراجعة المربوطة تشوف قوائم الإدارة وكشوف الحساب وملاحظات اللاعبين للقراءة فقط.</p>
+      <p class="muted" role="status">${enabled ? "وصول المراجعة فعّال." : configured ? "وصول المراجعة متوقف." : "هوية المراجعة غير مربوطة."}</p>
+      ${configured ? `<button class="btn ${enabled ? "bad" : "go"}" id="toggleReview" type="button">${enabled ? "أوقف وصول المراجعة" : "فعّل وصول المراجعة"}</button>` : ""}
     </div>`);
-  const create = $("createReview"), revoke = $("revokeReview"), copy = $("copyReview");
-  const change = async (action) => {
-    create.disabled = true;
-    if (revoke) revoke.disabled = true;
-    if (copy) copy.disabled = true;
+  const button = $("toggleReview");
+  if (!button) return;
+  button.onclick = async () => {
+    button.disabled = true;
     try {
-      const result = await api("review-access", { action });
+      const result = await api("review-access", { action: enabled ? "revoke" : "enable" });
       if (result.error) { toast(result.error); return; }
-      if (create.isConnected) renderReviewAccess(result);
+      if (button.isConnected) renderReviewAccess(result);
     } catch (e) {
       if (e.message !== "login") toast("ما قدرنا نغيّر وصول المراجعة. جرّب مرة ثانية.");
     } finally {
-      create.disabled = false;
-      if (revoke) revoke.disabled = false;
-      if (copy) copy.disabled = false;
+      button.disabled = false;
     }
   };
-  create.onclick = () => change("create");
-  if (revoke) revoke.onclick = () => change("revoke");
-  if (copy) {
-    const field = $("reviewCode");
-    field.value = reviewCode;
-    copy.onclick = async () => {
-      try { await navigator.clipboard.writeText(field.value); toast("نُسخ رمز المراجعة"); }
-      catch { field.focus(); field.select(); }
-    };
-  }
 }
 async function statement(plot) {
   const d = await api("statement?plot=" + plot);
