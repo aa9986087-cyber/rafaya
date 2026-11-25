@@ -155,8 +155,8 @@ export async function warSheet(tab = "home") {
   if (tab === "home") {
     const flying = st.ops.filter((o) => o.status === "flying");
     body = `<div class="war-grid">
-        <div><b>${ar(drones)}<small>/${ar(caps.drones)}</small></b><span>🛩️ مسيّرات</span></div>
-        <div><b>${ar(missiles)}<small>/${ar(caps.missiles)}</small></b><span>🚀 صواريخ</span></div>
+        <div><b>${ar(drones)}${caps.open ? "" : `<small>/${ar(caps.drones)}</small>`}</b><span>🛩️ مسيّرات</span></div>
+        <div><b>${ar(missiles)}${caps.open ? "" : `<small>/${ar(caps.missiles)}</small>`}</b><span>🚀 صواريخ</span></div>
         <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div>
         <div><b>${ar(flying.length)}</b><span>✈️ عمليات بالجو</span></div></div>
       <div class="rows">
@@ -172,11 +172,11 @@ export async function warSheet(tab = "home") {
       ${!p.airdefs.length ? `<div class="need">💡 مدينتك بلا دفاع جوي: أي هجوم يوصل. ابنِ بطارية دفاع جوي ورادار، واشترِ صواريخ اعتراضية.</div>` : !ars.intc ? `<div class="need">💡 الدفاع الجوي بلا ذخيرة: اشترِ صواريخ اعتراضية من «الدفاع».</div>` : ""}
       <p class="hint">للهجوم: افتح خريطة الجوف، اختر مدينة بينك وبينها حرب، واضغط «🎯 استهداف المدينة».</p>`;
   } else if (tab === "arms") {
-    body = `<p class="hint">الأسعار من ميزانية مدينتك. المسيّرات تنحفظ بالقاعدة، والصواريخ على المنصات${p.armory ? "، والمستودع يزيد السعة ٥٠٪" : ""}.</p><div class="rows">` + WEAPON_IDS.map((w) => {
+    body = `<p class="hint">الأسعار من ميزانية مدينتك. المسيّرات تنحفظ بالقاعدة، والصواريخ على المنصات.</p><div class="rows">` + WEAPON_IDS.map((w) => {
       const W = WEAPONS[w], why = weaponBlocker(p, w), kind = W.kind === "drone" ? "drones" : "missiles", room = caps[kind] - (W.kind === "drone" ? drones : missiles);
       return `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${weaponIcon(w)}</b><span><b>${W.name}</b><small>${W.text}</small><small>القوة ${ar(W.power)} · السعر ${money(W.price)} ريال · تشغيل ${money(W.fee)} · عندك <b>${ar(ars[w])}</b></small>${why ? `<small class="minus">${why}</small>` : ""}</span>
         ${why ? "" : `<button class="btn go" type="button" data-buy="${w}" ${room <= 0 || home.money < W.price ? "disabled" : ""}>+١</button>`}</div>`;
-    }).join("") + `</div><p class="hint">مكان للمسيّرات: ${ar(Math.max(0, caps.drones - drones))} · للصواريخ: ${ar(Math.max(0, caps.missiles - missiles))}</p>`;
+    }).join("") + `</div><p class="hint">${caps.open ? "⚔️ الحرب مفتوحة: خزّن اللي تبي من المسيّرات والصواريخ. المنصة والقاعدة تحددان كم ينطلق بكل تجهيز." : `مكان للمسيّرات: ${ar(Math.max(0, caps.drones - drones))} · للصواريخ: ${ar(Math.max(0, caps.missiles - missiles))}`}</p>`;
   } else if (tab === "def") {
     body = `<div class="rows">${list(p.airdefs, "airdef") || row("بطاريات الدفاع الجوي", "✕ ما فيه")}${list(p.radars, "radar") || row("الرادار", "✕ ما فيه")}
         ${row("صواريخ اعتراضية", `${ar(ars.intc)} من ${ar(caps.intc)}`)}

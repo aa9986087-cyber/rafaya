@@ -1838,7 +1838,7 @@ function frame(now) {
     }
     world.view.yawTarget += dt * 0.06; world.view.yaw = world.view.yawTarget; world.updateCamera(); tod = (tod + dt / 300) % 1;
   }
-  if (playing && S.decision && $("sheet").hidden) decisionSheet();
+  if (playing && S.decision && $("sheet").hidden && !WARX.scene) decisionSheet(); // never over a war scene
   if (playing && worldMode && !arrange) { warPoll(); chatPoll(); wnewsPoll(); onlinePoll(); } // «صراع الجوف» every 25 s; the chat every 20 s (4 s while open)
   ambT -= dt;
   // lightning far off while it rains: a flash in the clouds, the rumble a moment later

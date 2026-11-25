@@ -118,11 +118,12 @@ function pvSetRel(by, other, state) {
   pvWar.saveRel(by.plot, other.plot, r);
 }
 function pvArm(plot, arsenal) { const a = pvWar.acct(plot); Object.assign(a.arsenal, arsenal); a.reload = {}; pvWar.saveAcct(plot, a); }
-/** The owner's arsenal filled to what their stores hold (never past it). */
+/** The owner's arsenal filled for a try (to the store, or a dozen of each in open war). */
 function pvFill(me) {
   const st = pvWar.handle("state", { since: 0, seq: 0 }, me);
   if (st.error) return;
-  const a = pvWar.acct(me.plot), p = st.profile, c = st.caps;
+  const a = pvWar.acct(me.plot), p = st.profile, c = { ...st.caps };
+  if (c.open) { c.drones = Math.min(c.drones, 12); c.missiles = Math.min(c.missiles, 12); } // open war: a good stock to try, not the (unlimited) store
   const can = (w) => !weaponBlocker(p, w);
   const drones = ["drone2", "drone"].filter(can), missiles = ["missile2", "missile"].filter(can);
   a.arsenal = { drone: 0, drone2: 0, missile: 0, missile2: 0, intc: p.airdefs.length ? c.intc : 0 };

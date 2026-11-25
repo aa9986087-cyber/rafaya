@@ -139,11 +139,13 @@ function defTab(st) {
   const drones = ars.drone + ars.drone2, missiles = ars.missile + ars.missile2;
   const room = (w) => w === "intc" ? caps.intc - ars.intc : WEAPONS[w].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
   const line = (w, name, icon, price, why) => `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${icon}</b><span><b>${name}</b><small>${why || `عندك <b>${ar(ars[w])}</b> · السعر ${money(price)}`}</small></span>
-    ${why ? "" : `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${room(w) <= 0 || home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="${Math.max(0, room(w))}" ${room(w) <= 0 ? "disabled" : ""}>عبّي (${ar(Math.max(0, room(w)))})</button></span>`}</div>`;
+    ${why ? "" : w !== "intc" && caps.open
+      ? `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="5" ${home.money < price * 5 ? "disabled" : ""}>+٥</button></span>`
+      : `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${room(w) <= 0 || home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="${Math.max(0, room(w))}" ${room(w) <= 0 ? "disabled" : ""}>عبّي (${ar(Math.max(0, room(w)))})</button></span>`}</div>`;
   return `<div class="war-grid">
-      <div><b>${ar(drones)}<small>/${ar(caps.drones)}</small></b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}<small>/${ar(caps.missiles)}</small></b><span>🚀 صواريخ</span></div>
+      <div><b>${ar(drones)}${caps.open ? "" : `<small>/${ar(caps.drones)}</small>`}</b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}${caps.open ? "" : `<small>/${ar(caps.missiles)}</small>`}</b><span>🚀 صواريخ</span></div>
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
-    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">⚡ عبّي كل شي مرة وحدة</button></div>
+    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
     <div class="rows">${p.airdefs.length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
       ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), WEAPONS[w].price, weaponBlocker(p, w))).join("")}</div>
     <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
@@ -241,7 +243,7 @@ function bind(st) {
     $("wrFillAll").disabled = true; await warSyncNow();
     const p = st.profile, ars = st.arsenal, caps = st.caps;
     let spent = 0, got = 0;
-    const kinds = [...(p.airdefs.length ? ["intc"] : []), ...WEAPON_IDS.filter((w) => !weaponBlocker(p, w))];
+    const kinds = [...(p.airdefs.length ? ["intc"] : []), ...(caps.open ? [] : WEAPON_IDS.filter((w) => !weaponBlocker(p, w)))]; // open war: no store to fill, the interceptors only
     let drones = ars.drone + ars.drone2, missiles = ars.missile + ars.missile2;
     for (const w of kinds) {
       const room = w === "intc" ? caps.intc - ars.intc : WEAPONS[w].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;

@@ -398,7 +398,7 @@ export class WarFX {
   async launchScene(o, part) {
     this.skipping = false;
     const c = tileCenter(o.x, o.y);
-    await this.camTo({ x: c.x, z: c.z, zoom: 2.4, y: 0.2 }, 1.1);
+    await this.camTo({ x: c.x, z: c.z, zoom: Math.min(this.w.view.zoom, 1.3), y: 0.2 }, 1.1); // the pad, from a height
     if (o.kind === "missile") {
       const pivot = part?.pivot;
       o.sfx?.prep();
@@ -444,7 +444,7 @@ export class WarFX {
       }
       o.sfx?.launch();
       this.shake(0.05, 0.6);
-      this.camTo({ x: c.x, z: c.z, zoom: 1.5, y: 1.4 }, 2.6); // the pad stays in the shot while the missile climbs away
+      this.camTo({ x: c.x, z: c.z, zoom: Math.min(this.w.view.zoom, 1.1), y: 1.2 }, 2.6); // the pad stays in the shot while the missile climbs away
       await this.tween(2.6, (k) => {
         const t = k * 2.6;
         for (const f of flying) {
@@ -477,7 +477,7 @@ export class WarFX {
         return { fly, rotor, start: p, delay: i * 0.4 };
       }) : [(() => { const fly = this.mesh("wDrone"), rotor = this.mesh("wRotor"); fly.add(rotor); fly.position.set(c.x, 0.1, c.z); this.flyers.add(fly); return { fly, rotor, start: fly.position.clone(), delay: 0 }; })()];
       const dir = o.dir ? new THREE.Vector3(o.dir.x, 0, o.dir.z).normalize() : new THREE.Vector3(0, 0, 1);
-      this.camTo({ x: c.x + dir.x * 1.2, z: c.z + dir.z * 1.2, zoom: 1.7, y: 0.8 }, 3.4);
+      this.camTo({ x: c.x + dir.x * 1.2, z: c.z + dir.z * 1.2, zoom: Math.min(this.w.view.zoom, 1.1), y: 0.8 }, 3.4);
       await this.tween(3.4, (k) => {
         const t = k * 3.4;
         for (const f of flying) {
@@ -514,7 +514,7 @@ export class WarFX {
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
       for (const st of strikes) { x0 = Math.min(x0, st.c.x - st.r); x1 = Math.max(x1, st.c.x + st.r); z0 = Math.min(z0, st.c.z - st.r); z1 = Math.max(z1, st.c.z + st.r); }
       const span = Math.max(x1 - x0, z1 - z0, 3);
-      this.camTo({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, zoom: Math.max(0.9, Math.min(1.4, 9 / span)), y: 0 }, 1.0);
+      this.camTo({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, zoom: Math.min(this.w.view.zoom, Math.max(0.55, Math.min(0.8, 12 / span))), y: 0 }, 1.0); // there, from high up (never closer)
     }
     // where it falls, from the start to the hit: a red ring of the blast over every spot (it goes when that spot is hit)
     const rings = () => this.showStrike(strikes.filter((st) => st.left > 0).map((st) => ({ x: st.x, y: st.y, r: st.r, on: true })), []);
@@ -537,14 +537,14 @@ export class WarFX {
     const total = strikes.reduce((n, st) => n + st.weapons.length, 0);
     let hits = 0, n = 0;
     const one = async (h, k, st) => {
-      const missile = h.kind === "missile", dur = (missile ? 2.2 : 3.8) * (h.tried ? 1.3 : 1);
+      const missile = h.kind === "missile", dur = (missile ? 1.5 : 2.5) * (h.tried ? 1.25 : 1);
       const sdir = st.dir ? new THREE.Vector3(st.dir.x, 0, st.dir.z).normalize() : dir, sside = new THREE.Vector3(-sdir.z, 0, sdir.x);
       const lateral = ((k % 5) - 2) * 0.9;
       const from = st.c.clone().addScaledVector(sdir, missile ? 11 : 8).addScaledVector(sside, lateral).setY(missile ? 7 : 3);
       const fly = this.mesh({ missile: "wMissile", missile2: "wMissile2", drone: "wDrone", drone2: "wDrone2" }[h.w] || "wMissile");
       const rotor = !missile ? this.mesh(h.w === "drone2" ? "wRotor2" : "wRotor") : null;
       if (rotor) fly.add(rotor);
-      fly.position.copy(from); fly.scale.setScalar(strikes.length > 1 ? 1.5 : 1.25); this.flyers.add(fly);
+      fly.position.copy(from); fly.scale.setScalar(1); this.flyers.add(fly);
       live.add(fly);
       const top = st.top;
       // a missile comes in high and dives at the end; a drone flies low and steady, then drops on it
@@ -562,7 +562,7 @@ export class WarFX {
         if (gone) return;
         const p = at(kk), next = at(Math.min(1, kk + 0.01));
         fly.position.copy(p);
-        fly.scale.setScalar(Math.max(1.3, 2.1 / Math.max(0.5, this.w.view.zoom))); // big enough to follow when the shot is wide
+        fly.scale.setScalar(Math.max(0.85, Math.min(1.5, 1.1 / Math.max(0.5, this.w.view.zoom)))); // a little bigger when seen from far, never huge
         if (missile) fly.lookAt(next); else { fly.lookAt(new THREE.Vector3(next.x, p.y, next.z)); rotor.rotation.y += 0.9; }
         if (missile) {
           const aft = p.clone().sub(next).normalize(), sc = fly.scale.x, back = p.clone().addScaledVector(aft, 0.3 * sc);
@@ -582,7 +582,7 @@ export class WarFX {
             const src = ad.p.clone().setY(0.45), aim = at(meet);
             const miss = !h.intercepted ? side.clone().multiplyScalar(0.9).add(new THREE.Vector3(0, 0.5, 0)) : new THREE.Vector3();
             inter = { m: this.mesh("wInterceptor"), src, aim: aim.add(miss), done: false, last: src.clone() };
-            inter.m.scale.setScalar(1.8);
+            inter.m.scale.setScalar(1.2);
             inter.m.position.copy(src); this.flyers.add(inter.m); live.add(inter.m);
             this.emit("flash", src, { size: 1.1, life: 0.25 });
             for (let j = 0; j < 10; j++) this.emit("smoke", src.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, -0.2, (Math.random() - 0.5) * 0.3)), { color: "#ece7dc", size: 0.45, v: new THREE.Vector3((Math.random() - 0.5) * 1.6, 0.4, (Math.random() - 0.5) * 1.6) });
@@ -594,7 +594,7 @@ export class WarFX {
             const q = Math.min(1, (kk - fireAt) / (meet - fireAt));
             const ip = inter.src.clone().lerp(inter.aim, fxEase(q)); ip.y += Math.sin(q * Math.PI) * 1.0;
             inter.m.lookAt(ip.clone().add(ip.clone().sub(inter.last)));
-            inter.m.position.copy(ip); inter.m.scale.setScalar(Math.max(1.8, 2.6 / Math.max(0.5, this.w.view.zoom)));
+            inter.m.position.copy(ip); inter.m.scale.setScalar(Math.max(1.1, Math.min(1.6, 1.4 / Math.max(0.5, this.w.view.zoom))));
             const back = ip.clone().add(inter.last.clone().sub(ip).normalize().multiplyScalar(0.3));
             this.emit("flame", back, { size: 0.3 });
             this.emit("trail", back, { size: 0.24, color: "#f4f1ea", alpha: 0.8, life: 2.2 });
@@ -622,7 +622,7 @@ export class WarFX {
     };
     let k = 0;
     const runs = [];
-    for (const st of strikes) for (const h of st.weapons) { const kk = k++; runs.push(this.wait(kk * (strikes.length > 1 ? 1.5 : 0.9)).then(() => one(h, kk, st))); }
+    for (const st of strikes) for (const h of st.weapons) { const kk = k++; runs.push(this.wait(kk * (strikes.length > 1 ? 0.9 : 0.6)).then(() => one(h, kk, st))); }
     await Promise.all(runs);
     this.inScene = false;
     this.showStrike(null);

@@ -138,13 +138,16 @@ export function milProfile(snapOrList, dmg = new Map()) {
 }
 const milWorks = (it) => it && it.wd < 85;
 
-/** How much the town can store of each thing: { drones, missiles, intc }. */
+/** Open war: no store limit for drones and missiles (a working base or pad is enough); the launchers set how many go at once. */
+export const OPEN_STOCK = 9999;
+/** How much the town can store of each thing: { drones, missiles, intc, open }. */
 export function capacity(p) {
   const store = milWorks(p.armory) ? milStat("armory").store * warFactor(p.armory.wd) + (1 - warFactor(p.armory.wd)) : 1;
   const sum = (list, k, id) => list.filter(milWorks).reduce((n, it) => n + Math.round(milStat(id, it.lvl)[k] * (it.wd >= 30 ? 0.5 : 1)), 0);
   return {
-    drones: Math.floor(sum(p.bases, "cap", "dronebase") * store),
-    missiles: Math.floor(sum(p.pads, "cap", "missilepad") * store),
+    drones: p.bases.some(milWorks) ? OPEN_STOCK : 0,
+    missiles: p.pads.some(milWorks) ? OPEN_STOCK : 0,
+    open: true,
     intc: Math.floor(sum(p.airdefs, "intc", "airdef") * store)
   };
 }

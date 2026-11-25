@@ -70,7 +70,9 @@ test("buying: needs the right building, room and money; a request sent twice buy
   const again = W.war.handle("buy", { req: "r2", kind: "drone", n: 2 }, a);
   assert.deepEqual(again, r);
   assert.equal(W.war.handle("state", {}, a).arsenal.drone, 2);
-  assert.match(W.war.handle("buy", { req: "r3", kind: "drone", n: 1 }, a).error, /مليان|يكفي/);
+  // open war: the store has no limit for drones and missiles (the launchers set how many go at once)
+  const caps = W.war.handle("state", {}, a).caps;
+  assert.equal(caps.open, true); assert.ok(caps.drones >= 9999); assert.equal(caps.missiles, 0);
   // money already charged but not yet taken off the synced budget counts
   W.resync(10, (s) => { s.money = 3000; s.tiles[idx(23, 20)].b = { id: "dronebase", lvl: 0, res: 0, cond: 100 }; }); // 3000 ≥ 1800, but 1800 is still owed
   assert.match(W.war.handle("buy", { req: "r4", kind: "drone", n: 2 }, a).error, /المال/);
