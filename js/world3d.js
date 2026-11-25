@@ -6,7 +6,7 @@ import { buildingMaterials } from "./building-surfaces.js";
 import { tileLane, lanePosition, ISLAND_RADIUS } from "./traffic-path.js";
 import { worldWater, rainField, wetSurface } from "./world-weather.js";
 import { makeNightLighting, bakeNightLighting, addNightLighting, makeHeadlightMaterial } from "./world-lighting.js";
-import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS, FAIR_WHEEL, STREET_LAMP_HEAD } from "./models.js";
+import { model, modelFar, modelKey, baseKey, makerSeeded, VARIANTS, SETS, FAIR_WHEEL, STREET_LAMP_HEAD, POLE_INSULATORS, POLE_WIRE_HEIGHT } from "./models.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -92,6 +92,28 @@ export const warSquash = (wd) => (!wd || wd < 25 ? 1 : Math.max(0.5, 1 - (wd - 2
 /** …and from 60% it leans a little, always the same way for the same tile. */
 export const warTilt = (wd, x, y) => (wd >= 60 ? [((x * 13 + y * 7) % 5 - 2) * 0.018 * (wd / 100), ((x * 5 + y * 11) % 5 - 2) * 0.018 * (wd / 100)] : [0, 0]);
 const roadAt = (t) => t?.b && ROAD_IDS.includes(t.b.id);
+
+function roadPolePose(s, x, y) {
+  const at = (dx, dy) => inMap(x + dx, y + dy) ? s.tiles[idx(x + dx, y + dy)] : null;
+  const eastWest = at(1, 0)?.b?.id === "powerroad" || at(-1, 0)?.b?.id === "powerroad"
+    || (at(0, 1)?.b?.id !== "powerroad" && at(0, -1)?.b?.id !== "powerroad" && (roadAt(at(1, 0)) || roadAt(at(-1, 0))));
+  const c = tileCenter(x, y);
+  return { x: c.x + (eastWest ? 0 : .46), z: c.z + (eastWest ? .46 : 0), angle: eastWest ? Math.PI / 2 : 0, scale: .85 };
+}
+
+function polePoses(s, wires) {
+  const poses = new Map();
+  for (const [a, b] of wires) for (const [i, next] of [[a, b], [b, a]]) {
+    if (poses.has(i)) continue;
+    const x = i % N, y = Math.floor(i / N), id = s.tiles[i].b.id;
+    if (id === "powerroad") { poses.set(i, roadPolePose(s, x, y)); continue; }
+    const c = tileCenter(x, y), angle = Math.atan2(next % N - x, Math.floor(next / N) - y);
+    const feeder = id !== "pole";
+    const offset = feeder ? .42 : 0;
+    poses.set(i, { x: c.x + Math.sin(angle) * offset, z: c.z + Math.cos(angle) * offset, angle, scale: feeder ? .74 : 1, feeder });
+  }
+  return poses;
+}
 /** A steady pseudo-random number in 0..1 for a tile (the same every time). */
 const hash = (x, y, k = 0) => {
   let n = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(k | 0, 1442695041)) | 0;
@@ -653,6 +675,7 @@ export class World {
     this.removeAll(this.lampMeshes);
     const lamps = [], medians = [], islands = [], lights = [], epoles = [], monuments = {};
     this.streetLights = [];
+    this.roadFountains = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
       c.set(color);
@@ -682,8 +705,8 @@ export class World {
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b39b77");
       if (kind === "powerroad") { // its power poles, one a tile on the edge (the wires are drawn by syncWires)
-        const eastWest = link(1, 0) || link(-1, 0);
-        epoles.push(this.place(cx + (eastWest ? 0 : 0.46), cz + (eastWest ? 0.46 : 0), 0, 0.85));
+        const pole = roadPolePose(s, x, y);
+        epoles.push(this.place(pole.x, pole.z, pole.angle, pole.scale));
       }
       if (paved && (kind === "asphalt" || kind === "powerroad")) {
         if (link(1, 0) && link(-1, 0) && !link(0, 1) && !link(0, -1)) {
@@ -714,7 +737,11 @@ export class World {
         else if (ns && !ew) { quad(cx - 0.05, cz - 0.5, cx + 0.05, cz + 0.5, 0.009, "#cdbf9f"); for (const xx of [-0.25, 0.25]) for (const o of [-0.3, 0.05, 0.3]) quad(cx + xx - 0.01, cz + o - 0.07, cx + xx + 0.01, cz + o + 0.07, 0.01, "#f3efe6"); medians.push(this.place(cx, cz, 0)); }
       } else if (kind === "roundabout") {
         quad(cx - 0.5, cz - 0.5, cx + 0.5, cz + 0.5, 0.007, "#45474d");
-        if (t.b.monument) (monuments[t.b.monument] ||= []).push(this.place(cx, cz, 0, 0.62)); // a decoration set in the roundabout
+        if (t.b.monument) {
+          const scale = .62;
+          (monuments[t.b.monument] ||= []).push(this.place(cx, cz, 0, scale));
+          if (t.b.monument === "bigfountain") this.roadFountains.push({ x: cx, z: cz, height: .43, ring: true, scale });
+        }
         else islands.push(this.place(cx, cz, 0));
         const ringPoint = (r,a) => [cx + Math.cos(a)*r, cz + Math.sin(a)*r];
         const mark = (a,b,d) => {
@@ -777,39 +804,54 @@ export class World {
     return 0;
   }
 
-  /** Sagging wires from each source or pole to the next pole (live poles only). */
-  syncWires(s) {
-    if (this.wires) { this.scene.remove(this.wires); this.wires.geometry.dispose(); this.wires = null; }
-    const { wires } = powerNet(s);
+  /** Sagging cables attached to the three insulators of each pole, in one mesh. */
+  syncWires(wires, poses) {
+    const key = JSON.stringify([wires, [...poses.values()]]);
+    if (key === this.wireKey) return;
+    this.wireKey = key;
+    if (this.wires) { this.scene.remove(this.wires); this.wires.geometry.dispose(); this.wires.material.dispose(); this.wires = null; }
     if (!wires.length) return;
-    const pts = [], top = (i) => { const c = tileCenter(i % N, Math.floor(i / N)); return { x: c.x, z: c.z, y: s.tiles[i].b?.id === "pole" ? 0.9 : s.tiles[i].b?.id === "powerroad" ? 0.78 : 0.55 }; };
+    const pts = [], indices = [];
+    const top = (pole, offset) => ({
+      x: pole.x + offset * pole.scale * Math.cos(pole.angle),
+      z: pole.z - offset * pole.scale * Math.sin(pole.angle), y: POLE_WIRE_HEIGHT * pole.scale,
+    });
     for (const [a, b] of wires) {
-      const p = top(a), q = top(b), len = Math.hypot(q.x - p.x, q.z - p.z);
-      let prev = p;
-      for (let k = 1; k <= 8; k++) {
-        const t = k / 8, sag = Math.sin(t * Math.PI) * 0.08 * len / 3;
-        const cur = { x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t, y: p.y + (q.y - p.y) * t - sag };
-        pts.push(prev.x, prev.y, prev.z, cur.x, cur.y, cur.z);
-        prev = cur;
+      const from = poses.get(a), to = poses.get(b);
+      const direction = Math.cos(from.angle - to.angle) < -1e-6 ? -1 : 1;
+      for (const offset of POLE_INSULATORS) {
+        const p = top(from, offset), q = top(to, offset * direction);
+        const dx = q.x - p.x, dz = q.z - p.z, length = Math.hypot(dx, dz);
+        if (!length) continue;
+        const steps = Math.max(3, Math.ceil(length * 2)), radius = .015;
+        const rx = -dz / length * radius, rz = dx / length * radius;
+        // Two crossed strips keep the cables visible from a low angle or straight from above.
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps, x = p.x + dx * t, z = p.z + dz * t;
+          const y = p.y + (q.y - p.y) * t - Math.sin(Math.PI * t) * Math.min(.19, length * .035);
+          const n = pts.length / 3;
+          pts.push(x - rx, y, z - rz, x + rx, y, z + rz, x, y - radius, z, x, y + radius, z);
+          if (k) indices.push(n - 4, n - 3, n, n - 3, n + 1, n, n - 2, n - 1, n + 2, n - 1, n + 3, n + 2);
+        }
       }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-    this.wires = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#3a2e26", transparent: true, opacity: 0.8 }));
+    g.setIndex(indices);
+    this.wires = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: "#342d29", side: THREE.DoubleSide }));
     this.scene.add(this.wires);
   }
 
-  syncBuildings(s) {
+  syncBuildings(s, poles) {
     const groups = new Map();
     // tint: war damage darkens a building (1 = as built)
     const push = (key, ground, m, tint = 1, tile = -1) => { const k = key.startsWith("palms") ? `${key}:${ground}` : key; if (!groups.has(k)) groups.set(k, { key, ground, list: [], tints: [], tiles: [] }); const g = groups.get(k); g.list.push(m); g.tints.push(tint); g.tiles.push(tile); };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3(1, 1, 1);
     this.smokers = [];
-    this.fountains = [];
+    this.fountains = [...(this.roadFountains || [])];
     this.siteMotion = { pivot_b: [], themepark_b: [] };
     const seen = new Map(), where = new Map(), lights = [];
     this.anims ||= new Map();
-    const feeder = new Map(powerNet(s).wires.map(([from, to]) => [to, from]));
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const t = s.tiles[idx(x, y)];
       const p = tileCenter(x, y);
@@ -821,7 +863,7 @@ export class World {
       if (roadAt(t) || t.b.id === "decopart") continue; // (a big decoration's other tiles: drawn with it)
       // Face the road, then any quarter turns the mayor gave it.
       let angle = this.faceAngle(s, x, y) + (t.b.rot || 0) * Math.PI / 2;
-      if (t.b.id === "pole") { const f = feeder.get(idx(x, y)); angle = f === undefined ? 0 : Math.atan2((f % N) - x, Math.floor(f / N) - y); } // the cross arm stands across its wire
+      if (t.b.id === "pole") angle = poles.get(idx(x, y))?.angle ?? angle;
       if (t.b.id === "dam" || t.b.id === "pivot") angle = 0; // a dam always stands across the wadi
       q.setFromAxisAngle(up, angle);
       if (t.b.wd >= 25) { const [tx, tz] = warTilt(t.b.wd, x, y); q.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(tx, 0, tz))); sc.set(1, warSquash(t.b.wd), 1); }
@@ -866,9 +908,10 @@ export class World {
       if (!t.b.build && ["factory", "generator", "powerplant", "mandi", "datefactory", "incense"].includes(t.b.id)) this.smokers.push(p.clone());
       if (!t.b.build && !(t.b.wd >= 80) && ["fountain", "bigfountain", "park"].includes(t.b.id)) {
         const height = { fountain: 0.34, bigfountain: 0.43, park: 0.08 }[t.b.id];
-        this.fountains.push({ x: p.x, z: p.z, height: height * (t.b.span || 1), ring: t.b.id === "bigfountain" });
+        this.fountains.push({ x: p.x, z: p.z, height, ring: t.b.id === "bigfountain", scale: t.b.span || 1 });
       }
     }
+    for (const [i, pole] of poles) if (pole.feeder) push("pole", "sand", this.place(pole.x, pole.z, pole.angle, pole.scale), 1, i);
     // Reuse or rebuild the instanced meshes.
     for (const [k, inst] of this.instances) if (!groups.has(k)) { for (const m of Object.values(inst)) if (m?.isMesh) { this.scene.remove(m); m.dispose(); } this.instances.delete(k); }
     const tc = new THREE.Color();
@@ -919,7 +962,10 @@ export class World {
     if (what.roads) this.syncRoads(s);
     if (this.waterWeather.wet.value > 0.1 && (what.roads || what.tiles || what.buildings)) this.syncRainPools(s);
     else if (what.roads || what.tiles || what.buildings) this.rainPoolsDirty = true;
-    if (what.buildings) { this.syncBuildings(s); this.syncScenery(s); this.syncWires(s); }
+    if (what.buildings || what.roads) {
+      const { wires } = powerNet(s), poles = polePoses(s, wires);
+      this.syncBuildings(s, poles); this.syncScenery(s); this.syncWires(wires, poles);
+    }
     this.roads = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (roadAt(s.tiles[idx(x, y)])) this.roads.push([x, y]);
     this.nightLightsDirty = true;
@@ -1061,7 +1107,9 @@ export class World {
 
   syncCars() {
     const limit = CAR_LIMIT[this.quality] || CAR_LIMIT.medium;
-    const want = Math.min(limit, Math.floor((this.roads.length / 4) * (this.rush ? 1.45 : 1)));
+    const isRoad = (x, y) => inMap(x, y) && roadAt(this.state.tiles[idx(x, y)]);
+    const connected = this.roads.filter(([x, y]) => isRoad(x + 1, y) || isRoad(x - 1, y) || isRoad(x, y + 1) || isRoad(x, y - 1));
+    const want = Math.min(limit, Math.floor((connected.length / 4) * (this.rush ? 1.45 : 1)));
     if (!this.carFleet) {
       const batch = (geometry, material, capacity) => {
         const mesh = new THREE.InstancedMesh(geometry, material, capacity);
@@ -1081,10 +1129,9 @@ export class World {
       this.carPose = { matrix: new THREE.Matrix4(), child: new THREE.Matrix4(), wheel: new THREE.Matrix4(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0), point: new THREE.Vector3(), scale: new THREE.Vector3(1, 1, 1) };
       this.carColors = ["#e5e4d9", "#275e61", "#a84a3f", "#d5b16c", "#879397", "#334052", "#f4e4cb"].map((color) => new THREE.Color(color));
     }
-    const isRoad = (x, y) => inMap(x, y) && roadAt(this.state.tiles[idx(x, y)]);
-    this.cars = this.cars.filter((c) => isRoad(c.x, c.y) && isRoad(c.tx, c.ty) && isRoad(c.px, c.py));
-    while (this.cars.length < want && this.roads.length) {
-      const [x, y] = this.roads[Math.floor(Math.random() * this.roads.length)];
+    this.cars = this.cars.filter((c) => (c.tx !== c.x || c.ty !== c.y) && isRoad(c.x, c.y) && isRoad(c.tx, c.ty) && isRoad(c.px, c.py));
+    while (this.cars.length < want) {
+      const [x, y] = connected[Math.floor(Math.random() * connected.length)];
       const i = this.cars.length;
       const car = { x, y, px: x, py: y, t: Math.random(), speed: 0.55 + Math.random() * 0.47, kind: i % 3, color: i % this.carColors.length, spin: 0 };
       this.routeCar(car);
@@ -1386,7 +1433,8 @@ export class World {
     const f = this.floodAnim;
     if (!f) return;
     this.scene.remove(f.water, f.foam);
-    f.water.dispose(); f.foam.geometry.dispose();
+    f.water.geometry.dispose(); f.water.material.map.dispose(); f.water.material.dispose(); f.water.dispose();
+    f.foam.geometry.dispose(); f.foam.material.dispose();
     this.floodAnim = null;
     if (this.pendingSync) { const p = this.pendingSync; this.pendingSync = null; this.sync(p.s, p.what); }
   }
@@ -1777,7 +1825,7 @@ export class World {
     }
     let count = 0;
     const range = 7 / this.view.zoom + 3;
-    for (const { x, z, height, ring } of this.fountains) {
+    for (const { x, z, height, ring, scale } of this.fountains) {
       if (Math.abs(x - this.view.x) + Math.abs(z - this.view.z) > range * 1.8) continue;
       for (let i = 0; i < perJet; i++) {
         const sideJet = ring && i >= 4;
@@ -1786,7 +1834,7 @@ export class World {
         const radius = sideJet ? .289 - t * .155 : t * (height > .1 ? .23 : .08);
         const y = sideJet ? .108 + t * (1 - t) * (.7 + Math.sin(this.clock * 3 + i) * .25)
           : Math.max(.075, height + t * (.66 - t * .91));
-        this.dropMatrix.makeTranslation(x + Math.cos(angle) * radius, y, z + Math.sin(angle) * radius);
+        this.dropMatrix.makeTranslation(x + Math.cos(angle) * radius * scale, y * scale, z + Math.sin(angle) * radius * scale);
         this.waterDrops.setMatrixAt(count++, this.dropMatrix);
       }
       if (count >= cap * perJet) break;
@@ -2030,7 +2078,15 @@ export class World {
     }
   }
 
-  newTown() { this.prevKeys = null; this.anims?.clear(); this.buildFxOn && this.drawBuildFx([]); }
+  newTown() {
+    this.pendingSync = null;
+    this.endFlood();
+    this.prevKeys = null;
+    this.anims?.clear();
+    this.cars.length = 0;
+    this.truckKey = null;
+    this.buildFxOn && this.drawBuildFx([]);
+  }
   /** Play the build animation on a tile again (the showcase and tests). */
   playBuild(tile) { if (this.where?.has(tile)) { this.anims ||= new Map(); this.anims.set(tile, this.clock); } }
 

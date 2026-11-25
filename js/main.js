@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, joufHours, idleWhy } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
@@ -109,12 +109,13 @@ addEventListener("pointerup", () => {
   document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => { /* refused: the next tap asks again */ });
 }, { passive: true });
 const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-function save() {
-  if (visiting || arrange) return; // mid-layout the town is saved as it was before (see enterArrange)
+function save(leaving = false) {
+  if (arrange) return; // mid-layout the town is saved as it was before (see enterArrange)
+  if (visiting) { if (leaving) worldSync(true, true); return; }
   if (isIOS && Date.now() - (save.moveAt || 0) > 600000) { save.moveAt = Date.now(); setTimeout(() => iosPrepareMove(), 1000); } // the app's copy stays fresh
   S.cam = { x: world.view.x, z: world.view.z, zoom: world.view.zoom, yawTarget: world.view.yawTarget };
   S.savedAt = Date.now();
-  if (worldMode) { store.set(WORLD_SAVE, pack(S)); worldSync(); return; }
+  if (worldMode) { store.set(WORLD_SAVE, pack(S)); worldSync(leaving, leaving); return; }
   store.set(townKey(S.site || "main"), pack(S));
   noteTown();
 }
@@ -137,11 +138,17 @@ watchIcons(document.body); // every emoji in the page's text shows as its icon (
 world.dayCycle = settings.daynight;
 // Only trust a saved 3D camera (saves from the old 2D map used other numbers).
 const camOk = (c) => c && [c.x, c.z, c.zoom, c.yawTarget ?? c.yaw].every(Number.isFinite) && Math.abs(c.x) <= N / 2 && Math.abs(c.z) <= N / 2 && c.zoom >= 0.45 && c.zoom <= 3.2;
-if (!camOk(S.cam)) S.cam = null;
-if (S.cam) Object.assign(world.view, { x: S.cam.x, z: S.cam.z, zoom: S.cam.zoom, yaw: S.cam.yawTarget ?? S.cam.yaw, yawTarget: S.cam.yawTarget ?? S.cam.yaw });
-else focusTown();
-if (!S.cam) world.view.zoom = 0.9;
-world.updateCamera();
+function restoreTownCamera(cam) {
+  if (camOk(cam)) {
+    const yaw = cam.yawTarget ?? cam.yaw;
+    Object.assign(world.view, { x: cam.x, z: cam.z, zoom: cam.zoom, yaw, yawTarget: yaw });
+  } else {
+    focusTown();
+    world.view.zoom = 0.9;
+  }
+  world.updateCamera();
+}
+restoreTownCamera(S.cam);
 world.sync(S);
 const hud = document.querySelector(".hud"), side = document.querySelector(".side"), dock = document.querySelector(".dock");
 const view = window.visualViewport;
@@ -289,7 +296,7 @@ function hoverAt(t) {
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
 const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "roadup" ? B[roadNext(S.tiles[idx(x, y)].b)]?.cost || 0 : tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : priceOf(S, tool.id) + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0));
+const tileCost = (x, y) => (tool.id === "roadup" ? B[roadNext(S.tiles[idx(x, y)].b)]?.cost || 0 : tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : buildCost(S, x, y, tool.id));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
 const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : tool?.cat === "serv" ? "اضغط على مسجد أو مستشفى" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
@@ -327,7 +334,11 @@ function buildPreview(id, spots) {
   const d = B[id];
   if (!d || !spots.length || d.cat === "road") return null;
   const before = A, saved = spots.map((p) => { const t = S.tiles[idx(p.x, p.y)]; return [t, t.b, t.t]; });
-  for (const [t] of saved) t.b = { id, lvl: 0, res: 0, cond: 100 };
+  for (const [t, b] of saved) {
+    if (b?.id === id && d.quarter) t.b = { ...b, n: (b.n || 1) + 1 };
+    else if (b?.id === "roundabout" && d.monument) t.b = { ...b, monument: id };
+    else t.b = { id, lvl: 0, res: 0, cond: 100, span: d.span };
+  }
   let after;
   try { after = analyze(S); } finally { for (const [t, b, g] of saved) { t.b = b; t.t = g; } A = analyze(S); }
   const inc = (x) => (x.income || 0) + (x.farmIncome || 0) + (x.tax || 0);
@@ -552,14 +563,16 @@ function arrPaintOne(t) {
   if (!h || !inMap(t.x, t.y) || drag.done.has(idx(t.x, t.y))) return;
   drag.done.add(idx(t.x, t.y));
   if (layoutBlocker(S, t.x, t.y, h.b)) return;
+  if (!drag.pushed) { arrPush(); drag.pushed = true; }
   S.tiles[idx(t.x, t.y)].b = h.b;
   sfx.road();
   arrNext(h.b.id);
-  arrSync(); arrRender();
 }
 function arrSnapshot() {
+  const tray = arrange ? [...arrange.tray] : [];
+  if (arrange?.held?.from < 0) tray.push(arrange.held.b); // a road in hand from the store goes back with ↶, never lost
   return { b: S.tiles.map((t) => t.b), rot: S.tiles.map((t) => t.b?.rot || 0), tt: S.tiles.map((t) => t.t),
-    tray: arrange ? [...arrange.tray] : [], gone: arrange ? [...arrange.gone] : [], rocks: arrange ? [...arrange.rocks] : [] };
+    tray, gone: arrange ? [...arrange.gone] : [], rocks: arrange ? [...arrange.rocks] : [] };
 }
 function arrRestore(snap) {
   S.tiles.forEach((t, i) => { t.b = snap.b[i]; t.t = snap.tt[i]; if (t.b) { if (snap.rot[i]) t.b.rot = snap.rot[i]; else delete t.b.rot; } });
@@ -624,6 +637,7 @@ function arrLift(i) {
 function arrDrop(t) {
   const h = arrange.held;
   if (!h) return;
+  if (h.from < 0 && t && !layoutBlocker(S, t.x, t.y, h.b)) arrPush();
   arrange.held = null; arrange.dragging = false;
   const back = () => { if (h.from >= 0) S.tiles[h.from].b = h.b; else arrange.tray.push(h.b); };
   if (!t || !inMap(t.x, t.y)) { back(); arrSync(); arrRender(); return; }
@@ -673,7 +687,9 @@ function arrBegin() {
 /** A second finger landed: take back what this stroke did. */
 function arrUnstroke() {
   if (!arrange || !drag?.mode || !drag.started || !arrange.hist.length) return;
-  arrRestore(arrange.hist.pop()); arrange.held = drag.heldBefore; arrSync(); arrRender();
+  arrRestore(arrange.hist.pop()); arrange.held = drag.heldBefore;
+  if (arrange.held) { const k = arrange.tray.lastIndexOf(arrange.held.b); if (k >= 0) arrange.tray.splice(k, 1); }
+  arrSync(); arrRender();
 }
 /** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
 function arrMove(e) {
@@ -737,7 +753,6 @@ function arrRender() {
   $("arrTray").querySelectorAll("[data-k]").forEach((el) => el.addEventListener("click", () => {
     if (arrange.held && arrange.held.from < 0) arrange.tray.push(arrange.held.b);
     const k = Number(el.dataset.k), b = arrange.tray[k];
-    arrPush();
     arrange.tray.splice(k, 1);
     arrange.held = { b, from: -1 }; arrange.dragging = false; arrange.sel = null; arrange.erase = false;
     sfx.tap(); arrRender();
@@ -1468,7 +1483,7 @@ function inspect(x, y) {
   if (S.tiles[idx(x, y)].b?.id === "decopart") { const of = S.tiles[idx(x, y)].b.of; x = of % N; y = Math.floor(of / N); } // a big decoration's other tiles: the decoration
   const t = S.tiles[idx(x, y)];
   if (!owns(S, x, y)) { sfx.tap(); plotSheet(plotAt(x, y)); return; }
-  if (t.b?.id === "bank" && !t.b.build) { sfx.tap(); bankSheet(); return; }
+  if (t.b?.id === "bank" && !t.b.build && !visiting) { sfx.tap(); bankSheet(); return; }
   if (!t.b) {
     if (t.t === "rock") sheet(`<h2>صخور</h2><p>تقدر تشيلها بـ${money(ROCK_CLEAR)} ريال، أو تبني فوقها مباشرة والإزالة تنحسب مع السعر.</p>`, "inspect");
     else if (t.t === "wadi") sheet(`<h2>أرض الوادي</h2><p>أرض خصبة: مزارع النخل والخضار هنا تنتج ٥٠٪ أكثر.</p>`, "inspect");
@@ -1487,7 +1502,7 @@ function inspect(x, y) {
     html += `<div class="row"><span>حالة المبنى</span><b class="${c < 40 ? "minus" : ""}">${ar(c)}٪</b></div><i class="prog cond"><i style="width:${c}%" class="${c < 40 ? "low" : ""}"></i></i>`;
     if (t.b.ruin) html += `<div class="need">خربان ووقف عن الشغل! إذا ما رممته خلال ${ar(Math.max(1, 48 - t.b.ruin))} ساعة بيطيح.</div>`;
     else if (c < 40) html += `<div class="need">متهالك: يشتغل بـ٦٠٪ بس من طاقته.</div>`;
-    html += `<div class="sheet-actions"><button class="btn go block" id="repairOne" type="button" ${S.money < cost ? "disabled" : ""}>رمّمه بـ${money(cost)} ريال</button></div>`;
+    if (!visiting) html += `<div class="sheet-actions"><button class="btn go block" id="repairOne" type="button" ${S.money < cost ? "disabled" : ""}>رمّمه بـ${money(cost)} ريال</button></div>`;
   }
   if (t.b.build > 0) {
     const pct = Math.round((1 - t.b.build / d.buildHours) * 100);
@@ -1506,7 +1521,7 @@ function inspect(x, y) {
     const block = houseBlocker(S, A, x, y), next = d.levels[t.b.lvl + 1];
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next.name}»: ${block}</div>`;
-    else { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`; }
+    else if (!visiting) { const pr = upgradePrice(S, t.b); html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next.name}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`; }
   }
   if (BIZ_LEVELS[t.b.id] && !t.b.build) {
     const names = BIZ_LEVELS[t.b.id], next = names[t.b.lvl + 1];
@@ -1514,7 +1529,7 @@ function inspect(x, y) {
     const block = upgradeBlocker(S, A, x, y), pr = upgradePrice(S, t.b), cost = pr.total;
     if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
     else if (block) html += `<div class="need">عشان تطوره «${next}»: ${block}</div>`;
-    else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < cost ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(cost)} ريال</button></div>
+    else if (!visiting) html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < cost ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(cost)} ريال</button></div>
       ${effectHtml(t.b)}${matsNote(pr)}`;
   }
   WARX.inspectAt = `${x}:${y}`;
@@ -1526,7 +1541,7 @@ function inspect(x, y) {
       const block = upgradeBlocker(S, A, x, y), pr = upgradePrice(S, t.b);
       if (block === "أعلى مستوى") html += `<div class="need ok">وصل أعلى مستوى.</div>`;
       else if (block) html += `<div class="need">عشان تطوره «${next}»: ${block}</div>`;
-      else html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`;
+      else if (!visiting) html += `<div class="sheet-actions"><button class="btn go block" id="upgradeOne" type="button" ${S.money < pr.total ? "disabled" : ""}>طوّره إلى «${next}» بـ${money(pr.total)} ريال</button></div>${effectHtml(t.b)}${matsNote(pr)}`;
     }
     html += milHtml(t.b);
     if (t.b.id === "milhq" && worldMode && !visiting) html += `<div class="sheet-actions"><button class="btn go block" id="warOpen" type="button">⚔️ افتح القيادة العسكرية</button></div>`;
@@ -1544,11 +1559,15 @@ function inspect(x, y) {
   if (t.b.id === "vault") { html += row("تشيل", `${money(VAULT[t.b.lvl || 0].cap)} ريال`, "plus"); html += row("الخزنة كلها (مع البلدية)", `${money(Math.max(0, S.money))} من ${money(moneyCap(S))}`); }
   if (d.water > 0) html += row("يعطي ماء", ar(d.water), "plus");
   if (d.power > 0) html += row("يعطي كهرباء", ar(d.power), "plus");
+  if (d.pole || d.wire) {
+    const live = A.poles.live.has(idx(x, y));
+    html += row("الكهرباء في الخط", live ? "واصلة ✓" : "تحتاج مولد أو خط شغّال", live ? "plus" : "minus");
+  }
   if (d.radius) html += row("يوصل تأثيره", `${ar(d.radius + (up.radius || 0))} مربعات`);
   if (d.radius && (d.happy || d.pollute)) { const line = reachLine(t.b.id, [{ x, y }], up.radius || 0); if (line) html += d.pollute && line.startsWith("⚠️") ? `<div class="need">${line}. الحل: أبعده عن البيوت، أو حط حديقة أو شجر بينهم.</div>` : row(d.pollute ? "الإزعاج" : "يخدم", line.replace(/^يخدم /, "")); }
   if (d.service === "mosque") { const u = mosqueGaps(); html += u ? `<div class="need">${ar(u)} ${u >= 3 && u <= 10 ? "بيوت" : "بيت"} برا مدى المساجد: ابنِ مسجد قريب منها.</div>` : `<div class="need ok">كل البيوت داخل مدى المساجد ✓</div>`; html += `<button class="btn block" id="showMosques" type="button">🕌 اعرض وين توصل المساجد كلها</button>`; }
   const rNext = roadNext(t.b), rWhy = rNext ? roadUpWhy(x, y) : "";
-  html += `</div><div class="sheet-actions">${rNext && !visiting ? `<button class="btn go block" id="roadUpOne" type="button" ${rWhy ? "disabled" : ""}>⬆ طوّره إلى ${B[rNext].name} (${money(B[rNext].cost)} ريال)</button>${rWhy ? `<p class="hint">${rWhy}</p>` : ""}` : ""}${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(Math.floor(d.cost / 3))} ريال)</button></div>`;
+  html += `</div><div class="sheet-actions">${rNext && !visiting ? `<button class="btn go block" id="roadUpOne" type="button" ${rWhy ? "disabled" : ""}>⬆ طوّره إلى ${B[rNext].name} (${money(B[rNext].cost)} ريال)</button>${rWhy ? `<p class="hint">${rWhy}</p>` : ""}` : ""}${canTurn(t.b.id) && !visiting ? `<button class="btn block" id="turnOne" type="button">↻ لفّ المبنى (ببلاش)</button>` : ""}${visiting ? "" : `<button class="btn danger block" id="demolish" type="button">أزل المبنى (يرجع لك ${money(removalRefund(t.b))} ريال)</button>`}</div>`;
   sheet(html, "inspect");
   if (d.radius) showReach(x, y, { ...d, radius: d.radius + (up.radius || 0) });
   $("showMosques")?.addEventListener("click", () => { sfx.tap(); mosqueMap(); });
@@ -1569,9 +1588,13 @@ function inspect(x, y) {
   });
   $("warOpen")?.addEventListener("click", async () => { await warPoll(true); warSheet(); });
   $("warRepair")?.addEventListener("click", () => warRepairAt(x, y));
-  $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); refresh(); save(); inspect(x, y); });
+  $("repairOne")?.addEventListener("click", () => { const why = repair(S, x, y); if (why) { toast(why, "bad"); sfx.deny(); return; } sfx.build(); toast("رجع المبنى جديد 🔧", "goal"); sync(false); refresh(); save(); inspect(x, y); });
   $("turnOne")?.addEventListener("click", () => { sfx.tap(); t.b.rot = ((t.b.rot || 0) + 1) % 4; world.sync(S, { buildings: true }); save(); });
-  $("demolish").addEventListener("click", () => { demolish(S, x, y); sfx.remove(); closeSheet(); sync(ROAD_IDS.includes(t.b?.id)); refresh(); });
+  $("demolish")?.addEventListener("click", () => {
+    const wasRoad = ROAD_IDS.includes(t.b?.id), why = demolish(S, x, y);
+    if (why) { toast(why, "bad"); sfx.deny(); return; }
+    sfx.remove(); closeSheet(); sync(wasRoad); refresh(); save();
+  });
 }
 
 function council() {
@@ -1667,6 +1690,7 @@ async function api(path, body) {
 /** opts.target: choosing a building to strike; opts.scene: shown for a war scene (no visit bar). */
 async function visitTown(code, opts = {}) {
   if (code === "" || code == null) return;
+  if (arrange) { toast("احفظ الترتيب أو ألغِه قبل الزيارة", "bad"); return; }
   if (!onlineOk()) { toast("الأونلاين يشتغل من رابط اللعبة", "bad"); return; }
   let data;
   try { data = await api(`/world/town/${code}`); } catch { toast("ما لقيت المدينة", "bad"); return; }
@@ -1679,7 +1703,7 @@ async function visitTown(code, opts = {}) {
   for (const r of data.damage || []) { const t = town.tiles[idx(r.x, r.y)]; if (t?.b && t.b.id === r.bid) t.b.wd = r.wd; }
   if (visiting) leaveVisit(); // from one visit straight to another: home stays your own town
   save();
-  visiting = { code, world: true, info: data.town, comments: data.comments, home: S, cam: { x: world.view.x, z: world.view.z, zoom: world.view.zoom } };
+  visiting = { code, world: true, info: data.town, comments: data.comments, home: S, cam: S.cam };
   nameLandmarks(worldPlace(Number(code))); // the visited town's landmarks are of its own place
   S = town; A = analyze(S);
   closeSheet(); setTool(null);
@@ -1694,11 +1718,11 @@ async function visitTown(code, opts = {}) {
 }
 /** The town being visited changed (its owner built something): show it as it is now, camera and sheet left alone. */
 async function refreshVisit() {
-  if (!visiting?.world) return;
-  const code = visiting.code;
+  const visit = visiting;
+  if (!visit?.world) return;
   let data, town;
-  try { data = await api(`/world/town/${code}`); town = unpack(data.town.snapshot); } catch { return; }
-  if (!visiting || visiting.code !== code || !data.town.snapshot) return;
+  try { data = await api(`/world/town/${visit.code}`); town = unpack(data.town.snapshot); } catch { return; }
+  if (visiting !== visit) return;
   for (const t of town.tiles) if (t.b) delete t.b.wd;
   for (const r of data.damage || []) { const t = town.tiles[idx(r.x, r.y)]; if (t?.b && t.b.id === r.bid) t.b.wd = r.wd; }
   S = town; A = analyze(S);
@@ -1728,7 +1752,7 @@ function leaveVisit() {
   document.body.classList.remove("visiting"); $("visitBar").hidden = true;
   closeSheet();
   world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true });
-  world.view.x = cam.x; world.view.z = cam.z; world.view.zoom = cam.zoom; world.updateCamera();
+  restoreTownCamera(cam);
   refresh();
 }
 function visitComments() {
@@ -1759,7 +1783,10 @@ const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_
 let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) }, lastSync = 0, soloS = null;
 const worldHours = () => joufHours(Date.now() + worldClock.offset, worldClock);
 const worldHourNow = () => Math.floor(worldHours()) + 3;
-const me = () => JSON.parse(store.get(WORLD_ID) || "null");
+function me() {
+  try { return JSON.parse(store.get(WORLD_ID) || "null"); }
+  catch { return null; }
+}
 async function loadClock() {
   try {
     const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch };
@@ -1899,22 +1926,42 @@ async function pushIosHelp() {
   $("iosCopy")?.addEventListener("click", () => navigator.clipboard?.writeText(code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 /** A fresh town on the same land and name (the restart, here or from another phone). */
-function freshWorldTown(name, restartAt) {
-  const id = me();
+function makeWorldTown(id, name, restartAt = 0) {
   const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(id.plot), name, site: "world" });
-  s.day = worldHourNow(); s.world = { plot: id.plot, owner: id.name, start: s.day, restartAt }; s.war = { seq: 0 };
+  s.day = worldHourNow(); s.world = { plot: id.plot, owner: id.name, start: s.day, restartAt, saveVersion: "" }; s.war = { seq: 0 };
+  return s;
+}
+function freshWorldTown(name, restartAt, saveVersion = "") {
+  const s = makeWorldTown(me(), name, restartAt);
+  s.world.saveVersion = saveVersion;
   store.set(WORLD_SAVE, pack(s));
   store.set(warKey("seen"), "0");
   return s;
 }
 /** The server says this town started again (from another phone) after this copy: take the new one. */
-function syncReply(r) {
-  if (!r?.restarted || !worldMode || visiting || (S.world?.restartAt || 0) >= r.restarted) return false;
-  S = freshWorldTown(r.town || S.name, r.restarted); A = analyze(S);
-  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true }); refresh();
+function syncReply(r, home) {
+  if (!r || !ownsActiveSave(home)) return;
+  if (r.conflict || (r.hasSave && r.restarted > (home.world.restartAt || 0))) {
+    home.world.syncConflict = true;
+    if (!arrange) store.set(WORLD_SAVE, pack(home));
+    if (!document.hidden && !arrange && !["update", "namefix", "decision"].includes(sheetFor)) saveConflictSheet();
+    return;
+  }
+  if (!r.restarted || (home.world.restartAt || 0) >= r.restarted) {
+    if (r.town && r.town !== home.name) {
+      home.name = r.town;
+      if (!arrange) store.set(WORLD_SAVE, pack(home));
+      if (!visiting) refresh();
+    }
+    return;
+  }
+  if (arrange) leaveArrange(false);
+  const town = freshWorldTown(r.town || home.name, r.restarted, r.saveVersion);
+  if (visiting) { visiting.home = town; visiting.cam = town.cam; return; }
+  S = town; A = analyze(S);
+  world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true }); restoreTownCamera(S.cam); refresh();
   sheet(`<h2>🔄 مدينتك بدأت من جديد</h2><p>بدأت «${S.name}» من جديد من جوال ثاني، فهذا الجوال أخذ المدينة الجديدة.</p><div class="sheet-actions keep"><button class="btn go block" id="rsOk" type="button">تمام</button></div>`, "away");
   $("rsOk").addEventListener("click", closeSheet);
-  return true;
 }
 /** Start your al-Jouf town again from nothing: same land, same name; everything else goes (once a day). */
 function restartSheet() {
@@ -1932,7 +1979,7 @@ function restartSheet() {
     try { r = await api("/world/restart", { name: id.name, secret: id.secret }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
     if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
     // a fresh town on the same land (like founding it), the world's hour, no old war bills
-    const s = freshWorldTown(town, r.restarted || Date.now());
+    const s = freshWorldTown(town, r.restarted || Date.now(), r.saveVersion);
     if (worldMode) { S = s; A = analyze(S); world.sync(S, { tiles: true, roads: true, buildings: true }); }
     closeSheet(); sfx.era(); toast(`🔄 «${town}» بدأت من جديد. بالتوفيق!`, "era");
     enterWorldTown();
@@ -1974,7 +2021,7 @@ function pushOffer(tries = 0) {
 // In Safari on an iPhone the game keeps a fresh copy of all its saves on the server (gzip) and puts its token in
 // the page's address and the manifest's start, so the app added to the home screen opens with it and restores
 // everything (the al-Jouf account, the solo towns, the settings). A 6-digit code (24 h) does the same by hand.
-const MOVE = { token: "", code: "", at: 0, sum: "" };
+const MOVE = { token: "", code: "", at: 0, snapshot: "", pending: null };
 const moveKeys = () => Object.keys(localStorage).filter((k) => k.startsWith("rafaya-") && !k.startsWith("rafaya-move") && k !== "rafaya-handoff-asked" && k !== "rafaya-push-on");
 const b64 = (buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode(...u.subarray(i, i + 32768)); return btoa(s); };
 const unb64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
@@ -1983,18 +2030,22 @@ async function gunzipText(data) { return new Response(new Blob([unb64(data)]).st
 /** Safari on an iPhone: a fresh copy of the saves on the server, its token in the address and the manifest. */
 async function iosPrepareMove(force) {
   if (!isIOS || standalone() || !onlineOk() || globalThis.RAFAYA_PREVIEW || typeof CompressionStream === "undefined") return MOVE;
-  try {
+  if (MOVE.pending) return MOVE.pending;
+  MOVE.pending = (async () => {
     const all = {}; for (const k of moveKeys()) all[k] = localStorage.getItem(k);
-    const text = JSON.stringify(all), sum = `${text.length}:${text.slice(-64)}`;
-    if (!force && MOVE.token && MOVE.sum === sum && Date.now() - MOVE.at < 6 * 3600000) return MOVE;
+    const text = JSON.stringify(all);
+    if (!force && MOVE.token && MOVE.snapshot === text && Date.now() - MOVE.at < 6 * 3600000) return MOVE;
     const r = await (await fetch(API + "/move/put", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(text), old: MOVE.token }) })).json();
     if (!r.token) return MOVE;
-    Object.assign(MOVE, { token: r.token, code: r.code, at: Date.now(), sum });
+    Object.assign(MOVE, { token: r.token, code: r.code, at: Date.now(), snapshot: text });
     const link = new URLSearchParams(location.search).get("link");
     history.replaceState(null, "", `/?move=${r.token}${link ? `&link=${link}` : ""}`);
     document.querySelector('link[rel="manifest"]')?.setAttribute("href", `/api/world/manifest?m=${r.token}${link ? `&t=${link}` : ""}`);
-  } catch { /* next time */ }
-  return MOVE;
+    return MOVE;
+  })();
+  try { return await MOVE.pending; }
+  catch { return MOVE; }
+  finally { MOVE.pending = null; }
 }
 /** The app: take the copy (by the link or a typed code) and restore it, then start again with it. */
 async function takeMove(tokenOrCode) {
@@ -2060,7 +2111,10 @@ function updateSheet(v) {
   $("sheetClose").hidden = true;
   $("updNow").addEventListener("click", async () => {
     $("updNow").disabled = true; $("updNow").textContent = "نحدّث…";
-    try { if (playing) save(); if (worldMode) worldSync(true); } catch { /* the save is on the phone already */ }
+    try {
+      if (playing) save();
+      if (worldMode) await Promise.race([worldSync(true), new Promise((resolve) => setTimeout(resolve, 2500))]);
+    } catch { /* the save is on the phone already */ }
     try { sessionStorage.setItem("rafaya-update-tried", v); } catch { /* fine */ }
     const url = new URL(location.href);
     url.searchParams.set(UPDATE_PARAM, v);
@@ -2145,27 +2199,117 @@ function pendingSummary(home) {
   const d = home.decision && DECISIONS.find((x) => x.id === home.decision.id);
   return { n: list.length, who: list[0]?.person?.name || "", text: list[0]?.text || "", decision: d?.title || "" };
 }
-/** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
-function worldSync(force) {
-  if (worldMode && !force) { clearTimeout(worldSync.soon); worldSync.soon = setTimeout(() => warSyncNow(), 3000); } // only sent if the layout changed
+const saveRequests = new WeakMap();
+function ownsActiveSave(home) {
   const id = me();
-  if (!worldMode || !id?.plot && id?.plot !== 0 || !onlineOk()) return;
-  if (!force && Date.now() - lastSync < 2 * 60000) return;
-  lastSync = Date.now();
-  if (arrange) return; // half-arranged towns are not sent; the layout before is already saved
+  return worldMode && id?.plot != null && (visiting?.home ?? S) === home && home?.world?.plot === id.plot && home.world.owner === id.name;
+}
+function worldSnapshot(home, compare = false) {
+  const { saveVersion, pendingWrites, syncConflict, ...online } = home.world;
+  return pack({ ...home, world: online, savedAt: compare ? undefined : home.savedAt, cam: compare ? undefined : home.cam,
+    moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} });
+}
+async function prepareWorldSave(home, id) {
+  if (globalThis.RAFAYA_PREVIEW || typeof home.world.saveVersion === "string") return;
+  const local = worldSnapshot(home, true);
+  const { state, town } = await readCloudTown(id);
+  if (home.world.syncConflict || town.restarted > (home.world.restartAt || 0) || (town.snapshot && worldSnapshot(state, true) !== local)) {
+    home.world.syncConflict = true;
+    return;
+  }
+  home.world.saveVersion = state.world.saveVersion;
+}
+const conflictCopyKey = (id) => `rafaya-world-copy-${id.plot}-${id.name}`;
+function saveConflictSheet() {
+  const id = me(), home = visiting?.home ?? S;
+  if (!ownsActiveSave(home) || !home.world.syncConflict || sheetFor === "update" || sheetFor === "namefix") return;
+  sheet(`<h2>حفظ مدينتك على جهاز ثاني</h2><p>حفظ هذا الجهاز يختلف عن حفظ السيرفر. وقفنا المزامنة عشان نحافظ على النسختين.</p>
+    <p>إذا فتحت حفظ السيرفر، بنحتفظ بنسخة هذا الجهاز في الإعدادات.</p>
+    <div class="sheet-actions keep"><button class="btn go block" id="openServerSave" type="button">افتح حفظ السيرفر</button></div>`, "save-conflict");
+  $("openServerSave").addEventListener("click", async (event) => {
+    if (arrange) { toast("احفظ الترتيب أو ألغِه أول", "bad"); return; }
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const { state } = await readCloudTown(id);
+      if (!button.isConnected || !ownsActiveSave(home) || arrange) return;
+      const backup = pack(home), key = conflictCopyKey(id);
+      store.set(key, backup);
+      if (store.get(key) !== backup) { toast("ما فيه مساحة كافية لحفظ نسخة هذا الجهاز", "bad"); return; }
+      if (visiting) leaveVisit();
+      S = state;
+      store.set(WORLD_SAVE, pack(S));
+      await enterWorldTown();
+      toast("فتحنا حفظ السيرفر وحفظنا نسخة هذا الجهاز في الإعدادات", "goal");
+    } catch {
+      toast("ما قدرنا نفتح حفظ السيرفر. جرّب بعد شوي", "bad");
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+/** Send the town to the server: its look within seconds of a change, its numbers every 2 minutes, and now when leaving. */
+function worldSync(force, leaving = false) {
+  const id = me();
+  if (!worldMode || id?.plot == null || !onlineOk() || arrange) return;
   const mine = visiting ? visiting.home : S; // while visiting, S is the other player's town: never send it as yours
-  if (!mine?.world) return;
+  if (!ownsActiveSave(mine) || mine.world.syncConflict) return;
+  if (leaving && Date.now() - (worldSync.backgroundAt || 0) < 1000) return;
+  if (!force) {
+    clearTimeout(worldSync.soon);
+    worldSync.soon = setTimeout(warSyncNow, 3000); // only sent if the layout changed
+    if (Date.now() - lastSync < 2 * 60000) return;
+  }
+  const busy = saveRequests.get(mine);
+  if (busy) {
+    if (force && !leaving) busy.next ??= busy.task.then(() => {
+      if (ownsActiveSave(mine)) return worldSync(true);
+    });
+    return busy.next ?? busy.task;
+  }
+  const request = {};
+  request.task = sendWorldSave(mine, id, leaving).catch(() => {}).finally(() => saveRequests.delete(mine));
+  saveRequests.set(mine, request);
+  return request.task;
+}
+async function sendWorldSave(mine, id, leaving) {
+  if (typeof mine.world.saveVersion !== "string" && !globalThis.RAFAYA_PREVIEW) {
+    await prepareWorldSave(mine, id);
+    if (!ownsActiveSave(mine) || arrange) return;
+    if (mine.world.syncConflict) { syncReply({ conflict: true }, mine); return; }
+  }
+  lastSync = Date.now();
   // the money moves too, for the owner's statement of this town (what came in, what went out, and why)
   const ledger = { log: (mine.moneyLog || []).slice(-80), day: mine.day, start: mine.world?.start ?? null,
     hour: visiting ? null : { tax: Math.round(A.tax || 0), shops: Math.round(A.income || 0), farms: Math.round(A.farmIncome || 0), costs: Object.fromEntries(Object.entries(A.costs || {}).map(([k, v]) => [k, Math.round(v || 0)])), net: Math.round(A.net || 0) } };
-  const body = JSON.stringify({ name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era, pending: pendingSummary(mine), restartAt: mine.world?.restartAt || 0, warSeq: mine.war?.seq || 0, ledger,
-    snapshot: pack({ ...mine, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) });
-  if (globalThis.RAFAYA_PREVIEW) { globalThis.RAFAYA_PREVIEW("/world/sync", JSON.parse(body)); return; }
-  if (force && navigator.sendBeacon) navigator.sendBeacon(API + "/world/sync", new Blob([body], { type: "application/json" }));
-  else fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body }).then((r) => r.json()).then(syncReply).catch(() => {});
+  const data = { name: id.name, secret: id.secret, pop: mine.pop, happy: Math.round(mine.happy), money: Math.round(mine.money), era: mine.era,
+    pending: pendingSummary(mine), restartAt: mine.world.restartAt || 0, warSeq: mine.war?.seq || 0, ledger, snapshot: worldSnapshot(mine) };
+  const key = warTownKey(mine);
+  let r;
+  if (globalThis.RAFAYA_PREVIEW) {
+    r = await api("/world/sync", data);
+  } else {
+    const pendingWrites = Array.isArray(mine.world.pendingWrites) ? mine.world.pendingWrites : [];
+    const saveWrite = crypto.randomUUID();
+    const body = JSON.stringify({ ...data, saveVersion: mine.world.saveVersion, saveWrite, pendingWrites });
+    mine.world.pendingWrites = [...pendingWrites, saveWrite].slice(-8);
+    store.set(WORLD_SAVE, pack(mine)); // remember a background request even if the app closes before it gets a reply
+    if (leaving) {
+      worldSync.backgroundAt = Date.now();
+      if (navigator.sendBeacon?.(API + "/world/sync", new Blob([body], { type: "application/json" }))) return;
+    }
+    const response = await fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body });
+    r = await response.json();
+    if (r.ok && r.saveVersion === saveWrite) {
+      mine.world.saveVersion = saveWrite;
+      delete mine.world.pendingWrites;
+      if (!arrange && ownsActiveSave(mine)) store.set(WORLD_SAVE, pack(mine));
+    }
+  }
+  if (r?.ok && ownsActiveSave(mine)) { WARX.syncTown = mine; WARX.syncKey = key; lastSync = Date.now(); }
+  syncReply(r, mine);
 }
-addEventListener("pagehide", () => worldSync(true));
-document.addEventListener("visibilitychange", () => { if (document.hidden) worldSync(true); });
+addEventListener("online", () => worldSync(true));
 
 const esc = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
 // ---------- the owner asked this player to change a name (player and/or town): it has to be done ----------
@@ -2190,10 +2334,15 @@ function namefixSheet(f) {
     try { r = await api("/world/namefix", { name: id.name, secret: id.secret, newName, newTown }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
     if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
     store.set(WORLD_ID, JSON.stringify({ ...me(), name: r.name }));
-    if (r.town) {
-      if (worldMode && S.world) { S.name = r.town; save(); refresh(); }
-      else { try { const t = unpack(store.get(WORLD_SAVE)); t.name = r.town; store.set(WORLD_SAVE, pack(t)); } catch { /* the town picks it up next time */ } }
-    }
+    try {
+      const home = worldMode ? (visiting?.home ?? S) : unpack(store.get(WORLD_SAVE));
+      if (home.world?.plot === id.plot) {
+        home.world.owner = r.name;
+        if (r.town) home.name = r.town;
+        if (!arrange) store.set(WORLD_SAVE, pack(home));
+        if (worldMode && !visiting) refresh();
+      }
+    } catch { /* the server copy is used if the local town is unreadable */ }
     FIX.ask = null; closeSheet();
     sfx.era(); toast("تم التغيير ✓ شكرًا لتعاونك", "goal");
     if (!worldMode) openWorld();
@@ -2206,9 +2355,10 @@ function forgetTown() {
 }
 function townRemoved(f) {
   if (sheetFor === "removed") return;
+  if (arrange) leaveArrange(false);
   forgetTown();
   leaveWorld(); showMenu(); menuBackdrop();
-  sheet(`<h2>🗑️ مدينتك انحذفت من عالم الجوف</h2><p>الإدارة طلبت تغيير الاسم وخلصت المهلة (يوم كامل) بدون تغيير، فانحذفت المدينة.</p>
+  sheet(`<h2>🗑️ مدينتك انحذفت من عالم الجوف</h2><p>${f?.removed ? "انتهت مهلة تعديل الاسم، فانحذفت المدينة." : "حسابك باقي معك، وتقدر ترجع لخريطة الجوف."}</p>
     <div class="sheet-actions keep"><button class="btn go block" id="rmOk" type="button">تمام</button></div>`, "removed");
   $("rmOk").addEventListener("click", () => { closeSheet(); if (f) namefixSheet(f); });
 }
@@ -2399,9 +2549,7 @@ async function worldMapSheet(pick) {
     try {
       await api("/world/claim", { name: id.name, secret: id.secret, plot: sel, town, terrain: worldTerrain(sel) });
       store.set(WORLD_ID, JSON.stringify({ ...id, plot: sel }));
-      const s = newGame(Math.floor(Math.random() * 1e9), { terrain: worldTerrain(sel), name: town, site: "world" });
-      s.day = worldHourNow();
-      s.world = { plot: sel, owner: id.name, start: s.day };
+      const s = makeWorldTown({ ...id, plot: sel }, town);
       globalThis.RAFAYA_PREVIEW_TOWN?.(s); // the trial copy starts from a ready city
       store.set(WORLD_SAVE, pack(s));
       sfx.era(); toast(`تأسست «${town}» في عالم الجوف! 🎉`, "era");
@@ -2435,34 +2583,55 @@ function renameSheet(t, plots) {
     } catch { toast("ما زبط، جرّب بعد شوي", "bad"); }
   });
 }
+async function readCloudTown(id) {
+  const { town } = await api(`/world/town/${id.plot}`);
+  if (town.owner !== id.name) throw new Error("different town owner");
+  const state = town.snapshot ? unpack(town.snapshot) : makeWorldTown(id, town.town, town.restarted);
+  if (state.world?.plot !== id.plot) throw new Error("different town plot");
+  state.name = town.town;
+  state.world.owner = id.name;
+  state.world.saveVersion = town.saveVersion ?? "";
+  return { state, town };
+}
+async function readOwnTown(id) {
+  if (id?.plot == null) return null;
+  try {
+    const local = unpack(store.get(WORLD_SAVE));
+    if (local.world?.plot === id.plot) {
+      local.world.owner = id.name;
+      if (!local.world.syncConflict) await prepareWorldSave(local, id).catch(() => {});
+      return local;
+    }
+  } catch { /* use the server copy when local storage is missing or unreadable */ }
+  return readCloudTown(id).then(({ state }) => state).catch(() => null);
+}
+
 /** Play your own town in the world: the deputy's report first if you were away. */
 async function enterWorldTown() {
+  if (arrange) { toast("احفظ الترتيب أو ألغِه أول", "bad"); return; }
   if (visiting) leaveVisit(); // back to your own state first, so the visited town is never kept
   const id = me();
-  let raw = store.get(WORLD_SAVE);
-  if (!raw && id?.plot != null) { // a new phone: take the town from the server
-    try { const d = await api(`/world/town/${id.plot}`); raw = d.town.snapshot || null; } catch { raw = null; }
-  }
-  if (!raw) { toast("ما لقيت مدينتك", "bad"); return; }
-  let town;
-  try { town = unpack(raw); } catch { toast("حفظ المدينة خربان", "bad"); return; }
+  const town = worldMode && id?.plot != null && S.world?.plot === id.plot ? S : await readOwnTown(id);
+  if (id?.plot !== me()?.plot || id?.name !== me()?.name) return;
+  if (!town) { toast("ما قدرنا نقرأ حفظ مدينتك. جرّب بعد شوي", "bad"); return; }
   if (!worldMode) { if (playing) save(); soloS = S; }
   if (id?.plot != null) nameLandmarks(worldPlace(id.plot));
   worldMode = true; document.body.classList.add("world"); showWhatsNewDot();
   liveOpen(); lastTouch = Date.now();
-  S = town; S.idle = null;
+  S = town;
+  if (!S.world.syncConflict) S.idle = null;
   if (globalThis.RAFAYA_PREVIEW_SAMPLE) S.day = worldHourNow();
   const gap = worldHourNow() - S.day;
-  const report = gap > 1 ? deputyCatchUp(S, gap) : null;
-  if (gap > 0 && !report) S.day = worldHourNow();
+  const report = S.world.syncConflict ? null : deputyCatchUp(S, gap);
   A = analyze(S);
   closeSheet(); setTool(null);
   world.newTown(); world.sync(S, { tiles: true, roads: true, buildings: true });
-  if (S.cam) { world.view.x = S.cam.x; world.view.z = S.cam.z; world.view.zoom = S.cam.zoom; world.updateCamera(); } else { focusTown(); world.view.zoom = 0.9; world.updateCamera(); }
+  restoreTownCamera(S.cam);
   startPlaying();
   save(); worldSync(true);
-  if (report) deputyReport(report);
-  warBack(!!report);
+  if (S.world.syncConflict) { saveConflictSheet(); return; }
+  if (report && gap > 1) deputyReport(report);
+  warBack(!!report && gap > 1);
   if (!globalThis.RAFAYA_PREVIEW_SAMPLE) setTimeout(maybeWhatsNew, 1200); // after the deputy's report
   setTimeout(pushOffer, 6000); // waits for the report or any screen in front to close
 }
@@ -2519,22 +2688,17 @@ const secLeft = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return s 
 async function warApi(action, body = {}) {
   const id = me();
   if (!id || id.plot == null) return { error: "سجّل وأسس مدينتك بعالم الجوف أول" };
+  if (action !== "state" && worldMode && (visiting?.home ?? S).world?.syncConflict) return { error: "افتح حفظ السيرفر أول عشان ترجع مزامنة مدينتك" };
   try { return await api(`/world/war/${action}`, { name: id.name, secret: id.secret, ...body }); } catch (e) { return { error: e.message === "maintenance" ? "عالم الجوف تحت الصيانة" : "ما قدرت أوصل للسيرفر: جرّب بعد شوي" }; }
 }
 /** The buildings as the server last saw them: when they changed, send the town before any war action (the server only trusts what it has). */
-const warTownKey = (s) => `${s.era}|${s.tiles.map((t) => (t.b ? `${t.b.id}${t.b.lvl}${t.b.build > 0 ? "b" : ""}` : "")).join(",")}`;
+const warTownKey = (s) => `${s.era}|${s.tiles.map(({ t, b }) => b
+  ? [t, b.id, b.lvl, b.build > 0 ? "b" : "", b.rot || 0, b.n || 1, b.monument || ""].join(":") : t[0]).join(",")}`;
 async function warSyncNow() {
   const home = visiting ? visiting.home : S, id = me();
-  if (!worldMode || !home?.world || id?.plot == null) return;
-  const key = warTownKey(home);
-  if (key === WARX.syncKey) return;
-  const body = { name: id.name, secret: id.secret, pop: home.pop, happy: Math.round(home.happy), money: Math.round(home.money), era: home.era, pending: pendingSummary(home), restartAt: home.world?.restartAt || 0, warSeq: home.war?.seq || 0,
-    snapshot: pack({ ...home, moneyLog: undefined, news: [], history: [], log: [], neighbours: [], promises: [], comebacks: [], demands: {} }) };
-  try {
-    const r = await api("/world/sync", body); WARX.syncKey = key; lastSync = Date.now();
-    if (syncReply(r)) return;
-    if (r?.town && worldMode && S.world && r.town !== S.name) { S.name = r.town; refresh(); } // renamed (maybe from another phone)
-  } catch { /* the next try */ }
+  if (!worldMode || arrange || id?.plot == null || home?.world?.plot !== id.plot) return;
+  if (WARX.syncTown === home && warTownKey(home) === WARX.syncKey) return;
+  await worldSync(true);
 }
 /** An apology in the middle of the screen: what went wrong (our mistake) and what was given back. 30 seconds, or «تمام». */
 function apologyBox(n) {
@@ -2570,7 +2734,7 @@ async function warPoll(force) {
   WARX.offset = st.now - Date.now();
   world.fx && (world.fx.clockOffset = WARX.offset);
   WARX.st = st;
-  warApply(st);
+  if (!(visiting?.home ?? S).world?.syncConflict) warApply(st);
   if (WARX.again) { WARX.again = false; setTimeout(() => warPoll(true), 50); }
   return st;
 }
@@ -2603,7 +2767,11 @@ function warApply(st) {
     if (ds !== world.fx.droneStock || ms !== world.fx.missileStock) { world.fx.droneStock = ds; world.fx.missileStock = ms; changed = true; } // what stands on the pads
   }
   if (!visiting && (changed || posted)) { A = analyze(S); world.sync(S, { buildings: true }); refresh(); }
-  if (posted || changed) { save(); worldSync(true); }
+  if (posted || changed) {
+    if (visiting) store.set(WORLD_SAVE, pack(home));
+    else save();
+    worldSync(true);
+  }
   if (posted && !visiting && sheetFor === "budget") budget();
   warWatch(st); // a fresh attack on us plays first; its notes then wait in the log
   // notes: the newest few as toasts, the big ones into the town's news
@@ -3343,7 +3511,7 @@ function switchTown(id) {
   closeSheet(); setTool(null);
   world.stopFollow?.(); $("followTag").hidden = true;
   world.sync(S, { tiles: true, roads: true, buildings: true });
-  if (S.cam) { world.view.x = S.cam.x; world.view.z = S.cam.z; world.view.zoom = S.cam.zoom; world.updateCamera(); } else { focusTown(); world.view.zoom = 0.9; world.updateCamera(); }
+  restoreTownCamera(S.cam);
   save(); refresh(); showNewsCount?.();
   toast(`دخلت ${S.name}`, "goal");
 }
@@ -3368,6 +3536,9 @@ const WHATS_NEW = {
   v: { solo: "2026-11-25-edit", world: "2026-11-25-edit" },
   items: [
     ["both", "✏️", "وضع التعديل", "• «ترتيب» و«إزالة» صاروا زر واحد: «✏️ تعديل». • اختر أي مبنى: اسحبه لمكان ثاني أو بدّله مع غيره ببلاش، ↻ تلفه، 🗑️ تشيله. • 🗑️ بدون ما تختار شي يفتح وضع الإزالة: اضغط أو اسحب إصبعك على المباني والطرق والصخور. • ↶ تراجع و↷ إعادة لكل شي، وتشوف فوق كم بيرجع لك من الإزالة، وما ينحسب شي إلا إذا ضغطت ✓ (و✕ يرجّع كل شي مثل ما كان)."],
+    ["world", "💾", "حفظ المدينة بين الأجهزة", "الحفظ القديم من جهاز ثاني ما يرجّع مبانيك أو رصيدك. إذا اختلف الحفظ، تقدر تفتح حفظ السيرفر وتلقى نسخة هذا الجهاز في الإعدادات."],
+    ["both", "⚡", "أسلاك الكهرباء تظهر", "صلّحنا ظهور الأسلاك بين الأعمدة وعلى الطرق المكهربة، عشان تشوف مسار التوصيل وأنت تقرّب الخريطة."],
+    ["both", "💼", "أول استشارة مجانية", "تقدر تاخذ أول استشارة من المستشار المالي حتى لو ميزانية مدينتك بالسالب."],
     ["both", "💼", "المستشار المالي", "• زر جديد «المستشار» فوق «القائمة»: يقرأ مدينتك كلها ويقول لك إذا كنت رابح أو خسران، ووش أكبر أخطاءك، وكيف تصلحها خطوة خطوة بالأرقام، مع زر «📍 وريني» يوديك للمكان. • أول استشارة مجانية، وبعدها سعرها حسب مرحلتك، وتبقى صالحة يوم كامل باللعبة."],
     ["both", "💧", "الخزان والسد ينبنون", "• صلّحنا خطأ كان يعلّق اختيار مكان الخزان والسد، فما كانوا ينبنون. الحين تختار المكان وتبني عادي."],
     ["both", "⚡", "طريق مكهرب", "• طريق جديد بقسم الطرق: مسفلت ومعه أعمدة كهرب. إذا اتصل بمولد أو محطة أو عمود، ينقل الكهرب على طوله ويوصّلها للمباني لين مربعين من جنبه. سعره أغلى من المسفلت."],
@@ -3589,7 +3760,10 @@ const MENU = { town: null, t: 0, cx: 0, cz: 0, pitch: null };
 function menuBackdrop() {
   const id = me();
   let town = null;
-  if (id?.plot != null) try { town = unpack(store.get(WORLD_SAVE)); } catch { town = null; }
+  if (id?.plot != null) try {
+    const saved = unpack(store.get(WORLD_SAVE));
+    if (saved.world?.plot === id.plot) town = saved;
+  } catch { /* the town can still be loaded from the server after tapping Play */ }
   MENU.town = town;
   const label = $("mPlayLabel"), hint = $("mPlayHint");
   label.textContent = town ? `▶️ كمّل في «${town.name}»` : label.dataset.start || "▶️ ابدأ اللعب";
@@ -3989,23 +4163,25 @@ $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 // ---------- المستشار المالي: a paid reading of the town (js/advisor.js), the first one free ----------
 const advisorFee = () => (S.advisor?.used ? ADVISOR_FEE[Math.min(ADVISOR_FEE.length - 1, S.era)] : 0);
 function advisorSheet() {
-  const fresh = S.advisor?.at != null && S.day - S.advisor.at < ADVISOR_HOURS;
+  if (arrange || visiting) { toast("افتح المستشار من مدينتك بعد ما تخلّص الترتيب", "bad"); return; }
+  const age = S.day - S.advisor?.at;
+  const fresh = age >= 0 && age < ADVISOR_HOURS;
   if (!fresh) {
-    const fee = advisorFee(), poor = fee > S.money;
+    const fee = advisorFee(), poor = fee > 0 && fee > S.money;
     sheet(`<h2>💼 المستشار المالي</h2>
       <p>يقرأ مدينتك كلها: الفلوس، وكل حارة، والماء والكهرب، والوظايف، والزحمة، والمباني الواقفة. ويقول لك إذا كنت رابح أو خسران، ووش أكبر أخطاءك، وكيف تصلحها خطوة خطوة.</p>
       <p class="hint">الاستشارة صالحة ${ar(ADVISOR_HOURS)} ساعة باللعبة. سعرها حسب مرحلة مدينتك.</p>
       <div class="sheet-actions"><button class="btn go block" id="advPay" type="button" ${poor ? "disabled" : ""}>${fee ? `استشره بـ${money(fee)} ريال` : "استشره مجاناً (أول مرة)"}${poor ? " · ما يكفي المال" : ""}</button></div>`, "advisor");
     $("advPay").addEventListener("click", () => {
       const f = advisorFee();
-      if (f > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+      if (f > 0 && f > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
       if (f) changeMoney(S, -f, "advisor", "المستشار المالي");
       S.advisor = { at: S.day, used: true };
       sfx.coin(); refresh(); save(); advisorSheet();
     });
     return;
   }
-  const r = advise(S, A), left = ADVISOR_HOURS - (S.day - S.advisor.at);
+  const r = advise(S, A), left = ADVISOR_HOURS - age;
   const mood = r.verdict === "مديون" || r.verdict === "خسران" ? "minus" : "plus";
   sheet(`<h2>💼 المستشار المالي</h2>
     <div class="rows">
@@ -4043,7 +4219,10 @@ $("goal").addEventListener("click", () => { sfx.tap(); goals(); });
 
 function settingsSheet(fromMenu) {
   const q = settings.quality, pushStatus = pushState();
-  if (pushStatus === "off" && me()?.plot != null) pushKey().catch(() => {});
+  const id = me();
+  if (pushStatus === "off" && id?.plot != null) pushKey().catch(() => {});
+  const deviceCopy = id?.plot != null ? store.get(conflictCopyKey(id)) : null;
+  const syncConflict = worldMode && (visiting?.home ?? S).world?.syncConflict;
   sheet(`<h2>الإعدادات</h2>
     <h3>الرسوم</h3><p>«عالية» فيها توهّج الانفجارات والأضواء وأعلى دقة. لو الجوال يسخن أو البطارية تخلص بسرعة، اختر «متوسطة» أو «خفيفة».</p>
     <div class="seg seg-wrap">${[["auto", "✨ تلقائي"], ["saver", "🔋 توفير"], ["low", "خفيفة"], ["medium", "متوازنة"], ["high", "عالية"], ["ultra", "فائقة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
@@ -4062,6 +4241,8 @@ function settingsSheet(fromMenu) {
     <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
     <div id="backupBox"></div>
     <div class="sheet-actions two"><button class="btn" id="copySave" type="button">🔑 اطلع كود</button><button class="btn" id="loadSave" type="button">استرجع من كود</button></div>
+    ${syncConflict ? `<button class="btn block" id="saveConflict" type="button">مزامنة حفظ المدينة</button>` : ""}
+    ${deviceCopy ? `<button class="btn block" id="copyDeviceSave" type="button">نسخة الجهاز قبل المزامنة</button>` : ""}
     <h3>عن اللعبة</h3>
     <p>صُنعت في الرافعية بيد Vamos. الرسم ثلاثي الأبعاد بمكتبة three.js (ترخيص MIT)، وكل المباني مصممة داخل اللعبة.</p>`, fromMenu ? "settings-menu" : "settings");
   $("sheetBody").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
@@ -4070,6 +4251,16 @@ function settingsSheet(fromMenu) {
   }));
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
   $("worldRestart")?.addEventListener("click", () => restartSheet());
+  $("saveConflict")?.addEventListener("click", saveConflictSheet);
+  $("copyDeviceSave")?.addEventListener("click", () => {
+    const box = $("backupBox");
+    box.innerHTML = `<label class="rg-name">كود نسخة هذا الجهاز <textarea id="deviceSaveCode" dir="ltr" readonly></textarea></label>`;
+    const field = $("deviceSaveCode");
+    field.value = b64(new TextEncoder().encode(deviceCopy));
+    field.focus();
+    field.select();
+    navigator.clipboard?.writeText(field.value).then(() => toast("نسخت الكود ✓"), () => {});
+  });
   $("pushDenied")?.addEventListener("click", () => pushDeniedHelp());
   $("pushTest")?.addEventListener("click", async (e) => {
     const button = e.currentTarget, status = $("pushTestStatus"), id = me();
@@ -4126,21 +4317,28 @@ function settingsSheet(fromMenu) {
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
   // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
-  const longCode = () => btoa(unescape(encodeURIComponent(pack(S))));
   const short = onlineOk() && !globalThis.RAFAYA_PREVIEW && typeof CompressionStream !== "undefined";
   $("copySave").addEventListener("click", async (e) => {
     const box = $("backupBox"), button = e.currentTarget;
+    if (arrange) { toast("احفظ الترتيب أو ألغِه أول", "bad"); return; }
+    button.disabled = true;
+    const id = me();
+    const town = fromMenu && id?.plot != null ? await readOwnTown(id) : (visiting?.home ?? S);
+    if (!button.isConnected) return;
+    if (!town) { button.disabled = false; toast("ما قدرنا نقرأ مدينتك عشان ننسخها", "bad"); return; }
+    const snapshot = pack(town);
     let code = "";
     if (short) {
-      button.disabled = true; box.innerHTML = `<p class="hint">نطلع الكود…</p>`;
+      box.innerHTML = `<p class="hint">نطلع الكود…</p>`;
       try {
-        const r = await (await fetch(API + "/move/backup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(pack(S)), old: store.get("rafaya-backup-code") || "" }) })).json();
+        const r = await (await fetch(API + "/move/backup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: await gzipText(snapshot), old: store.get("rafaya-backup-code") || "" }) })).json();
         if (r.code) { code = `${r.code.slice(0, 4)}-${r.code.slice(4)}`; store.set("rafaya-backup-code", r.code); }
       } catch { /* the long code below */ }
-      button.disabled = false;
     }
+    button.disabled = false;
+    if (!box.isConnected) return;
     if (code) box.innerHTML = `<div class="backup-code" dir="ltr">${code}</div><p class="hint">هذا كود مدينتك الحين. لو كملت لعب وتبي آخر شي، اطلع كود جديد.</p>`;
-    else { code = longCode(); box.innerHTML = `<textarea id="saveCode" readonly></textarea><p class="hint">ما قدرنا نوصل للسيرفر، فهذا الكود الطويل.</p>`; $("saveCode").value = code; }
+    else { code = b64(new TextEncoder().encode(snapshot)); box.innerHTML = `<textarea id="saveCode" readonly></textarea><p class="hint">ما قدرنا نوصل للسيرفر، فهذا الكود الطويل.</p>`; $("saveCode").value = code; }
     try { await navigator.clipboard.writeText(code); toast("انسخ الكود ✓"); } catch { $("saveCode")?.select(); }
   });
   $("loadSave").addEventListener("click", function first() { // the first tap shows the box; the next one restores (it used to clear what was typed)
@@ -4148,17 +4346,38 @@ function settingsSheet(fromMenu) {
     $("backupBox").innerHTML = `<label class="rg-name">الكود <input id="restoreCode" type="text" autocomplete="off" dir="ltr" placeholder="ABCD-EFGH" style="text-transform:uppercase"></label>`;
     $("restoreCode").focus();
     $("loadSave").textContent = "استرجع الحين";
-    $("loadSave").onclick = async () => {
+    $("loadSave").onclick = async (event) => {
+      if (arrange || visiting) { toast("ارجع لمدينتك وخلّص ترتيبها أول", "bad"); return; }
+      const button = event.currentTarget, current = S, id = me();
       const raw = $("restoreCode").value.trim();
+      button.disabled = true;
       try {
         let text;
         if (raw.replace(/[^A-Za-z0-9]/g, "").length === 8) { // the short code
           const r = await (await fetch(API + "/move/restore", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: raw }) })).json();
           if (r.error || !r.data) { toast(r.error || "الكود غير صحيح", "bad"); return; }
           text = await gunzipText(r.data);
-        } else text = decodeURIComponent(escape(atob(raw))); // an old long code still works
-        S = unpack(text); save(); world.sync(S); refresh(); closeSheet(); toast("رجعت مدينتك!", "goal");
+        } else text = new TextDecoder("utf-8", { fatal: true }).decode(unb64(raw));
+        if (!button.isConnected || S !== current || me()?.plot !== id?.plot || me()?.name !== id?.name || visiting || arrange) return;
+        const restored = unpack(text), next = analyze(restored);
+        if (restored.world) {
+          if (id?.plot !== restored.world.plot || id?.name !== restored.world.owner) {
+            toast("ادخل حساب المدينة نفسها في الجوف قبل تسترجع نسختها", "bad"); return;
+          }
+          const active = worldMode ? current : await readOwnTown(id);
+          if (!button.isConnected || S !== current || me()?.plot !== id.plot || me()?.name !== id.name || visiting || arrange) return;
+          if ((active?.world?.restartAt || 0) > (restored.world.restartAt || 0) || (active?.war?.seq || 0) > (restored.war?.seq || 0)) {
+            toast("هالنسخة أقدم من آخر تحديث لحساب مدينتك", "bad"); return;
+          }
+          if (!worldMode) { store.set(WORLD_SAVE, pack(restored)); menuBackdrop(); }
+          else { S = restored; A = next; world.newTown(); world.sync(S); restoreTownCamera(S.cam); refresh(); save(); worldSync(true); }
+        } else {
+          if (worldMode) { toast("هذا كود مدينة من طور مختلف", "bad"); return; }
+          S = restored; A = next; world.newTown(); world.sync(S); restoreTownCamera(S.cam); refresh(); save();
+        }
+        closeSheet(); toast("رجعت مدينتك!", "goal");
       } catch { toast("الكود غير صحيح", "bad"); }
+      finally { button.disabled = false; }
     };
   });
 }
@@ -4461,7 +4680,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const paused = ["away", "pause", "settings", "how", "decision", "election", "whatsnew", "update"].includes(sheetFor);
-  if (arrange) { /* the town waits while the mayor rearranges it */ } else if (playing && !visiting && worldMode) {
+  if (arrange || (worldMode && S.world?.syncConflict)) { /* wait for the layout or save to be settled */ } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
     if (!paused && wh - S.day > 3) {
@@ -4527,10 +4746,13 @@ for (const event of ["gesturestart", "gesturechange"]) {
   }, { passive: false });
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) save();
-  else if (playing) refresh();
+  if (document.hidden) save(true);
+  else if (playing) {
+    refresh();
+    if (!sheetFor) saveConflictSheet();
+  }
 });
-addEventListener("pagehide", save);
+addEventListener("pagehide", () => save(true));
 
 // For tests and curious players.
 Object.defineProperty(window, "__S", { get: () => S });

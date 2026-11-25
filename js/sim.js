@@ -264,14 +264,16 @@ export function cantBuild(s, x, y, id) {
   if (t.b && def.quarter && t.b.id === id && (t.b.n || 1) < 4) return s.money < def.cost ? "ما يكفي المال" : ""; // another in the same tile
   if (t.b) {
     // a better road can be laid over an old one
-    if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) return s.money < def.cost ? "ما يكفي المال" : "";
+    if (ROAD_IDS.includes(id) && id !== "road" && ROAD_IDS.includes(t.b.id) && t.b.id !== id) {
+      if (t.b.monument) return "أزل الدوار أول عشان يرجع لك جزء من سعر النصب";
+      return s.money < def.cost ? "ما يكفي المال" : "";
+    }
     return `المكان مشغول: فيه «${B[t.b.id]?.name || "مبنى"}»`;
   }
   if (t.t === "lake") return "هذي بحيرة السد";
   if (def.onWadi && t.t !== "wadi") return "السد ينبني على الوادي بس";
   if (def.onRock && t.t !== "rock") return "الكسارة تنبني على الصخور";
-  const cost = priceOf(s, id) + (t.t === "rock" && !def.onRock ? ROCK_CLEAR : 0);
-  if (s.money < cost) return "ما يكفي المال";
+  if (s.money < buildCost(s, x, y, id)) return "ما يكفي المال";
   return "";
 }
 
@@ -281,6 +283,17 @@ export function priceOf(s, id) {
   if (id !== "vault") return d.cost;
   const n = s.tiles.reduce((k, t) => k + (t.b?.id === "vault" ? 1 : 0), 0);
   return Math.round(d.cost * (1 + VAULT_MORE * n));
+}
+/** Full build price, including every rock under a multi-tile building. */
+export function buildCost(s, x, y, id) {
+  const def = B[id], tile = s.tiles[idx(x, y)];
+  let cost = priceOf(s, id);
+  if (def.onRock || (def.monument && tile.b?.id === "roundabout")) return cost;
+  const size = def.span || 1;
+  for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
+    if (inMap(x + dx, y + dy) && s.tiles[idx(x + dx, y + dy)].t === "rock") cost += ROCK_CLEAR;
+  }
+  return cost;
 }
 export function build(s, x, y, id) {
   const why = cantBuild(s, x, y, id);
@@ -309,31 +322,74 @@ export function build(s, x, y, id) {
 // ---------- power poles ----------
 /** How far a wire runs between two poles, or from a source to its first pole. */
 export const POLE_LINK = 4;
+const poleOffsets = [];
+const powerNetworks = new WeakMap();
+for (let dy = -POLE_LINK; dy <= POLE_LINK; dy++) for (let dx = -POLE_LINK; dx <= POLE_LINK; dx++) {
+  const distance = dx * dx + dy * dy;
+  if (distance > 0 && distance <= POLE_LINK * POLE_LINK) poleOffsets.push({ dx, dy, distance });
+}
 /**
- * Which poles carry power, and the wires between them: a pole is live when it stands within a
- * working source's reach (or POLE_LINK of it), or within POLE_LINK of a live pole.
- * Returns { live: Set of tile indexes, wires: [[from, to], ...] } (from is a source or a pole).
+ * Physical spans stay in place when power is cut. Short spans connect each group of poles,
+ * with continuous wiring along electrified roads and a single lead from each nearby source.
  */
 export function powerNet(s) {
-  const poles = [], sources = [];
+  const poles = new Map(), sources = new Map(), topology = [];
   s.tiles.forEach((t, i) => {
     const b = t.b;
-    if (!b || b.build > 0 || b.ruin) return;
-    if (b.id === "pole" || B[b.id]?.wire) poles.push(i); // poles, and the electrified road (its own poles along it)
-    else if (B[b.id]?.power > 0 && B[b.id]?.reach) sources.push(i);
+    if (!b || b.build > 0) return;
+    if ((B[b.id]?.pole || B[b.id]?.wire) && !b.ruin) {
+      poles.set(i, b.id);
+      topology.push(i * 4 + (B[b.id].wire ? 1 : 0));
+    } else if (B[b.id]?.power > 0 && B[b.id]?.reach) {
+      const active = !b.ruin && warWorks(b.wd) > 0;
+      sources.set(i, active);
+      topology.push(i * 4 + (active ? 2 : 3));
+    }
   });
-  const live = new Set(), wires = [], q = [];
-  const dist = (i, j) => Math.hypot((i % N) - (j % N), Math.floor(i / N) - Math.floor(j / N));
-  for (const p of poles) {
-    let best = -1, bd = Infinity;
-    for (const src of sources) { const d = dist(p, src); if (d <= POLE_LINK + 0.01 && d < bd) { bd = d; best = src; } }
-    if (best >= 0) { live.add(p); wires.push([best, p]); q.push(p); }
+  const key = topology.join(","), previous = powerNetworks.get(s);
+  if (previous?.key === key) return previous.net;
+  const live = new Set(), wires = [], net = { live, wires };
+  powerNetworks.set(s, { key, net });
+  if (!poles.size) return net;
+  const parent = new Map([...poles.keys()].map((i) => [i, i]));
+  function root(i) {
+    while (i !== parent.get(i)) {
+      parent.set(i, parent.get(parent.get(i)));
+      i = parent.get(i);
+    }
+    return i;
   }
-  for (let h = 0; h < q.length; h++) for (const p of poles) {
-    if (live.has(p) || dist(q[h], p) > POLE_LINK + 0.01) continue;
-    live.add(p); wires.push([q[h], p]); q.push(p);
+  const spans = [], feeders = [];
+  for (const [a, id] of poles) {
+    const x = a % N, y = Math.floor(a / N);
+    for (const { dx, dy, distance } of poleOffsets) {
+      if (!inMap(x + dx, y + dy)) continue;
+      const b = idx(x + dx, y + dy);
+      if (sources.has(b)) feeders.push({ a: b, b: a, distance });
+      if (b > a && poles.has(b)) {
+        const road = distance === 1 && id === "powerroad" && poles.get(b) === "powerroad";
+        spans.push({ a, b, distance, road });
+      }
+    }
   }
-  return { live, wires };
+  spans.sort((p, q) => Number(q.road) - Number(p.road) || p.distance - q.distance || p.a - q.a || p.b - q.b);
+  for (const { a, b, road } of spans) {
+    const p = root(a), q = root(b);
+    if (p === q && !road) continue;
+    parent.set(q, p);
+    wires.push([a, b]);
+  }
+  const connected = new Set(), powered = new Set();
+  feeders.sort((p, q) => p.distance - q.distance || p.a - q.a || p.b - q.b);
+  for (const { a, b } of feeders) {
+    const group = root(b), key = a * N * N + group;
+    if (connected.has(key)) continue;
+    connected.add(key);
+    wires.push([a, b]);
+    if (sources.get(a)) powered.add(group);
+  }
+  for (const i of poles.keys()) if (powered.has(root(i))) live.add(i);
+  return net;
 }
 
 // ---------- paths ----------
@@ -644,6 +700,7 @@ export function moveBuilding(s, fx, fy, tx, ty) {
 }
 
 /** Remove a building (a third of its price comes back) or clear a rock. */
+export const removalRefund = (b) => Math.floor((B[b.id].cost * (b.n || 1) + (B[b.monument]?.cost || 0)) / 3);
 export function demolish(s, x, y) {
   const t = s.tiles[idx(x, y)];
   if (!owns(s, x, y)) return "الأرض هذي مو لك";
@@ -651,8 +708,7 @@ export function demolish(s, x, y) {
   if (t.b?.id === "decopart") { t.b = null; return ""; }
   if (t.b?.span) dropParts(s, idx(x, y));
   if (t.b) {
-    const def = B[t.b.id];
-    changeMoney(s, Math.floor((def.cost + (B[t.b.monument]?.cost || 0)) / 3), "remove", levelName(t.b));
+    changeMoney(s, removalRefund(t.b), "remove", levelName(t.b));
     s.pop = Math.max(0, s.pop - (t.b.res || 0));
     t.b = null;
     return "";
@@ -751,7 +807,7 @@ export function analyze(s) {
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const b = s.tiles[idx(x, y)].b, def = b && B[b.id];
     if (!def?.reach || b.build > 0 || b.ruin) continue;
-    const mark = def.water > 0 ? a.watered : def.power > 0 ? a.powered : null;
+    const mark = def.water > 0 ? a.watered : def.power > 0 && warWorks(b.wd) > 0 ? a.powered : null;
     if (!mark) continue;
     for (let yy = y - def.reach; yy <= y + def.reach; yy++) for (let xx = x - def.reach; xx <= x + def.reach; xx++)
       if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= def.reach) mark[idx(xx, yy)] = 1;
@@ -1253,12 +1309,19 @@ export function step(s, r = Math.random) {
   if (raining && s.day - (s.lastFlood ?? -999) > 72 && r() < (s.tech.dams ? 0.02 : 0.03) * (s.away ? 0.3 : 1)) {
     const lost = [], damaged = [];
     let refund = 0;
+    const targets = new Set();
     s.tiles.forEach((t, i) => {
       if (t.t !== "wadi" || !t.b || i % N > firstDam || t.b.id === "dam") return;
+      if (t.b.id === "decopart") {
+        if (s.tiles[t.b.of]?.b?.span) targets.add(t.b.of);
+      } else targets.add(i);
+    });
+    for (const i of targets) {
+      const t = s.tiles[i];
       const isRoad = ROAD_IDS.includes(t.b.id);
       if (r() < (isRoad ? 0.3 : 0.45) * (s.terrain === "bigwadi" ? 1.4 : 1) * (s.tech.floodworks ? 0.5 : 1)) { lost.push({ i, id: t.b.id }); refund += lose(s, t); }
       else if (!isRoad) { t.b.cond = Math.max(1, (t.b.cond ?? 100) - 50); damaged.push(i); }
-    });
+    }
     if (lost.length || damaged.length) {
       s.lastFlood = s.day;
       const names = [...new Set(lost.filter((x) => !ROAD_IDS.includes(x.id)).map((x) => B[x.id].name))].slice(0, 3);
@@ -1527,7 +1590,14 @@ export function deputyCatchUp(s, hours, r = Math.random) {
 // ---------- saving ----------
 
 export function pack(s) {
-  const tiles = s.tiles.map((t) => (t.t === "sand" ? "" : t.t[0]) + (t.b ? `:${t.b.id}:${t.b.lvl}:${t.b.res || 0}:${t.b.build || 0}:${Math.round(t.b.cond ?? 100)}${t.b.rot || t.b.wd ? `:${t.b.rot || 0}` : ""}${t.b.wd ? `:${Math.round(t.b.wd * 10) / 10}` : ""}` : ""));
+  const tiles = s.tiles.map(({ t, b }) => {
+    const ground = t === "sand" ? "" : t[0];
+    if (!b) return ground;
+    const ext = [b.n, b.span, b.of, b.monument, b.ruin].map((value) => value ?? "").join(",").replace(/,+$/, "");
+    const rotation = b.rot || b.wd || ext ? `:${b.rot || 0}` : "";
+    const damage = b.wd || ext ? `:${Math.round((b.wd || 0) * 10) / 10}` : "";
+    return `${ground}:${b.id}:${b.lvl || 0}:${b.res || 0}:${b.build || 0}:${Math.round(b.cond ?? 100)}${rotation}${damage}${ext ? `:${ext}` : ""}`;
+  });
   const { tiles: _, ...rest } = s;
   return JSON.stringify({ ...rest, tiles });
 }
@@ -1535,10 +1605,14 @@ export function pack(s) {
 export function unpack(text) {
   const o = JSON.parse(text);
   if (!o || o.v !== 1 || !Array.isArray(o.tiles)) throw new Error("bad save");
+  if (!Number.isInteger(o.day) || o.day < 1 || !Number.isInteger(o.era) || !ERAS[o.era] || !Number.isFinite(o.pop) || !Number.isFinite(o.happy)) throw new Error("bad save");
+  o.tech ??= {};
+  o.events ??= [];
+  if (typeof o.tech !== "object" || Array.isArray(o.tech) || !Array.isArray(o.events) || o.events.some((event) => !event || typeof event.id !== "string")) throw new Error("bad save");
   if (!Number.isFinite(o.money)) o.money = 0; // a budget that went NaN (a town at the last stage, before its staff cost was set) is saved as null
   // Saves from the 30×30 map: the old town goes in the middle, with new land around it to buy.
   const old = Math.round(Math.sqrt(o.tiles.length));
-  if (old * old !== o.tiles.length || old > N) throw new Error("bad save");
+  if (!old || old * old !== o.tiles.length || old > N || (N - old) % 2) throw new Error("bad save");
   if (old < N) {
     const off = (N - old) / 2, land = makeLand(rng((o.seed || 1) + 7));
     const fresh = land.map((t) => (t.t === "sand" || t.t === "wadi" ? "" : t.t[0]));
@@ -1561,21 +1635,51 @@ export function unpack(text) {
   o.name ||= "الرافعية"; o.site ||= "main"; o.terrain ||= "wadi";
   // Version 3 (houses are upgraded by the mayor): every house in an older save goes back to a tent.
   const toTents = o.hv !== 3;
-  const shift = 0;
   o.hv = 3;
   const faydaMissing = o.fv !== 1;
   o.fv = 1;
   o.tiles = o.tiles.map((str) => {
-    const [t, id, lvl, res, build, cond, rot, wd] = String(str).split(":");
+    const [t, id, lvl, res, build, cond, rot, wd, ext] = String(str).split(":");
     const ground = t === "w" ? "wadi" : t === "r" ? "rock" : t === "f" ? "fayda" : t === "l" ? "lake" : "sand";
-    const b = id && B[id] ? { id, lvl: id === "house" && toTents ? 0 : Math.min((Number(lvl) || 0) + shift, (B[id].levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || (id === "vault" ? VAULT.length : 0) || 1) - 1), res: Number(res) || 0 } : null;
+    const maxLevel = (B[id]?.levels?.length || BIZ_LEVELS[id]?.length || MIL[id]?.length || (id === "vault" ? VAULT.length : 1)) - 1;
+    const level = id === "house" && toTents ? 0 : clamp(Math.floor(Number(lvl) || 0), 0, maxLevel);
+    const b = id && B[id] ? { id, lvl: level, res: Number(res) || 0 } : null;
     if (b && Number(build) > 0) b.build = Number(build);
-    if (b) b.cond = cond === undefined ? 100 : Number(cond);
+    if (b) b.cond = cond === undefined || !Number.isFinite(Number(cond)) ? 100 : clamp(Number(cond), 0, 100);
     if (b && Number(rot) > 0) b.rot = Number(rot) % 4; // quarter turns the mayor gave it
     if (b && Number(wd) > 0) b.wd = Math.min(100, Number(wd)); // war damage (world of al-Jouf), kept by the server
+    if (b && ext) {
+      const [count, span, anchor, monument, ruin] = ext.split(",");
+      if (B[id].quarter && Number(count) > 1) b.n = Math.min(4, Math.floor(Number(count)));
+      if (B[id].span && Number(span) === B[id].span) b.span = B[id].span;
+      if (id === "decopart" && /^\d+$/.test(anchor) && Number(anchor) < old * old) {
+        const offset = (N - old) / 2, from = Number(anchor);
+        b.of = idx(from % old + offset, Math.floor(from / old) + offset);
+      }
+      if (id === "roundabout" && B[monument]?.monument) b.monument = monument;
+      if (Number.isFinite(Number(ruin)) && Number(ruin) > 0) b.ruin = Math.floor(Number(ruin));
+    }
     if (b && ground === "rock" && !B[id].onRock) return { t: "sand", b }; // a building never stands on loose rocks (only the quarry does)
     return { t: ground, b };
   });
+  // Existing saves kept the three occupied tiles but lost their links to the large decoration.
+  const parts = new Set();
+  o.tiles.forEach(({ b }, i) => {
+    const size = B[b?.id]?.span;
+    if (!size) return;
+    const x = i % N, y = Math.floor(i / N), footprint = [];
+    if (inMap(x + size - 1, y + size - 1)) {
+      for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) if (dx || dy) footprint.push(idx(x + dx, y + dy));
+    }
+    if (footprint.length && footprint.every((at) => {
+      const part = o.tiles[at].b;
+      return part?.id === "decopart" && (part.of === undefined || part.of === i) && !parts.has(at);
+    })) {
+      b.span = size;
+      for (const at of footprint) { o.tiles[at].b.of = i; parts.add(at); }
+    } else delete b.span;
+  });
+  o.tiles.forEach((tile, i) => { if (tile.b?.id === "decopart" && !parts.has(i)) tile.b = null; });
   if (faydaMissing) addFayda(o.tiles, rng((o.seed || 1) + 99));
   // Plots bought before they were split in halves: both halves are yours.
   for (const k of Object.keys(o.owned)) if (o.owned[k] && /^[nesw]\d?$/.test(k)) { o.owned[`${k}a`] = o.owned[`${k}b`] = true; delete o.owned[k]; }

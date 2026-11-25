@@ -23,6 +23,8 @@ const GLASS = new Set(["#4f7f99", "#2d3a46", "#26415e", "#1d3b55", "#1f3f6b", "#
  * metal (bare steel), glass (dark tinted) and glow (lamps and screens bright enough to bloom).
  */
 export const SETS = ["matte", "shiny", "lights", "paint", "metal", "glass", "glow", ...BUILDING_SURFACES];
+export const POLE_INSULATORS = [-0.18, 0, 0.18];
+export const POLE_WIRE_HEIGHT = 0.955;
 
 /** Collects coloured parts and merges them into one geometry per material. */
 class Builder {
@@ -1330,7 +1332,7 @@ const MAKERS = {
     b.cyl(.04,.04,.011,"#53534a",{y:.298},8,"metal");
     b.cyl(.033,.033,.01,"#53534a",{y:.845},8,"metal");
     b.box(0.42, 0.035, 0.05, "#6b4e33", { y: 0.88 });
-    for (const x of [-0.18, 0, 0.18]) b.cyl(0.014, 0.014, 0.05, "#e9e4d8", { x, y: 0.905 }, 5, "shiny");
+    for (const x of POLE_INSULATORS) b.cyl(0.014, 0.014, 0.05, "#e9e4d8", { x, y: POLE_WIRE_HEIGHT - 0.05 }, 5, "shiny");
   },
   lantern(b) {
     b.lathe([[.032,0],[.03,.06],[.024,.115],[.015,.389],[.026,.409],[.044,.425]],"#564d40",{},9,"metal"); // the post stands in the ground, no stone base

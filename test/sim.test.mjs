@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newGame, step, build, demolish, cantBuild, analyze, catchUp, pack, unpack, idx, startResearch, houseBlocker, owns, buyPlot, plotAt, rng, seasonOf } from "../js/sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, catchUp, pack, unpack, idx, startResearch, houseBlocker, owns, buyPlot, plotAt, rng, seasonOf, powerNet, ROCK_CLEAR, removalRefund } from "../js/sim.js";
 import { B, MAP_SIZE as N, START_MONEY } from "../js/data.js";
+import { advise } from "../js/advisor.js";
 import { autoplay } from "./balance.mjs";
 
 const fixedRandom = () => { let s = 7; return () => ((s = (s * 16807) % 2147483647) / 2147483647); };
@@ -109,6 +110,33 @@ test("a save from the old 30×30 map opens with the town in the middle", () => {
   assert.equal(back.tiles.length, N * N);
   const off = (N - 30) / 2;
   assert.equal(back.tiles[idx((465 % 30) + off, Math.floor(465 / 30) + off)].b.id, "house");
+});
+
+test("a truncated save is refused and old counters keep valid building levels", () => {
+  const saved = JSON.parse(pack(newGame(48)));
+  assert.throws(() => unpack(JSON.stringify({ ...saved, tiles: [] })), /bad save/);
+  assert.throws(() => unpack(JSON.stringify({ ...saved, era: 120 })), /bad save/);
+  assert.throws(() => unpack(JSON.stringify({ ...saved, events: [null] })), /bad save/);
+  saved.tiles[idx(36, 36)] = ":house:-5:3:0:bad";
+  const town = unpack(JSON.stringify(saved));
+  assert.equal(town.tiles[idx(36, 36)].b.lvl, 0);
+  assert.equal(town.tiles[idx(36, 36)].b.cond, 100);
+  assert.ok(Number.isFinite(analyze(town).net));
+});
+
+test("financial advice distinguishes an even budget, debt and a completely full vault", async () => {
+  const { moneyCap } = await import("../js/sim.js");
+  const town = newGame(64);
+  assert.match(advise(town, { ...analyze(town), net: 0 }).verdict, /يغطي المصاريف/);
+  town.money = -100;
+  const debt = advise(town, { ...analyze(town), net: 0 }).findings[0];
+  assert.match(debt.steps[0], /تحتاج فائض/);
+  town.world = { plot: 1, owner: "Test", start: 3 };
+  const cap = moneyCap(town);
+  town.money = cap - 1;
+  assert.ok(!advise(town, analyze(town)).findings.some((f) => f.title === "الخزنة مليانة"));
+  town.money = cap;
+  assert.ok(advise(town, analyze(town)).findings.some((f) => f.title === "الخزنة مليانة"));
 });
 
 test("decisions about the village: they show up for a reason and do what they say", async () => {
@@ -423,7 +451,6 @@ test("weather follows the season: no rain in summer, Eid al-Fitr after Ramadan",
 });
 
 test("power poles carry power away from a smoky generator, and only when linked", async () => {
-  const { powerNet } = await import("../js/sim.js");
   const s = newGame(5);
   s.era = 1;
   const free = (x, y) => { const t = s.tiles[y * N + x]; t.t = "sand"; t.b = null; };
@@ -438,6 +465,23 @@ test("power poles carry power away from a smoky generator, and only when linked"
   const a = analyze(s);
   assert.equal(a.powered[20 * N + 26], 1, "a pole lights three tiles round it, past the generator's own reach");
   assert.equal(a.powered[20 * N + 28], 0);
+});
+
+test("power spans stay visible before their source is built and when it fails", () => {
+  const s = newGame(22), y = 20;
+  const put = (x, id, extra) => { s.tiles[idx(x, y)].b = { id, lvl: 0, cond: 100, ...extra }; };
+  put(18, "pole"); put(22, "pole"); put(26, "powerroad"); put(27, "powerroad"); put(32, "pole");
+  const line = [idx(18, y), idx(22, y), idx(26, y), idx(27, y)];
+  const expected = line.slice(1).map((tile, i) => [line[i], tile]);
+  assert.deepEqual(powerNet(s).wires, [expected[2], expected[0], expected[1]]);
+  assert.equal(powerNet(s).live.size, 0);
+  put(14, "generator");
+  assert.deepEqual([...powerNet(s).live], line);
+  const cables = powerNet(s).wires;
+  put(14, "generator", { wd: 85 });
+  assert.deepEqual(powerNet(s).wires, cables);
+  assert.equal(powerNet(s).live.size, 0);
+  assert.equal(analyze(s).powered[idx(15, y)], 0);
 });
 
 test("the bigger world map keeps every old plot where it was, under the same number", async () => {
@@ -567,12 +611,22 @@ test("the electrified road carries power along it from a generator and lights wh
 });
 
 test("a big decoration takes 2×2 tiles; its other tiles go with it; small ones and old saves stay one tile", () => {
-  const s = newGame(12);
+  let s = newGame(12);
   s.money = 1e6; s.era = 2;
   let x0 = -1, y0 = -1;
   for (let y = 0; y < N - 1 && x0 < 0; y++) for (let x = 0; x < N - 1; x++) if (!cantBuild(s, x, y, "bigfountain")) { x0 = x; y0 = y; break; }
   assert.ok(x0 >= 0, "there is room for it");
+  const rocks = s.tiles[idx(x0 + 1, y0)]; rocks.t = "rock";
+  const funds = s.money; s.money = B.bigfountain.cost + ROCK_CLEAR - 1;
+  assert.equal(build(s, x0, y0, "bigfountain"), "ما يكفي المال");
+  assert.equal(rocks.t, "rock");
+  s.money = funds;
   assert.equal(build(s, x0, y0, "bigfountain"), "");
+  const oldSave = JSON.parse(pack(s));
+  oldSave.tiles = oldSave.tiles.map((tile) => tile.split(":").slice(0, 8).join(":"));
+  assert.equal(unpack(JSON.stringify(oldSave)).tiles[idx(x0+1, y0+1)].b.of, idx(x0, y0), "old footprints are reconstructed");
+  s = unpack(pack(s));
+  assert.equal(s.tiles[idx(x0,y0)].b.span, 2);
   assert.equal(s.tiles[idx(x0 + 1, y0 + 1)].b.id, "decopart");
   assert.ok(cantBuild(s, x0 + 1, y0, "streetpalm"), "its other tiles are taken");
   for (let h = 0; h < 50; h++) step(s, fixedRandom());
@@ -586,6 +640,20 @@ test("a big decoration takes 2×2 tiles; its other tiles go with it; small ones 
   assert.equal(s.tiles[idx(x0 + 1, y0)].b, null);
 });
 
+test("a flood touching one corner of a decoration handles its whole footprint once", () => {
+  const s = newGame(76);
+  s.tiles.forEach((t) => { t.b = null; t.t = "sand"; });
+  const x = N / 2 - 2, y = N / 2 - 2, anchor = idx(x, y);
+  s.money = 1e5; s.era = 2;
+  assert.equal(build(s, x, y, "bigfountain"), "");
+  s.tiles[idx(x + 1, y)].t = "wadi";
+  s.tiles[idx(x + 1, y + 1)].t = "wadi";
+  s.events = [{ id: "rain", left: 10 }];
+  const flood = step(s, () => .001).msgs.find((m) => m.kind === "flood");
+  assert.deepEqual(flood.lost, [anchor]);
+  for (const i of [anchor, anchor + 1, anchor + N, anchor + N + 1]) assert.equal(s.tiles[i].b, null);
+});
+
 test("small decorations: four of the same on one tile, each counting", () => {
   const s = newGame(13);
   s.money = 1e5;
@@ -593,6 +661,11 @@ test("small decorations: four of the same on one tile, each counting", () => {
   for (let y = 0; y < N && x0 < 0; y++) for (let x = 0; x < N; x++) if (!cantBuild(s, x, y, "streetpalm")) { x0 = x; y0 = y; break; }
   for (let k = 0; k < 4; k++) assert.equal(build(s, x0, y0, "streetpalm"), "", `palm ${k + 1}`);
   assert.equal(s.tiles[idx(x0, y0)].b.n, 4);
+  const restored = unpack(pack(s));
+  assert.equal(restored.tiles[idx(x0,y0)].b.n, 4);
+  const before = restored.money;
+  assert.equal(demolish(restored, x0, y0), "");
+  assert.equal(restored.money - before, Math.floor(B.streetpalm.cost * 4 / 3));
   assert.ok(cantBuild(s, x0, y0, "streetpalm"), "a fifth does not fit");
   assert.ok(cantBuild(s, x0, y0, "flowers"), "another kind does not share it");
   const one = analyze({ ...s, tiles: s.tiles.map((t, i) => (i === idx(x0, y0) ? { ...t, b: { ...t.b, n: 1 } } : t)) });
@@ -610,6 +683,10 @@ test("a big decoration can be set in a roundabout: the road keeps working and th
   assert.equal(build(s, at % N, Math.floor(at / N), "dallah"), "");
   assert.equal(s.tiles[at].b.id, "roundabout");
   assert.equal(s.tiles[at].b.monument, "dallah");
+  const restored = unpack(pack(s));
+  assert.equal(restored.tiles[at].b.monument, "dallah");
+  assert.match(cantBuild(restored, at % N, Math.floor(at / N), "asphalt"), /النصب/);
+  assert.equal(removalRefund(restored.tiles[at].b), Math.floor((B.roundabout.cost + B.dallah.cost) / 3));
   assert.ok(analyze(s).decor[at] > before);
   assert.ok(cantBuild(s, at % N, Math.floor(at / N), "olivetree"), "one to a roundabout");
 });
