@@ -320,44 +320,55 @@ export const REGION = { found: [15000, 30000, 60000, 120000, 200000], startMoney
 
 // The world of al-Jouf: one map shared by every player, in plots (COLS × ROWS). Each part of the
 // region has its own land; the names mark where the real places are (roughly).
-// The map grew from 24 × 16 to 40 × 26: the first map sits inside it at (8, 5) and its plots keep their
-// numbers (0 … 383); the land added round it is numbered after them, in reading order.
+// The map grew twice, and every plot keeps its number: first 24 × 16 (plots 0 … 383), then 40 × 26 round it
+// (numbered after them, in reading order), then 6 columns more on each side, 52 × 26 (numbered after those,
+// in reading order). On today's map the 40 × 26 one starts at column 6.
 export const WORLD = {
-  cols: 40, rows: 26, first: { cols: 24, rows: 16, x: 8, y: 5 },
+  cols: 52, rows: 26, old: { cols: 40, rows: 26, x: 6, y: 0 }, first: { cols: 24, rows: 16, x: 14, y: 5 },
   places: [
-    { name: "القريات", x: 11, y: 8, terrain: "mountain", r: 3.2 },
-    { name: "طبرجل", x: 16, y: 10, terrain: "plain", r: 3 },
-    { name: "دومة الجندل", x: 19, y: 14, terrain: "bigwadi", r: 2.6 },
-    { name: "الرافعية", x: 14, y: 15, terrain: "wadi", r: 2.2 },
-    { name: "سكاكا", x: 22, y: 12, terrain: "wadi", r: 3 },
-    { name: "الحماد", x: 21, y: 7, terrain: "mountain", r: 4 },
-    { name: "النفود الكبير", x: 26, y: 19, terrain: "dunes", r: 7 },
-    { name: "روضات الجوف", x: 28, y: 9, terrain: "meadow", r: 3 },
-    { name: "الحديثة", x: 5, y: 6, terrain: "plain", r: 2.6 },
-    { name: "العيساوية", x: 9, y: 12, terrain: "plain", r: 2.2 },
-    { name: "الشويحطية", x: 23, y: 3, terrain: "mountain", r: 2.6 },
-    { name: "صوير", x: 32, y: 12, terrain: "plain", r: 2.6 },
-    { name: "ميقوع", x: 25, y: 14, terrain: "wadi", r: 2 },
-    { name: "أبو عجرم", x: 33, y: 18, terrain: "dunes", r: 2.6 },
-    { name: "زلوم", x: 18, y: 21, terrain: "meadow", r: 2.2 }
+    { name: "القريات", x: 17, y: 8, terrain: "mountain", r: 3.2 },
+    { name: "طبرجل", x: 22, y: 10, terrain: "plain", r: 3 },
+    { name: "دومة الجندل", x: 25, y: 14, terrain: "bigwadi", r: 2.6 },
+    { name: "الرافعية", x: 20, y: 15, terrain: "wadi", r: 2.2 },
+    { name: "سكاكا", x: 28, y: 12, terrain: "wadi", r: 3 },
+    { name: "الحماد", x: 27, y: 7, terrain: "mountain", r: 4 },
+    { name: "النفود الكبير", x: 32, y: 19, terrain: "dunes", r: 7 },
+    { name: "روضات الجوف", x: 34, y: 9, terrain: "meadow", r: 3 },
+    { name: "الحديثة", x: 11, y: 6, terrain: "plain", r: 2.6 },
+    { name: "العيساوية", x: 15, y: 12, terrain: "plain", r: 2.2 },
+    { name: "الشويحطية", x: 29, y: 3, terrain: "mountain", r: 2.6 },
+    { name: "صوير", x: 38, y: 12, terrain: "plain", r: 2.6 },
+    { name: "ميقوع", x: 31, y: 14, terrain: "wadi", r: 2 },
+    { name: "أبو عجرم", x: 39, y: 18, terrain: "dunes", r: 2.6 },
+    // added with the map's widening (2026-11-25): west and east of الرافعية, as on the region map
+    { name: "الأضارع", x: 16, y: 16, terrain: "mountain", r: 2.4 },
+    { name: "الرديفة", x: 23, y: 17, terrain: "meadow", r: 2.4 },
+    { name: "زلوم", x: 24, y: 21, terrain: "meadow", r: 2.2 }
   ]
 };
-const FIRST = WORLD.first, FIRST_N = FIRST.cols * FIRST.rows;
+const FIRST = WORLD.first, FIRST_N = FIRST.cols * FIRST.rows, OLD = WORLD.old;
 const inFirst = (x, y) => x >= FIRST.x && x < FIRST.x + FIRST.cols && y >= FIRST.y && y < FIRST.y + FIRST.rows;
-const ADDED = [], ADDED_AT = new Map();
-for (let y = 0; y < WORLD.rows; y++) for (let x = 0; x < WORLD.cols; x++) if (!inFirst(x, y)) { ADDED_AT.set(y * WORLD.cols + x, ADDED.length); ADDED.push([x, y]); }
+const inOld = (x, y) => x >= OLD.x && x < OLD.x + OLD.cols && y >= OLD.y && y < OLD.y + OLD.rows;
+const ADDED = [], ADDED_AT = new Map(), WIDE = [], WIDE_AT = new Map();
+for (let y = OLD.y; y < OLD.y + OLD.rows; y++) for (let x = OLD.x; x < OLD.x + OLD.cols; x++) if (!inFirst(x, y)) { ADDED_AT.set(y * WORLD.cols + x, ADDED.length); ADDED.push([x, y]); }
+for (let y = 0; y < WORLD.rows; y++) for (let x = 0; x < WORLD.cols; x++) if (!inOld(x, y)) { WIDE_AT.set(y * WORLD.cols + x, WIDE.length); WIDE.push([x, y]); }
 /** Where a plot is on the map ([-1, -1] if there is no such plot). */
 export function worldXY(plot) {
   if (plot >= 0 && plot < FIRST_N) return [(plot % FIRST.cols) + FIRST.x, Math.floor(plot / FIRST.cols) + FIRST.y];
-  return ADDED[plot - FIRST_N] || [-1, -1];
+  if (plot < FIRST_N + ADDED.length) return ADDED[plot - FIRST_N] || [-1, -1];
+  return WIDE[plot - FIRST_N - ADDED.length] || [-1, -1];
 }
 /** The plot number of a place on the map. */
 export function worldPlot(x, y) {
   if (inFirst(x, y)) return (y - FIRST.y) * FIRST.cols + (x - FIRST.x);
-  return FIRST_N + ADDED_AT.get(y * WORLD.cols + x);
+  if (inOld(x, y)) return FIRST_N + ADDED_AT.get(y * WORLD.cols + x);
+  return FIRST_N + ADDED.length + WIDE_AT.get(y * WORLD.cols + x);
 }
+/** Towns that stood before الأضارع and الرديفة were added keep the place (and the landmarks) they had. */
+const PLACE_KEEP = { 219: "العيساوية", 243: "الرافعية", 249: "دومة الجندل", 267: "الرافعية", 268: "الرافعية", 272: "الرافعية", 273: "دومة الجندل", 274: "دومة الجندل", 291: "الرافعية", 292: "الرافعية", 295: "الرافعية", 296: "الرافعية", 297: "النفود الكبير" };
 /** The nearest named place to a plot. */
 export function worldPlace(plot) {
+  if (PLACE_KEEP[plot]) return PLACE_KEEP[plot];
   const [x, y] = worldXY(plot);
   return WORLD.places.reduce((b, p) => (Math.hypot(x - p.x, y - p.y) / p.r < Math.hypot(x - b.x, y - b.y) / b.r ? p : b)).name;
 }
@@ -368,7 +379,7 @@ export function worldTerrain(plot) {
   for (const p of WORLD.places) { const d = Math.hypot(x - p.x, y - p.y) / p.r; if (d < 1 && d < bd) { bd = d; best = p; } }
   if (best) return best.terrain;
   if (y <= 2) return "mountain"; // the stony Hamad to the north
-  return y >= 16 || (x >= 25 && y >= 13) ? "dunes" : "plain";
+  return y >= 16 || (x >= 31 && y >= 13) ? "dunes" : "plain";
 }
 
 // Bank loans: the money now, paid back every hour with interest. Paying early skips the interest left.

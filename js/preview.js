@@ -41,9 +41,9 @@ function pvTown(name, plot, owner, era, mil) {
 function pvMakeBots() {
   if (pvState.bots) return;
   const bots = [
-    { name: "أبو_مشعل", town: "هجرة الشعيب", at: [18, 12], era: 2, mood: "enemy", mil: (put) => { put(22, 39, "milhq", 1); put(25, 39, "dronebase", 1); put(28, 39, "missilepad", 1); put(31, 39, "radar", 1); put(33, 39, "airdef", 1); put(44, 39, "airdef"); } },
-    { name: "أبو_تركي", town: "النبك", at: [10, 18], era: 2, mood: "calm", mil: (put) => { put(22, 39, "milhq"); put(25, 39, "radar"); put(28, 39, "airdef"); } },
-    { name: "سالم_الحربي", town: "الخضراء", at: [21, 19], era: 1, mood: "loud", mil: (put) => { put(22, 39, "milhq"); put(25, 39, "dronebase"); } }
+    { name: "أبو_مشعل", town: "هجرة الشعيب", at: [24, 12], era: 2, mood: "enemy", mil: (put) => { put(22, 39, "milhq", 1); put(25, 39, "dronebase", 1); put(28, 39, "missilepad", 1); put(31, 39, "radar", 1); put(33, 39, "airdef", 1); put(44, 39, "airdef"); } },
+    { name: "أبو_تركي", town: "النبك", at: [16, 18], era: 2, mood: "calm", mil: (put) => { put(22, 39, "milhq"); put(25, 39, "radar"); put(28, 39, "airdef"); } },
+    { name: "سالم_الحربي", town: "الخضراء", at: [27, 19], era: 1, mood: "loud", mil: (put) => { put(22, 39, "milhq"); put(25, 39, "dronebase"); } }
   ];
   for (const b of bots) {
     const plot = worldPlot(b.at[0], b.at[1]);
@@ -292,7 +292,7 @@ function pvReadyTown(s) {
 }
 
 function pvSample() {
-  const name = "عمدة_التجربة", town = "واحة الرافعية", plot = worldPlot(19, 14), secret = "trial";
+  const name = "عمدة_التجربة", town = "واحة الرافعية", plot = worldPlot(25, 14), secret = "trial";
   const state = pvReadyTown(newGame(89213, { name: town, site: "world", terrain: "plain" }));
   state.day = pvHour();
   state.world = { plot, owner: name, start: state.day };

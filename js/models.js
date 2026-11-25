@@ -2386,7 +2386,7 @@ function vaultParts(b, k) {
 //   kaf:    القريات, الحديثة, العيساوية, الحماد, الشويحطية, زلوم: black basalt of the harra, arched doors (Qasr Kaf)
 //   rawda:  طبرجل, روضات الجوف, صوير: white limestone arcades among olive groves
 //   nafud:  النفود الكبير, أبو عجرم: sand pillars under a black goat-hair tent with Sadu stripes
-export const PLACE_STYLE = { "دومة الجندل": "jandal", "سكاكا": "zabal", "ميقوع": "zabal", "القريات": "kaf", "الحديثة": "kaf", "العيساوية": "kaf", "الحماد": "kaf", "الشويحطية": "kaf", "زلوم": "kaf", "طبرجل": "rawda", "روضات الجوف": "rawda", "صوير": "rawda", "النفود الكبير": "nafud", "أبو عجرم": "nafud" };
+export const PLACE_STYLE = { "دومة الجندل": "jandal", "سكاكا": "zabal", "ميقوع": "zabal", "القريات": "kaf", "الحديثة": "kaf", "العيساوية": "kaf", "الحماد": "kaf", "الشويحطية": "kaf", "زلوم": "kaf", "طبرجل": "rawda", "روضات الجوف": "rawda", "صوير": "rawda", "النفود الكبير": "nafud", "أبو عجرم": "nafud", "الأضارع": "kaf", "الرديفة": "rawda" };
 const STYLED = ["gate", "tower", "skyline", "airport"];
 let landStyle = "";
 /** The style of the landmarks being drawn: a PLACE_STYLE value, or "" for الرافعية's own. */
