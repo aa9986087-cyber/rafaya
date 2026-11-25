@@ -15,14 +15,14 @@ function normalize(text) {
 
 // Treat spaces, punctuation and digits inside a term as separators while still matching whole words.
 const separator = "[^\\p{L}]";
-const terms = [...protectedNames, ...insults].map((term) => term.replaceAll(" ", "").split("").join(`${separator}*`));
-const chatPattern = new RegExp(`(?:^|${separator})(?:[وف])?(?:يا${separator}*)?(?:ال${separator}*){0,2}(?:${terms.join("|")})(?=$|${separator})`, "u");
-
-export function blockedChat(text) {
-  return chatPattern.test(normalize(text));
-}
-
-export function blockedName(text) {
-  const compact = normalize(text).replace(/[^\p{L}]/gu, "");
-  return protectedNames.some((name) => compact.includes(name)) || blockedChat(text);
+export function createModeration({ names = [], words = [] } = {}) {
+  const families = [...protectedNames, ...names];
+  const terms = [...families, ...insults, ...words].map((term) => term.replaceAll(" ", "").split("").join(`${separator}*`));
+  const chatPattern = new RegExp(`(?:^|${separator})(?:[وف])?(?:يا${separator}*)?(?:ال${separator}*){0,2}(?:${terms.join("|")})(?=$|${separator})`, "u");
+  const blockedChat = (text) => chatPattern.test(normalize(text));
+  const blockedName = (text) => {
+    const compact = normalize(text).replace(/[^\p{L}]/gu, "");
+    return families.some((name) => compact.includes(name)) || blockedChat(text);
+  };
+  return { blockedChat, blockedName };
 }
