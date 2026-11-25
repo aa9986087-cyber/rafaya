@@ -467,6 +467,7 @@ function confirmPending() {
   if (!list.length) { toast(whyNot(pending[0].x, pending[0].y) || "ما ينفع هنا", "bad"); sfx.deny(); return; }
   if (cost > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
   for (const p of list) apply(p.x, p.y, list.length > 1);
+  if (tool.id === "fill" && list.length > 1) { A = analyze(S); world.sync(S, { tiles: true, roads: false, buildings: true }); refresh(); } // the ground once, not once a tile (it froze phones)
   pending = [];
   world.setHover(null); world.setGhost(null); world.setOverlay(null);
   showPending();
@@ -754,7 +755,8 @@ function apply(x, y, quiet) {
   if (tool.id === "fill") {
     const why = fillWadi(S, x, y);
     if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
-    sfx.road(); A = analyze(S); world.sync(S, { tiles: true, roads: false, buildings: true }); refresh();
+    sfx.road();
+    if (!quiet) { A = analyze(S); world.sync(S, { tiles: true, roads: false, buildings: true }); refresh(); } // many at once: redrawn once, after the last (confirmPending)
     return;
   }
   if (tool.id === "bulldoze") {
@@ -1391,6 +1393,7 @@ function inspect(x, y) {
     const pct = Math.round((1 - t.b.build / d.buildHours) * 100);
     html += `<div class="need ok">تحت الإنشاء: باقي ${ar(t.b.build)} ساعة (${ar(Math.ceil(t.b.build / 24))} يوم)</div><i class="prog"><i style="width:${pct}%"></i></i>`;
   } else if (!works) html += `<div class="need">ما يشتغل: ${idleWhy(S, x, y) || "يحتاج طريق جنبه"}.</div>`;
+  if ((t.b.id === "well" || t.b.id === "tank") && A.groundFactor < 1) html += `<div class="need">💧 الماء الجوفي ناقص (${ar(Math.round(A.aquifer))}٪): ${t.b.id === "tank" ? "الخزان" : "البئر"} يعطي ${ar(Math.round(A.groundFactor * 100))}٪ بس من ماه. السدود ترجّع الماء للأرض، والتحلية ما تحتاجه.</div>`;
   if (t.b.id === "house") {
     const cap = Math.round(d.levels[t.b.lvl].cap * (S.tech.concrete ? 1.25 : 1));
     html += row("السكان", `${ar(t.b.res || 0)} من ${ar(cap)}`);

@@ -299,7 +299,7 @@ export function powerNet(s) {
   s.tiles.forEach((t, i) => {
     const b = t.b;
     if (!b || b.build > 0 || b.ruin) return;
-    if (b.id === "pole") poles.push(i);
+    if (b.id === "pole" || B[b.id]?.wire) poles.push(i); // poles, and the electrified road (its own poles along it)
     else if (B[b.id]?.power > 0 && B[b.id]?.reach) sources.push(i);
   });
   const live = new Set(), wires = [], q = [];
@@ -713,7 +713,7 @@ export function analyze(s) {
     count: Object.fromEntries(Object.keys(B).map((k) => [k, 0])), levels: B.house.levels.map(() => 0),
     waterSupply: 0, waterUse: 0, powerSupply: 0, powerUse: 0, cap: 0, jobs: 0, income: 0, farmIncome: 0,
     upkeep: 0, costs: { military: 0, services: 0, utilities: 0, business: 0, sites: 0, staff: 0, cleaning: 0, waterNet: 0, roads: 0, loan: 0, insurance: 0, health: 0, theft: 0 },
-    value: 0, repairBill: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), pollution: new Float32Array(N * N),
+    value: 0, repairBill: 0, homes: 0, connectedHomes: 0, local: new Float32Array(N * N), decor: new Float32Array(N * N), pollution: new Float32Array(N * N),
     services: Array.from({ length: N * N }, () => new Set())
   };
   const concrete = s.tech.concrete ? 1.25 : 1;
@@ -732,7 +732,7 @@ export function analyze(s) {
   // Power poles carry the wires further: a pole near a source (or near a live pole) is live and lights its own reach.
   const net = powerNet(s);
   for (const i of net.live) {
-    const x = i % N, y = Math.floor(i / N), r = B.pole.reach;
+    const x = i % N, y = Math.floor(i / N), r = B[s.tiles[i].b.id].reach || B.pole.reach;
     for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++)
       if (inMap(xx, yy) && Math.abs(xx - x) + Math.abs(yy - y) <= r) a.powered[idx(xx, yy)] = 1;
   }
@@ -777,7 +777,8 @@ export function analyze(s) {
       for (let yy = y - rad; yy <= y + rad; yy++) for (let xx = x - rad; xx <= x + rad; xx++) {
         if (!inMap(xx, yy) || Math.abs(xx - x) + Math.abs(yy - y) > rad) continue;
         const i = idx(xx, yy);
-        if (def.happy) a.local[i] += (s.money < 0 && def.cat === "serv" ? cheer / 2 : cheer) * f;
+        if (def.happy && def.cat === "deco") a.decor[i] += cheer * f; // decorations: a share of their own (below), so they still count in a well-served quarter
+        else if (def.happy) a.local[i] += (s.money < 0 && def.cat === "serv" ? cheer / 2 : cheer) * f;
         if (def.pollute) a.pollution[i] += def.pollute;
         if (def.service) a.services[i].add(def.service);
       }
@@ -905,11 +906,12 @@ export function analyze(s) {
   for (let i = 0; i < N * N; i++) {
     const t = s.tiles[i];
     if (!t.b || t.b.id !== "house" || !t.b.works) continue;
-    const local = Math.min(40, a.local[i]) - Math.min(30, a.pollution[i]) - (a.watered[i] ? 0 : 10) - (a.grid && t.b.lvl >= 3 && !a.powered[i] ? 6 : 0); // villas and towers live on electricity
+    const cheer = Math.min(40, a.local[i]) + Math.min(15, a.decor[i]); // services and parks up to 40, decorations up to 15 more
+    const local = cheer - Math.min(30, a.pollution[i]) - (a.watered[i] ? 0 : 10) - (a.grid && t.b.lvl >= 3 && !a.powered[i] ? 6 : 0); // villas and towers live on electricity
     t.b.local = local;
     const w = Math.max(1, t.b.res || 1);
     sum += local * w; weight += w;
-    part.cheer += Math.min(40, a.local[i]) * w; part.smoke += Math.min(30, a.pollution[i]) * w;
+    part.cheer += cheer * w; part.smoke += Math.min(30, a.pollution[i]) * w;
     part.dry += (a.watered[i] ? 0 : 10) * w; part.dark += (a.grid && t.b.lvl >= 3 && !a.powered[i] ? 6 : 0) * w;
   }
   const local = weight ? sum / weight : 0;

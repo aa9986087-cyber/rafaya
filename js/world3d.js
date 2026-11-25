@@ -531,7 +531,7 @@ export class World {
     const pos = [], uv = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const tile = s.tiles[idx(x,y)], kind = tile.b?.id, h = hash(x,y,88);
-      const dirt = kind === "road", paved = kind === "asphalt" || kind === "avenue";
+      const dirt = kind === "road", paved = kind === "asphalt" || kind === "avenue" || kind === "powerroad";
       if (!owns(s,x,y) || tile.t === "rock" || tile.t === "lake" || (!dirt && !paved && tile.b)) continue;
       const limit = paved ? 0.47 : dirt ? 0.33 : tile.t === "wadi" ? 0.6 : 0.029;
       if (h > limit) continue;
@@ -651,7 +651,7 @@ export class World {
     this.syncKerbs(s);
     if (this.roadMesh) { this.scene.remove(this.roadMesh); this.roadMesh.geometry.dispose(); this.roadMesh.material.dispose(); }
     this.removeAll(this.lampMeshes);
-    const lamps = [], medians = [], islands = [], lights = [];
+    const lamps = [], medians = [], islands = [], lights = [], epoles = [];
     this.streetLights = [];
     const pos = [], col = [], c = new THREE.Color();
     const quad = (x0, z0, x1, z1, y, color) => {
@@ -681,7 +681,11 @@ export class World {
       }
       const w = paved ? 0.42 : 0.36;
       quad(cx - w, cz - w, cx + w, cz + w, 0.006, paved ? "#55575b" : "#b39b77");
-      if (paved && kind === "asphalt") {
+      if (kind === "powerroad") { // its power poles, one a tile on the edge (the wires are drawn by syncWires)
+        const eastWest = link(1, 0) || link(-1, 0);
+        epoles.push(this.place(cx + (eastWest ? 0 : 0.46), cz + (eastWest ? 0.46 : 0), 0, 0.85));
+      }
+      if (paved && (kind === "asphalt" || kind === "powerroad")) {
         if (link(1, 0) && link(-1, 0) && !link(0, 1) && !link(0, -1)) {
           for (const side of [-1, 1]) quad(cx - 0.49, cz + side * 0.352 - 0.007, cx + 0.49, cz + side * 0.352 + 0.007, 0.008, "#d1c8b2");
         }
@@ -744,7 +748,7 @@ export class World {
         if (link(0, 1) || link(0, -1)) for (const o of [-0.16, 0.16]) quad(cx + o - 0.035, cz - 0.5, cx + o + 0.035, cz + 0.5, 0.007, "#99724f");
       }
     }
-    this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true)];
+    this.lampMeshes = [...this.addInstances(model("lamp"), lamps, true), ...this.addInstances(model("medianPalm"), medians, true), ...this.addInstances(model("roundIsland"), islands, true), ...this.addInstances(model("trafficLight"), lights, true), ...this.addInstances(model("pole"), epoles, true)];
     if (!pos.length) { this.roadMesh = null; return; }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -777,7 +781,7 @@ export class World {
     if (this.wires) { this.scene.remove(this.wires); this.wires.geometry.dispose(); this.wires = null; }
     const { wires } = powerNet(s);
     if (!wires.length) return;
-    const pts = [], top = (i) => { const c = tileCenter(i % N, Math.floor(i / N)); return { x: c.x, z: c.z, y: s.tiles[i].b?.id === "pole" ? 0.9 : 0.55 }; };
+    const pts = [], top = (i) => { const c = tileCenter(i % N, Math.floor(i / N)); return { x: c.x, z: c.z, y: s.tiles[i].b?.id === "pole" ? 0.9 : s.tiles[i].b?.id === "powerroad" ? 0.78 : 0.55 }; };
     for (const [a, b] of wires) {
       const p = top(a), q = top(b), len = Math.hypot(q.x - p.x, q.z - p.z);
       let prev = p;
@@ -2153,7 +2157,7 @@ export function thumbnail(key, ground = "sand") {
   const sun = new THREE.DirectionalLight("#fff1d6", 2.2); sun.position.set(3, 6, 4); scene.add(sun);
   const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.04, 1), new THREE.MeshStandardMaterial({ color: "#ead4a4" }));
   base.position.y = -0.02; scene.add(base);
-  const geo = model(key, ground);
+  const geo = model(key === "powerroad" ? "pole" : key, ground); // the electrified road's card: a pole on asphalt
   let top = 0.5;
   thumbMats ||= {
     ...buildingMaterials("medium"),
@@ -2167,7 +2171,7 @@ export function thumbnail(key, ground = "sand") {
     geo[set].computeBoundingBox();
     top = Math.max(top, geo[set].boundingBox.max.y);
   }
-  if (key === "road" || key === "asphalt") { base.material.color.set(key === "asphalt" ? "#4d4f55" : "#a98457"); }
+  if (key === "road" || key === "asphalt" || key === "powerroad") { base.material.color.set(key === "road" ? "#a98457" : "#4d4f55"); }
   const span = Math.max(1.5, top * 1.25 + 0.6);
   const cam = new THREE.OrthographicCamera(-span * 0.69, span * 0.69, span / 2, -span / 2, 0.1, 50);
   cam.position.set(6, 5.2, 6); cam.lookAt(0, top * 0.38, 0);

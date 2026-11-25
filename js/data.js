@@ -156,6 +156,7 @@ export const B = {
 
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },
   asphalt: { cat: "road", name: "طريق مسفلت", cost: 25, upkeep: 0, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 110, text: "أنظف وأحسن من الترابي، ويشيل ضعف السيارات." },
+  powerroad: { cat: "road", name: "طريق مكهرب", cost: 90, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 110, reach: 2, wire: true, text: "طريق مسفلت معه أعمدة كهرب: ينقل الكهرب على طوله (إذا اتصل بمولد أو محطة أو عمود) ويوصّله للمباني لين مربعين من جنبه." },
   avenue: { cat: "road", name: "شارع رئيسي", cost: 60, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 2, cap: 300, text: "مسارين بكل اتجاه وجزيرة نخل بالنص. يشيل زحمة كبيرة: حطه على الطرق اللي توصل الحارات بالشغل." },
   roundabout: { cat: "road", name: "دوار", cost: 120, upkeep: 1, era: 1, tech: "asphalt", radius: 1, happy: 3, cap: 240, junction: true, text: "حطه على التقاطعات: السيارات تمشي بدون ما توقف، والتقاطع يشيل أكثر بكثير." },
   signal: { cat: "road", name: "إشارة مرور", cost: 80, upkeep: 1, era: 1, tech: "asphalt", cap: 170, junction: true, text: "تنظّم التقاطع الزحمة. أرخص من الدوار بس تشيل أقل." },
@@ -288,7 +289,7 @@ export const CHAINS = [
 export const MAT = { price: 20, sell: 6, cap: 400, quarry: 3, block: 8, house: [0, 0, 4, 20, 80, 260], biz: [0, 0, 12, 45] };
 
 // Everything a car can drive on.
-export const ROAD_IDS = ["road", "asphalt", "avenue", "roundabout", "signal"];
+export const ROAD_IDS = ["road", "asphalt", "powerroad", "avenue", "roundabout", "signal"];
 // Traffic: each resident makes this many car trips an hour at rush time; a plain crossing (three or
 // four roads meeting) carries this share of its road's capacity unless it has a roundabout or lights.
 export const TRAFFIC = { perResident: 0.3, crossing: 0.75 };

@@ -550,3 +550,18 @@ test("every stage has a budget: a town at the last stage keeps real numbers", ()
   for (let h = 0; h < 30; h++) step(s, fixedRandom());
   assert.ok(Number.isFinite(s.money), `money ${s.money}`);
 });
+
+test("the electrified road carries power along it from a generator and lights what is beside it", () => {
+  const s = newGame(11);
+  const put = (x, y, id) => { const t = s.tiles[idx(x, y)]; t.t = "sand"; t.b = id ? { id, lvl: 0, res: 0, cond: 100 } : null; };
+  for (let y = 20; y <= 50; y++) for (let x = 10; x <= 60; x++) put(x, y, null);
+  put(12, 30, "generator");
+  for (let x = 13; x <= 40; x++) put(x, 31, "powerroad");
+  put(40, 32, "house");
+  let a = analyze(s);
+  assert.ok(a.powered[idx(40, 32)], "a home far along the electrified road has power");
+  assert.ok(!a.powered[idx(40, 36)], "but not one far off to the side");
+  for (let x = 13; x <= 40; x++) put(x, 31, "asphalt");
+  a = analyze(s);
+  assert.ok(!a.powered[idx(40, 32)], "a plain road carries no power");
+});
