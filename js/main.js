@@ -3559,8 +3559,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-updates", world: "2026-11-25-updates" },
+  v: { solo: "2026-11-25-updates", world: "2026-11-25-players" },
   items: [
+    ["world", "👥", "اللاعبين: متى بدوا وكم لعبوا", "• من «القائمة» ← «👥 اللاعبين» تشوف كل لاعبين عالم الجوف: متى بدأ كل واحد (اليوم والتاريخ والساعة) وكم ساعة لعب، وترتّبهم بالأقدم أو الأكثر لعب. • وقت اللعب ينحسب واللعبة مفتوحة قدامك، من يوم نزول هالتحديث."],
     ["both", "⬆️", "التحديثات توصلك على طول", "• إذا نزل تحديث وأنت داخل اللعبة (حتى لو حاطها تطبيق)، يطلع لك «تحديث جديد» خلال ثواني بعالم الجوف، وخلال دقيقة برا، بدون ما تطلع وترجع."],
     ["world", "💾", "الحفظ بعد انقطاع الاتصال", "صلّحنا تنبيه تعارض الحفظ اللي كان يظهر أحيانًا من نفس الجوال بعد إغلاق اللعبة أو انقطاع الاتصال. إذا رجعت للعبة، تتعرّف على حفظك السابق وتكمل المزامنة."],
     ["both", "🏠", "ابنِ البيت المطوّر على طول", "• إذا طوّرت بيت لمستوى (طين، شعبي، فيلا، عمارة…)، يطلع هالمستوى في قسم «سكن» بطاقة لحاله، وتبنيه جاهز على طول. • سعره: الخيمة مع كل التطويرات اللي قبله ومواد البناء، نفس لو بنيته وطورته."],
@@ -4507,6 +4508,24 @@ function howTo(fromMenu) {
     </div></details>`, fromMenu ? "settings-menu" : "how");
 }
 
+/** Every player of al-Jouf: the day, date and time they started, and how long they have played (counted since this list began). */
+async function playersSheet(order = "start") {
+  sheet(`<h2>👥 لاعبين عالم الجوف</h2><p class="hint">نجيب القائمة…</p>`, "players");
+  let r;
+  try { r = await api("/world/players"); } catch { r = null; }
+  if (sheetFor !== "players") return;
+  if (!r?.players) { sheet(`<h2>👥 لاعبين عالم الجوف</h2><div class="need">ما قدرنا نجيب القائمة، جرّب بعد شوي.</div>`, "players"); return; }
+  const list = [...r.players].sort((a, b) => (order === "played" ? b.played - a.played : a.started - b.started));
+  const when = (t) => new Date(t).toLocaleString("ar-SA-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const time = (sec) => { const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60); return h ? `${ar(h)} ساعة${m ? ` و${ar(m)} دقيقة` : ""}` : m ? `${ar(m)} دقيقة` : "أقل من دقيقة"; };
+  const mine = me()?.name;
+  sheet(`<h2>👥 لاعبين عالم الجوف</h2>
+    <p class="hint">${ar(list.length)} لاعب. وقت اللعب ينحسب واللعبة مفتوحة قدامك، من يوم ما نزلت هالقائمة.</p>
+    <div class="sheet-actions two"><button class="btn ${order === "start" ? "go" : ""}" id="plStart" type="button">الأقدم</button><button class="btn ${order === "played" ? "go" : ""}" id="plPlayed" type="button">الأكثر لعب</button></div>
+    <div class="rows">${list.map((p, k) => `<div class="row player ${p.name === mine ? "me" : ""}"><span><b>${ar(k + 1)}. ${p.name}</b>${p.town ? ` · ${p.town}` : ""}<small>بدأ: ${p.started ? when(p.started) : "قديم"}</small></span><b>${time(p.played)}</b></div>`).join("")}</div>`, "players");
+  $("plStart").addEventListener("click", () => playersSheet("start"));
+  $("plPlayed").addEventListener("click", () => playersSheet("played"));
+}
 function pauseMenu() {
   if (visiting) { // looking at someone else's town: a short menu, and the way home
     sheet(`<h2>القائمة</h2><p class="hint">أنت تتفرج على مدينة غيرك. ما تقدر تغيّر فيها شي.</p><div class="rows">
@@ -4524,6 +4543,7 @@ function pauseMenu() {
     <button class="row link" id="pmNew" type="button"><span>وش الجديد؟</span><b>←</b></button>
     ${worldMode ? `<button class="row link" id="pmWorld" type="button"><span>🌍 خريطة عالم الجوف</span><b>←</b></button>
     <button class="row link" id="pmDeputy" type="button"><span>🧑‍💼 أوامر نائب العمدة</span><b>←</b></button>` : `<button class="row link" id="pmRegion" type="button"><span>🗺️ خريطة المنطقة</span><b>←</b></button>`}
+    ${worldMode ? `<button class="row link" id="pmPlayers" type="button"><span>👥 اللاعبين: متى بدوا وكم لعبوا</span><b>←</b></button>` : ""}
     <button class="row link" id="pmAch" type="button"><span>الإنجازات</span><b>${ar(ACHIEVEMENTS.filter((x) => S.ach?.[x.id]).length)}/${ar(ACHIEVEMENTS.length)}</b></button>
     <button class="row link" id="pmSettings" type="button"><span>الإعدادات والنسخة الاحتياطية</span><b>←</b></button>
     <button class="row link" id="pmMain" type="button"><span>القائمة الرئيسية</span><b>←</b></button>
@@ -4535,6 +4555,7 @@ function pauseMenu() {
   $("pmWorld")?.addEventListener("click", () => worldMapSheet());
   $("pmDeputy")?.addEventListener("click", () => deputySheet());
   $("pmAch").addEventListener("click", () => achievementsSheet());
+  $("pmPlayers")?.addEventListener("click", () => playersSheet());
   $("pmSettings").addEventListener("click", () => settingsSheet(false));
   $("pmMain").addEventListener("click", () => { save(); leaveWorld(); closeSheet(); showMenu(); menuBackdrop(); });
 }

@@ -101,6 +101,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ } // seconds with the game open and in front (counted from the live pings)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
@@ -261,14 +262,17 @@ export class Board extends DurableObject {
   async webSocketMessage(ws, msg) {
     let m; try { m = JSON.parse(String(msg)); } catch { return; }
     if (m.t === "ping") { // the game is open and in front (it only pings while visible)
-      ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), seen: Date.now() });
+      const a = ws.deserializeAttachment() || {}, now = Date.now();
+      // time played: the gap since the last sign of life, at most 45 s (a ping comes every 30 s while in front)
+      if (a.name && a.seen) { const gap = Math.min(45, Math.max(0, Math.round((now - a.seen) / 1000))); if (gap) this.sql.exec("UPDATE players SET played = played + ? WHERE name = ?", gap, a.name); }
+      ws.serializeAttachment({ ...a, seen: now });
       try { ws.send('{"t":"pong"}'); } catch { /* gone */ }
       return;
     }
     if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
       const row = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", clean(m.name, 16)).toArray()[0];
       const ok = await this.keyOk(clean(m.name, 16), row, m.secret);
-      ws.serializeAttachment({ plot: ok ? row.plot : null, seen: Date.now() });
+      ws.serializeAttachment({ plot: ok ? row.plot : null, name: ok ? clean(m.name, 16) : null, seen: Date.now() });
       try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
     }
   }
@@ -692,6 +696,10 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const plots = new Set();
       for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot != null && Date.now() - (a.seen || 0) < 70000) plots.add(a.plot); }
       return json({ n: plots.size });
+    }
+    if (!post && p[0] === "players") { // every player: when they started and how long they have played (the owner chose to show it to all)
+      const list = this.sql.exec("SELECT p.name, p.created, p.played, pl.town FROM players p LEFT JOIN plots pl ON pl.plot = p.plot WHERE COALESCE(p.banned, 0) = 0 ORDER BY p.created LIMIT 3000").toArray();
+      return json({ players: list.map((r) => ({ name: r.name, town: r.town || "", started: r.created || 0, played: r.played || 0 })) });
     }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();

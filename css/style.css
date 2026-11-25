@@ -652,3 +652,7 @@ body.world .speeds { display: none !important; }
 .arr-bar button:disabled { opacity: .45; }
 .arr-sum { align-self: center; padding: 6px 14px; border-radius: 99px; background: rgba(179, 38, 30, .92); color: #fff; font-size: 13px; font-weight: 700; }
 .arr-sum[hidden] { display: none; }
+
+/* the players list: name and town, the start date under, the time played on the side */
+.row.player span small { display: block; opacity: .75; font-size: 12px; margin-top: 2px; }
+.row.player.me { background: rgba(240, 185, 80, .18); border-radius: 12px; }
