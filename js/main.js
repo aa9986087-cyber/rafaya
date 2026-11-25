@@ -536,20 +536,37 @@ function arrPaintOne(t) {
   arrSync(); arrRender();
 }
 function arrSnapshot() {
-  const at = [];
-  S.tiles.forEach((t, i) => { if (arrMovable(t.b)) at.push([i, t.b, t.b.rot || 0]); });
-  return { at, tray: arrange ? [...arrange.tray] : [] };
+  return { b: S.tiles.map((t) => t.b), rot: S.tiles.map((t) => t.b?.rot || 0), tt: S.tiles.map((t) => t.t),
+    tray: arrange ? [...arrange.tray] : [], gone: arrange ? [...arrange.gone] : [], rocks: arrange ? [...arrange.rocks] : [] };
 }
 function arrRestore(snap) {
-  S.tiles.forEach((t) => { if (arrMovable(t.b)) t.b = null; });
-  for (const [i, b, rot] of snap.at) { S.tiles[i].b = b; b.rot = rot || undefined; if (!b.rot) delete b.rot; }
-  arrange.tray = [...snap.tray];
+  S.tiles.forEach((t, i) => { t.b = snap.b[i]; t.t = snap.tt[i]; if (t.b) { if (snap.rot[i]) t.b.rot = snap.rot[i]; else delete t.b.rot; } });
+  arrange.tray = [...snap.tray]; arrange.gone = [...snap.gone]; arrange.rocks = [...snap.rocks];
+}
+/** What the removals give back (a third of each price) and what the cleared rocks cost, settled on ✓. */
+function arrBill() {
+  let back = 0, people = 0;
+  for (const { b } of arrange.gone) { back += Math.floor(((B[b.id]?.cost || 0) * (b.n || 1) + (B[b.monument]?.cost || 0)) / 3); people += b.res || 0; }
+  return { back, people, rocks: arrange.rocks.length * ROCK_CLEAR };
+}
+/** Remove what stands on tile i (a big decoration with all its tiles), or clear a rock. Callers take the snapshot. */
+function arrRemove(i) {
+  const t = S.tiles[i];
+  if (!t) return false;
+  let b = t.b;
+  if (!b) { if (t.t !== "rock") return false; arrange.rocks.push(i); t.t = "sand"; return true; }
+  if (b.id === "decopart") { i = b.of; b = S.tiles[i]?.b; if (!b) { t.b = null; return true; } }
+  if (b.span) S.tiles.forEach((tt) => { if (tt.b?.id === "decopart" && tt.b.of === i) tt.b = null; });
+  arrange.gone.push({ b, i });
+  S.tiles[i].b = null;
+  if (arrange.sel === i) arrange.sel = null;
+  return true;
 }
 function enterArrange() {
   if (visiting) { toast("هذي مدينة غيرك: تتفرج بس", "bad"); return; }
   save();
   closeSheet();
-  arrange = { tray: [], held: null, sel: null, hist: [] };
+  arrange = { tray: [], held: null, sel: null, hist: [], future: [], gone: [], rocks: [], del: false };
   arrange.start = arrSnapshot();
   document.body.classList.add("arranging");
   $("arrange").hidden = false;
@@ -558,14 +575,20 @@ function enterArrange() {
 function leaveArrange(keep) {
   if (!arrange) return;
   if (!keep) arrRestore(arrange.start);
+  const bill = keep ? arrBill() : null, removed = keep ? arrange.gone.length : 0, cleared = keep ? arrange.rocks.length : 0;
   arrange = null;
+  if (bill) { // the removals and cleared rocks are settled now
+    if (bill.back) changeMoney(S, bill.back, "remove", `إزالة ${ar(removed)}`);
+    if (bill.rocks) changeMoney(S, -bill.rocks, "rock");
+    S.pop = Math.max(0, S.pop - bill.people);
+  }
   document.body.classList.remove("arranging");
   $("arrange").hidden = true;
   world.setGhost(null); world.setHover(null); world.setOverlay(null);
   A = analyze(S); arrSync(); refresh();
-  if (keep) { save(); toast("انحفظ ترتيب البلد ✓", "goal"); sfx.build(); }
+  if (keep) { save(); toast(`انحفظ التعديل ✓${removed ? ` · انشال ${ar(removed)} ورجع لك ${money(bill.back)} ريال` : ""}${cleared ? ` · ${ar(cleared)} صخر بـ${money(bill.rocks)}` : ""}`, "goal"); sfx.build(); }
 }
-const arrPush = () => { arrange.hist.push(arrSnapshot()); if (arrange.hist.length > 40) arrange.hist.shift(); };
+const arrPush = () => { arrange.hist.push(arrSnapshot()); arrange.future = []; if (arrange.hist.length > 40) arrange.hist.shift(); };
 /** Lift a building: off its tile (or out of the tray), into the hand. */
 function arrLift(i) {
   const b = S.tiles[i].b;
@@ -604,12 +627,14 @@ function arrDown(e) {
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting: false, done: new Set(), grab: i >= 0 && i === arrange.sel && arrMovable(S.tiles[i].b) ? i : -1 };
   // a road from the tray: the finger lays road wherever it goes
   if (arrange.erase && i >= 0) { drag.erase = true; drag.grab = -1; drag.last = t; arrErase(t); return; }
+  if (arrange.del && i >= 0) { drag.del = true; drag.grab = -1; drag.last = t; arrPush(); if (arrRemove(i)) sfx.remove(); arrSync(); arrRender(); return; }
   const h = arrange.held;
   if (h && h.from < 0 && B[h.b.id].cat === "road" && i >= 0) { drag.paint = true; drag.grab = -1; drag.last = t; arrPaintOne(t); } // a road in hand: the finger draws it (busy tiles are skipped)
 }
 /** While a finger moves: a building under it at the start is dragged; otherwise the land pans. */
 function arrMove(e) {
   if (drag.erase) { arrErase(world.pick(e.clientX, e.clientY)); return true; }
+  if (drag.del) { let any = false; for (const c of arrLine(world.pick(e.clientX, e.clientY))) if (inMap(c.x, c.y) && arrRemove(idx(c.x, c.y))) any = true; if (any) { sfx.remove(); arrSync(); arrRender(); } return true; }
   if (drag.paint) { arrPaint(world.pick(e.clientX, e.clientY)); return true; }
   if (!drag.moved) return true;
   if (drag.grab >= 0 && !arrange.held) { arrLift(drag.grab); arrange.dragging = true; }
@@ -626,12 +651,14 @@ function arrMove(e) {
 }
 function arrUp(e) {
   const t = world.pick(e.clientX, e.clientY);
-  if (drag.paint || drag.erase) { arrRender(); return; }
+  if (drag.paint || drag.erase || drag.del) { arrRender(); return; }
   if (arrange.held && arrange.dragging) { arrDrop(t); return; }
   if (drag.moved) return;
   if (arrange.held) { arrDrop(t); return; } // something from the tray: tap where it goes
   const i = inMap(t.x, t.y) ? idx(t.x, t.y) : -1;
-  arrange.sel = i >= 0 && arrMovable(S.tiles[i].b) ? (arrange.sel === i ? null : i) : null;
+  let pick = i >= 0 && S.tiles[i].b ? i : -1;
+  if (pick >= 0 && S.tiles[pick].b.id === "decopart") pick = S.tiles[pick].b.of; // a big decoration: the whole of it
+  arrange.sel = pick >= 0 ? (arrange.sel === pick ? null : pick) : null;
   sfx.tap(); arrRender();
 }
 function arrRender() {
@@ -648,10 +675,17 @@ function arrRender() {
   $("arrTip").textContent = arrange.held && arrange.held.from < 0 ? (B[arrange.held.b.id].cat === "road" ? `اسحب إصبعك على الأرض وترصف «${B[arrange.held.b.id].name}» (باقي ${ar(1 + arrange.tray.filter((b) => b.id === arrange.held.b.id).length)})` : `اضغط على الأرض وين تبي «${levelName(arrange.held.b)}»`)
     : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
     : arrange.erase ? "اسحب إصبعك على الطرق وتنشال للمخزن. بعدها اختر الطريق من المخزن وارسمه بإصبعك."
-    : sel != null ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه`
-    : "اضغط على مبنى عشان تختاره، بعدها اسحبه بإصبعك لمكانه. حطه على مبنى ثاني ويتبادلون مكانهم.";
-  $("arrRot").disabled = sel == null || !canTurn(S.tiles[sel]?.b?.id);
+    : arrange.del ? "🗑️ وضع الإزالة: اضغط أو اسحب إصبعك على اللي تبي تشيله (مباني، طرق، صخور). تقدر ترجعه بـ↶، وما ينحسب إلا إذا ضغطت ✓."
+    : sel != null ? (arrMovable(S.tiles[sel].b) ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه، أو 🗑️ تشيله` : `«${levelName(S.tiles[sel].b)}»: ما ينقل${S.tiles[sel].b.build > 0 ? " (تحت الإنشاء)" : S.tiles[sel].b.wd > 0 ? " (فيه ضرر عسكري)" : ""}، بس تقدر 🗑️ تشيله`)
+    : "اضغط على مبنى عشان تختاره، بعدها اسحبه بإصبعك لمكانه أو شيله بـ🗑️. حطه على مبنى ثاني ويتبادلون مكانهم.";
+  $("arrRot").disabled = sel == null || !arrMovable(S.tiles[sel]?.b) || !canTurn(S.tiles[sel]?.b?.id);
   $("arrUndo").disabled = !arrange.hist.length;
+  $("arrRedo").disabled = !arrange.future.length;
+  $("arrDel").classList.toggle("on", !!arrange.del);
+  $("arrDel").querySelector("small").textContent = sel != null && !arrange.del ? "شيله" : "إزالة";
+  { const bill = arrBill(), n = arrange.gone.length;
+    $("arrSum").hidden = !n && !arrange.rocks.length;
+    $("arrSum").textContent = `${n ? `🗑️ بتشيل ${ar(n)} · يرجع لك ${money(bill.back)} ريال` : ""}${n && bill.rocks ? " · " : ""}${bill.rocks ? `🪨 ${ar(arrange.rocks.length)} صخر بـ${money(bill.rocks)}` : ""}`; }
   $("arrErase").classList.toggle("on", !!arrange.erase);
   $("arrTray").querySelectorAll("[data-k]").forEach((el) => el.addEventListener("click", () => {
     if (arrange.held && arrange.held.from < 0) arrange.tray.push(arrange.held.b);
@@ -671,8 +705,22 @@ $("arrErase").addEventListener("click", () => {
   if (!arrange) return;
   sfx.tap();
   if (arrange.held && arrange.held.from < 0) { arrange.tray.push(arrange.held.b); arrange.held = null; }
-  arrange.erase = !arrange.erase; arrange.sel = null;
+  arrange.erase = !arrange.erase; arrange.del = false; arrange.sel = null;
   arrRender();
+});
+// 🗑️: with a building chosen, it goes (↶ brings it back); with none, the removal mode (tap or drag over what goes)
+$("arrDel").addEventListener("click", () => {
+  if (!arrange) return;
+  if (arrange.held) arrDrop(null);
+  if (arrange.sel != null && !arrange.del) { arrPush(); arrRemove(arrange.sel); arrange.sel = null; sfx.remove(); arrSync(); arrRender(); return; }
+  sfx.tap();
+  arrange.del = !arrange.del; arrange.erase = false; arrange.sel = null;
+  arrRender();
+});
+$("arrRedo").addEventListener("click", () => {
+  if (!arrange?.future.length) return;
+  arrange.held = null; arrange.hist.push(arrSnapshot()); arrRestore(arrange.future.pop()); arrange.sel = null;
+  sfx.tap(); arrSync(); arrRender();
 });
 $("arrAll").addEventListener("click", () => {
   if (!arrange) return;
@@ -683,7 +731,7 @@ $("arrAll").addEventListener("click", () => {
 });
 $("arrUndo").addEventListener("click", () => {
   if (!arrange?.hist.length) return;
-  arrange.held = null; arrRestore(arrange.hist.pop()); arrange.sel = null;
+  arrange.held = null; arrange.future.push(arrSnapshot()); arrRestore(arrange.hist.pop()); arrange.sel = null;
   sfx.tap(); arrSync(); arrRender();
 });
 $("arrCancel").addEventListener("click", () => { sfx.tap(); leaveArrange(false); });
@@ -691,6 +739,8 @@ $("arrSave").addEventListener("click", () => {
   if (!arrange) return;
   const left = arrange.tray.length + (arrange.held ? 1 : 0);
   if (left) { toast(`حط كل المباني أول: باقي ${ar(left)} بالمخزن`, "bad"); sfx.deny(); return; }
+  const bill = arrBill();
+  if (bill.rocks > S.money + bill.back) { toast(`إزالة الصخور تبي ${money(bill.rocks)} ريال وما يكفي المال`, "bad"); sfx.deny(); return; }
   leaveArrange(true);
 });
 
@@ -863,17 +913,18 @@ const ICONS = {
   proj: `<path ${F} d="M10 21V8l2-5 2 5v13z"/><path d="M10 21V8l2-5 2 5v13M7 21h10M10 12h4M10 16h4M4 21v-6h3M20 21v-6h-3"/>`,
   mil: `<path ${F} d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6zM9 12l2 2 4-4"/>`,
   move: `<path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>`,
+  edit: `<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4M4 20l1-4"/>`,
   road: `<path ${F} d="M8 3h8l4 18H4z"/><path d="M8 3 4 21M16 3l4 18M12 4v3M12 10v3M12 16v3"/>`,
   bulldoze: `<path ${F} d="M3 13h9v4H3zM5 9h5v4H5z"/><path d="M3 13h9v4H3zM5 9h5v4H5zM12 14l4-3 2 1-1 5h-5M18 12l3 5M4 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M9 19.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0"/>`
 };
-const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name, worldOnly: c.worldOnly })), { id: "move", name: "ترتيب" }, { id: "bulldoze", name: "إزالة" }];
+const toolsBar = [...CATS.map((c) => ({ id: c.id, name: c.name, worldOnly: c.worldOnly })), { id: "edit", name: "تعديل" }]; // moving, turning and removing: one mode (like the layout editors of the big city games)
 function renderCats() {
   $("cats").innerHTML = toolsBar.filter((c) => !c.worldOnly || worldMode).map((c) => `<button type="button" class="cat ${c.id === "bulldoze" ? "danger" : ""} ${(openCat === c.id || tool?.id === c.id) ? "on" : ""}" data-cat="${c.id}"><svg viewBox="0 0 24 24">${ICONS[c.id]}</svg><span>${c.name}</span></button>`).join("");
   $("cats").querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => {
     sfx.tap();
     const id = b.dataset.cat;
     if (id === "bulldoze") { openCat = null; setTool(tool?.id === "bulldoze" ? null : { id: "bulldoze" }); return; }
-    if (id === "move") { openCat = null; setTool(null); enterArrange(); return; }
+    if (id === "edit" || id === "move") { openCat = null; setTool(null); enterArrange(); return; }
     openCat = openCat === id ? null : id;
     renderCats(); renderCards();
   }));
@@ -3267,8 +3318,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-advisor", world: "2026-11-25-advisor" },
+  v: { solo: "2026-11-25-edit", world: "2026-11-25-edit" },
   items: [
+    ["both", "✏️", "وضع التعديل", "• «ترتيب» و«إزالة» صاروا زر واحد: «✏️ تعديل». • اختر أي مبنى: اسحبه لمكان ثاني أو بدّله مع غيره ببلاش، ↻ تلفه، 🗑️ تشيله. • 🗑️ بدون ما تختار شي يفتح وضع الإزالة: اضغط أو اسحب إصبعك على المباني والطرق والصخور. • ↶ تراجع و↷ إعادة لكل شي، وتشوف فوق كم بيرجع لك من الإزالة، وما ينحسب شي إلا إذا ضغطت ✓ (و✕ يرجّع كل شي مثل ما كان)."],
     ["both", "💼", "المستشار المالي", "• زر جديد «المستشار» فوق «القائمة»: يقرأ مدينتك كلها ويقول لك إذا كنت رابح أو خسران، ووش أكبر أخطاءك، وكيف تصلحها خطوة خطوة بالأرقام، مع زر «📍 وريني» يوديك للمكان. • أول استشارة مجانية، وبعدها سعرها حسب مرحلتك، وتبقى صالحة يوم كامل باللعبة."],
     ["both", "💧", "الخزان والسد ينبنون", "• صلّحنا خطأ كان يعلّق اختيار مكان الخزان والسد، فما كانوا ينبنون. الحين تختار المكان وتبني عادي."],
     ["both", "⚡", "طريق مكهرب", "• طريق جديد بقسم الطرق: مسفلت ومعه أعمدة كهرب. إذا اتصل بمولد أو محطة أو عمود، ينقل الكهرب على طوله ويوصّلها للمباني لين مربعين من جنبه. سعره أغلى من المسفلت."],
@@ -4151,8 +4203,9 @@ function howTo(fromMenu) {
       <div class="row"><span>زر «لفّ»</span><b>تدوّر المنظر</b></div>
       <div class="row"><span>اختر من تحت، اضغط مكانه، ثم ✓</span><b>تبني</b></div>
       <div class="row"><span>اسحب بالطريق ثم ✓</span><b>ترسمه مرة وحدة</b></div>
-      <div class="row"><span>«نقل»: اضغط المبنى ثم مكانه الجديد</span><b>ترتب ديرتك (أجرة ١٠٪)</b></div>
-      <div class="row"><span>«إزالة»</span><b>تشيل المبنى ويرجع لك ثلث سعره</b></div>
+      <div class="row"><span>«✏️ تعديل»: اختر مبنى واسحبه</span><b>تنقله أو تبادله مع غيره ببلاش، و↻ تلفه</b></div>
+      <div class="row"><span>«✏️ تعديل» ← 🗑️</span><b>تشيل المبنى أو الطريق أو الصخر (يرجع لك ثلث سعره)</b></div>
+      <div class="row"><span>↶ و ↷، ثم ✓</span><b>ترجع وتعيد، وما ينحسب شي إلا بعد ✓</b></div>
       <div class="row"><span>اضغط على الأرض ورا السياج</span><b>تشتريها وتكبر فيها</b></div>
       <div class="row"><span>اضغط على أي مبنى</span><b>تشوف وش ينقصه</b></div>
       <div class="row"><span>القائمة ← الإنجازات</span><b>تشوف وش حققت</b></div>

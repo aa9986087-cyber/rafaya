@@ -107,7 +107,7 @@ export function advise(s, a) {
   // ---- services and nuisances by quarter ----
   for (const sv of n.uncovered) add(40 + Math.min(20, sv.homes), sv.svc === "mosque" ? "🕌" : sv.svc === "school" ? "🏫" : sv.svc === "health" ? "🏥" : "👮", `${advAr(sv.homes)} بيت ${sv.area} بلا ${sv.what}`, "الخدمة قريبة ترفع رضا البيت وتطوّره.", [sv.idea], sv.list?.[0] ?? -1);
   for (const sv of n.noRoad) add(55, "🚧", `${sv.name} ${sv.area} ما عليه طريق`, `واقف، و${advAr(sv.homes)} بيت حوله محرومة منه.`, ["وصّله بطريق بس."], sv.list?.[0] ?? -1);
-  if (n.polluted) add(45, "🏭", "دخان جنب البيوت", `${advAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by}: رضا أقل، وعلاج أمراض الدخان ${advNum(c.health || 0)} بالساعة.`, ["انقل المصنع أو المولد بعيد (أداة النقل).", "أو حط حديقة ونخل بينه وبين البيوت."], n.polluted.list?.[0] ?? -1);
+  if (n.polluted) add(45, "🏭", "دخان جنب البيوت", `${advAr(n.polluted.homes)} بيت ${n.polluted.area} جنب ${n.polluted.by}: رضا أقل، وعلاج أمراض الدخان ${advNum(c.health || 0)} بالساعة.`, ["انقل المصنع أو المولد بعيد (من «✏️ تعديل»).", "أو حط حديقة ونخل بينه وبين البيوت."], n.polluted.list?.[0] ?? -1);
 
   // ---- traffic ----
   const jam = []; if (a.trafficCong) for (let i = 0; i < N * N; i++) if (a.trafficCong[i] > 0.6) jam.push(i);

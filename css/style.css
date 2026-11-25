@@ -645,3 +645,10 @@ body.world .speeds { display: none !important; }
 .adv-item p { margin: 0 0 6px; }
 .adv-item ol { margin: 0 0 8px; padding-inline-start: 20px; }
 .adv-item li { margin: 2px 0; }
+
+/* the edit mode: the removal button, and the running total of what is removed */
+.arr-bar button.danger { color: #b3261e; }
+.arr-bar button.danger.on { background: #b3261e; color: #fff; }
+.arr-bar button:disabled { opacity: .45; }
+.arr-sum { align-self: center; padding: 6px 14px; border-radius: 99px; background: rgba(179, 38, 30, .92); color: #fff; font-size: 13px; font-weight: 700; }
+.arr-sum[hidden] { display: none; }
