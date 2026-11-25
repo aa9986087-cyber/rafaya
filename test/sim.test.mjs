@@ -690,3 +690,19 @@ test("a big decoration can be set in a roundabout: the road keeps working and th
   assert.ok(analyze(s).decor[at] > before);
   assert.ok(cantBuild(s, at % N, Math.floor(at / N), "olivetree"), "one to a roundabout");
 });
+
+test("a house level reached once can be built straight away, at the price of the tent and its upgrades", async () => {
+  const { houseTop, housePrice, buildHouseAt } = await import("../js/sim.js");
+  const s = newGame(15);
+  s.money = 1e5; s.era = 2;
+  let at = -1;
+  for (let i = 0; i < N * N && at < 0; i++) if (!cantBuild(s, i % N, Math.floor(i / N), "house")) at = i;
+  assert.ok(buildHouseAt(s, at % N, Math.floor(at / N), 3), "a villa is not open before one was built");
+  s.tiles.find((t) => t.b?.id === "house").b.lvl = 3; // one house upgraded to a villa
+  assert.equal(houseTop(s), 3);
+  const before = s.money, p = housePrice(s, 3);
+  assert.equal(buildHouseAt(s, at % N, Math.floor(at / N), 3), "");
+  assert.equal(s.tiles[at].b.lvl, 3);
+  assert.equal(Math.round(before - s.money), Math.round(p.total));
+  assert.equal(p.money, B.house.cost + B.house.levels[1].cost + B.house.levels[2].cost + B.house.levels[3].cost);
+});

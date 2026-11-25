@@ -1,7 +1,7 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
 import { VERSION, REQUIRED } from "./version.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
+import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, houseTop, housePrice, buildHouseAt, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
@@ -285,7 +285,7 @@ function hoverAt(t) {
   const tile = S.tiles[idx(t.x, t.y)];
   const ok = tool.id === "bulldoze" ? !!(tile.b || tile.t === "rock") : !cantBuild(S, t.x, t.y, tool.id);
   world.setHover(t, ok);
-  if (tool.id !== "bulldoze" && B[tool.id].cat !== "road" && !tile.b) world.setGhost(t, modelKey(tool.id, 0), ok, tile.t, ghostAngle(t.x, t.y, tool.id));
+  if (tool.id !== "bulldoze" && B[tool.id].cat !== "road" && !tile.b) world.setGhost(t, modelKey(tool.id, tool.lvl || 0), ok, tile.t, ghostAngle(t.x, t.y, tool.id));
   else world.setGhost(null);
   if (tool.id !== "bulldoze" && (B[tool.id].radius || B[tool.id].reach)) showReach(t.x, t.y, B[tool.id]);
 }
@@ -296,7 +296,7 @@ function hoverAt(t) {
 let pending = []; // [{ x, y }]
 // "upgrade" is the house-upgrade tool: tap (or drag over) houses that are ready, then ✓.
 const isMulti = () => tool && tool.id !== "move" && (tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill" || B[tool.id].cat === "road");
-const tileCost = (x, y) => (tool.id === "roadup" ? B[roadNext(S.tiles[idx(x, y)].b)]?.cost || 0 : tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : buildCost(S, x, y, tool.id));
+const tileCost = (x, y) => (tool.lvl ? housePrice(S, tool.lvl).total + (S.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0) : tool.id === "roadup" ? B[roadNext(S.tiles[idx(x, y)].b)]?.cost || 0 : tool.id === "fill" ? FILL_COST : tool.id === "bulldoze" ? 0 : tool.id === "upgrade" ? upgradePrice(S, S.tiles[idx(x, y)].b).total : buildCost(S, x, y, tool.id));
 /** The upgrade tool works on one kind: homes, shops, or farms and workshops. */
 const upFits = (b) => upgradable(b) && (!tool?.cat || B[b.id].cat === tool.cat);
 const upgradeWhy = (x, y) => { const b = S.tiles[idx(x, y)].b; return !upFits(b) ? (tool?.cat === "shop" ? "اضغط على محل" : tool?.cat === "farm" ? "اضغط على مزرعة أو ورشة" : tool?.cat === "serv" ? "اضغط على مسجد أو مستشفى" : "اضغط على بيت") : upgradeBlocker(S, A, x, y); };
@@ -405,13 +405,13 @@ function showPending() {
       : !ok.length ? upgradeWhy(pending[0].x, pending[0].y) : `تطوير ${ar(ok.length)} · ${money(cost)} ريال${(() => { let inc = 0, upk = 0, tax = 0; for (const q of ok) { const e = upgradeEffect(S, S.tiles[idx(q.x, q.y)].b); if (!e) continue; if (e.house) tax += e.taxGain; else { inc += e.incomeNext - e.incomeNow; upk += e.upkeepNext - e.upkeepNow; } } return inc || upk || tax ? ` · دخل +${fine(inc + tax)} مصروف +${fine(upk)}` : ""; })()}${cost > S.money ? " · ما يكفي المال" : ""}`;
     return;
   }
-  if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${d.name} · ${money(priceOf(S, tool.id))} ريال${d.cat === "road" ? " · اسحب من طريق موجود، أو اضغط مكان البداية واسحب منه" : " · اضغط مكانه"}`;
+  if (!pending.length) $("toolName").textContent = tool.id === "bulldoze" ? "إزالة: اضغط أو اسحب على اللي تبي تشيله" : `${tool.lvl ? B.house.levels[tool.lvl].name : d.name} · ${money(tool.lvl ? housePrice(S, tool.lvl).total : priceOf(S, tool.id))} ريال${d.cat === "road" ? " · اسحب من طريق موجود، أو اضغط مكان البداية واسحب منه" : " · اضغط مكانه"}`;
   else if (tool.id === "bulldoze") $("toolName").textContent = `إزالة ${ar(ok.length)} ${ok.length === 1 ? "شي" : "أشياء"}؟`;
   else if (!ok.length) $("toolName").textContent = cantBuild(S, pending[0].x, pending[0].y, tool.id) || "ما ينفع هنا";
   else {
     const pv = buildPreview(tool.id, ok);
     const shortStaff = pv && pv.jobs && pv.net < 0 && A.workers - A.employed < pv.jobs;
-    $("toolName").innerHTML = `${isMulti() ? `${ar(ok.length)} مربع` : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`
+    $("toolName").innerHTML = `${isMulti() ? `${ar(ok.length)} مربع` : tool.lvl ? B.house.levels[tool.lvl].name : d.name} · ${money(cost)} ريال${cost > S.money ? " · ما يكفي المال" : ""}`
       + (pv && (pv.income || pv.upkeep) ? `<span class="tool-money">بالساعة: <b class="plus">دخل ${signed(pv.income)}</b> <b class="minus">مصروف −${fine(Math.max(0, pv.upkeep))}</b> <b class="${pv.net >= 0 ? "plus" : "minus"}">صافي ${signed(pv.net)}</b>${d.buildHours ? " (بعد ما يخلص)" : ""}</span>`
         + (shortStaff ? `<span class="tool-hint">💡 الناس قليل: الدخل يزيد لا كبرت البلد</span>` : "") : "")
       + (reachLine(tool.id, ok) ? `<span class="tool-hint ${d.pollute && reachHomes(ok, d.radius).homes ? "warn" : ""}">${reachLine(tool.id, ok)}</span>` : "");
@@ -880,7 +880,7 @@ function apply(x, y, quiet) {
     sfx.remove(); sync(wasRoad);
     clearPreview(quiet);
   } else {
-    const why = build(S, x, y, tool.id);
+    const why = tool.lvl ? buildHouseAt(S, x, y, tool.lvl) : build(S, x, y, tool.id);
     if (why) { if (!quiet || why === "ما يكفي المال") { toast(why, "bad"); sfx.deny(); } return; }
     if (tool.id === "milhq") addPosts([{ id: `d-war-hq${S.day}`, day: S.day, kind: "war", topic: "war", mood: 0, person: { name: "أبو فيصل", role: "من الأهالي", area: "" }, text: "العمدة افتتح مقر القيادة العسكرية، والناس يتساءلون عن المصاريف الجديدة." }]);
     if (placeRot && canTurn(tool.id)) tile.b.rot = placeRot;
@@ -1021,10 +1021,16 @@ function renderCards() {
   const uc = UP_CARDS[openCat];
   const upgradeCard = uc ? `<button type="button" class="card ${tool?.id === (uc.tool || "upgrade") && (uc.tool || tool.cat === openCat) ? "on" : ""}" data-build="${uc.tool || "upgrade"}" style="--i:0">
       <img alt="" src="${thumbnail(uc.key)}"><b>${uc.name}</b><span class="price">من ${money(uc.from)} ريال</span><span class="hours">${uc.path}</span></button>` : "";
-  box.innerHTML = upgradeCard + ids.map((id, i) => {
+  // houses already upgraded to a level: that level is a card of its own, to build straight away
+  const levelCards = openCat === "home" ? Array.from({ length: houseTop(S) }, (_, k) => k + 1).map((lvl) => {
+    const p = housePrice(S, lvl), L = B.house.levels[lvl];
+    return `<button type="button" class="card ${tool?.id === "house" && tool.lvl === lvl ? "on" : ""} ${S.money < p.total ? "poor" : ""}" data-build="house" data-lvl="${lvl}">
+      <img alt="" src="${thumbnail(modelKey("house", lvl))}"><b>${L.name}</b><span class="price">${money(p.total)} ريال</span><span class="hours">جاهز على طول · يسكن ${ar(L.cap)}</span></button>`;
+  }).join("") : "";
+  box.innerHTML = upgradeCard + levelCards + ids.map((id, i) => {
     const lock = lockReason(id);
     const afford = S.money >= priceOf(S, id);
-    return `<button type="button" class="card ${tool?.id === id ? "on" : ""} ${lock ? "locked" : ""} ${!lock && !afford ? "poor" : ""}" data-build="${id}" style="--i:${i}">
+    return `<button type="button" class="card ${tool?.id === id && !tool.lvl ? "on" : ""} ${lock ? "locked" : ""} ${!lock && !afford ? "poor" : ""}" data-build="${id}" style="--i:${i}">
       <img alt="" src="${thumbnail(modelKey(id, 0))}"><b>${B[id].name}</b>
       ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${B[id].fullCost ? `<s>${money(B[id].fullCost)}</s> ` : ""}${money(priceOf(S, id))} ريال</span>`}
       ${B[id].fullCost && !lock ? `<span class="hours">دعم الدولة −${ar(Math.round(SUBSIDY[B[id].cat] * 100))}٪</span>` : ""}
@@ -1033,7 +1039,8 @@ function renderCards() {
       ${!lock && (B[id].income || B[id].upkeep) ? `<span class="money-line">${B[id].income ? `<i class="plus">+${money(B[id].income)}</i>` : ""}${B[id].upkeep ? `<i class="minus">−${money(B[id].upkeep)}</i>` : ""}<small>بالساعة</small></span>` : ""}</button>`;
   }).join("");
   box.querySelectorAll("[data-build]").forEach((b) => b.addEventListener("click", () => {
-    const id = b.dataset.build, lock = lockReason(id);
+    const id = b.dataset.build, lock = lockReason(id), lvl = Number(b.dataset.lvl) || 0;
+    if (lvl) { sfx.tap(); setTool(tool?.id === "house" && tool.lvl === lvl ? null : { id: "house", lvl }); return; } // a house at a level reached before
     if (B[id]?.cat === "serv" && tool?.id !== id) { sfx.tap(); serviceInfo(id); return; } // services: their card first (what they do, their reach), then build
     if (lock) { toast(lock, "bad"); sfx.deny(); return; }
     sfx.tap();
@@ -3533,8 +3540,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-edit", world: "2026-11-25-edit" },
+  v: { solo: "2026-11-25-houses", world: "2026-11-25-houses" },
   items: [
+    ["both", "🏠", "ابنِ البيت المطوّر على طول", "• إذا طوّرت بيت لمستوى (طين، شعبي، فيلا، عمارة…)، يطلع هالمستوى في قسم «سكن» بطاقة لحاله، وتبنيه جاهز على طول. • سعره: الخيمة مع كل التطويرات اللي قبله ومواد البناء، نفس لو بنيته وطورته."],
     ["both", "✏️", "وضع التعديل", "• «ترتيب» و«إزالة» صاروا زر واحد: «✏️ تعديل». • اختر أي مبنى: اسحبه لمكان ثاني أو بدّله مع غيره ببلاش، ↻ تلفه، 🗑️ تشيله. • 🗑️ بدون ما تختار شي يفتح وضع الإزالة: اضغط أو اسحب إصبعك على المباني والطرق والصخور. • ↶ تراجع و↷ إعادة لكل شي، وتشوف فوق كم بيرجع لك من الإزالة، وما ينحسب شي إلا إذا ضغطت ✓ (و✕ يرجّع كل شي مثل ما كان)."],
     ["world", "💾", "حفظ المدينة بين الأجهزة", "الحفظ القديم من جهاز ثاني ما يرجّع مبانيك أو رصيدك. إذا اختلف الحفظ، تقدر تفتح حفظ السيرفر وتلقى نسخة هذا الجهاز في الإعدادات."],
     ["both", "⚡", "أسلاك الكهرباء تظهر", "صلّحنا ظهور الأسلاك بين الأعمدة وعلى الطرق المكهربة، عشان تشوف مسار التوصيل وأنت تقرّب الخريطة."],

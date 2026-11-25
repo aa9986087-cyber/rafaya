@@ -1184,6 +1184,37 @@ export function upgradeHouse(s, x, y, a = analyze(s)) {
   const paid = payUpgrade(s, b);
   if (paid) return paid;
   b.lvl++; b.cond = 100; b.ruin = 0; b.upAt = s.day;
+  s.houseTop = Math.max(s.houseTop || 0, b.lvl);
+  return "";
+}
+
+/** The highest house level this town has reached (once reached it stays open, even if that house is gone). */
+export function houseTop(s) {
+  let top = s.houseTop || 0;
+  for (const t of s.tiles) if (t.b?.id === "house" && t.b.lvl > top) top = t.b.lvl;
+  s.houseTop = top;
+  return top;
+}
+/** A house built straight at a level reached before: the tent, every upgrade up to it and their building materials. */
+export function housePrice(s, lvl) {
+  let money = priceOf(s, "house"), mats = 0;
+  for (let k = 1; k <= lvl; k++) { money += B.house.levels[k].cost || 0; mats += MAT.house[k] || 0; }
+  const short = Math.max(0, mats - (s.materials || 0));
+  return { money, mats, short, total: money + short * MAT.price };
+}
+export function buildHouseAt(s, x, y, lvl) {
+  if (!lvl) return build(s, x, y, "house");
+  if (lvl > houseTop(s)) return "طوّر بيت لهالمستوى أول عشان ينفتح";
+  const why = cantBuild(s, x, y, "house");
+  if (why && why !== "ما يكفي المال") return why;
+  const p = housePrice(s, lvl), rock = s.tiles[idx(x, y)].t === "rock" ? ROCK_CLEAR : 0;
+  if (s.money < p.total + rock) return "ما يكفي المال";
+  const base = build(s, x, y, "house");
+  if (base) return base;
+  changeMoney(s, -(p.total - priceOf(s, "house")), "upgrade", B.house.levels[lvl].name);
+  s.materials = Math.max(0, (s.materials || 0) - p.mats);
+  const b = s.tiles[idx(x, y)].b;
+  b.lvl = lvl; b.upAt = s.day;
   return "";
 }
 
