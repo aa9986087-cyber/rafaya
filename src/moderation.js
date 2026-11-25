@@ -1,3 +1,4 @@
+import { BAD_WORD_LIST } from "./badwords.js";
 const protectedNames = ["عايض", "الفرحان", "غوينم", "سكران", "ترازا", "محاميد", "محدا", "رمال", "نمصان"];
 const abusiveNames = ["نياج الخروق", "نياج خروق", "نياك الخروق", "نياك خروق"];
 const insults = [
@@ -21,7 +22,7 @@ const separator = "[^\\p{L}]";
 export const nameRuleKey = (text) => normalize(text).replace(/[^\p{L}]/gu, "");
 export function createModeration({ names = [], words = [], nameOnly = [] } = {}) {
   const families = [...protectedNames, ...names];
-  const terms = [...families, ...insults, ...abusiveNames, ...words].map(nameRuleKey).filter(Boolean).map((term) => [...term].join(`${separator}*`));
+  const terms = [...families, ...insults, ...BAD_WORD_LIST, ...abusiveNames, ...words].map(nameRuleKey).filter(Boolean).map((term) => [...term].join(`${separator}*`));
   const explicitNames = [...abusiveNames, ...nameOnly].map(nameRuleKey).filter(Boolean);
   const blockedNames = [...families.map(nameRuleKey).filter(Boolean), ...explicitNames];
   const chatPattern = new RegExp(`(?:^|${separator})(?:[وف])?(?:يا${separator}*)?(?:ال${separator}*){0,2}(?:${terms.join("|")})(?=$|${separator})`, "u");

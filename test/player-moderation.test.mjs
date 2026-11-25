@@ -182,3 +182,10 @@ test("a failed purge rolls back the city and the moderator gets an error", async
   assert.equal((await request("world/town/7")).status, 200);
   assert.equal(sql("SELECT COUNT(*) AS n FROM chat")[0].n, 1);
 });
+
+test("the bad-word bank blocks bad names and chat, but not normal names", async () => {
+  const { createModeration } = await import("../src/moderation.js");
+  const m = createModeration();
+  for (const bad of ["شرموطة", "يا كلب", "كسمك", "sharmoota", "ك س م ك", "قحــــبه"]) assert.equal(m.blockedChat(bad) || m.blockedName(bad), true, bad);
+  for (const ok of ["عبدالله", "كساب", "مصطفى", "الكسوة", "فرج الله", "هجرة الخير", "الرافعية", "كلبي ضاع", "Scunthorpe", "class"]) assert.equal(m.blockedName(ok), false, ok);
+});

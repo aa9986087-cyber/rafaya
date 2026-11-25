@@ -60,7 +60,8 @@ The owner is Saudi and is not a programmer.
 | `js/version.js` | `VERSION`/`REQUIRED`. They are `"dev"` in the repo; the deploy stamps them. |
 | `js/preview.js` | The **trial copy only**: a fake al-Jouf server in the page, with bot towns. It answers `/api/world/*` itself. **Every new server route needs a twin here**, or the trial breaks. |
 | `src/worker.js` | The server: static files plus `/api/world/*` (players) and `/api/admin/*` (owner). One Durable Object `Board` holds all SQLite tables (§4). |
-| `src/moderation.js` | The bad-word and protected-family-name filter for names and chat. It normalises Arabic letters, including Persian چ/گ/ڤ/پ. |
+| `src/moderation.js` | The bad-word and protected-family-name filter for names and chat. It normalises Arabic letters, including Persian چ/گ/ڤ/پ. The owner can add private rules from the admin panel, kept in `meta` `private_moderation`. |
+| `src/badwords.js` | **The bank of bad words** (Arabic, Gulf, Arabizi, English LDNOOBW), approved by the owner. Add new words to the right group. Test against normal names (`test/player-moderation.test.mjs`). |
 | `src/google.js` | Checks a Google sign-in token (RS256 via Google's keys). |
 | `src/web-push.js` | Phone notifications (VAPID Web Push). |
 | `src/review-access.js` | Signed read-only access for an outside reviewer. |
