@@ -378,7 +378,7 @@ function showPending() {
   else if (isMulti()) {
     const values = new Float32Array(N * N);
     for (const p of pending) values[idx(p.x, p.y)] = 1;
-    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : tool.id === "upgrade" || tool.id === "roadup" ? "#e0a44a" : "#2cb59c", tool.id === "roadup" ? 0.55 : 0.3, tool.id === "roadup" ? 0.12 : 0.015);
+    world.setOverlay(pending.length ? values : null, tool.id === "bulldoze" ? "#e0523f" : tool.id === "upgrade" || tool.id === "roadup" ? "#e0a44a" : "#2cb59c", tool.id === "roadup" ? 0.55 : 0.3, tool.id === "roadup" ? 0.12 : tool.id === "fill" ? 0.05 : 0.015); // the fill marks above the wadi's water in rain
     world.setHover(pending.length ? pending[pending.length - 1] : null, true);
   } else if (pending.length) hoverAt(pending[0]);
   else { world.setHover(null); world.setGhost(null); world.setOverlay(null); }
@@ -498,6 +498,7 @@ function confirmPending() {
   const cost = list.reduce((a, p) => a + tileCost(p.x, p.y), 0);
   if (!list.length) { toast(whyNot(pending[0].x, pending[0].y) || "ما ينفع هنا", "bad"); sfx.deny(); return; }
   if (cost > S.money) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+  if (tool.id === "fill" && world.floodAnim) { toast("السيل ماشي بالوادي الحين، انتظره يمر وبعدين اردم", "bad"); sfx.deny(); return; }
   for (const p of list) apply(p.x, p.y, list.length > 1);
   if (tool.id === "fill" && list.length > 1) { A = analyze(S); world.sync(S, { tiles: true, roads: false, buildings: true }); refresh(); } // the ground once, not once a tile (it froze phones)
   pending = [];
@@ -868,6 +869,7 @@ function apply(x, y, quiet) {
     return;
   }
   if (tool.id === "fill") {
+    if (world.floodAnim) { if (!quiet) { toast("السيل ماشي بالوادي الحين، انتظره يمر وبعدين اردم", "bad"); sfx.deny(); } return; }
     const why = fillWadi(S, x, y);
     if (why) { if (!quiet) { toast(why, "bad"); sfx.deny(); } return; }
     sfx.road();
@@ -3698,8 +3700,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-reach", world: "2026-11-25-move" },
+  v: { solo: "2026-11-25-fill", world: "2026-11-25-fill" },
   items: [
+    ["both", "🪨", "ردم الوادي وقت المطر", "• وقت المطر كانت مربعات الردم تطلع رمادية تحت مويّة الوادي وما تبين. الحين تطلع واضحة فوق الموية وتقدر تردم عادي. • إذا السيل ماشي بالوادي، اللعبة تقولك انتظره يمر وبعدين اردم."],
     ["world", "🚚", "انقل مدينتك، وغيّر اسمك مرة وحدة", "• افتح خريطة الجوف واضغط على أي أرض فاضية، بيطلع لك زر «🚚 انقل مدينتك هنا». • مدينتك تنتقل كاملة: مبانيها وفلوسها وسكانها وحربها وعلاقاتها وتعليقاتها، وأرضك القديمة تصير فاضية. • النقل مرة وحدة بس، فاختر أرضك زين. وتطلع هجرتك بالنشرة. • وصار تقدر تغيّر اسمك الشخصي مرة وحدة بس من «الإعدادات» ← «اسمك»، واسم مدينتك مرة وحدة بس من خريطة الجوف."],
     ["world", "🗺️", "الأضارع والرديفة بخريطة الجوف", "• خريطة الجوف توسّعت ٦ أعمدة يمين و٦ يسار، فيها أراضي جديدة للمدن. • انضافت «الأضارع» يسار الرافعية (أرض جبلية)، و«الرديفة» يمينها (روضة خضرا)، ولكل وحدة تصاميم مبانيها ومعالمها. • المدن الموجودة باقية بمكانها واسمها ومعالمها مثل ما هي."],
     ["world", "🔐", "الدخول بحساب قوقل", "• اربط حسابك بقوقل من «الإعدادات» ← «حسابك وقوقل»، وبعدها من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل» وترجع لمدينتك بضغطة، بدون كود استرجاع. • ما ناخذ إيميلك ولا اسمك من قوقل، بس رقم حسابك المميز مشفّر. • تقدر تفك الربط متى ما بغيت."],

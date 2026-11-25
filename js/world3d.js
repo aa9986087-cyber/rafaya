@@ -1957,12 +1957,12 @@ export class World {
     if (!this.hoverMesh) {
       const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
       this.hoverMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.35, depthWrite: false }));
-      this.hoverMesh.renderOrder = 2;
+      this.hoverMesh.renderOrder = 3;
       this.scene.add(this.hoverMesh);
     }
     this.hoverMesh.visible = !!tile;
     if (!tile) return;
-    this.hoverMesh.position.copy(tileCenter(tile.x, tile.y)).setY(0.02);
+    this.hoverMesh.position.copy(tileCenter(tile.x, tile.y)).setY(0.04); // above the wadi's water when it rains
     this.hoverMesh.material.color.set(ok === false ? "#ff5a4a" : "#ffffff");
   }
 
@@ -1996,7 +1996,7 @@ export class World {
       if (heat) { const v = Math.min(1, values[i]); hc.setHSL(0.33 * (1 - v), 0.85, 0.5); this.overlay.setColorAt(k, hc); }
     });
     this.overlay.count = cells.length;
-    this.overlay.renderOrder = 1;
+    this.overlay.renderOrder = 3; // drawn after the wadi's water, so the marks never look grey in rain
     this.scene.add(this.overlay);
   }
 
