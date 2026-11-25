@@ -88,14 +88,15 @@ export function warWatch(st) {
     if (o.status !== "done" || played.has(o.id) || WARX.watched.has(o.id)) continue;
     if (o.salvo && (st.ops || []).some((x) => x.salvo === o.salvo && x.status === "flying")) continue; // a salvo plays once all of it has landed
     if (Date.now() - (o.doneAt - WARX.offset) > 15 * 60000) { markPlayed(o.id); continue; } // old news: in the log only
-    if (o.side === "in" && (WARX.scene || sheetFor === "war-report")) continue; // a scene or its report is on: this one plays after (next poll)
+    if (WARX.scene || sheetFor === "war-report") continue; // a scene or its report is on: this one plays after (next poll)
     // another attack on us lands within half a minute: wait for it, so they play together (but never more than 45 s)
     if (o.side === "in" && Date.now() - (o.doneAt - WARX.offset) < 45000 && (st.ops || []).some((x) => x.side === "in" && x.status === "flying" && x.arriveAt - warNow() < 30000)) { clearTimeout(WARX.gatherT); WARX.gatherT = setTimeout(() => warPoll(true), 4000); continue; }
+    // it plays at once, wherever the mayor is (the report then has the way back to the war room); only choosing targets,
+    // a decision to answer or another scene make it wait (it plays right after them)
+    if (WARX.targeting || WARX.scene || sheetFor === "decision") continue;
     WARX.watched.add(o.id);
-    if (o.side === "in" && WARX.targeting) { WARX.watched.delete(o.id); continue; } // choosing targets: the scene waits until they are done
-    if (o.side === "in" && sheetFor === "warroom") { toast(`${o.result?.dmg ? "💥" : "🛡️"} ${o.bname}: ${o.result?.blocked ? "ما أصابت" : o.result?.dmg ? `إصابة ${ar(o.result.dmg)}٪` : "انعترضت"} · اضغطها بالشريط تشوف المشهد`, o.result?.dmg ? "bad" : "goal"); } // the war room is never closed by an alert
-    else if (o.side === "in" && !visiting && !WARX.scene && sheetFor !== "decision") { warDefenseScene(o); }
-    else if (o.side === "out" && !WARX.scene) { markPlayed(o.id); toast(`📋 نتيجة عمليتك على «${o.toTown}» وصلت`, o.result.dmg ? "goal" : ""); }
+    if (o.side === "in") warDefenseScene(o);
+    else { for (const x of salvoOf(o)) { markPlayed(x.id); WARX.watched.add(x.id); } resultScene(o); }
   }
   // an attack on its way: a countdown at the top
   const incoming = (st.ops || []).filter((o) => o.side === "in" && o.status === "flying" && o.detected).sort((a, b) => a.arriveAt - b.arriveAt)[0];
@@ -535,9 +536,33 @@ export async function warOpScene(op, launch) {
     if (visiting && !WARX.targeting) { const keep = sheetFor; leaveVisit(); if (keep === "war-report") opReport(WARX.lastReport, true); }
   }
 }
+/** Our operation's result arrived while no scene was on: straight to the target town, the hits, then the report. */
+async function resultScene(op) {
+  if (WARX.scene || !op.result) return;
+  const ops = salvoOf(op).filter((o) => o.result);
+  if (sceneMode() === "off") { if (ops.length > 1) salvoReport(ops, true); else opReport(op, true); return; }
+  WARX.scene = { op };
+  sceneUi(true); closeSheet(); setTool(null);
+  world.fx.speed = sceneMode() === "fast" ? 2.2 : 1;
+  try {
+    banner(`🎯 ضربتك على «${op.toTown}» وصلت`, "");
+    if (await sceneTown(op.to)) {
+      salvoBefore(ops);
+      if (ops.some((o) => !o.result.blocked)) await world.fx.playIncoming(salvoOpts(ops, defenceOf(S)));
+      else banner({ gone: "الهدف ما عاد موجود", shield: "المدينة دخلت درع الحماية", truce: "دخلت الهدنة قبل الوصول" }[op.result.blocked] || "ما أصابت", "bad");
+    }
+    world.fx.clear();
+    if (visiting) leaveVisit();
+    if (ops.length > 1) salvoReport(ops, true); else opReport(op, true);
+  } finally {
+    sceneUi(false); WARX.scene = null; world.fx.clear();
+    if (visiting && !WARX.targeting) leaveVisit();
+  }
+}
 /** An attack on us that just landed, played in our own town. */
 export async function warDefenseScene(op, replay = false) {
   if (WARX.scene) return;
+  if (visiting && !replay) leaveVisit(); // it plays at home, wherever the mayor was looking
   // everything that landed on us plays together in one scene (several towns, many missiles), then one report
   const ops = replay ? salvoOf(op).filter((o) => o.status === "done") : landedOnUs(op);
   for (const o of ops) { markPlayed(o.id); WARX.watched.add(o.id); }

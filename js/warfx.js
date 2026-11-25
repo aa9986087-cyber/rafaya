@@ -116,8 +116,10 @@ export class WarFX {
   /** Called after the buildings are redrawn. */
   syncTown(s) {
     this.state = s;
-    for (const p of this.parts.values()) this.root.remove(p.group);
-    this.parts.clear();
+    // a launcher in the middle of its launch keeps its moving parts (the stock just changed: a redraw would drop them)
+    const held = [...this.parts.entries()].filter(([, p]) => p.held);
+    for (const p of this.parts.values()) if (!p.held) this.root.remove(p.group);
+    this.parts = new Map(held);
     for (const m of this.marks.children) if (m.userData.rubble) { m.geometry.dispose(); m.material.dispose(); }
     this.marks.clear();
     this.burning = [];
@@ -125,8 +127,8 @@ export class WarFX {
     for (let y = 0; y < FX_N; y++) for (let x = 0; x < FX_N; x++) {
       const t = s.tiles[idx(x, y)], b = t.b;
       if (!b || b.build > 0) continue;
-      const c = tileCenter(x, y);
-      if (b.id === "windfarm") {
+      const c = tileCenter(x, y), kept = this.parts.get(idx(x, y))?.held;
+      if (b.id === "windfarm" && !kept) {
         // the turbines' blades turn (slower when damaged, still when wrecked)
         const g = new THREE.Group();
         g.position.copy(c);
@@ -141,7 +143,7 @@ export class WarFX {
         this.root.add(g);
         this.parts.set(idx(x, y), part);
       }
-      if (["radar", "airdef", "missilepad", "dronebase"].includes(b.id)) {
+      if (["radar", "airdef", "missilepad", "dronebase"].includes(b.id) && !kept) {
         const g = new THREE.Group();
         g.position.copy(c);
         g.rotation.y = this.w.faceAngle(s, x, y) + (b.rot || 0) * Math.PI / 2;
@@ -387,8 +389,15 @@ export class WarFX {
    * o: { x, y (the pad or base tile), kind: "missile" | "drone", wid, n, dir: Vector3 on the ground toward the target }
    */
   async playLaunch(o) {
+    const part = this.parts.get(idx(o.x, o.y));
+    if (part) part.held = true;
+    try { await this.launchScene(o, part); } finally {
+      if (part) { part.held = false; if (this.state && this.parts.get(idx(o.x, o.y)) === part) this.syncTown(this.state); }
+    }
+  }
+  async launchScene(o, part) {
     this.skipping = false;
-    const part = this.parts.get(idx(o.x, o.y)), c = tileCenter(o.x, o.y);
+    const c = tileCenter(o.x, o.y);
     await this.camTo({ x: c.x, z: c.z, zoom: 2.4, y: 0.2 }, 1.1);
     if (o.kind === "missile") {
       const pivot = part?.pivot;
@@ -421,7 +430,7 @@ export class WarFX {
           for (let j = 0; j < 3; j++) this.emit("smoke", mouth.clone(), { color: "#ece7dc", size: 0.3, v: out.clone().multiplyScalar(0.4) });
         }
         this.light.position.copy(at(live[0], 0.3)); this.light.intensity = 3.2; this.lightT = 0.3;
-        await this.tween(0.45, (k) => { for (const m of live) { m.position.z = m.userData.z0 + fxEaseIn(k) * 0.32; if (Math.random() < 0.6) this.emit("flame", at(m, -0.25), { size: 0.22, life: 0.08 }); } });
+        await this.tween(0.8, (k) => { for (const m of live) { m.position.z = m.userData.z0 + fxEaseIn(k) * 0.5; if (Math.random() < 0.6) this.emit("flame", at(m, -0.25), { size: 0.22, life: 0.08 }); } });
       }
       for (const [i, m] of missiles.entries()) {
         // the missile leaves its rail: from the arm to the world
@@ -435,6 +444,7 @@ export class WarFX {
       }
       o.sfx?.launch();
       this.shake(0.05, 0.6);
+      this.camTo({ x: c.x, z: c.z, zoom: 1.5, y: 1.4 }, 2.6); // the pad stays in the shot while the missile climbs away
       await this.tween(2.6, (k) => {
         const t = k * 2.6;
         for (const f of flying) {
@@ -452,7 +462,6 @@ export class WarFX {
           if (Math.random() < 0.8) this.emit("trail", back, { v: new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.05, (Math.random() - 0.5) * 0.15) });
           if (tt < 0.25) for (let j = 0; j < 2; j++) this.emit("smoke", new THREE.Vector3(c.x + (Math.random() - 0.5) * 0.6, 0.1, c.z + (Math.random() - 0.5) * 0.6), { color: "#d8d2c6", v: new THREE.Vector3((Math.random() - 0.5) * 1.6, 0.3, (Math.random() - 0.5) * 1.6), size: 0.6 });
         }
-        this.follow(flying[0].fly, 0.08, 1.1);
       });
       for (const f of flying) this.flyers.remove(f.fly);
       if (part?.pivot) await this.tween(0.6, (k) => { part.pivot.rotation.x = -1.2 * (1 - k); });
@@ -468,6 +477,7 @@ export class WarFX {
         return { fly, rotor, start: p, delay: i * 0.4 };
       }) : [(() => { const fly = this.mesh("wDrone"), rotor = this.mesh("wRotor"); fly.add(rotor); fly.position.set(c.x, 0.1, c.z); this.flyers.add(fly); return { fly, rotor, start: fly.position.clone(), delay: 0 }; })()];
       const dir = o.dir ? new THREE.Vector3(o.dir.x, 0, o.dir.z).normalize() : new THREE.Vector3(0, 0, 1);
+      this.camTo({ x: c.x + dir.x * 1.2, z: c.z + dir.z * 1.2, zoom: 1.7, y: 0.8 }, 3.4);
       await this.tween(3.4, (k) => {
         const t = k * 3.4;
         for (const f of flying) {
@@ -479,7 +489,6 @@ export class WarFX {
           f.fly.rotation.x = Math.min(0.35, go * 0.4);
           if (tt < 0.6 && Math.random() < 0.5) this.emit("dust", new THREE.Vector3(f.start.x, 0.05, f.start.z), { v: new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.1, (Math.random() - 0.5) * 1.2), size: 0.25 });
         }
-        this.follow(flying[0].fly, 0.08, 1.4);
       });
       for (const f of flying) this.flyers.remove(f.fly);
     }
@@ -490,30 +499,6 @@ export class WarFX {
    * o: { x, y, dir (toward where it came from), weapons: [{ w, kind, tried, intercepted, dmg }], detected,
    *      airdefs: [{ x, y }], radars: [{ x, y }], banner(text, cls), onHit(dmg), sfx }
    */
-  /**
-   * The camera follows the action: every frame it takes what is in the air (and the spots still waiting
-   * for their hit), finds where they are on the screen, and glides so they all stay in view, zooming out
-   * when they spread and in when they gather. points(): [Vector3] in the world.
-   */
-  direct(points) {
-    const cam = this.w.camera, v = this.w.view, ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
-    const ground = (nx, ny) => { ray.setFromCamera(new THREE.Vector2(nx, ny), cam); return ray.ray.intersectPlane(plane, hit) ? hit.clone() : null; };
-    this.director = (dt) => {
-      const pts = points().filter(Boolean);
-      if (!pts.length) return;
-      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-      for (const p of pts) { const q = p.clone().project(cam); x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
-      const g = ground((x0 + x1) / 2, (y0 + y1) / 2);
-      const k = Math.min(1, dt * 2.2);
-      if (g) { v.x += (g.x - v.x) * k; v.z += (g.z - v.z) * k; }
-      // fit: the spread on the screen should take about 60% of it (never closer than 1.6 or further than 0.55)
-      const need = Math.max((x1 - x0) / 1.25, (y1 - y0) / 1.15, 0.2);
-      const want = Math.max(0.85, Math.min(1.7, v.zoom / need));
-      v.zoom += (want - v.zoom) * k * 0.7;
-      v.y = (v.y || 0) * (1 - k); // look at the ground itself: a lifted look point shifts what is centred
-      this.w.updateCamera();
-    };
-  }
   async playIncoming(o) {
     this.skipping = false;
     // one strike, or a salvo of them: each falls on its own spot, all of them together
@@ -521,17 +506,19 @@ export class WarFX {
     strikes.forEach((st) => { st.top = st.c.clone().setY(0.45); });
     const ads = (o.airdefs || []).map((a) => ({ ...a, p: tileCenter(a.x, a.y), used: 0 }));
     const defends = ads.length > 0 && strikes.some((st) => st.weapons.some((h) => h.tried));
-    // the camera takes in every spot (and the batteries that fire)
+    // the camera goes once to where it falls (all the spots in view), then it is the mayor's: pan and zoom freely
     const live = new Set();
     this.inScene = true;
-    this.pitch0 ??= this.w.view.pitch;
-    this.tween(1.0, (k) => { this.w.view.pitch = fxLerp(this.pitch0, 1.12, fxEase(k)); this.w.updateCamera(); }); // looking down between the towers
     strikes.forEach((st) => { st.left = st.weapons.length; });
-    const pending = () => strikes.filter((st) => st.left > 0).map((st) => st.top);
-    // the shot follows what flies and what waits for its hit (and the batteries when they defend)
-    // (a weapon joins the shot once it is near: far off it would only make everything small)
-    const near = (m) => strikes.some((st) => Math.hypot(m.position.x - st.c.x, m.position.z - st.c.z) < 6);
-    this.direct(() => [...[...live].filter(near).map((m) => m.position), ...pending(), ...(defends && live.size ? ads.filter((a) => a.used && strikes.some((st) => a.p.distanceTo(st.c) < 6)).map((a) => a.p) : [])]);
+    {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const st of strikes) { x0 = Math.min(x0, st.c.x - st.r); x1 = Math.max(x1, st.c.x + st.r); z0 = Math.min(z0, st.c.z - st.r); z1 = Math.max(z1, st.c.z + st.r); }
+      const span = Math.max(x1 - x0, z1 - z0, 3);
+      this.camTo({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, zoom: Math.max(0.9, Math.min(1.4, 9 / span)), y: 0 }, 1.0);
+    }
+    // where it falls, from the start to the hit: a red ring of the blast over every spot (it goes when that spot is hit)
+    const rings = () => this.showStrike(strikes.filter((st) => st.left > 0).map((st) => ({ x: st.x, y: st.y, r: st.r, on: true })), []);
+    rings();
     await this.wait(1.0);
     if (ads.length && !defends && o.noAmmo) { o.banner?.("🛡️ الدفاع الجوي بلا صواريخ اعتراضية!", "bad"); await this.wait(1.2); }
     if (o.detected) {
@@ -543,8 +530,6 @@ export class WarFX {
         sp.position.set(p.x, 0.9, p.z);
         this.tween(2.4, (k) => { sp.scale.setScalar(0.4 + (k * 6 % 1) * 0.9); sp.material.opacity = 1 - (k * 6 % 1); if (k >= 1) { this.flyers.remove(sp); this.pool.push(sp); } });
       }
-      // where they are going: a red lock over every spot
-      this.showStrike(strikes.map((st) => ({ x: st.x, y: st.y, r: st.r, on: true })), []);
       await this.wait(1.0);
     }
     const dir = new THREE.Vector3(o.dir?.x ?? 1, 0, o.dir?.z ?? 0).normalize();
@@ -617,7 +602,7 @@ export class WarFX {
             if (q >= 1) {
               inter.done = true; this.flyers.remove(inter.m); live.delete(inter.m);
               if (h.intercepted) {
-                gone = true; this.flyers.remove(fly); live.delete(fly); st.left--;
+                gone = true; this.flyers.remove(fly); live.delete(fly); st.left--; if (!st.left) rings();
                 this.airBurst(p, missile ? 1.15 : 0.8);
                 o.sfx?.airBurst(); o.banner?.("✅ تم اعتراض هدف", "ok");
               } else {
@@ -629,7 +614,7 @@ export class WarFX {
         }
       });
       if (gone) return;
-      this.flyers.remove(fly); live.delete(fly); st.left--;
+      this.flyers.remove(fly); live.delete(fly); st.left--; if (!st.left) rings();
       this.blast(st, missile, h);
       o.sfx?.boom();
       hits++;
@@ -639,10 +624,8 @@ export class WarFX {
     const runs = [];
     for (const st of strikes) for (const h of st.weapons) { const kk = k++; runs.push(this.wait(kk * (strikes.length > 1 ? 1.5 : 0.9)).then(() => one(h, kk, st))); }
     await Promise.all(runs);
-    this.director = null; this.inScene = false;
+    this.inScene = false;
     this.showStrike(null);
-    const p0 = this.pitch0; this.pitch0 = undefined;
-    if (p0 != null) this.tween(1.2, (k) => { this.w.view.pitch = fxLerp(1.12, p0, fxEase(k)); this.w.updateCamera(); });
     await this.wait(hits ? 1.8 : 0.8);
     this.skipping = false;
   }
@@ -690,7 +673,6 @@ export class WarFX {
   step(dt) {
     const now = Date.now() + this.clockOffset;
     // tweens
-    if (this.director) this.director(dt);
     if (this.tasks.length) {
       const done = [];
       for (const t of this.tasks) { t.t += dt * (this.speed || 1); const k = Math.min(1, t.t / t.dur); t.fn(k); if (k >= 1) done.push(t); }
@@ -769,8 +751,7 @@ export class WarFX {
 
   /** Drop the scene's flyers and particles (leaving a scene early). */
   clear() {
-    if (this.pitch0 != null) { this.w.view.pitch = this.pitch0; this.pitch0 = undefined; }
-    this.director = null; this.speed = 1; this.inScene = false;
+    this.speed = 1; this.inScene = false;
     this.skip(); this.skipping = false;
     for (const q of this.parts3) { this.flyers.remove(q.sp); this.pool.push(q.sp); }
     this.parts3 = [];
