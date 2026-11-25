@@ -100,6 +100,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
     // the owner asks a player to change a name that breaks the rules: player name and/or town (what: "name", "town", "both");
@@ -416,19 +417,24 @@ export class Board extends DurableObject {
     if (action === "backup") { // a short code for this town's copy (the same phone asking again replaces its last one)
       const data = String(body.data || "");
       if (!data || data.length > 1800000) return json({ error: "كبير" }, 413);
-      this.sql.exec("DELETE FROM backups WHERE at < ?", now - 60 * 86400000);
       const old = String(body.old || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-      if (old) this.sql.exec("DELETE FROM backups WHERE code = ?", old);
       const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I/L: easy to read and type
-      let code; do { code = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => abc[b % abc.length]).join(""); } while (this.sql.exec("SELECT 1 FROM backups WHERE code = ?", code).toArray().length);
-      this.sql.exec("INSERT INTO backups (code, data, at) VALUES (?, ?, ?)", code, data, now);
+      const code = this.ctx.storage.transactionSync(() => {
+        this.sql.exec("DELETE FROM backups WHERE at < ?", now - 60 * 86400000);
+        let next;
+        do { next = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => abc[b % abc.length]).join(""); }
+        while (this.sql.exec("SELECT 1 FROM backups WHERE code = ?", next).toArray().length);
+        this.sql.exec("INSERT INTO backups (code, data, at) VALUES (?, ?, ?)", next, data, now);
+        if (old) this.sql.exec("DELETE FROM backups WHERE code = ?", old);
+        return next;
+      });
       return json({ code });
     }
     if (action === "restore") { // the copy behind a short code (it stays, so it works again on another phone)
       this.backupFails = this.backupFails.filter((t) => now - t < 60000);
       if (this.backupFails.length > 30) return json({ error: "محاولات كثير، جرّب بعد دقيقة" });
       const code = String(body.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-      const row = code.length === 8 ? this.sql.exec("SELECT data FROM backups WHERE code = ?", code).toArray()[0] : null;
+      const row = code.length === 8 ? this.sql.exec("SELECT data FROM backups WHERE code = ? AND at >= ?", code, now - 60 * 86400000).toArray()[0] : null;
       if (!row) { this.backupFails.push(now); return json({ error: "الكود غلط أو انتهى (يبقى ٦٠ يوم)" }); }
       return json({ data: row.data });
     }
@@ -669,7 +675,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     }
     if (!post && p[0] === "town" && p[1]) {
       const plot = int(p[1]);
-      const town = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0];
+      const town = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, snapshot, restarted, save_version AS saveVersion FROM plots WHERE plot = ?", plot).toArray()[0];
       if (!town) return json({ error: "no such town" }, 404);
       const comments = this.sql.exec("SELECT author, text, at FROM comments WHERE code = ? ORDER BY id DESC LIMIT 30", `w${plot}`).toArray();
       return json({ town, comments, damage: this.war.publicDamage(plot) });
@@ -764,9 +770,25 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (me.plot == null) return json({ error: "no town" }, 400);
       const snapshot = String(body.snapshot || "");
       if (snapshot.length > MAX_SNAPSHOT) return json({ error: "snapshot too big" }, 413);
-      const was = this.sql.exec("SELECT town, owner, pop, era, money, updated, restarted FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const was = this.sql.exec("SELECT town, owner, pop, era, money, updated, restarted, length(snapshot) > 0 AS hasSave, save_version AS saveVersion FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      if (!was) return json({ error: "no town" }, 400);
       // a copy of the town from before its fresh start (another phone): refused; that phone takes the new town
-      if (was?.restarted && int(body.restartAt) < was.restarted) return json({ ok: false, restarted: was.restarted, town: was.town });
+      if (was.restarted && int(body.restartAt) < was.restarted) return json({
+        ok: false, restarted: was.restarted, town: was.town, hasSave: !!was.hasSave, saveVersion: was.saveVersion
+      });
+      const write = body.saveWrite;
+      const tracked = typeof write === "string" && /^[a-f0-9-]{36}$/.test(write);
+      const conflict = () => json({ ok: false, conflict: true, error: "فيه حفظ أحدث لمدينتك على السيرفر." });
+      if (tracked) {
+        if (!snapshot) return json({ error: "missing snapshot" }, 400);
+        // A close or lost response may leave the phone with a write it sent but could not confirm.
+        if (was.saveVersion === write) return json({ ok: true, town: was.town, saveVersion: write });
+        const pending = Array.isArray(body.pendingWrites) ? body.pendingWrites.slice(0, 8) : [];
+        if (body.saveVersion !== was.saveVersion && !pending.includes(was.saveVersion)) return conflict();
+      } else if (was.saveVersion && !was.saveVersion.startsWith("legacy-")) {
+        return conflict(); // an installed app with old code must update before it can write again
+      }
+      const saveVersion = tracked ? write : "legacy-" + crypto.randomUUID();
       // back after a while away: a town gains at most AWAY_CAP for its stage while its mayor is out (old
       // games on phones without the cap too). Only what is above the cap is taken back; the money it had
       // when it left (the last sync before) is never touched. A little room is left for the minutes played since.
@@ -797,24 +819,26 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const support = this.sql.exec(`SELECT COALESCE(-SUM(json_extract(data, '$.amount')), 0) total FROM war
         WHERE tbl = 'charge' AND k1 = ? AND json_extract(data, '$.why') = 'citizenSupport' AND json_extract(data, '$.seq') > ?`,
         String(me.plot), Math.max(0, seen)).toArray()[0].total;
-      this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END WHERE plot = ?",
-        int(body.pop), int(body.happy), int(body.money) + support, int(body.era), Date.now(), snapshot, snapshot, me.plot);
+      this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END, save_version = ? WHERE plot = ?",
+        int(body.pop), int(body.happy), int(body.money) + support, int(body.era), Date.now(), snapshot, snapshot, saveVersion, me.plot);
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (body.ledger && typeof body.ledger === "object") { const lj = JSON.stringify(body.ledger); if (lj.length < 40000) this.sql.exec("UPDATE plots SET ledger = ? WHERE plot = ?", lj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh
-      return json({ ok: true, town: was?.town });
+      return json({ ok: true, town: was.town, saveVersion });
     }
     if (p[0] === "restart") { // the mayor starts the town again from nothing, on the same land with the same name (once a day)
       if (me.plot == null) return json({ error: "ما عندك مدينة" });
-      const t = this.sql.exec("SELECT town, restarted FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      const t = this.sql.exec("SELECT town, restarted, save_version AS saveVersion FROM plots WHERE plot = ?", me.plot).toArray()[0];
+      if (!t) return json({ error: "ما عندك مدينة" });
       const wait = (t?.restarted || 0) + 86400000 - Date.now();
       if (wait > 0) return json({ error: `بدأت من جديد قريب: تقدر مرة ثانية بعد ${Math.ceil(wait / 3600000)} ساعة` });
       this.war.resetTown(me.plot);
-      this.sql.exec("UPDATE plots SET pop = 9, happy = 55, money = 0, era = 0, snapshot = '', pending = NULL, reminded = 0, restarted = ?, updated = ? WHERE plot = ?", Date.now(), Date.now(), me.plot);
-      const at = this.sql.exec("SELECT restarted FROM plots WHERE plot = ?", me.plot).toArray()[0].restarted;
+      const saveVersion = t.saveVersion && !t.saveVersion.startsWith("legacy-") ? crypto.randomUUID() : "";
+      const at = Date.now();
+      this.sql.exec("UPDATE plots SET pop = 9, happy = 55, money = 0, era = 0, snapshot = '', save_version = ?, pending = NULL, reminded = 0, restarted = ?, updated = ? WHERE plot = ?", saveVersion, at, at, me.plot);
       this.news("restart", `🔄 «${t.town}» بدأت من جديد. الله يوفقهم`, me.plot);
       this.live({ t: "town", plot: me.plot });
-      return json({ ok: true, restarted: at });
+      return json({ ok: true, restarted: at, saveVersion });
     }
     if (p[0] === "handoff") { // a move for this account: a long token for the home-screen link (7 days) and a 6-digit code to type (24 hours); each works once
       const now = Date.now();

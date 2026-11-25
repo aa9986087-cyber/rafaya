@@ -45,7 +45,9 @@ export function advise(s, a) {
   const net = a.net;
   if (s.money < 0) {
     add(120, "🚨", "البلدية مديونة", `عليك ${advNum(-s.money)} ريال، وأكبر مصاريفك: ${topCosts.map(([k, v]) => `${k} ${advNum(v)}`).join("، ")} بالساعة.`, [
-      net < 0 ? `أول شي وقّف الخسارة: الصافي ${advNum(net)} ريال بالساعة.` : `الدخل يغطي (${advNum(net)}+ بالساعة)، ترجع فوق الصفر بعد ${advAr(Math.ceil(-s.money / Math.max(1, net)))} ساعة تقريباً إذا ما صرفت.`,
+      net < 0 ? `أول شي وقّف الخسارة: الصافي ${advNum(net)} ريال بالساعة.` : net > 0
+        ? `فائضك ${advNum(net)} ريال بالساعة، وتسدد دينك بعد ${advAr(Math.ceil(-s.money / net))} ساعة تقريباً إذا ما صرفت.`
+        : "دخلك يغطي المصاريف بالضبط. تحتاج فائض عشان ينقص الدين.",
       "لا تبني شي جديد لين ترجع فوق الصفر، إلا اللي يجيب دخل.",
       s.tax < 12 ? `ارفع الضريبة شوي (الحين ${advAr(s.tax)}٪) من «الأرقام».` : "شيل المباني اللي ما تشتغل ومصروفها عليك (تحت)."
     ]);
@@ -65,7 +67,7 @@ export function advise(s, a) {
 
   // vault full: money above the cap is lost
   const cap = moneyCap(s);
-  if (Number.isFinite(cap) && s.money >= cap * 0.95) add(70, "🔒", "الخزنة مليانة", `فلوسك ${advNum(s.money)} والحد ${advNum(cap)}: أي دخل زيادة يضيع.`, ["اصرف على شي يجيب دخل أو يكبّر البلد.", "ابنِ خزنة جديدة أو طوّر خزنتك (قسم ماء وكهرباء)."]);
+  if (Number.isFinite(cap) && s.money >= cap) add(70, "🔒", "الخزنة مليانة", `فلوسك ${advNum(s.money)} والحد ${advNum(cap)}: أي دخل زيادة يضيع.`, ["اصرف على شي يجيب دخل أو يكبّر البلد.", "ابنِ خزنة جديدة أو طوّر خزنتك (قسم ماء وكهرباء)."]);
 
   // ---- buildings that stand idle, and why ----
   const idle = new Map();
@@ -91,7 +93,9 @@ export function advise(s, a) {
   if (n.wells > 0 || dry.length) add(85, "💧", "الماء ناقص", `${n.wells ? `الماء ناقص ${advNum(n.waterGap)} وحدة (عندك ${advPct(a.waterRatio)} من الحاجة). ` : ""}${dry.length ? `${advCount(dry.length, "بيت", "بيتين", "بيوت")} ${advWhere(s, dry)} ما توصلها مواسير.` : ""}`,
     [n.wells ? `ابنِ ${advCount(n.wells, "بئر", "بئرين", "آبار", "بئر")} (كل بئر ٣٠ وحدة)${s.era >= 1 ? " أو خزان (١٤٠ وحدة ويوصل ٩ مربعات)" : ""}.` : "", dry.length ? "حط البئر أو الخزان وسط البيوت اللي ما يوصلها ماء." : ""].filter(Boolean), dry[0] ?? -1);
   if ((s.aquifer ?? 100) < GROUND.low && (s.aquiferRate ?? 0) <= 0.05) add(80, "🏜️", "الماء الجوفي ينزل", `الماء الجوفي ${advPct((s.aquifer ?? 0) / 100)}، والآبار والخزانات تعطي أقل من ماها. عندك ${advAr(a.count.well)} بئر و${advAr(a.count.tank)} خزان و${advAr(a.count.pivot)} مزرعة محورية تسحب.`,
-    [s.tech.dams ? "ابنِ سد أو سدّين على الوادي: يرجّعون الماء للأرض." : "ابحث «سدود الأودية» من المجلس، وابنِ سد.", s.era >= 1 ? "التحلية تعطي ماء بدون ما تسحب من الأرض." : "خفّف الآبار الزايدة.", a.count.pivot ? "المزارع المحورية تسحب كثير: لا تزيدها." : ""].filter(Boolean));
+    [s.tech.dams ? "ابنِ سد أو سدّين على الوادي: يرجّعون الماء للأرض." : "ابحث «سدود الأودية» من المجلس، وابنِ سد.",
+      s.era >= B.desal.era ? (s.tech.desal ? "التحلية تعطي ماء بدون ما تسحب من الأرض." : "ابحث «تحلية المياه» قبل بناء محطة التحلية.") : "خفّف الآبار الزايدة.",
+      a.count.pivot ? "المزارع المحورية تسحب كثير: لا تزيدها." : ""].filter(Boolean));
 
   // ---- power ----
   const dark = homes.filter((i) => tiles[i].b.works && tiles[i].b.lvl >= 3 && a.grid && !a.powered?.[i]);
@@ -125,6 +129,6 @@ export function advise(s, a) {
   if (tech && !s.research && s.money > tech[1].cost * 2) add(25, "🧪", "المجلس فاضي", `ما فيه بحث شغال. «${tech[1].name}» بـ${advNum(tech[1].cost)}: ${tech[1].text}`, ["ابدأه من «المجلس»."]);
 
   out.sort((p, q) => q.w - p.w);
-  const verdict = s.money < 0 ? "مديون" : net < 0 ? "خسران" : out.some((f) => f.w >= 70) ? "رابح بس فيه مشاكل" : "ماشي زين";
+  const verdict = s.money < 0 ? "مديون" : net < 0 ? "خسران" : net === 0 ? "الدخل يغطي المصاريف" : out.some((f) => f.w >= 70) ? "رابح بس فيه مشاكل" : "ماشي زين";
   return { net, verdict, findings: out, good };
 }
