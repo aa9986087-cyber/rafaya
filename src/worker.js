@@ -33,6 +33,7 @@ import { pendingSaveMatches } from "../js/save-version.js";
 import { encryptPush, pushKeys } from "./web-push.js";
 import { createModeration } from "./moderation.js";
 import { REVIEW_ROUTES, verifyReview } from "./review-access.js";
+import { googleSub } from "./google.js";
 const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
@@ -101,7 +102,8 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
     try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
-    try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ } // seconds with the game open and in front (counted from the live pings)
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN google TEXT"); } catch { /* already there */ } // the linked Google account's number, hashed (never the e-mail) // seconds with the game open and in front (counted from the live pings)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
@@ -724,6 +726,16 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       this.sql.exec("UPDATE players SET secret = ? WHERE name = ?", await hash(secret), name);
       return json({ name, secret, plot: row.plot });
     }
+    if (post && p[0] === "google" && p[1] === "login") { // «الدخول بحساب قوقل»: a linked Google account → its player, with a key of its own
+      const sub = await googleSub(body.credential);
+      if (!sub) return json({ error: "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" }, 403);
+      const pl = this.sql.exec("SELECT name, plot, banned FROM players WHERE google = ?", await hash("g:" + sub)).toArray()[0];
+      if (!pl) return json({ error: "none" }, 404); // no player linked to this Google account yet
+      if (pl.banned) return json({ error: "banned" }, 403);
+      const secret = makeSecret();
+      this.sql.exec("INSERT INTO keys (name, secret, at) VALUES (?, ?, ?)", pl.name, await hash(secret), Date.now());
+      return json({ name: pl.name, secret, plot: pl.plot });
+    }
     if (post && p[0] === "handoff" && p[1] === "claim") { // the new app: a move code → this player, with a key of its own
       const now = Date.now();
       this.handoffFails = this.handoffFails.filter((t) => now - t < 60000);
@@ -743,9 +755,18 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     const name = clean(body.name, 16), me = this.sql.exec("SELECT secret, plot FROM players WHERE name = ?", name).toArray()[0];
     if (!me || !(await this.keyOk(name, me, body.secret))) return json({ error: "who are you" }, 403);
     if (this.sql.exec("SELECT banned FROM players WHERE name = ?", name).toArray()[0]?.banned) return json({ error: "banned" }, 403); // stopped by the owner
+    if (post && p[0] === "google" && p[1] === "link") { // link this player to a Google account (one account, one player)
+      const sub = await googleSub(body.credential);
+      if (!sub) return json({ error: "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" }, 403);
+      const g = await hash("g:" + sub), other = this.sql.exec("SELECT name FROM players WHERE google = ?", g).toArray()[0];
+      if (other && other.name !== name) return json({ error: `حساب قوقل هذا مربوط بلاعب ثاني («${other.name}»)` }, 409);
+      this.sql.exec("UPDATE players SET google = ? WHERE name = ?", g, name);
+      return json({ ok: true });
+    }
+    if (post && p[0] === "google" && p[1] === "unlink") { this.sql.exec("UPDATE players SET google = NULL WHERE name = ?", name); return json({ ok: true }); }
     if (p[0] === "me") { // the player's own start and time played (only theirs: the owner wants nobody else's shown)
-      const row = this.sql.exec("SELECT created, played FROM players WHERE name = ?", name).toArray()[0] || {};
-      return json({ name, started: row.created || 0, played: row.played || 0 });
+      const row = this.sql.exec("SELECT created, played, google FROM players WHERE name = ?", name).toArray()[0] || {};
+      return json({ name, started: row.created || 0, played: row.played || 0, google: !!row.google });
     }
     if (post && p[0] === "feedback") {
       const text = typeof body.text === "string" ? body.text.trim() : "";

@@ -25,7 +25,7 @@ if (closed) {
   await cp(new URL("icon.svg", root), new URL("icon.svg", out));
   console.log("MAINTENANCE: site copied as the maintenance page only");
 } else {
-  for (const item of ["index.html", "admin.html", "icon.svg", "icons", "manifest.webmanifest", "sw.js", "css", "js", "vendor"]) await cp(new URL(item, root), new URL(item, out), { recursive: true });
+  for (const item of ["index.html", "admin.html", "privacy.html", "icon.svg", "icons", "manifest.webmanifest", "sw.js", "css", "js", "vendor"]) await cp(new URL(item, root), new URL(item, out), { recursive: true });
   if (stamp) {
     const tag = encodeURIComponent(stamp);
     const page = new URL("index.html", out);

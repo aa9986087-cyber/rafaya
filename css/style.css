@@ -663,3 +663,8 @@ body.world .speeds { display: none !important; }
 .reach-tag span { display: grid; min-width: 0; overflow: hidden; }
 .reach-tag small { opacity: .8; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .reach-tag button { border: 0; border-radius: 10px; padding: 7px 10px; background: rgba(255, 255, 255, .14); color: inherit; font-weight: 700; }
+
+/* «الدخول بحساب قوقل»: Google's own button, centred, and an «أو» line above it */
+.g-btn { display: flex; justify-content: center; min-height: 44px; margin: 8px 0; }
+.g-or { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; opacity: .7; font-size: 13px; }
+.g-or::before, .g-or::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .35; }

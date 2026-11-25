@@ -2415,6 +2415,57 @@ async function openWorld() {
   } catch { /* the map anyway */ }
   worldMapSheet();
 }
+// ---------- «الدخول بحساب قوقل»: a Google account linked to the player, to sign in from any phone ----------
+const GOOGLE_CLIENT_ID = "610657966885-d15nel049o5fltrq4ospoe4gfb50hf4e.apps.googleusercontent.com";
+const inAppBrowser = () => /Snapchat|TikTok|musical_ly|Instagram|FBAN|FBAV|Line\/|; wv\)/i.test(navigator.userAgent);
+let gsiLoad = null;
+const gsi = () => (gsiLoad ||= new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true; sc.onload = () => res(globalThis.google); sc.onerror = rej; document.head.appendChild(sc); }));
+/** Google's own button in `box`; onToken gets the signed answer (checked on the server). */
+async function googleButton(box, onToken) {
+  if (!box) return;
+  if (globalThis.RAFAYA_PREVIEW || !onlineOk()) { box.hidden = true; return; }
+  if (inAppBrowser()) { box.innerHTML = `<p class="hint">قوقل ما يسمح بالدخول من داخل سناب وتيك توك وإنستقرام. افتح اللعبة في كروم أو سفاري وادخل بحساب قوقل من هناك.</p>`; return; }
+  try {
+    const g = await gsi();
+    g.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: (r) => r?.credential && onToken(r.credential), ux_mode: "popup", auto_select: false, cancel_on_tap_outside: true });
+    box.innerHTML = "";
+    g.accounts.id.renderButton(box, { theme: "outline", size: "large", shape: "pill", text: "continue_with", locale: "ar", width: Math.min(320, box.clientWidth || 300) });
+  } catch { box.innerHTML = `<p class="hint">ما قدرنا نفتح قوقل الحين، جرّب بعد شوي.</p>`; }
+}
+/** Sign in with Google: the player linked to that Google account, on this phone. */
+async function googleLogin(credential) {
+  let r;
+  try { r = await api("/world/google/login", { credential }); } catch (e) { r = { error: e.message }; }
+  if (r?.secret) {
+    store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: r.plot }));
+    toast(`حيّاك ${r.name}! دخلت بحساب قوقل ✓`, "goal"); sfx.goal(); worldMapSheet(); return;
+  }
+  toast(r?.error === "404" || r?.error === "none" ? "حساب قوقل هذا مو مربوط بأي لاعب. ادخل باسمك أو بكود الاسترجاع، واربطه من الإعدادات." : r?.error === "403" ? "ما قدرنا نتأكد من حساب قوقل، جرّب مرة ثانية" : "ما زبط الدخول بقوقل، جرّب بعد شوي", "bad");
+}
+/** Link (or unlink) this player to a Google account, from the settings. */
+async function googleLink(credential) {
+  const id = me();
+  if (!id) return;
+  let r;
+  try { r = await api("/world/google/link", { name: id.name, secret: id.secret, credential }); } catch (e) { r = { error: e.message === "409" ? "حساب قوقل هذا مربوط بلاعب ثاني" : "ما زبط الربط، جرّب بعد شوي" }; }
+  if (r?.ok) { toast("انربط حسابك بقوقل ✓ تقدر تدخل منه من أي جوال", "goal"); sfx.goal(); googleSection(); }
+  else toast(r?.error || "ما زبط الربط", "bad");
+}
+/** The settings' «حسابك» part: linked or not, and the button. */
+async function googleSection() {
+  const box = $("googleBox"), id = me();
+  if (!box || !id) return;
+  let st = null;
+  try { st = await api("/world/me", { name: id.name, secret: id.secret }); } catch { st = null; }
+  if (!$("googleBox")) return;
+  if (st?.google) {
+    box.innerHTML = `<div class="need ok">✓ حسابك «${id.name}» مربوط بحساب قوقل. من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل».</div><button class="btn block" id="gUnlink" type="button">فك الربط</button>`;
+    $("gUnlink").addEventListener("click", async () => { try { await api("/world/google/unlink", { name: id.name, secret: id.secret }); toast("انفك الربط"); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); } googleSection(); });
+  } else {
+    box.innerHTML = `<p>اربط حسابك بقوقل، ولو ضاع جوالك أو غيرته تدخل لمدينتك بضغطة. ما ناخذ إيميلك ولا اسمك من قوقل.</p><div id="gBtn" class="g-btn"></div>`;
+    googleButton($("gBtn"), googleLink);
+  }
+}
 function worldJoinSheet(recover) {
   sheet(`<h2>🌍 عالم الجوف</h2>
     <p>عالم واحد يجمع كل اللاعبين على خريطة الجوف: كل واحد يأسس مدينته في أرض، والكل يشوف مدن الثاني ويدخلها. العالم يمشي دايم، وإذا طلعت يمسك مدينتك «نائب العمدة».</p>
@@ -2424,9 +2475,13 @@ function worldJoinSheet(recover) {
       : `<label class="rg-name">اختر اسمك <input id="wjName" type="text" maxlength="16" placeholder="مثلاً: أبو_فهد"></label>
       <p class="hint">٣ إلى ١٦ حرف (عربي أو إنجليزي أو أرقام). يطلع للكل فوق مدينتك، فلا تكتب اسمك الكامل.</p>
       <div class="sheet-actions keep"><button class="btn go block" id="wjGo" type="button">ادخل العالم</button></div>
+      <div class="g-or"><span>أو</span></div>
+      <div id="wjGoogle" class="g-btn"></div>
+      <p class="hint" style="text-align:center">«الدخول بحساب قوقل» للي ربط حسابه من الإعدادات.</p>
       <button class="btn block" id="wjRecover" type="button">عندي حساب وكود استرجاع</button>
       <button class="btn block" id="wjHandoff" type="button">📲 كنت ألعب من سفاري (عندي رمز)</button>`}`, "world");
   $("wjRecover")?.addEventListener("click", () => worldJoinSheet(true));
+  googleButton($("wjGoogle"), googleLogin);
   $("wjHandoff")?.addEventListener("click", () => handoffSheet());
   $("wjGo").addEventListener("click", async () => {
     const name = $("wjName").value.trim();
@@ -2440,7 +2495,9 @@ function worldJoinSheet(recover) {
         store.set(WORLD_ID, JSON.stringify({ name: r.name, secret: r.secret, plot: null }));
         sheet(`<h2>هلا ${r.name}!</h2><p>هذا كود الاسترجاع حقك. احفظه عندك (صوّره أو انسخه): لو غيرت جوالك ترجع فيه لاسمك ومدينتك.</p>
           <div class="row"><span>كود الاسترجاع</span><b class="ol-code">${r.recovery}</b></div>
-          <div class="sheet-actions keep"><button class="btn block" id="wjCopy" type="button">انسخ الكود</button><button class="btn go block" id="wjNext" type="button">حفظته، كمّل للخريطة</button></div>`, "world");
+          <div class="sheet-actions keep"><button class="btn block" id="wjCopy" type="button">انسخ الكود</button><button class="btn go block" id="wjNext" type="button">حفظته، كمّل للخريطة</button></div>
+          <h3>🔐 أو اربطه بقوقل (أسهل)</h3><p class="hint">تدخل من أي جوال بضغطة، بدون كود.</p><div id="gBtn" class="g-btn"></div>`, "world");
+        googleButton($("gBtn"), googleLink);
         $("wjCopy").addEventListener("click", () => navigator.clipboard?.writeText(r.recovery).then(() => toast("نسخت ✓", "goal")));
         $("wjNext").addEventListener("click", () => worldMapSheet());
       }
@@ -3563,8 +3620,9 @@ function electionSheet(m) {
 // What changed, per mode: "solo" (اللعب الفردي), "world" (عالم الجوف) or "both" (shared game rules).
 // Each mode has its own version: bump only the one an update touches (both for a "both" item).
 const WHATS_NEW = {
-  v: { solo: "2026-11-25-reach", world: "2026-11-25-reach" },
+  v: { solo: "2026-11-25-reach", world: "2026-11-25-google" },
   items: [
+    ["world", "🔐", "الدخول بحساب قوقل", "• اربط حسابك بقوقل من «الإعدادات» ← «حسابك وقوقل»، وبعدها من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل» وترجع لمدينتك بضغطة، بدون كود استرجاع. • ما ناخذ إيميلك ولا اسمك من قوقل، بس رقم حسابك المميز مشفّر. • تقدر تفك الربط متى ما بغيت."],
     ["both", "🗺️", "شوف مدى المبنى على الخريطة", "• اضغط على أي مبنى له مدى (مسجد، مدرسة، بقالة، بئر، مولد، مصنع…) وبمعلوماته زر «🗺️ شوف مداه على الخريطة»: تختفي المعلومات، والخريطة تقرّب عليه وتلوّن مداه كامل، وفوق شريط يقول كم بيت يخدم. • زر «ℹ️ المعلومات» يرجعك لمعلوماته، و✕ أو أي ضغطة على الخريطة تقفله."],
     ["world", "⏱️", "وقتك في اللعبة", "• من «القائمة» ← «⏱️ وقتك في اللعبة» تشوف متى بديت (اليوم والتاريخ والساعة)، ومن كم يوم وأنت معنا، وكم ساعة لعبت. • ما أحد يشوف وقتك غيرك. • وقت اللعب ينحسب واللعبة مفتوحة قدامك، من يوم نزول هالخانة."],
     ["both", "⬆️", "التحديثات توصلك على طول", "• إذا نزل تحديث وأنت داخل اللعبة (حتى لو حاطها تطبيق)، يطلع لك «تحديث جديد» خلال ثواني بعالم الجوف، وخلال دقيقة برا، بدون ما تطلع وترجع."],
@@ -4272,6 +4330,7 @@ function settingsSheet(fromMenu) {
     <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
+    ${id && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>🔐 حسابك وقوقل</h3><div id="googleBox"><p class="hint">نشيّك…</p></div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
     <div id="backupBox"></div>
@@ -4285,6 +4344,7 @@ function settingsSheet(fromMenu) {
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
+  googleSection();
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("saveConflict")?.addEventListener("click", saveConflictSheet);
   $("copyDeviceSave")?.addEventListener("click", () => {
