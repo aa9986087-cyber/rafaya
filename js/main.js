@@ -498,7 +498,11 @@ function confirmPending() {
 // on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
 // ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
 const arrMovable = (b) => !!b && !(b.build > 0) && !(b.wd > 0) && !b.span && b.id !== "decopart"; // (a big decoration's 2×2 stays put) // war damage is kept by place on the server: repair first // everything moves, roads too (like walls in a base editor)
-const arrSync = () => world.sync(S, { tiles: false, roads: true, buildings: true });
+// Redrawn once a frame at most however many tiles a stroke touches, and with no building animation: in the editor a
+// building moves, it is not built (both made dragging stutter).
+let arrSyncAt = 0;
+const arrSyncNow = () => { arrSyncAt = 0; world.prevKeys = null; world.anims?.clear(); world.sync(S, { tiles: false, roads: true, buildings: true }); };
+const arrSync = () => { if (!arrSyncAt) arrSyncAt = requestAnimationFrame(arrSyncNow); };
 /** Lay the next one of the same kind from the tray (roads are laid by dragging a finger along). */
 function arrNext(id) {
   const k = arrange.tray.findIndex((b) => b.id === id);
