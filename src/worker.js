@@ -28,7 +28,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
 import { fastWar } from "../js/war.js";
-import { ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
+import { CITY_MILESTONE, ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { pendingSaveMatches } from "../js/save-version.js";
@@ -396,6 +396,36 @@ export class Board extends DurableObject {
         this.sql.exec("DELETE FROM citizen_support_push WHERE day = ? AND k = ?", row.day, row.k);
       }
     }));
+  }
+
+  /** Run inside the claim or clock transaction so every credit and both announcements commit together. */
+  celebrateCityCount(now) {
+    const key = `city_milestone_${WORLD_GEN}_${CITY_MILESTONE.goal}`;
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return null;
+    const towns = this.sql.exec(`SELECT t.plot FROM plots t JOIN players p ON p.plot = t.plot AND p.name = t.owner
+      WHERE p.banned = 0 ORDER BY t.plot`).toArray();
+    if (towns.length < CITY_MILESTONE.goal) return null;
+
+    const { title, thanks, amount, signature } = CITY_MILESTONE;
+    const text = `🎉 ${title} ${thanks} هديتنا لكم ${amount.toLocaleString("ar-SA")} ريال لكل مدينة داخل اللعبة. — ${signature}`;
+    for (const { plot } of towns) {
+      const account = this.war.acct(plot);
+      const credit = this.war.charge(plot, account, -amount, "cityMilestone");
+      account.cityMilestoneSeq = credit.seq;
+      this.war.saveAcct(plot, account);
+      this.sql.exec("UPDATE plots SET money = COALESCE(money, 0) + ? WHERE plot = ?", amount, plot);
+    }
+    this.sql.exec("INSERT INTO meta (key, value) VALUES (?, ?)", key, String(now));
+    this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, NULL, '', ?, ?)", DEV_NAME, text, now);
+    this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
+    this.news("cityMilestone", text, null, null, false);
+    return this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 1").toArray()[0];
+  }
+  publishCityMilestone(message) {
+    if (!message) return;
+    this.live({ t: "chat", message });
+    this.live({ t: "news" });
+    this.live({ t: "war" });
   }
   /** Name requests past their day: the town leaves al-Jouf (the player stays, and must still change the name). */
   namefixSweep() {
@@ -785,6 +815,7 @@ export class Board extends DurableObject {
       const clock = { epoch: WORLD_EPOCH, slowAt, fastAt }, now = Date.now();
       this.startCitizenSupport(clock, now);
       this.startCitizenSupport2(clock, now);
+      this.publishCityMilestone(this.ctx.storage.transactionSync(() => this.celebrateCityCount(now)));
       if (this.sql.exec("SELECT 1 FROM citizen_support WHERE paid_at IS NULL AND due <= ? LIMIT 1", now).toArray().length) {
         await this.armWar();
         this.payCitizenSupport(Date.now());
@@ -983,9 +1014,15 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (plot < 0 || plot >= 5000 || badText(town) || this.moderation.blockedName(town)) return json({ error: "bad" }, 400);
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", plot).toArray().length) return json({ error: "taken" }, 409);
       if (this.nameTaken(town)) return json({ error: "name taken" }, 422); // every town in al-Jouf has its own name
-      this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), Date.now());
-      this.sql.exec("UPDATE players SET plot = ? WHERE name = ?", plot, name);
-      this.news("town", `🏕️ تأسست «${town}» بأرض الجوف. حيّاهم الله`, plot, 0);
+      const now = Date.now();
+      const celebration = this.ctx.storage.transactionSync(() => {
+        this.sql.exec("INSERT INTO plots (plot, owner, town, terrain, pop, happy, money, era, updated, snapshot) VALUES (?, ?, ?, ?, 9, 55, 0, 0, ?, '')", plot, name, town, clean(body.terrain, 12), now);
+        this.sql.exec("UPDATE players SET plot = ? WHERE name = ?", plot, name);
+        this.news("town", `🏕️ تأسست «${town}» بأرض الجوف. حيّاهم الله`, plot, 0, false);
+        return this.celebrateCityCount(now);
+      });
+      if (celebration) this.publishCityMilestone(celebration);
+      else this.live({ t: "news" });
       return json({ ok: true, plot });
     }
     if (post && p[0] === "move") { // «انقل مدينتك»: the whole town goes to other land, with everything in it
@@ -1060,11 +1097,11 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (!Number.isSafeInteger(seen)) {
         try { seen = int(JSON.parse(snapshot || "{}").war?.seq); } catch { seen = 0; }
       }
-      const support = this.sql.exec(`SELECT COALESCE(-SUM(json_extract(data, '$.amount')), 0) total FROM war
-        WHERE tbl = 'charge' AND k1 = ? AND json_extract(data, '$.why') = 'citizenSupport' AND json_extract(data, '$.seq') > ?`,
+      const pendingCredits = this.sql.exec(`SELECT COALESCE(-SUM(json_extract(data, '$.amount')), 0) total FROM war
+        WHERE tbl = 'charge' AND k1 = ? AND json_extract(data, '$.why') IN ('citizenSupport', 'cityMilestone') AND json_extract(data, '$.seq') > ?`,
         String(me.plot), Math.max(0, seen)).toArray()[0].total;
       this.sql.exec("UPDATE plots SET pop = ?, happy = ?, money = ?, era = ?, updated = ?, snapshot = CASE WHEN ? = '' THEN snapshot ELSE ? END, save_version = ? WHERE plot = ?",
-        int(body.pop), int(body.happy), int(body.money) + support, int(body.era), Date.now(), snapshot, snapshot, saveVersion, me.plot);
+        int(body.pop), int(body.happy), int(body.money) + pendingCredits, int(body.era), Date.now(), snapshot, snapshot, saveVersion, me.plot);
       if (body.pending && typeof body.pending === "object") { const pj = JSON.stringify({ n: int(body.pending.n), who: clean(body.pending.who, 30), text: clean(body.pending.text, 140), decision: clean(body.pending.decision, 60) }); this.sql.exec("UPDATE plots SET pending = ? WHERE plot = ?", pj, me.plot); }
       if (body.ledger && typeof body.ledger === "object") { const lj = JSON.stringify(body.ledger); if (lj.length < 40000) this.sql.exec("UPDATE plots SET ledger = ? WHERE plot = ?", lj, me.plot); }
       if (snapshot) this.live({ t: "town", plot: me.plot }); // its look changed: open maps and visitors refresh

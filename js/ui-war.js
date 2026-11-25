@@ -7,7 +7,7 @@ import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
 import { addPosts } from "./ui-news.js";
-import { ERAS, MAP_SIZE as N, MIL, WORLD, worldXY } from "./data.js";
+import { CITY_MILESTONE, ERAS, MAP_SIZE as N, MIL, WORLD, worldXY } from "./data.js";
 import { idx, levelName } from "./sim.js";
 
 export const WARX = {
@@ -43,23 +43,41 @@ export async function warSyncNow() {
   await worldSync(true);
 }
 /** An apology in the middle of the screen: what went wrong (our mistake) and what was given back. 30 seconds, or «تمام». */
-export function apologyBox(n) {
+export function apologyBox(n, onClose) {
   document.getElementById("apology")?.remove();
   const el = document.createElement("div");
   el.id = "apology"; el.className = "apology";
-  el.innerHTML = n.kind === "gift" ? `<div class="apology-card"><div class="apology-ic">🎁</div><h2>هدية من إدارة الجوف</h2>
+  const milestone = n.kind === "cityMilestone";
+  if (milestone) {
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-label", CITY_MILESTONE.title);
+  }
+  el.innerHTML = milestone || n.kind === "gift" ? `<div class="apology-card"><div class="apology-ic">${milestone ? "🎉" : "🎁"}</div><h2>${milestone ? CITY_MILESTONE.title : "هدية من إدارة الجوف"}</h2>
     <div class="apology-back">وصلتك هدية<b>+${money(n.amount || 0)} ريال</b></div>
-    ${n.text ? `<p>«${n.text.replace(/[<>]/g, "")}»</p>` : ""}` : `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>
+    ${n.text ? `<p>«${n.text.replace(/[<>]/g, "")}»</p>` : ""}
+    ${milestone ? `<p><bdi>— ${CITY_MILESTONE.signature}</bdi></p>` : ""}` : `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>
     <p>صار <b>خطأ من عندنا</b> ببرمجة اللعبة بحساب خصم الغياب، وانخصم من مدينتك مبلغ ما كان المفروض ينخصم.</p>
     <div class="apology-back">رجّعنا لك حقك كامل<b>+${money(n.amount || 0)} ريال</b></div>
     <p class="hint">السموحة منك، وشكرًا على صبرك 🌹</p>`;
-  el.innerHTML += `<i class="apology-bar"></i><button class="btn go block" type="button">تمام</button>`;
+  el.innerHTML += `${milestone ? "" : '<i class="apology-bar"></i>'}<button class="btn go block" type="button">تمام</button>`;
   el.querySelector(".apology-card").append(...el.querySelectorAll(":scope > .apology-bar, :scope > button")); // the bar and «تمام» for both kinds
   document.body.append(el);
   sfx.coin?.();
-  const close = () => { el.classList.add("out"); setTimeout(() => el.remove(), 300); };
-  el.querySelector("button").addEventListener("click", close);
-  setTimeout(close, 30000);
+  const close = () => { onClose?.(); el.classList.add("out"); setTimeout(() => el.remove(), 300); };
+  const answer = el.querySelector("button");
+  answer.addEventListener("click", close);
+  if (milestone) answer.focus({ preventScroll: true });
+  if (!milestone) setTimeout(close, 30000);
+}
+
+export function cityMilestonePopup(st) {
+  const home = visiting?.home ?? S;
+  if (!worldMode || document.hidden || sheetFor === "update" || $("apology") || !st?.cityMilestoneSeq) return;
+  if (!home.world || home.world.plot !== me()?.plot || home.world.syncConflict || (home.war?.seq ?? 0) < st.cityMilestoneSeq) return;
+  const key = warKey(`city-milestone-${CITY_MILESTONE.goal}`);
+  if (store.get(key)) return;
+  apologyBox({ kind: "cityMilestone", amount: CITY_MILESTONE.amount, text: CITY_MILESTONE.thanks }, () => store.set(key, "1"));
 }
 /** Ask the server how things stand, and bring the town up to date (money, damage, notes, attacks). */
 export async function warPoll(force) {

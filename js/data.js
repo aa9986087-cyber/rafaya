@@ -27,6 +27,14 @@ export const ERAS = [
   { id: 4, name: "حاضرة", pop: 9000 }
 ];
 
+export const CITY_MILESTONE = {
+  goal: 80,
+  amount: 1000,
+  title: "وصلنا ٨٠ لاعب!",
+  thanks: "يعطيكم العافية يا أهل الجوف! شكرًا لكل من نشر الرافعية وعزم ربعه عليها.",
+  signature: "Vamos"
+};
+
 /**
  * Time: the town moves forward one hour at a time (one simulation step = one hour),
  * 24 hours make a day, and the year turns through four seasons of SEASON_DAYS days.

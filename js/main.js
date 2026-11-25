@@ -18,7 +18,7 @@ import { idleClamp, perf, perfHud, perfWatch, runHour } from "./ui-idle.js";
 import { focusTown, howTo, pauseMenu, reachClose, reachView } from "./ui-settings.js";
 import { canDo, canTurn, hoverAt, isMulti, paintAt, paintStarts, pointers, reachLine, roadAim, roadAimStart, roadNext, roadUpWhy, showPending, tileCost, upFits, upgradeWhy, whyNot } from "./ui-tools.js";
 import { arrBill, arrDrop, arrMovable, arrMove, arrPush, arrRemove, arrRender, arrRestore, arrSnapshot, arrUnstroke, arrUp, clearPreview, mosqueGaps, mosqueMap, nearRoad, showMove, showReach } from "./ui-arrange.js";
-import { WARX, apologyBox, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
+import { WARX, apologyBox, cityMilestonePopup, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
 import { F, FIX, NAME_KEEP, face, floatAt, here, nameLandmarks, renderCards, row, toast, toolsBar } from "./ui-build.js";
 import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, showNewsCount, whenSheet, wnewsPoll } from "./ui-news.js";
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
@@ -1284,7 +1284,7 @@ export function warApply(st) {
   const home = visiting ? visiting.home : S;
   home.war ||= { seq: 0 };
   let paid = 0, supportPaid = 0, posted = false;
-  const reasons = new Map([["gift", "gift"], ["citizenSupport", "citizenSupport"], ["refund", "refund"], ["away cap", "awayLimit"]]);
+  const reasons = new Map([["gift", "gift"], ["citizenSupport", "citizenSupport"], ["cityMilestone", "cityMilestone"], ["refund", "refund"], ["away cap", "awayLimit"]]);
   for (const c of st.charges || []) {
     if (!(c.seq > home.war.seq)) continue;
     const kind = reasons.get(c.why) || "worldBill";
@@ -1325,6 +1325,7 @@ export function warApply(st) {
     warNews(fresh);
   }
   if (supportPaid > 0) toast(`💰 مبروك نزلك حساب مواطن بقيمة ${money(supportPaid)} ريال، ويمكن نسترده بعدين 🏃🏻`, "goal");
+  cityMilestonePopup(st);
   $("warDot").hidden = !(st.rels || []).some((r) => r.offer && r.offer.by !== me()?.plot) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
   if (sheetFor === "war") warSheet(WARX.tab);
 }
@@ -1869,6 +1870,7 @@ document.addEventListener("visibilitychange", () => {
   else if (playing) {
     refresh();
     if (!sheetFor) saveConflictSheet();
+    cityMilestonePopup(WARX.st);
   }
 });
 addEventListener("pagehide", () => save(true));
