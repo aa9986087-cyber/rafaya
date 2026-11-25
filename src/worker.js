@@ -65,6 +65,8 @@ const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
 // never in the repository). A login makes a token for that phone; tokens are kept hashed.
 const ADMIN_CODE_HASH = "54906eee335cadf9ae395da8a17a35b2cd6c6695fded1d995d7174970a08218b";
+const REVIEW_DURATION = 15 * 60 * 1000;
+const REVIEW_ROUTES = new Set(["stats", "reports", "chat", "feedback", "players", "namefix", "gifts", "statement"]);
 const BAD = ["كلب", "حمار", "زق", "خرا", "سكس", "شرموط", "قحب", "fuck", "shit", "sex"];
 const badText = (t) => BAD.some((w) => t.toLowerCase().includes(w));
 async function hash(text) {
@@ -103,6 +105,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN save_version TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN ban_reason TEXT"); } catch { /* already there */ }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS admintokens (token TEXT PRIMARY KEY, at INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS review_access (id INTEGER PRIMARY KEY CHECK (id = 1), token TEXT NOT NULL, expires INTEGER NOT NULL)`);
     // the owner asks a player to change a name that breaks the rules: player name and/or town (what: "name", "town", "both");
     // not done within a real day, the town is taken off al-Jouf (the request stays until the player changes)
     this.sql.exec(`CREATE TABLE IF NOT EXISTS namefix (name TEXT PRIMARY KEY, what TEXT, reasons TEXT, note TEXT, at INTEGER, due INTEGER, removed INTEGER DEFAULT 0)`);
@@ -466,8 +469,32 @@ export class Board extends DurableObject {
       return json({ token });
     }
     const tok = request.headers.get("x-admin") || "";
-    if (!tok || !this.sql.exec("SELECT 1 FROM admintokens WHERE token = ?", await hash(tok)).toArray().length) return json({ error: "سجّل دخول" }, 401);
     const one = (q, ...a) => this.sql.exec(q, ...a).toArray()[0];
+    const owner = tok && one("SELECT 1 FROM admintokens WHERE token = ?", await hash(tok));
+    if (!owner) {
+      const review = request.headers.get("x-rafaya-review") || "";
+      if (!/^rf-review-[a-f0-9]{32}$/.test(review)) return json({ error: "سجّل دخول" }, 401);
+      if (request.method !== "GET" || p.length !== 1 || !REVIEW_ROUTES.has(p[0])) return json({ error: "رمز المراجعة يفتح القوائم للقراءة فقط" }, 403);
+      if (!one("SELECT 1 FROM review_access WHERE id = 1 AND token = ? AND expires > ?", await hash(review), Date.now())) {
+        return json({ error: "رمز المراجعة غير صالح أو انتهى" }, 401);
+      }
+    }
+    if (p.length === 1 && p[0] === "review-access") {
+      if (request.method === "GET") {
+        const expires = one("SELECT expires FROM review_access WHERE id = 1 AND expires > ?", now)?.expires ?? null;
+        return json({ expires });
+      }
+      if (post && body?.action === "create") {
+        const token = "rf-review-" + makeSecret(), expires = Date.now() + REVIEW_DURATION;
+        this.sql.exec("INSERT OR REPLACE INTO review_access (id, token, expires) VALUES (1, ?, ?)", await hash(token), expires);
+        return json({ token, expires });
+      }
+      if (post && body?.action === "revoke") {
+        this.sql.exec("DELETE FROM review_access WHERE id = 1");
+        return json({ ok: true });
+      }
+      return json({ error: "اختر إنشاء الرمز أو إلغاءه" }, 400);
+    }
     if (p[0] === "stats") {
       return json({
         players: one("SELECT COUNT(*) n FROM players").n, towns: one("SELECT COUNT(*) n FROM plots").n,

@@ -73,7 +73,7 @@ function login() {
     token = r.token; localStorage.setItem("rafaya-admin", token); show();
   };
 }
-const TABS = [["home", "📊 نظرة عامة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["feedback", "🔒 ملاحظات اللاعبين"], ["players", "👥 اللاعبين"], ["names", "✏️ الأسماء"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
+const TABS = [["home", "📊 نظرة عامة"], ["review", "🔑 وصول للمراجعة"], ["reports", "🚩 البلاغات"], ["chat", "💬 الشات"], ["feedback", "🔒 ملاحظات اللاعبين"], ["players", "👥 اللاعبين"], ["names", "✏️ الأسماء"], ["gifts", "🎁 الهدايا"], ["announce", "📢 إعلان"], ["away", "🧾 الخصومات"]];
 function frame(inner) {
   $("app").innerHTML = `<header><h1>🛠️ لوحة تحكم الجوف</h1><button id="out">خروج</button></header>
     <nav>${TABS.map(([k, t]) => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</nav><main>${inner}</main>`;
@@ -83,7 +83,7 @@ function frame(inner) {
 async function show() {
   if (!token) return login();
   frame(`<p class="muted">نحمّل…</p>`);
-  try { await ({ home, reports, chat, feedback, players, names, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
+  try { await ({ home, review: reviewAccess, reports, chat, feedback, players, names, gifts, announce, away })[tab](); } catch (e) { if (e.message !== "login") frame(`<p>ما زبط: ${esc(e.message)}</p>`); }
 }
 async function home() {
   const s = await api("stats");
@@ -183,6 +183,53 @@ const MOVES = { hour: "تشغيل المدينة (دخل وصرف الساعة)"
 const COSTS = { staff: "رواتب البلدية", cleaning: "النظافة", waterNet: "شبكة الماء", roads: "الطرق والإنارة", services: "الخدمات", utilities: "تشغيل الماء والكهرباء", business: "تشغيل المحلات والمزارع والمصانع", military: "القوة العسكرية", sites: "مواقع الإنشاء", loan: "أقساط القروض", insurance: "التأمين", health: "علاج التلوث", theft: "سرقات" };
 const signed = (v) => `<span class="${v > 0 ? "plus" : v < 0 ? "minus" : ""}" dir="ltr">${v > 0 ? "+" : v < 0 ? "−" : ""}${n(Math.abs(Math.round(v)))}</span>`;
 const when = (at) => new Date(at).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" });
+async function reviewAccess() {
+  const session = token;
+  const result = await api("review-access");
+  if (tab !== "review" || token !== session) return;
+  if (result.error) throw new Error(result.error);
+  renderReviewAccess(result);
+}
+function renderReviewAccess({ expires, token: reviewCode }) {
+  const active = expires > Date.now();
+  frame(`<h2>وصول للمراجعة</h2>
+    <div class="card">
+      <p>الرمز يفتح قوائم الإدارة وكشوف الحساب وملاحظات اللاعبين لمدة ١٥ دقيقة للقراءة فقط.</p>
+      <p class="muted" role="status">${active ? `الرمز الحالي ينتهي ${when(expires)}. إنشاء رمز جديد يلغي الحالي.` : "ما فيه رمز مراجعة فعّال."}</p>
+      ${reviewCode && active ? `<label for="reviewCode">رمز المراجعة</label><input id="reviewCode" dir="ltr" readonly>
+        <p class="muted">يظهر الرمز مرة وحدة. شاركه مع الشخص اللي تبي يراجع القوائم.</p>
+        <button class="btn block" id="copyReview" type="button">انسخ رمز المراجعة</button>` : ""}
+      <div class="acts"><button class="btn go" id="createReview" type="button">أنشئ رمز مراجعة</button>
+        ${active ? '<button class="btn bad" id="revokeReview" type="button">ألغِ الوصول</button>' : ""}</div>
+    </div>`);
+  const create = $("createReview"), revoke = $("revokeReview"), copy = $("copyReview");
+  const change = async (action) => {
+    create.disabled = true;
+    if (revoke) revoke.disabled = true;
+    if (copy) copy.disabled = true;
+    try {
+      const result = await api("review-access", { action });
+      if (result.error) { toast(result.error); return; }
+      if (create.isConnected) renderReviewAccess(result);
+    } catch (e) {
+      if (e.message !== "login") toast("ما قدرنا نغيّر وصول المراجعة. جرّب مرة ثانية.");
+    } finally {
+      create.disabled = false;
+      if (revoke) revoke.disabled = false;
+      if (copy) copy.disabled = false;
+    }
+  };
+  create.onclick = () => change("create");
+  if (revoke) revoke.onclick = () => change("revoke");
+  if (copy) {
+    const field = $("reviewCode");
+    field.value = reviewCode;
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(field.value); toast("نُسخ رمز المراجعة"); }
+      catch { field.focus(); field.select(); }
+    };
+  }
+}
 async function statement(plot) {
   const d = await api("statement?plot=" + plot);
   if (d.error) { toast(d.error); return; }
