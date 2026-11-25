@@ -9,7 +9,8 @@
 //   POST /api/world/recover  { name, recovery } → { name, secret }
 //   GET  /api/world/map                         → { plots: [...] }  (every claimed plot, no snapshots)
 //   POST /api/world/claim    { name, secret, plot, town, terrain } → { ok }
-//   POST /api/world/move     { name, secret, plot } → { ok, plot, from } | { error }  (the whole town to empty land, once a day)
+//   POST /api/world/move     { name, secret, plot } → { ok, plot, from } | { error }  (the whole town to empty land, once only)
+//   POST /api/world/newname  { name, secret, newName } → { ok, name } | { error }  (the player's own name, once only)
 //   POST /api/world/rename   { name, secret, town } → { ok, town } | { error }  (once per town; names are unique in al-Jouf)
 //   POST /api/world/sync     { name, secret, pop, happy, money, era, snapshot } → { ok }
 //   GET  /api/world/town/PLOT                   → { town, comments }
@@ -40,7 +41,6 @@ const POP_MARKS = [100, 500, 1000, 2500, 5000, 10000, 20000];
 const MAX_SNAPSHOT = 400_000; // characters of the packed town
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 const clean = (v, max) => String(v ?? "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
-const MOVE_GAP = 86400000; // a town moves once a day
 const int = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
@@ -103,7 +103,8 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN ledger TEXT"); } catch { /* already there */ } // the town's money moves, as its phone keeps them (the owner's statement)
-    try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ } // stopped by the owner
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE players ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ } // the player changed their own name (once only) // stopped by the owner
     try { this.sql.exec("ALTER TABLE players ADD COLUMN played INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE players ADD COLUMN google TEXT"); } catch { /* already there */ } // the linked Google account's number, hashed (never the e-mail)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN restarted INTEGER DEFAULT 0"); } catch { /* already there */ } // the last fresh start (one a day)
@@ -115,7 +116,7 @@ export class Board extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS namefix (name TEXT PRIMARY KEY, what TEXT, reasons TEXT, note TEXT, at INTEGER, due INTEGER, removed INTEGER DEFAULT 0)`);
     this.adminFails = []; // the citizens' unanswered requests (for reminders)
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN reminded INTEGER DEFAULT 0"); } catch { /* already there */ }
-    try { this.sql.exec("ALTER TABLE plots ADD COLUMN moved INTEGER DEFAULT 0"); } catch { /* already there */ } // the last move to other land (one a day)
+    try { this.sql.exec("ALTER TABLE plots ADD COLUMN moved INTEGER DEFAULT 0"); } catch { /* already there */ } // when the town moved to other land (once only)
     // notifications on the phone (Web Push): who asked for them, and what is waiting to be shown
     // moving an account to another app on the same phone (the iPhone's home-screen app keeps its own storage):
     // a 6-digit code made in the old one gives the new one its own key; both keys work
@@ -412,6 +413,11 @@ export class Board extends DurableObject {
     }
   }
 
+  /** A player's name changes everywhere it is kept. */
+  renamePlayer(name, newName) {
+    this.sql.exec("UPDATE players SET name = ? WHERE name = ?", newName, name);
+    for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["feedback", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
+  }
   /** Is this town name already used in al-Jouf (by another plot)? */
   nameTaken(town, plot = -1) {
     const key = townNameKey(town);
@@ -709,7 +715,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       return json({ n: plots.size });
     }
     if (!post && p[0] === "map") {
-      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed FROM plots ORDER BY plot LIMIT 3000").toArray();
+      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed, moved > 0 AS moved FROM plots ORDER BY plot LIMIT 3000").toArray();
       return json({ plots });
     }
     if (!post && p[0] === "town" && p[1]) {
@@ -774,8 +780,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     }
     if (post && p[0] === "google" && p[1] === "unlink") { this.sql.exec("UPDATE players SET google = NULL WHERE name = ?", name); return json({ ok: true }); }
     if (p[0] === "me") { // the player's own start and time played (only theirs: the owner wants nobody else's shown)
-      const row = this.sql.exec("SELECT created, played, google FROM players WHERE name = ?", name).toArray()[0] || {};
-      return json({ name, started: row.created || 0, played: row.played || 0, google: !!row.google });
+      const row = this.sql.exec("SELECT created, played, google, renamed FROM players WHERE name = ?", name).toArray()[0] || {};
+      return json({ name, started: row.created || 0, played: row.played || 0, google: !!row.google, renamed: !!row.renamed });
     }
     if (post && p[0] === "feedback") {
       const text = typeof body.text === "string" ? body.text.trim() : "";
@@ -787,6 +793,21 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const town = me.plot == null ? "" : this.sql.exec("SELECT town FROM plots WHERE plot = ?", me.plot).toArray()[0]?.town || "";
       this.sql.exec("INSERT INTO feedback (name, town, text, at) VALUES (?, ?, ?, ?)", name, town, text, now);
       return json({ ok: true });
+    }
+    if (post && p[0] === "newname") { // the player changes their own name, once only
+      if (this.sql.exec("SELECT 1 FROM namefix WHERE name = ?", name).toArray().length) return json({ error: "الإدارة طالبة منك تغيير اسمك، غيّره من التنبيه اللي جاك" });
+      if (this.sql.exec("SELECT renamed FROM players WHERE name = ?", name).toArray()[0]?.renamed) return json({ error: "غيّرت اسمك قبل، ما يتغير مرة ثانية" });
+      const newName = clean(body.newName, 16);
+      if (!NAME_RE.test(newName) || badText(newName) || this.moderation.blockedName(newName)) return json({ error: "الاسم ما يصلح. اختر لقب مناسب للعبة (٣ حروف وأكثر)" });
+      if (newName === name) return json({ error: "اكتب اسم غير اسمك الحالي" });
+      if (this.sql.exec("SELECT 1 FROM players WHERE name = ?", newName).toArray().length) return json({ error: "هالاسم مأخوذ، اختر غيره" });
+      this.ctx.storage.transactionSync(() => {
+        this.renamePlayer(name, newName);
+        this.sql.exec("UPDATE players SET renamed = 1 WHERE name = ?", newName);
+      });
+      for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.name === name) ws.serializeAttachment({ ...a, name: newName }); }
+      if (me.plot != null) this.live({ t: "town", plot: me.plot });
+      return json({ ok: true, name: newName });
     }
     const fix = this.sql.exec("SELECT what, reasons, note, due, removed FROM namefix WHERE name = ?", name).toArray()[0];
     if (p[0] === "namefix") { // the player changes the names the owner asked for (name and/or town)
@@ -805,8 +826,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         if (this.nameTaken(newTown, me.plot)) return json({ error: "فيه مدينة بالجوف بهالاسم، اختر غيره" });
       }
       if (wantName) {
-        this.sql.exec("UPDATE players SET name = ? WHERE name = ?", newName, name);
-        for (const [tbl, col] of [["plots", "owner"], ["keys", "name"], ["handoff", "name"], ["chat", "name"], ["feedback", "name"], ["comments", "author"], ["reports", "by"]]) this.sql.exec(`UPDATE ${tbl} SET ${col} = ? WHERE ${col} = ?`, newName, name);
+        this.renamePlayer(name, newName);
       }
       if (wantTown) {
         this.sql.exec("UPDATE plots SET town = ? WHERE plot = ?", newTown, me.plot);
@@ -835,8 +855,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", to).toArray().length) return json({ error: "الأرض انأخذت، اختر غيرها" });
       const t = this.sql.exec("SELECT town, moved FROM plots WHERE plot = ?", from).toArray()[0];
       if (!t) return json({ error: "ما عندك مدينة تنقلها" });
-      const wait = (t.moved || 0) + MOVE_GAP - now;
-      if (wait > 0) return json({ error: `تقدر تنقل مدينتك مرة وحدة باليوم. باقي ${Math.ceil(wait / 3600000)} ساعة`, wait });
+      if (t.moved) return json({ error: "نقلت مدينتك قبل، النقل مرة وحدة بس" });
       if (this.war.inFlight(from)) return json({ error: "فيه عملية حربية بالجو تخص مدينتك، انتظر لين توصل" });
       this.ctx.storage.transactionSync(() => {
         this.sql.exec("UPDATE plots SET plot = ?, moved = ? WHERE plot = ?", to, now, from);

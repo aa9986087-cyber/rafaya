@@ -2469,6 +2469,35 @@ async function googleLink(credential) {
   else toast(r?.error || "ما زبط الربط", "bad");
 }
 /** The settings' «حسابك» part: linked or not, and the button. */
+/** «اسمك»: the player changes their own name in al-Jouf, once only. */
+async function nameSection() {
+  const id = me();
+  if (!$("nameBox") || !id) return;
+  let st = null;
+  try { st = await api("/world/me", { name: id.name, secret: id.secret }); } catch { st = null; }
+  const box = $("nameBox");
+  if (!box) return;
+  if (!st) { box.innerHTML = `<p class="hint">ما قدرنا نوصل للسيرفر، جرّب بعد شوي.</p>`; return; }
+  if (st.renamed) { box.innerHTML = `<p class="hint">اسمك «<b>${esc(id.name)}</b>». غيّرته قبل، والاسم يتغير مرة وحدة بس.</p>`; return; }
+  box.innerHTML = `<p class="hint">اسمك الحين «<b>${esc(id.name)}</b>». تقدر تغيّره <b>مرة وحدة بس</b>، وبعدها يثبت.</p>
+    <label class="rg-name">اسمك الجديد <input id="nmNew" type="text" maxlength="16" placeholder="بدل «${esc(id.name)}»"></label>
+    <button class="btn block" id="nmGo" type="button">غيّر اسمي</button>`;
+  $("nmGo").addEventListener("click", async () => {
+    const newName = ($("nmNew").value || "").trim();
+    if (!newName) { toast("اكتب الاسم الجديد", "bad"); sfx.deny(); return; }
+    if (!confirm(`تغيّر اسمك إلى «${newName}»؟ ما تقدر تغيّره بعدها.`)) return;
+    let r;
+    try { r = await api("/world/newname", { name: id.name, secret: id.secret, newName }); } catch { toast("ما زبط، جرّب بعد شوي", "bad"); return; }
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+    store.set(WORLD_ID, JSON.stringify({ ...me(), name: r.name }));
+    try {
+      const home = worldMode ? (visiting?.home ?? S) : unpack(store.get(WORLD_SAVE));
+      if (home.world?.plot === id.plot) { home.world.owner = r.name; if (!arrange) store.set(WORLD_SAVE, pack(home)); }
+    } catch { /* the server copy is used if the local town is unreadable */ }
+    sfx.goal(); toast(`صار اسمك «${r.name}» ✓`, "goal");
+    nameSection();
+  });
+}
 async function googleSection() {
   const box = $("googleBox"), id = me();
   if (!box || !id) return;
@@ -2624,7 +2653,7 @@ async function worldMapSheet(pick) {
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
-          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id && byPlot.get(id.plot) ? `<p class="hint">كل لاعب له مدينة وحدة بالعالم، بس تقدر تنقل مدينتك هنا بكل اللي فيها.</p>
+          <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id && byPlot.get(id.plot) && !byPlot.get(id.plot).moved ? `<p class="hint">كل لاعب له مدينة وحدة بالعالم، بس تقدر تنقل مدينتك هنا بكل اللي فيها (مرة وحدة بس).</p>
           <div class="sheet-actions keep"><button class="btn go block" id="wmMove" type="button">🚚 انقل مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
@@ -2672,7 +2701,7 @@ function moveSheet(t, to) {
   if (arrange) { toast("احفظ الترتيب أو ألغِه قبل النقل", "bad"); return; }
   sheet(`<h2>🚚 انقل مدينتك</h2><p>تنقل «<b>${t.town}</b>» من ${worldPlace(id.plot)} إلى ${worldPlace(to)}، أرض ${TERRAINS[worldTerrain(to)].name}.</p>
     <p>كل شي ينتقل معك: المباني والفلوس والسكان والمخازن والحرب والعلاقات والتعليقات. أرضك القديمة تصير فاضية.</p>
-    <p class="hint">تقدر تنقل مرة وحدة باليوم، ويطلع خبر هجرتك بالنشرة.</p>
+    <p class="hint"><b>النقل مرة وحدة بس</b>، وبعدها تثبت مدينتك بمكانها. ويطلع خبر هجرتك بالنشرة.</p>
     <div class="sheet-actions keep"><button class="btn go block" id="mvGo" type="button">انقلها الحين</button><button class="btn block" id="mvBack" type="button">رجوع</button></div>`, "world");
   $("mvBack").addEventListener("click", () => worldMapSheet(to));
   $("mvGo").addEventListener("click", async (e) => {
@@ -3671,7 +3700,7 @@ function electionSheet(m) {
 const WHATS_NEW = {
   v: { solo: "2026-11-25-reach", world: "2026-11-25-move" },
   items: [
-    ["world", "🚚", "انقل مدينتك لأي أرض بالجوف", "• افتح خريطة الجوف واضغط على أي أرض فاضية، بيطلع لك زر «🚚 انقل مدينتك هنا». • مدينتك تنتقل كاملة: مبانيها وفلوسها وسكانها وحربها وعلاقاتها وتعليقاتها، وأرضك القديمة تصير فاضية. • تقدر تنقل مرة وحدة باليوم، وتطلع هجرتك بالنشرة."],
+    ["world", "🚚", "انقل مدينتك، وغيّر اسمك مرة وحدة", "• افتح خريطة الجوف واضغط على أي أرض فاضية، بيطلع لك زر «🚚 انقل مدينتك هنا». • مدينتك تنتقل كاملة: مبانيها وفلوسها وسكانها وحربها وعلاقاتها وتعليقاتها، وأرضك القديمة تصير فاضية. • النقل مرة وحدة بس، فاختر أرضك زين. وتطلع هجرتك بالنشرة. • وصار تقدر تغيّر اسمك الشخصي مرة وحدة بس من «الإعدادات» ← «اسمك»، واسم مدينتك مرة وحدة بس من خريطة الجوف."],
     ["world", "🗺️", "الأضارع والرديفة بخريطة الجوف", "• خريطة الجوف توسّعت ٦ أعمدة يمين و٦ يسار، فيها أراضي جديدة للمدن. • انضافت «الأضارع» يسار الرافعية (أرض جبلية)، و«الرديفة» يمينها (روضة خضرا)، ولكل وحدة تصاميم مبانيها ومعالمها. • المدن الموجودة باقية بمكانها واسمها ومعالمها مثل ما هي."],
     ["world", "🔐", "الدخول بحساب قوقل", "• اربط حسابك بقوقل من «الإعدادات» ← «حسابك وقوقل»، وبعدها من أي جوال: «عالم الجوف» ← «الدخول بحساب قوقل» وترجع لمدينتك بضغطة، بدون كود استرجاع. • ما ناخذ إيميلك ولا اسمك من قوقل، بس رقم حسابك المميز مشفّر. • تقدر تفك الربط متى ما بغيت."],
     ["both", "🗺️", "شوف مدى المبنى على الخريطة", "• اضغط على أي مبنى له مدى (مسجد، مدرسة، بقالة، بئر، مولد، مصنع…) وبمعلوماته زر «🗺️ شوف مداه على الخريطة»: تختفي المعلومات، والخريطة تقرّب عليه وتلوّن مداه كامل، وفوق شريط يقول كم بيت يخدم. • زر «ℹ️ المعلومات» يرجعك لمعلوماته، و✕ أو أي ضغطة على الخريطة تقفله."],
@@ -4381,6 +4410,7 @@ function settingsSheet(fromMenu) {
     <div class="rows">${(() => { const st = pushStatus; return st === "checking" ? `<p class="hint">نتأكد من اشتراك هالجهاز…</p>` : st === "on" ? `<button class="btn go block" id="pushTest" type="button">📲 جرّب التنبيه</button><div id="pushTestStatus" role="status" aria-live="polite"></div>` : st === "denied" ? `<button class="btn block" id="pushDenied" type="button">🔒 التنبيهات مقفلة: كيف أرجّعها؟</button>` : st === "no" ? `<div class="need">${isIOS ? "تنبيهات الآيفون تحتاج iOS 16.4 أو أحدث، واللعب من أيقونة الشاشة الرئيسية." : "هالمتصفح ما يدعم التنبيهات. جرّب Chrome أو متصفح يدعم إشعارات المواقع."}</div>` : `<p class="hint">شغّلها من «🔔 التنبيهات على الجوال» فوق.</p>`; })()}</div>` : ""}
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
+    ${id && onlineOk() ? `<h3>✏️ اسمك</h3><div id="nameBox"><p class="hint">نشيّك…</p></div>` : ""}
     ${id && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>🔐 حسابك وقوقل</h3><div id="googleBox"><p class="hint">نشيّك…</p></div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
@@ -4395,7 +4425,7 @@ function settingsSheet(fromMenu) {
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
-  googleSection();
+  googleSection(); nameSection();
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("saveConflict")?.addEventListener("click", saveConflictSheet);
   $("copyDeviceSave")?.addEventListener("click", () => {

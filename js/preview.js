@@ -128,7 +128,7 @@ function pvRoute(p, body) {
     if (!pvState.news.length) for (const t of Object.values(pvState.plots)) pvNews("town", `🏕️ تأسست «${t.town}» بأرض الجوف. حيّاهم الله`, t.plot, 0);
     return { items: pvState.news.slice(-60).reverse(), now: Date.now() };
   }
-  if (post && p[0] === "me") { const pl = pvState.players[body?.name]; return { name: body?.name, started: pl?.created || Date.now() - 3 * 86400000, played: pl?.played ?? 4 * 3600 + 25 * 60 }; } // the trial: the player's own time
+  if (post && p[0] === "me") { const pl = pvState.players[body?.name]; return { name: body?.name, started: pl?.created || Date.now() - 3 * 86400000, played: pl?.played ?? 4 * 3600 + 25 * 60, renamed: !!pl?.renamed }; } // the trial: the player's own time
   if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t) };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];
@@ -154,14 +154,28 @@ function pvRoute(p, body) {
     pvNews("town", `🏕️ تأسست «${pvState.plots[me.plot].town}» بأرض الجوف. حيّاهم الله`, me.plot, 0);
     return { ok: true, plot: me.plot };
   }
-  if (p[0] === "move") { // like the live one: the whole town to empty land (the trial lets it move any time)
+  if (p[0] === "newname") { // the player's own name, once only (like the live one)
+    if (me.renamed) return { error: "غيّرت اسمك قبل، ما يتغير مرة ثانية" };
+    const newName = String(body.newName || "").trim().slice(0, 16);
+    if (newName.length < 3) return { error: "الاسم ما يصلح. اختر لقب مناسب للعبة (٣ حروف وأكثر)" };
+    if (newName === me.name) return { error: "اكتب اسم غير اسمك الحالي" };
+    if (pvState.players[newName]) return { error: "هالاسم مأخوذ، اختر غيره" };
+    delete pvState.players[me.name];
+    const old = me.name; me.name = newName; me.renamed = 1; pvState.players[newName] = me;
+    if (me.plot != null && pvState.plots[me.plot]) pvState.plots[me.plot].owner = newName;
+    for (const c of pvState.comments) if (c.author === old) c.author = newName;
+    pvSave();
+    return { ok: true, name: newName };
+  }
+  if (p[0] === "move") { // like the live one: the whole town to empty land (once only)
     const from = me.plot, to = Number(body.plot), t = pvState.plots[from];
     if (!t) return { error: "ما عندك مدينة تنقلها" };
     if (!(to >= 0 && to < WORLD.cols * WORLD.rows) || to === from) return { error: "اختر أرض ثانية فاضية" };
     if (pvState.plots[to]) return { error: "الأرض انأخذت، اختر غيرها" };
+    if (t.moved) return { error: "نقلت مدينتك قبل، النقل مرة وحدة بس" };
     if (pvWar.inFlight(from)) return { error: "فيه عملية حربية بالجو تخص مدينتك، انتظر لين توصل" };
     delete pvState.plots[from];
-    pvState.plots[to] = { ...t, plot: to };
+    pvState.plots[to] = { ...t, plot: to, moved: 1 };
     if (t.snapshot) try { const o = JSON.parse(t.snapshot); o.world.plot = to; pvState.plots[to].snapshot = JSON.stringify(o); } catch { /* kept */ }
     me.plot = to;
     for (const c of pvState.comments) if (c.plot === from) c.plot = to;
