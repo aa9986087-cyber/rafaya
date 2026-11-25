@@ -209,7 +209,7 @@ canvas.addEventListener("pointerdown", (e) => {
   // fill, on a building to upgrade…); started anywhere else it moves the map, so looking around never lays a road
   const painting = tool && (B[tool.id]?.cat === "road" || tool.id === "bulldoze" || tool.id === "upgrade" || tool.id === "roadup" || tool.id === "fill") && paintStarts(world.pick(e.clientX, e.clientY));
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, painting, done: new Set() };
-  if (painting) { drag.pendingBefore = pending.slice(); paintAt(e.clientX, e.clientY); }
+  if (painting) drag.pendingBefore = pending.slice(); // the paint starts when this finger moves alone (a second finger means moving the map)
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!pointers.has(e.pointerId)) { if (e.pointerType === "mouse" && tool && playing && !pending.length) hoverAt(world.pick(e.clientX, e.clientY)); return; }
@@ -226,14 +226,17 @@ canvas.addEventListener("pointermove", (e) => {
   if (!drag) return;
   if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > (e.pointerType === "touch" ? 14 : 8)) drag.moved = true; // a finger shakes a little on a tap
   if (arrange && arrMove(e)) return;
-  if (drag.painting) { paintAt(e.clientX, e.clientY); return; }
+  if (drag.painting) {
+    if (!drag.started) { if (!drag.moved) return; drag.started = true; paintAt(drag.x, drag.y); } // from where the finger first touched
+    paintAt(e.clientX, e.clientY); return;
+  }
   if (drag.moved) { world.pan(e.clientX - drag.lx, e.clientY - drag.ly); drag.lx = e.clientX; drag.ly = e.clientY; }
 });
 canvas.addEventListener("pointerup", (e) => {
   if (!pointers.delete(e.pointerId)) return;
   if (pointers.size < 2) pinch = null;
   if (arrange && drag && pointers.size === 0) { arrUp(e); drag = null; return; }
-  if (drag && !drag.moved && !drag.painting && pointers.size === 0) tap(e.clientX, e.clientY);
+  if (drag && !drag.moved && (!drag.painting || !drag.started) && pointers.size === 0) tap(e.clientX, e.clientY);
   if (pointers.size === 0) drag = null;
 });
 /** Does a drag that starts on tile t paint (true) or move the map (false)? */
@@ -249,7 +252,7 @@ function paintStarts(t) {
   return isEnd(t.x, t.y) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isEnd(t.x + dx, t.y + dy));
 }
 function restoreTapPreview() {
-  if (!drag?.pendingBefore || drag.moved || !tool) return;
+  if (!drag?.pendingBefore || !tool) return;
   pending = drag.pendingBefore;
   showPending();
 }
