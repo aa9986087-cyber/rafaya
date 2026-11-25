@@ -35,7 +35,7 @@ const store = {
 // and whether the adaptive steps may move both ways.
 const touch = matchMedia("(pointer: coarse)").matches;
 const QUALITY = ["auto", "saver", "low", "medium", "high", "ultra"];
-const settings = { quality: QUALITY.includes(store.get("rafaya-quality")) ? store.get("rafaya-quality") : "auto", daynight: store.get("rafaya-daynight") !== "0" };
+const settings = { quality: QUALITY.includes(store.get("rafaya-quality")) ? store.get("rafaya-quality") : "auto", daynight: true }; // night and day for everyone, as the world's clock says (the old switch is gone: the owner wants every player to see the same hour)
 const RENDER = {
   auto: { world: touch ? "medium" : "high", busy: touch ? 45 : 60, idle: 30, adapt: true },
   saver: { world: "low", busy: 30, idle: 20, adapt: false },
@@ -3887,7 +3887,6 @@ function settingsSheet(fromMenu) {
     <div class="seg seg-wrap">${[["auto", "✨ تلقائي"], ["saver", "🔋 توفير"], ["low", "خفيفة"], ["medium", "متوازنة"], ["high", "عالية"], ["ultra", "فائقة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
     <p class="hint">${{ auto: "يختار لحاله حسب جوالك، ويخفف إذا الجوال تعب أو سخن، ويرجع يرفع إذا ارتاح.", saver: "أقل استهلاك للبطارية والحرارة: ٣٠ إطار بالكثير، بدون ظلال ولا زحمة سيارات.", low: "للجوالات الضعيفة: بدون ظلال ولا توهج.", medium: "جودة حلوة واستهلاك معتدل.", high: "ظلال ناعمة وتوهج الأضواء بالليل، ٦٠ إطار.", ultra: "أعلى دقة وأنعم ظلال، للجوالات والكمبيوترات القوية." }[q]}</p>
     <div class="rows" style="margin-top:10px">
-      <label class="row toggle"><span>الليل والنهار</span><input type="checkbox" id="setDay" ${settings.daynight ? "checked" : ""}></label>
       ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
@@ -3962,7 +3961,6 @@ function settingsSheet(fromMenu) {
     if (e.target.checked) document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {});
     else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   });
-  $("setDay").addEventListener("change", (e) => { settings.daynight = e.target.checked; world.dayCycle = e.target.checked; store.set("rafaya-daynight", e.target.checked ? "1" : "0"); });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
   // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
