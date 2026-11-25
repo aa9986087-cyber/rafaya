@@ -155,8 +155,8 @@ export class Board extends DurableObject {
         this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('news_google', ?)", String(Date.now()));
       }
     } catch { /* said next time */ }
-    // the owner asked (2026-11-25): the line about «هجرة السكران» being removed comes off the bulletin
-    this.sql.exec("DELETE FROM wnews WHERE kind = 'removed' AND text LIKE '%«هجرة السكران»%'");
+    // the owner asked (2026-11-25): no town's removal is announced, and the old lines come off the bulletin
+    this.sql.exec("DELETE FROM wnews WHERE kind = 'removed'");
     const warDb = sqlWarDb(this.sql); // creates the war table (new, nothing old is touched)
     const gen = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'world_gen'").toArray()[0]?.value || 1);
     if (gen < WORLD_GEN) {
@@ -405,7 +405,7 @@ export class Board extends DurableObject {
     this.sql.exec("UPDATE players SET plot = NULL WHERE plot = ?", plot);
     this.sql.exec("DELETE FROM pushsubs WHERE plot = ?", plot);
     this.sql.exec("DELETE FROM comments WHERE code = ?", `w${plot}`);
-    if (t) this.news("removed", `🗑️ «${t.town}» انحذفت من عالم الجوف (${why})`, plot);
+    // no line in the bulletin: the owner wants removed towns left unannounced (why stays for the caller)
     this.live({ t: "town", plot });
   }
   async alarm() {
