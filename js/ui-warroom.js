@@ -443,7 +443,11 @@ function zoomable(svg, Z) {
     Z.mv = [...v];
     svg.setAttribute("viewBox", v.join(" "));
     const k = v[2] / fw, px = v[2] / Math.max(1, svg.clientWidth); // user units in one screen pixel
-    svg.querySelectorAll("[data-r]").forEach((c) => c.setAttribute("r", Number(c.dataset.r) * Math.max(0.35, Math.sqrt(k))));
+    // towns sit 10 units apart: a dot, however important, never reaches its neighbour, and each town's tap area is its own half
+    svg.querySelectorAll("[data-r]").forEach((c) => {
+      const r = Number(c.dataset.r) * Math.max(0.35, Math.sqrt(k));
+      c.setAttribute("r", c.classList.contains("wm-hit") ? 4.9 : c.classList.contains("wm-ring") ? Math.min(r, 6.5) : Math.min(r, 4.4));
+    });
     svg.querySelectorAll(".wm-name").forEach((t) => { t.style.fontSize = `${11 * px}px`; t.setAttribute("y", Number(t.dataset.y) - 9 * px); t.style.strokeWidth = `${2.6 * px}px`; });
     svg.querySelectorAll(".wm-pl").forEach((t) => { t.style.fontSize = `${9 * px}px`; });
     declutter();
