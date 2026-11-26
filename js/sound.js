@@ -61,13 +61,13 @@ function startAmbience() {
   amb = { wind: make("bandpass", 420, 0.6), rain: rg, nextChirp: 0 };
 }
 // ---------- background music: soft and cinematic, under everything ----------
-// A looping track (media/music.mp3) played through Web Audio: its volume is a gain node (iPhones ignore an
+// A looping track (media/music.m4a) played through Web Audio: its volume is a gain node (iPhones ignore an
 // audio element's own volume), a gentle low-pass keeps it warm and far, and it never starts before the
 // player's first touch (both iPhone and Android require that). It rests while the page is hidden, the trailer
 // plays, or the sound is off, and steps back during a war scene. The player sets it on/off and its level.
 let musicOn = true, musicVol = 0.5, mus = null;
 try { musicOn = localStorage.getItem("rafaya-music") !== "0"; const v = localStorage.getItem("rafaya-music-vol"); if (v !== null) musicVol = Math.max(0, Math.min(1, Number(v))); } catch { /* defaults */ }
-const musicUrl = () => globalThis.RAFAYA_MUSIC || "media/music.mp3";
+const musicUrl = () => globalThis.RAFAYA_MUSIC || "media/music.m4a";
 let musicWant = 0; // the level wanted now (0: silent)
 function musicStart() {
   if (mus) return mus;
