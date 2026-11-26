@@ -354,6 +354,7 @@ function bind(st) {
   q("[data-wrtalk]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalk); warRoom("talk"); }));
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
+  rankGo();
   q("[data-rkonly]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.rankOnly = b.dataset.rkonly === "1"; warRoom("rank"); }));
   // al-Jouf and diplomacy
   worldZoom();
@@ -508,7 +509,7 @@ export function rankHtml(map, where = "sheet") {
   const list = [...map.plots].sort((a, b) => (b.era || 0) - (a.era || 0) || (b.pop || 0) - (a.pop || 0));
   const why = (t) => t.plot === mine ? ["me", "📍 مدينتك"] : (t.era || 0) < WAR.minEra ? ["safe", "🛡️ قرية محمية"] : myEra < WAR.minEra ? ["safe", "🛡️ أنت قرية"] : eraGap(myEra, t.era) ? ["no", eraGap(myEra, t.era).startsWith("مدينتك أكبر") ? "🚫 أصغر منك بكثير" : "🚫 أكبر منك بكثير"] : ["ok", "⚔️ تقدر تحاربها"];
   const only = ROOM.rankOnly && where === "room";
-  const rows = list.map((t, i) => { const [k, w] = why(t); if (only && k !== "ok") return ""; return `<div class="rk-row ${k}"><span class="rk-n">${ar(i + 1)}</span><span class="rk-t"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · ${money(t.pop || 0)} ساكن</small></span><span class="rk-w">${w}</span></div>`; }).join("");
+  const rows = list.map((t, i) => { const [k, w] = why(t); if (only && k !== "ok") return ""; return `<div class="rk-row ${k}"><span class="rk-n">${ar(i + 1)}</span><span class="rk-t"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · ${money(t.pop || 0)} ساكن</small></span><span class="rk-w">${w}</span>${k === "ok" ? `<button type="button" class="rk-go" data-rkgo="${t.plot}">🗺️ روح لها</button>` : ""}</div>`; }).join("");
   const stages = ERAS.slice(WAR.minEra).map((e) => e.id);
   const top = (e) => Math.min(e, ERAS.length - 2); // the greater city counts as a حاضرة
   const grid = `<div class="rk-grid" style="grid-template-columns: 74px repeat(${stages.length}, 1fr)"><span></span>${stages.map((e) => `<b>${ERAS[e].name}</b>`).join("")}
@@ -523,10 +524,14 @@ export function rankHtml(map, where = "sheet") {
     ${where === "room" ? `<div class="wr-enemies"><button type="button" class="${only ? "" : "on"}" data-rkonly="0">الكل</button><button type="button" class="${only ? "on" : ""}" data-rkonly="1">⚔️ اللي أقدر أحاربهم</button></div>` : ""}
     <div class="rk-list">${rows || `<p class="hint">ما فيه مدن تقدر تحاربها الحين.</p>`}</div></div>`;
 }
+/** «روح لها»: the al-Jouf map in the war room, zoomed on that town with its panel open (attack, tribute, talk). */
+function rankGo() {
+  $("sheetBody").querySelectorAll("[data-rkgo]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); clearInterval(ROOM.rankT); ROOM.sel = Number(b.dataset.rkgo); ROOM.focusSel = true; ROOM.form = ""; warRoom("world"); }));
+}
 /** The same table on its own (from the world map; anyone, with or without a command centre). */
 export async function rankSheet() {
   sheet(`<h2>🏆 الترتيب ومين يحارب مين</h2><p class="hint">نحمّل…</p>`, "rank");
-  const draw = async () => { if (sheetFor !== "rank") { clearInterval(ROOM.rankT); return; } const map = await worldMap(true); if (sheetFor !== "rank") return; const keep = $("sheetBody").scrollTop; sheet(`<h2>🏆 الترتيب ومين يحارب مين</h2>${rankHtml(map)}`, "rank"); $("sheetBody").scrollTop = keep; };
+  const draw = async () => { if (sheetFor !== "rank") { clearInterval(ROOM.rankT); return; } const map = await worldMap(true); if (sheetFor !== "rank") return; const keep = $("sheetBody").scrollTop; sheet(`<h2>🏆 الترتيب ومين يحارب مين</h2>${rankHtml(map)}`, "rank"); $("sheetBody").scrollTop = keep; rankGo(); };
   await draw();
   clearInterval(ROOM.rankT); ROOM.rankT = setInterval(draw, 20000); // as fresh as the map
 }
