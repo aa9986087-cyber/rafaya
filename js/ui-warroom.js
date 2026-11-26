@@ -38,18 +38,18 @@ function stripHtml(st) {
       <div class="wr-gl">${g.map(chip).join("")}</div></div>`;
   }).join("");
 }
-/**
- * The front, drawn as a plan (not to scale, so names never overlap): our town on the right, the towns we are
- * in conflict with spread down the left, and every operation in the air on its own curved path.
- */
 /** The own town on every war map: its real name with a pin (a town elsewhere may well be called «مدينتي»). */
-const myLabel = () => `📍 ${(visiting ? visiting.home : S)?.name || "مدينتك"}`;
+const myLabel = (town) => `📍 ${town || (visiting ? visiting.home : S)?.name || "مدينتك"}`; // the map's name first: it follows a rename
 /** A front between two towns: a gentle arc (so two fronts from one town part), thicker the more strikes it saw. */
 function frontPath(ax, ay, bx, by, f, cls) {
   const d = Math.hypot(bx - ax, by - ay) || 1, lift = Math.min(18, d * 0.12), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
   const w = 1.6 + Math.min(2.4, ((f.hitsA || 0) + (f.hitsB || 0)) * 0.25);
   return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wm-front ${f.state} ${cls}" style="stroke-width:${cls === "ours" ? w + 1.2 : w * 0.6}px"/>`;
 }
+/**
+ * The front, drawn as a plan (not to scale, so names never overlap): our town on the right, the towns we are
+ * in conflict with spread down the left, and every operation in the air on its own curved path.
+ */
 function mapHtml(st) {
   const mine = me()?.plot, rels = (st?.rels || []).filter((r) => r.state !== "peace");
   const others = [...new Set([...rels.map((r) => r.other), ...liveOps(st).flatMap((o) => [o.from, o.to]).filter((p) => p !== mine)])];
@@ -107,7 +107,7 @@ function frontMap(map, st) {
     const [x, y] = xy(t.plot), on = involved.has(t.plot), rel = rels.find((r) => r.other === t.plot), state = t.plot === mine ? "me" : rel?.state || "peace";
     const inN = flying.filter((o) => o.from === t.plot).length, outN = flying.filter((o) => o.to === t.plot).length;
     const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0)), quiet = !on && (t.era || 0) < 1;
-    return `<g class="wm-t ${state} ${on ? "on" : ""} ${quiet ? "quiet" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel() : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
+    return `<g class="wm-t ${state} ${on ? "on" : ""} ${quiet ? "quiet" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel(t.town) : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
   }).join("");
   return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${towns}</svg>
     <div class="wr-zoom" data-for="wrFront"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الجوف">⤢</button></div></div>`;
@@ -218,7 +218,7 @@ function worldSvg(map, st) {
     const [x, y] = xy(t.plot), r = rel(t.plot), state = t.plot === mine ? "me" : r?.state || "peace", sel = ROOM.sel === t.plot, atWar = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce");
     const pri = (t.plot === mine ? 5e6 : 0) + (sel ? 4e6 : 0) + (r && r.state !== "peace" ? 3e6 : 0) + (atWar ? 2e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
     const quiet = !sel && !atWar && t.plot !== mine && (!r || r.state === "peace") && (t.era || 0) < 1; // a village at peace: a small dot, its name when zoomed in
-    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""} ${quiet ? "quiet" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel() : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
+    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""} ${quiet ? "quiet" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel(t.town) : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
   }).join("");
   const Z = (ROOM.wz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
   const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.full;
@@ -237,7 +237,7 @@ async function worldTab(st) {
 }
 /** The wars of al-Jouf in words (everyone can read them): who fights whom, and how many strikes landed. */
 function frontsList(map, plot) {
-  const name = (p) => map.plots.find((x) => x.plot === p)?.town || "مدينة", list = map.fronts.filter((f) => plot == null || f.a === plot || f.b === plot);
+  const mine = me()?.plot, name = (p) => { const n = map.plots.find((x) => x.plot === p)?.town || "مدينة"; return p === mine ? myLabel(n) : n; }, list = map.fronts.filter((f) => plot == null || f.a === plot || f.b === plot);
   if (!list.length) return plot == null ? `<p class="hint">🕊️ ما فيه حروب بالجوف الحين.</p>` : "";
   return `<h3>🔥 جبهات الجوف</h3><div class="rows">${list.map((f) => { const first = f.by === f.b ? f.b : f.a, second = first === f.a ? f.b : f.a, hf = first === f.a ? f.hitsA : f.hitsB, hs = first === f.a ? f.hitsB : f.hitsA;
     return row(`${REL_ICONS[f.state] || "⚔️"} «${name(first)}» ⟵ «${name(second)}»`, f.state === "war" ? `ضربات ${ar(hf)} مقابل ${ar(hs)}` : f.state === "warning" ? "إنذار حرب" : f.state === "truce" ? "هدنة" : "طلب جزية"); }).join("")}</div>`;
