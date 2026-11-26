@@ -66,13 +66,13 @@ export class WarServer {
     const wa = this.acct(w); this.stat(wa, "wins"); this.saveAcct(w, wa); this.medalCache = null;
     out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: "انتصار" }].slice(-30);
     void hw; void hl; // who won is told in words, never as a score
-    this.note(w, "victory", `🏆 النصر لك! كسرت شوكة «${ln}» وانتهت الحرب بانتصارك. رايتك ترفرف فوق الجوف، وأهل مدينتك يحتفلون فيك.`, { from: l, enemy: ln });
-    this.note(l, "defeat", `🏳️ انتهت الحرب بخسارتك أمام «${wn}». لملم صفوفك، وارجع أقوى.`, { from: w });
+    this.note(w, "victory", `🏆 النصر لمدينتك! كسرت شوكة «${ln}» وانتهت الحرب بانتصارها. رايتها ترفرف فوق الجوف، وأهلها يحتفلون.`, { from: l, enemy: ln });
+    this.note(l, "defeat", `🏳️ انتهت الحرب بخسارة مدينتك أمام «${wn}». الجولة الجاية لكم بإذن الله.`, { from: w });
     const lines = [
-      `🏆 نصرٌ مؤزّر لـ«${wn}»! أخضعت «${ln}» ورفعت راية النصر فوق الجوف`,
-      `⚔️ «${wn}» تكسر شوكة «${ln}» وتخرج من الحرب منتصرة مرفوعة الراس`,
-      `🦅 الجوف تشهد: «${wn}» تنتصر على «${ln}» بعد حرب طاحنة`,
-      `🏰 سقطت دفاعات «${ln}» وانتهت الحرب بنصر «${wn}»`
+      `🏆 نصرٌ مؤزّر لمدينة «${wn}»! أخضعت مدينة «${ln}» ورفعت راية النصر فوق الجوف`,
+      `⚔️ مدينة «${wn}» تكسر شوكة مدينة «${ln}» وتخرج من الحرب منتصرة مرفوعة الراس`,
+      `🦅 الجوف تشهد: مدينة «${wn}» تنتصر على مدينة «${ln}» بعد حرب طاحنة`,
+      `🏰 سقطت دفاعات مدينة «${ln}» وانتهت الحرب بنصر مدينة «${wn}»`
     ];
     this.news("victory", lines[(r.a * 7 + r.b * 13 + Math.floor(r.warStart / 1000)) % lines.length], l);
     return out;

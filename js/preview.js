@@ -200,7 +200,7 @@ const PV_SCENARIOS = [
   ["count100", "⏳ رجّع عداد ١٠٠ يوم", "العداد الأصلي من الحين: ١٠٠ يوم بالجوف (الحرب تبقى مفتوحة بالتجربة عشان السيناريوهات).", () => { pvState.zeroAt = Date.now() + 100 * JOUF_DAY; pvState.zeroLock = false; setTimeout(() => setWarOpen(pvState.zeroAt), 100); return { plot: null, room: "none", msg: "رجع عداد ساعة الصفر: ١٠٠ يوم." }; }],
   ["win", "🏆 جرّب شاشة النصر", "كأنك انتصرت في حرب على «هجرة الشعيب»: شاشة النصر وخبر النشرة.", () => {
     const me = pvMe(), bot = pvBot("enemy");
-    pvNews("victory", `🏆 نصرٌ مؤزّر لـ«${pvState.plots[me.plot]?.town || "مدينتك"}»! أخضعت «${pvState.plots[bot.plot]?.town || "هجرة الشعيب"}» ورفعت راية النصر فوق الجوف`, bot.plot);
+    pvNews("victory", `🏆 نصرٌ مؤزّر لمدينة «${pvState.plots[me.plot]?.town || "الرافعية"}»! أخضعت مدينة «${pvState.plots[bot.plot]?.town || "هجرة الشعيب"}» ورفعت راية النصر فوق الجوف`, bot.plot);
     setTimeout(() => victoryScreen(pvState.plots[bot.plot]?.town || "هجرة الشعيب"), 600);
     return { plot: null, room: "none", msg: "🏆" };
   }],

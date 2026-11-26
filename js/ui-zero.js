@@ -139,10 +139,10 @@ export function victoryScreen(enemy) {
   el.className = "zero-ann win"; el.id = "victoryBox";
   el.innerHTML = `<div class="za-rays"></div>${Array.from({ length: 10 }, (_, i) => `<i class="fw" style="--x:${8 + (i * 37) % 84}%;--y:${10 + (i * 23) % 40}%;--d:${(i * 0.37) % 2.4}s;--c:${["#f2d48a", "#ff8a7d", "#7fe3b0", "#bfe0ff"][i % 4]}"></i>`).join("")}
     <div class="za-card"><div class="za-seal"><b>🏆</b></div><small class="za-kicker">انتهت الحرب</small>
-      <h2>النصر لك!</h2>
-      <p>كسرت شوكة «${enemy || "عدوك"}» وانتهت الحرب بانتصارك.</p>
-      <p>رايتك ترفرف فوق الجوف، والنشرة تعلن نصرك للكل، وأهل مدينتك يحتفلون فيك. 🎉</p>
-      <p class="za-wish">الرضا +١٠ من الفخر · 🎖️ انتصار جديد بسجلك</p>
+      <h2>النصر لمدينتك!</h2>
+      <p>كسرت مدينتك شوكة «${enemy || "العدو"}» وانتهت الحرب بانتصارها.</p>
+      <p>رايتها ترفرف فوق الجوف، والنشرة تعلن نصرها للكل، وأهلها يحتفلون. 🎉</p>
+      <p class="za-wish">الرضا +١٠ من الفخر · 🎖️ انتصار جديد بسجل مدينتك</p>
       <div class="za-acts"><button class="btn go" type="button" id="vOk">الحمدلله 🏆</button></div></div>`;
   document.body.append(el);
   requestAnimationFrame(() => el.classList.add("on"));
