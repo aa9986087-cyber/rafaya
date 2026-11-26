@@ -19,8 +19,8 @@ export const WAR = {
   T: {
     hostileToWar: 10 * WAR_MIN,  // hostility must stand this long before war can be declared
     warning: 15 * WAR_MIN,       // after a declaration of war, no strike until this has passed
-    war: 24 * WAR_HOUR,          // how long a war lasts, then it goes back to hostility
-    truce: 6 * WAR_HOUR,         // a truce stops strikes this long
+    war: 7 * JOUF_DAY,           // how long a war lasts (a week of al-Jouf), then it goes back to hostility
+    truce: 2 * JOUF_DAY,         // a truce (both agree, any time) stops strikes this long, and ends the war
     peaceCool: 14 * JOUF_DAY,    // after peace, no new hostility or war between the two for two weeks of al-Jouf
     warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
     tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
@@ -28,7 +28,8 @@ export const WAR = {
     shieldLast: 7 * JOUF_DAY,    // a bought shield lasts a week of al-Jouf
     shieldEvery: 30 * JOUF_DAY,  // and can be bought once a month of al-Jouf
     say: 3000,                   // one line in a threat talk this often
-    offer: 6 * WAR_HOUR,         // an offer of truce or peace waits this long for an answer
+    offer: JOUF_DAY,             // an offer of truce or peace waits a day of al-Jouf for an answer
+    heat: 60 * WAR_MIN,          // a launcher that fired lately needs longer to get ready again (each launch in this window adds half)
     threat: 30 * WAR_MIN         // one threat per pair this often (the old ready-made threats)
   },
   flight: { missile: { base: 12000, perCell: 800 }, drone: { base: 25000, perCell: 2200 } },
@@ -36,11 +37,15 @@ export const WAR = {
     perOp: 60,               // most damage one operation can do to its building
     building: 100,           // a building's war damage never passes this (it is out of action, never removed)
     rehitWindow: 6 * WAR_HOUR, rehitMax: 2,   // the same building is hit at most twice in 6 hours
+    awayWindow: 12 * WAR_HOUR, awayMax: 3,    // an owner away (no game open for 2 hours) takes at most 3 hits in 12 hours,
+                                              // unless the town itself attacked in that time
     inFlightTo: 3                          // operations flying at one town at once (from everyone)
   },
   interceptor: { price: 600, name: "صاروخ اعتراضي" },
   shieldPrice: [5000, 10000, 20000, 35000, 55000, 75000], // the bought shield, by the town's stage (village … greater city)
-  tribute: { min: 1000, share: 0.3 },  // a demand of tribute: at least this, at most this share of the other town's budget
+  tribute: { min: 1000, share: 0.15 }, // a demand of tribute: at least this, at most this share of the other town's budget
+  maxWars: 3,                 // a town is at war with three towns at most at once
+  casualty: { dead: 0.06, hurt: 0.3, warned: 0.6 }, // of the people reached (occupants × damage): killed, injured; × warned when the sirens sounded
   repairPerPoint: 45 * 1000,  // repair time: 45 s per point of damage (a building at 60% → 45 min)
   repairPrice: 0.012,         // repair: × the building's price, per point of damage
   autoBudget: 5000            // the deputy's default repair and refill budget, per day
@@ -49,7 +54,7 @@ export const WAR = {
 /** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
 export function fastWar(div = 30) {
   const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));
-  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
+  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, awayWindow: WAR.caps.awayWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
 }
 
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
@@ -201,6 +206,16 @@ export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint)
 // ---------- relations between two towns ----------
 
 export const REL_NAMES = { peace: "سلام", tension: "توتر", hostile: "عداوة معلنة", warning: "إنذار حرب", war: "حرب", truce: "هدنة" };
+/**
+ * The people a strike reaches in a building (its residents, or its workers) and what happens to them: of those
+ * reached (people × damage), some are killed and more injured, fewer when the sirens warned them in time.
+ * Returns { dead, hurt } as fractions (the server adds them up and rounds once).
+ */
+export function casualties(b, dmg, warned, cfg = WAR) {
+  const people = b.id === "house" ? b.res || 0 : B[b.id]?.jobs || 0;
+  const reached = people * Math.min(1, dmg / 100), k = warned ? cfg.casualty.warned : 1;
+  return { dead: reached * cfg.casualty.dead * k, hurt: reached * cfg.casualty.hurt * k };
+}
 /** The price of the bought shield for a town at this stage. */
 export const shieldPrice = (era, cfg = WAR) => cfg.shieldPrice[Math.max(0, Math.min(cfg.shieldPrice.length - 1, era || 0))];
 /** The most tribute that may be asked of a town with this budget. */
@@ -230,7 +245,7 @@ export function relNow(rel, now, cfg = WAR) {
   }
   if (r.state === "warning" && now >= r.warStart) r.state = "war";
   if (r.state === "war" && now >= r.warEnd) { r.state = "hostile"; r.since = r.warEnd; r.warCool = r.warEnd + cfg.T.warCool; }
-  if (r.state === "truce" && now >= r.truceEnd) { r.state = "hostile"; r.since = r.truceEnd; }
+  if (r.state === "truce" && now >= r.truceEnd) { r.state = "hostile"; r.since = r.truceEnd; r.warCool = r.truceEnd + cfg.T.warCool; }
   if (r.offer && now - r.offer.at > cfg.T.offer) r.offer = null;
   return r;
 }

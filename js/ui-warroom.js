@@ -118,7 +118,7 @@ const TARGET_ORDER = ["milhq", "airdef", "radar", "missilepad", "dronebase", "ar
 function launchersHtml(st) {
   const list = launcherTimes(st);
   if (!list.length) return `<div class="need">ما عندك منصات ولا قواعد مسيّرات: ابنها من «البناء ← الدفاع والعسكرية».</div>`;
-  return `<div class="wr-launchers">${list.map((x) => `<div class="wr-launcher ${x.broken ? "broken" : x.left ? "wait" : "ready"}" data-left="${x.left}" data-key="${x.key}">
+  return `<p class="hint">كل إطلاق خلال ساعة يطوّل تجهيز المنصة نفسها (٤ دقايق ثم ٦ ثم ٨…): وزّع ضرباتك واختر أهدافك صح.</p><div class="wr-launchers">${list.map((x) => `<div class="wr-launcher ${x.broken ? "broken" : x.left ? "wait" : "ready"}" data-left="${x.left}" data-key="${x.key}">
     <b>${x.kind === "missilepad" ? "🚀" : "🛩️"} ${x.name}</b><i>${x.broken ? "متعطلة: صلّحها" : x.left ? `⏳ ${secLeft(x.left)}` : "✓ جاهزة"}</i><span class="bar"><span style="width:${x.left ? Math.max(4, 100 - x.left / 6000) : 100}%"></span></span></div>`).join("")}</div>`;
 }
 async function attackTab(st) {
@@ -201,7 +201,7 @@ function diploPanel(st, map, t) {
     form = `<div class="dp-form"><b>🪙 كم تطلب من «${t.town}»؟</b>
       <div class="dp-amount"><output id="dpAmt">${money(v)}</output><small>ريال</small></div>
       <input type="range" id="dpRange" min="${WAR.tribute.min}" max="${most}" step="500" value="${v}">
-      <div class="dp-scale"><small>${money(WAR.tribute.min)}</small><small>الحد ${money(most)} (٣٠٪ من ميزانيتهم)</small></div>
+      <div class="dp-scale"><small>${money(WAR.tribute.min)}</small><small>الحد ${money(most)} (${ar(Math.round(WAR.tribute.share * 100))}٪ من ميزانيتهم)</small></div>
       <p class="hint">إذا دفعوا: يوصلك المبلغ، وسلام بينكم شهر بالجوف (${fmtLeft(WAR.T.tributePeace)}). إذا رفضوا أو ما ردوا خلال يوم بالجوف (${fmtLeft(WAR.T.tributeAnswer)}): الحرب تنعلن لحالها.</p>
       <div class="dp-row"><button class="btn go" type="button" data-dpdo="tribute">أرسل الطلب</button><button class="btn" type="button" data-dpform="">إلغاء</button></div></div>`;
   } else if (ROOM.form === "chat") {

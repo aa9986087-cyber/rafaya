@@ -101,21 +101,21 @@ test("relations: war straight away (open war), a warning, then war; truce and pe
   assert.equal(W.war.handle("rel", { req: "pa", other: 10, act: "accept" }, b).ok, true);
   assert.equal(W.war.handle("state", {}, a).rels[0].state, "peace");
   // after peace: two weeks of al-Jouf before a new war
-  assert.match(W.war.handle("rel", { req: "w3", other: 30, act: "war" }, a).error, /صلح/);
-  W.tick(WAR.T.peaceCool + MIN);
+  assert.match(W.war.handle("rel", { req: "w3", other: 30, act: "war" }, a).error, /صلح|طالعين من حرب/);
+  W.tick(Math.max(WAR.T.peaceCool, WAR.T.warCool) + MIN);
   assert.equal(W.war.handle("rel", { req: "w4", other: 30, act: "war" }, a).ok, true);
 });
 
-test("tribute: up to 30% of their budget; paid = a month of peace; refused or unanswered = war", () => {
+test("tribute: up to 15% of their budget; paid = a month of peace; refused or unanswered = war", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE, money: 100000 }), c = W.addTown(40, "طبرجل", { mil: BASE, money: 100000 });
-  assert.match(W.war.handle("rel", { req: "t0", other: 30, act: "tribute", amount: 40000 }, a).error, /٣٠٪/);
-  assert.equal(W.war.handle("rel", { req: "t1", other: 30, act: "tribute", amount: 30000 }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "t0", other: 30, act: "tribute", amount: 20000 }, a).error, /١٥٪/);
+  assert.equal(W.war.handle("rel", { req: "t1", other: 30, act: "tribute", amount: 15000 }, a).ok, true);
   assert.match(W.war.handle("rel", { req: "t2", other: 30, act: "war" }, a).error, /جزية/);
   assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "tribute"));
   assert.equal(W.war.handle("rel", { req: "pay", other: 10, act: "pay" }, b).ok, true);
-  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.at(-1).amount, 30000);
-  assert.equal(W.war.handle("state", { seq: 0 }, a).charges.at(-1).amount, -30000);
+  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.at(-1).amount, 15000);
+  assert.equal(W.war.handle("state", { seq: 0 }, a).charges.at(-1).amount, -15000);
   assert.equal(W.war.handle("state", {}, a).rels[0].state, "peace");
   assert.match(W.war.handle("rel", { req: "t3", other: 30, act: "tribute", amount: 1000 }, a).error, /الجزية/);
   assert.match(W.war.handle("rel", { req: "t4", other: 30, act: "war" }, a).error, /الجزية/);
@@ -258,7 +258,7 @@ test("repairs: paid on the server, damage comes off over time; the deputy repair
   assert.equal(W.war.handle("state", {}, b).damage.length, 0);
   // the deputy, with a budget, starts the repair by itself after a hit
   W.war.handle("settings", { repair: true, refill: false, budget: 50000 }, b);
-  W.tick(2 * HOUR);
+  W.tick(5 * MIN);
   W.war.handle("buy", { req: "m9", kind: "missile", n: 1 }, a);
   const r2 = W.war.handle("launch", { op: "q2", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
   W.tick(r2.op.arriveAt - W.now() + 1);
@@ -416,4 +416,35 @@ test("watch: anyone can follow the strikes landing on a town at war (public fiel
   assert.equal(v.ops[0].status, "done"); assert.ok(Array.isArray(v.ops[0].result.hits));
   assert.equal(v.ops[0].fee, undefined); assert.equal(v.ops[0].value, undefined); assert.equal(v.ops[0].pads, undefined);
   assert.equal(W.war.handle("watch", { plot: 40 }, c).war, false);
+});
+
+test("fair play: three wars at most, launchers slow down when fired often, an absent owner takes 3 hits in 12 hours, casualties by the numbers", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [22, 20, "dronebase"]] });
+  const others = [30, 31, 32, 33].map((p, i) => W.addTown(p, `مدينة${i}`, { mil: [[20, 20, "milhq"], ...Array.from({ length: 6 }, (_, k) => [30 + k, 30, "factory"])] }));
+  for (const [i, o] of others.slice(0, 3).entries()) assert.equal(W.war.handle("rel", { req: `w${i}`, other: o.plot, act: "war" }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "w3", other: 33, act: "war" }, a).error, /الحد/);
+  assert.match(W.war.handle("rel", { req: "t3", other: 33, act: "tribute", amount: 1000 }, a).error, /الحد/);
+  W.tick(WAR.T.warning + MIN);
+  // the pad: 4 minutes, then 6, then 8 … within the hour
+  W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
+  const fire = (k, x) => W.war.handle("launch", { op: `h${k}`, to: 30, x, y: 30, load: { missile: 1 } }, a);
+  const r1 = fire(1, 30); assert.equal(r1.ok, true);
+  const gap1 = W.war.state({}, a).reload["p24:20"] - W.now();
+  W.tick(gap1 + 1000);
+  assert.equal(fire(2, 31).ok, true);
+  const gap2 = W.war.state({}, a).reload["p24:20"] - W.now();
+  assert.ok(gap2 > gap1 * 1.4, `${gap2} vs ${gap1}`);
+  // casualties come from the people there and the damage done
+  W.tick(Math.max(0, r1.op.arriveAt - W.now()) + 60000); W.war.settle();
+  const done = W.war.handle("op", { op: "h1" }, a).op;
+  assert.equal(done.status, "done");
+  assert.ok(done.result.dead >= 0 && done.result.hurt >= done.result.dead);
+  assert.ok(done.result.hurt > 0, "a factory hit: its workers are reached");
+  // the owner of 31 is away: after three hits in 12 hours, no more (until he plays or attacks)
+  W.towns.get(31).updated = W.now() - 3 * HOUR;
+  const war31 = (k, x) => { const ac0 = W.war.acct(10); ac0.reload = {}; W.war.saveAcct(10, ac0); const r = W.war.handle("launch", { op: `z${k}`, to: 31, x, y: 30, load: { missile: 1 } }, a); if (r.ok) { W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); } return r; };
+  W.war.handle("buy", { req: "m2", kind: "missile", n: 6 }, a);
+  for (let k = 0; k < 3; k++) { const r = war31(k, 30 + k); assert.equal(r.ok, true, r.error); }
+  assert.match(war31(9, 34).error, /غايب/);
 });

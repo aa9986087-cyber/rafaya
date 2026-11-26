@@ -883,3 +883,4 @@ body.war-scene .follow-pill { display: none; }
 .wr-world .wm-front, .wr-world .wm-ring, .wm-map .wm-war { animation: none; }
 .wr-world .wm-front.ours.war { animation: wrDash 1.2s linear infinite; }
 body:has(#sheet:not([hidden])) .follow-pill { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }
+.war-toll { display: flex; gap: 10px; justify-content: center; margin: 8px 0; } .war-toll span { flex: 1; text-align: center; border-radius: 12px; padding: 8px; background: rgba(163, 51, 43, .12); border: 1px solid rgba(163, 51, 43, .35); font-size: 14px; } .war-toll b { font-size: 18px; color: #a3332b; }

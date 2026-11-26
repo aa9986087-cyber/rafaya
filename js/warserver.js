@@ -14,7 +14,7 @@ import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
-  MOSQUES, blastArea, shieldPrice, tributeMax
+  MOSQUES, blastArea, shieldPrice, tributeMax, casualties
 } from "./war.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
@@ -175,8 +175,28 @@ export class WarServer {
     this.news("shield", `🛡️ «${info.town}» رفعت درع الحماية`, me.plot);
     return { ok: true, shield: this.shieldView(info, a, now), charge: c };
   }
+  /** Wars (and declared warnings) a town is in now. */
+  warsOf(plot, now) { return this.db.list("rel", { either: String(plot) }).filter((r) => ["warning", "war"].includes(relNow(this.lapse(r, now), now, this.cfg).state)).length; }
+  /**
+   * حماية الغايب: an owner away (no game open for a while) takes only so many hits in a window, unless the town
+   * attacked someone itself in that time. Returns why a strike stops here, or "".
+   */
+  awayBlock(info, now) {
+    if (now - (info.updated || 0) <= this.cfg.away) return "";
+    if (now - (this.acct(info.plot).lastAttack || 0) < this.cfg.caps.awayWindow) return "";
+    const hits = this.db.list("hit", { k1: String(info.plot) }).filter((h) => now - h.at < this.cfg.caps.awayWindow);
+    return hits.length >= this.cfg.caps.awayMax ? "صاحب المدينة غايب وأخذت حدها من الضربات: محمية لين يرجع" : "";
+  }
+  /** A launcher fired: its next ready time, longer for every launch it made in the last hour (no endless barrage). */
+  reloadAfter(a, key, minutes, now) {
+    a.fired ||= {};
+    const recent = (a.fired[key] || []).filter((t) => now - t < this.cfg.T.heat);
+    recent.push(now); a.fired[key] = recent;
+    return now + minutes * 60000 * (1 + 0.5 * (recent.length - 1));
+  }
   /** Attacking breaks the attacker's own shield (a shield is for staying out of the fight). */
   breakShield(plot, a, now) {
+    a.lastAttack = now; // and ends the town's protection while away
     if (!(a.shield && a.shield.until > now)) return;
     a.shield.until = now;
     this.note(plot, "shield", "🛡️ انكسر درعك لأنك هاجمت.", {}, false);
@@ -231,7 +251,7 @@ export class WarServer {
     const ops = this.db.list("op", { k2: String(plot), limit: 60 }).filter((o) => o.status === "flying" || now - (o.doneAt || 0) < 30 * 60000).map((o) => ({
       id: o.id, salvo: o.salvo || null, from: o.from, to: o.to, fromTown: o.fromTown, toTown: o.toTown, x: o.x, y: o.y, bname: o.bname, load: o.load,
       launchAt: o.launchAt, arriveAt: o.arriveAt, doneAt: o.doneAt || 0, status: o.status, detected: o.detected, side: "watch",
-      result: o.status === "done" ? { hits: o.result.hits, area: o.result.area, dmg: o.result.dmg, blocked: o.result.blocked, displaced: o.result.displaced || 0, airdef: o.result.airdef || 0 } : null
+      result: o.status === "done" ? { hits: o.result.hits, area: o.result.area, dmg: o.result.dmg, blocked: o.result.blocked, displaced: o.result.displaced || 0, dead: o.result.dead || 0, hurt: o.result.hurt || 0, airdef: o.result.airdef || 0 } : null
     }));
     const war = this.db.list("rel", { either: String(plot) }).some((r) => ["warning", "war"].includes(relNow(this.lapse(r, now), now, this.cfg).state));
     return { town: info.town, war, ops, now, mine: plot === me.plot };
@@ -353,12 +373,16 @@ export class WarServer {
       log("hostile", "إعلان عداوة");
       this.note(other, "hostile", `⚔️ «${myName}» أعلنت عليك العداوة!`, { from: me.plot });
     } else if (act === "war") {
+      if (this.warsOf(me.plot, now) >= this.cfg.maxWars) return { error: `عندك ${nf(this.cfg.maxWars)} حروب: هذا الحد` };
+      if (this.warsOf(other, now) >= this.cfg.maxWars) return { error: `«${theirName}» داخلة ${nf(this.cfg.maxWars)} حروب: هذا الحد` };
       declare("إعلان حرب");
     } else if (act === "tribute") {
+      if (this.warsOf(me.plot, now) >= this.cfg.maxWars) return { error: `عندك ${nf(this.cfg.maxWars)} حروب: هذا الحد` };
+      if (this.warsOf(other, now) >= this.cfg.maxWars) return { error: `«${theirName}» داخلة ${nf(this.cfg.maxWars)} حروب: هذا الحد` };
       // a demand of money: paid, a month of peace; refused or left without an answer for a day of al-Jouf, war
       const most = tributeMax(them.snap.money, this.cfg), amount = Math.round(Number(body.amount) || 0);
       if (most < this.cfg.tribute.min) return { error: "ميزانيتهم ما تكفي لجزية" };
-      if (!(amount >= this.cfg.tribute.min && amount <= most)) return { error: `الجزية من ${nf(this.cfg.tribute.min)} إلى ${nf(most)} ريال (٣٠٪ من ميزانيتهم)` };
+      if (!(amount >= this.cfg.tribute.min && amount <= most)) return { error: `الجزية من ${nf(this.cfg.tribute.min)} إلى ${nf(most)} ريال (${nf(this.cfg.tribute.share * 100)}٪ من ميزانيتهم)` };
       r.tribute = { by: me.plot, amount, at: now, until: now + this.cfg.T.tributeAnswer };
       if (r.state === "peace") { r.state = "tension"; r.since = now; }
       log("tribute", `طلب جزية ${nf(amount)} ريال`);
@@ -443,6 +467,8 @@ export class WarServer {
     const target = at ? { ...at, name: B[at.id].name } : { x, y, id: null, lvl: 0, name: `موقع قرب ${B[near.id].name}` };
     const shield = this.shieldUntil(them, now);
     if (shield) return { error: `المدينة عليها درع حماية: باقي ${minutesText(shield - now)}` };
+    const away = this.awayBlock(them, now);
+    if (away) return { error: away };
     const rehits = this.db.list("hit", { k1: String(to) }).filter((h) => h.x === x && h.y === y && now - h.at < this.cfg.caps.rehitWindow);
     if (rehits.length >= this.cfg.caps.rehitMax) return { error: "هالمكان انضرب كثير: محمي فترة" };
     // what is sent
@@ -524,9 +550,9 @@ export class WarServer {
     // spend: the ammunition, and the launchers that fired (only as many as the batch needed)
     for (const [w, n] of Object.entries(need)) a.arsenal[w] -= n;
     let left = drones;
-    for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = now + milStat("dronebase", b.lvl).reload * 60000; }
+    for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     left = missiles;
-    for (const b of readyPads.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = now + milStat("missilepad", b.lvl).reload * 60000; }
+    for (const b of readyPads.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); }
     this.breakShield(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `دفعة على «${them.town}» (${nf(plans.length)} أهداف)`);
     this.saveAcct(me.plot, a);
@@ -556,8 +582,8 @@ export class WarServer {
     if (pl.error) return pl;
     const { now, to, x, y, target, load, fee, a, mine, them, readyBases, readyPads, drones, missiles, flight } = pl;
     for (const [w, n] of Object.entries(load)) a.arsenal[w] -= n;
-    if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = now + milStat("dronebase", b.lvl).reload * 60000; }
-    if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = now + milStat("missilepad", b.lvl).reload * 60000; } }
+    if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
+    if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); } }
     this.breakShield(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `تشغيل عملية على «${them.town}»`);
     this.saveAcct(me.plot, a);
@@ -601,6 +627,7 @@ export class WarServer {
     res.before = before;
     if (!them) res.blocked = "gone";
     else if (this.shieldUntil(them, now)) res.blocked = "shield";
+    else if (this.awayBlock(them, now)) res.blocked = "away";
     else if (relNow(this.rel(op.from, op.to), now, this.cfg).state !== "war") res.blocked = "truce";
     const p = them ? this.profileOf(them) : null;
     // every weapon that gets through bursts on the spot: the buildings in its radius take a share of its damage
@@ -633,6 +660,12 @@ export class WarServer {
     res.dmg = dmg; res.before = centre ? centre.before : before; res.after = centre ? centre.after : before;
     // the people of the houses hit leave them until they are repaired (in the game's numbers)
     res.displaced = them ? hurt.filter((a) => a.id === "house").reduce((n, a) => { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y); return n + Math.round((t?.res || 0) * Math.min(1, a.dmg / 85)); }, 0) : 0;
+    // the dead and the injured: the people of every building reached, by its damage (fewer when the sirens warned them)
+    if (them) {
+      let dead = 0, hurtN = 0;
+      for (const a of hurt) { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y) || { id: a.id }; const c = casualties(t, a.dmg, op.detected, this.cfg); dead += c.dead; hurtN += c.hurt; }
+      res.dead = Math.round(dead); res.hurt = Math.round(hurtN);
+    }
     res.airdef = p ? p.airdefs.filter((x) => x.wd < 85).length : 0; // working batteries (to tell "no defence" from "no interceptors")
     res.intcValue = res.intcUsed * this.cfg.interceptor.price;
     if (dmg > 0) {
@@ -645,14 +678,15 @@ export class WarServer {
     // notifications for both sides
     const intercepted = res.hits.filter((h) => h.intercepted).length, total = res.hits.length;
     if (res.blocked) {
-      const why = { gone: "الهدف ما عاد موجود", shield: "المدينة دخلت درع الحماية", truce: "دخلت الهدنة قبل الوصول" }[res.blocked];
+      const why = { gone: "الهدف ما عاد موجود", shield: "المدينة دخلت درع الحماية", truce: "دخلت الهدنة قبل الوصول", away: "صاحبها غايب وأخذت حدها من الضربات" }[res.blocked];
       this.note(op.from, "result", `📋 عمليتك على «${op.toTown}» ما أصابت: ${why}.`, { op: op.id });
       this.note(op.to, "result", `🛡️ هجوم «${op.fromTown}» ما وصل: ${why}.`, { op: op.id });
     } else if (dmg > 0) {
       const many = res.area.length > 1 ? ` وتضرر ${nf(res.area.length)} مباني حوله` : "", gone = res.displaced ? `، ونزح ${nf(res.displaced)} ساكن من بيوتهم` : "";
-      this.note(op.to, "hit", `💥 ضربة عسكرية من «${op.fromTown}» على ${op.bname}${many} (أكبر ضرر ${nf(dmg)}٪)${gone}.${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
-      this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).`, { op: op.id });
-      this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»`, op.to);
+      const toll = res.dead || res.hurt ? ` ⚰️ ${nf(res.dead)} وفاة و🤕 ${nf(res.hurt)} إصابة.` : "";
+      this.note(op.to, "hit", `💥 ضربة عسكرية من «${op.fromTown}» على ${op.bname}${many} (أكبر ضرر ${nf(dmg)}٪)${gone}.${toll}${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
+      this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).${toll}`, { op: op.id });
+      this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»${res.dead || res.hurt ? `: ${nf(res.dead)} وفاة و${nf(res.hurt)} إصابة` : ""}`, op.to);
     } else {
       this.note(op.to, "intercept", `🛡️ دفاعاتك نجحت في اعتراض هجوم «${op.fromTown}».`, { op: op.id });
       this.note(op.from, "result", `🛡️ دفاع «${op.toTown}» اعترض عمليتك.`, { op: op.id });

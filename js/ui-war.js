@@ -696,7 +696,8 @@ async function followPoll() {
 async function spectateScene(ops) {
   if (WARX.scene) return;
   const hurt = ops.reduce((n, o) => n + (o.result?.area?.length || 0), 0), stopped = ops.reduce((n, o) => n + (o.result?.hits || []).filter((h) => h.intercepted).length, 0);
-  const sum = `👁️ «${ops[0].toTown}»: ${ar(hurt)} مباني تضررت · ${ar(stopped)} انعترض`;
+  const dead = ops.reduce((n, o) => n + (o.result?.dead || 0), 0), injured = ops.reduce((n, o) => n + (o.result?.hurt || 0), 0);
+  const sum = `👁️ «${ops[0].toTown}»: ${ar(hurt)} مباني تضررت · ${ar(stopped)} انعترض${dead || injured ? ` · ⚰️ ${ar(dead)} وفاة و${ar(injured)} إصابة` : ""}`;
   if (sceneMode() === "off") { toast(sum, ""); return; }
   WARX.scene = { op: ops[0], watch: true };
   sceneUi(true); closeSheet(); setTool(null);
@@ -733,9 +734,11 @@ async function warReplayAll(ops) {
 export function salvoReport(ops, fresh) {
   const out = ops[0].side === "out" || ops[0].from === me()?.plot;
   const area = ops.reduce((n, o) => n + (o.result?.area?.length || 0), 0), people = ops.reduce((n, o) => n + (o.result?.displaced || 0), 0);
+  const dead = ops.reduce((n, o) => n + (o.result?.dead || 0), 0), hurt = ops.reduce((n, o) => n + (o.result?.hurt || 0), 0);
   const stopped = ops.reduce((n, o) => n + (o.result?.hits.filter((h) => h.intercepted).length || 0), 0), sent = ops.reduce((n, o) => n + (o.result?.hits.length || 0), 0);
   sheet(`<h2>📋 ${out ? "تقرير الدفعة" : "تقرير الهجمات عليك"}</h2>
     <div class="war-grid"><div><b>${ar(ops.length)}</b><span>📍 أماكن</span></div><div><b>${ar(area)}</b><span>🏚️ مباني تضررت</span></div><div><b>${ar(stopped)}<small>/${ar(sent)}</small></b><span>🛡️ انعترض</span></div><div><b>${ar(people)}</b><span>🧳 نزحوا</span></div></div>
+    ${dead || hurt ? `<div class="war-toll"><span>⚰️ <b>${ar(dead)}</b> وفاة</span><span>🤕 <b>${ar(hurt)}</b> إصابة</span></div>` : ""}
     <div class="rows">${row(out ? "المدينة المستهدفة" : ops.length > 1 && new Set(ops.map((o) => o.from)).size > 1 ? "المهاجمين" : "المهاجم", out ? `«${ops[0].toTown}»` : [...new Set(ops.map((o) => o.fromTown))].map((t) => `«${t}»`).join(" · "))}
       ${ops.map((o, i) => { const r = o.result; return row(`${ar(i + 1)}. ${out || new Set(ops.map((x) => x.from)).size === 1 ? "" : `«${o.fromTown}» ← `}${o.bname} · ${weaponsText(o.load)}`, !r ? "بالجو" : r.blocked ? "ما أصابت" : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت", r?.dmg ? (out ? "plus" : "minus") : ""); }).join("")}</div>
     ${!out && area ? `<div class="need">💡 الإصلاح من «غرفة العمليات ← السجل والأضرار»: كل مبنى وجنبه «صلّح».</div>` : ""}
@@ -780,6 +783,7 @@ export function opReport(op, fresh) {
       ${!out && r && !r.blocked && r.airdef && !r.hits.some((h) => h.tried) ? `<div class="need">💡 بطاريتك ما ردّت لأن ما عندها صواريخ اعتراضية: اشترِ من «القيادة ← الدفاع»، أو خلّ النائب يعبيها.</div>` : ""}
       ${r?.dmg ? row("الضرر", `${ar(r.dmg)}٪ (صار ${ar(Math.round(r.after))}٪)`, out ? "plus" : "minus") : ""}
       ${r && !r.blocked ? row("الحالة", r.state) : ""}
+      ${r?.dmg ? row("⚰️ الوفيات", ar(r.dmg ? r.dead || 0 : 0), out ? "" : "minus") + row("🤕 الإصابات", ar(r.hurt || 0), out ? "" : "minus") + (r.displaced ? row("🧳 نزحوا من بيوتهم", ar(r.displaced)) : "") : ""}
       ${out ? row("تكلفة العملية", `${money(op.fee)} ريال تشغيل + ذخائر بقيمة ${money(op.value)}`) : r?.intcUsed ? row("ذخيرة الدفاع المستخدمة", `${ar(r.intcUsed)} صاروخ اعتراضي (${money(r.intcValue)} ريال)`) : ""}
       ${row("وقت العملية", when)}</div>
     ${!out && r?.dmg ? `<div class="need">💡 اضغط على ${op.bname} بمدينتك واختر «🔧 إصلاح الأضرار العسكرية»، أو خلّ النائب يصلحها (القيادة ← النائب).</div>` : ""}
