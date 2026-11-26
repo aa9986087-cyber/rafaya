@@ -29,8 +29,32 @@ export function setWarOpen(at) {
 /** Right after entering one's town: the trailer (first time only), then the countdown or the announcement. */
 export function zeroEnter() {
   if (!worldMode) return;
-  const next = () => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); };
+  const next = () => warNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); });
   if (!store.get(INTRO)) { store.set(INTRO, "1"); playIntro(next); } else next();
+}
+
+// ---------- the owner's notice before the war: once for every player, on the screen ----------
+const NOTICE = "rafaya-notice-war-move-v1";
+function warNotice(done) {
+  if (store.get(NOTICE) || !worldMode) { done?.(); return; }
+  store.set(NOTICE, "1");
+  const el = document.createElement("div");
+  el.className = "zero-ann notice"; el.id = "warNotice";
+  el.innerHTML = `<div class="za-card"><div class="za-seal"><b>📢</b></div><small class="za-kicker">إعلان من الإدارة</small>
+      <h2>⚔️ تنبيه لأهل الجوف</h2>
+      <p>ساعة الصفر <b>فجر السبت الساعة ٢</b>، وبعدها تنفتح الحرب للكل 🔥</p>
+      <div class="nt-box"><b>📍 انتبهوا للجيران!</b><p>كل ما كانت المدينة قريبة منك، ضرباتها توصلك أسرع:<br>🚀 صاروخ الجار يوصلك بـ<b>١٢ ثانية</b> بس<br>🛩️ والمسيّرة بـ<b>٢٥ ثانية</b></p></div>
+      <div class="nt-box"><b>🚚 عشان كذا عطيناكم نقلة ببلاش قبل الحرب</b><p>حتى اللي نقل قبل، صار عنده نقلة وحدة جديدة.<br>افتح <b>خريطة الجوف</b> ← اضغط أي أرض فاضية ← <b>«انقل مدينتك هنا»</b>، وكل شي ينتقل معك.<br>واللي مرتاح بديرته، يبقى فيها بكيفه 👍</p></div>
+      <div class="nt-box"><b>🛡️ جهّزوا من الحين:</b><p>١. مركز القيادة العسكرية وبطارية دفاع جوي ورادار<br>٢. عبّوا الصواريخ الاعتراضية<br>٣. فعّلوا النائب يعبّي ويصلّح لا غبتوا<br>٤. درع الحماية يحميكم أسبوع (مرة كل ٣ أسابيع)</p></div>
+      <p>📖 كل القوانين في زر «الدليل» تحت «القيادة»</p>
+      <p class="za-wish">بالتوفيق للجميع 🤝🏆</p>
+      <div class="za-acts"><button class="btn go" type="button" id="ntMap">🗺️ افتح خريطة الجوف</button><button class="btn" type="button" id="ntOk">تمام</button></div></div>`;
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add("on"));
+  try { sfx.event(); } catch { /* sound off */ }
+  const close = (then) => { el.classList.remove("on"); setTimeout(() => { el.remove(); then?.(); }, 350); };
+  el.querySelector("#ntOk").addEventListener("click", () => { sfx.tap(); close(done); });
+  el.querySelector("#ntMap").addEventListener("click", () => { sfx.tap(); close(() => document.getElementById("worldBtn")?.click()); });
 }
 
 // ---------- the chip in the town: always ticking ----------

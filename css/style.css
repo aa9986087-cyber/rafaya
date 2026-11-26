@@ -1024,3 +1024,9 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .tb-head { gap: 8px; } .tb-head b { flex: 1; }
 .tb-fold { border: 1px solid rgba(217,180,106,.35); background: rgba(255,255,255,.07); color: #e0bd72; border-radius: 12px; width: 32px; height: 32px; font-size: 15px; flex: none; }
 .tb-min { gap: 6px; } .tb-min .tb-fire { padding: 8px; }
+
+.zero-ann.notice .za-card { text-align: start; } .zero-ann.notice h2, .zero-ann.notice .za-kicker, .zero-ann.notice .za-wish { text-align: center; } .zero-ann.notice .za-card > small.za-kicker { display: table; margin: 0 auto; }
+.nt-box { border: 1px solid rgba(224,189,114,.3); border-radius: 14px; padding: 8px 12px; margin: 8px 0; background: rgba(255,255,255,.04); }
+.nt-box b { color: #f2d48a; } .nt-box p { margin: 4px 0 0; font-size: 14px; line-height: 1.8; }
+.zero-ann.notice .za-card { max-height: calc(100% - 20px); }
+.zero-ann.notice .za-seal { margin: 0 auto 6px; width: 56px; height: 56px; } .zero-ann.notice .za-seal b { font-size: 26px; }
