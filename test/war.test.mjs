@@ -235,7 +235,7 @@ test("caps: one building twice in 6 hours; the bought shield stops strikes, once
   assert.equal(back.ok, true);
   assert.equal(W.war.handle("state", {}, b).shield, 0);
   assert.equal(fire(21, 36).ok, true);
-  assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /مرة بالشهر/);
+  assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /٣ أسابيع/);
 });
 
 test("repairs: paid on the server, damage comes off over time; the deputy repairs within its budget", () => {
@@ -461,4 +461,31 @@ test("zero hour: before it no war, tribute or strike; talk and building are fine
   assert.equal(W.war.handle("state", {}, a).openAt, open);
   open = W.now() - 1;
   assert.equal(W.war.handle("rel", { req: "z5", other: 30, act: "war" }, a).ok, true);
+});
+
+test("rewards: spoils from economic buildings, medals for the leaders, an official victory when the war ends", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] });
+  const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], ...Array.from({ length: 6 }, (_, k) => [30 + k, 30, "factory"])] });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
+  atWar(W, a, b);
+  for (let k = 0; k < 3; k++) {
+    const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac);
+    const r = W.war.handle("launch", { op: `rw${k}`, to: 30, x: 30 + k * 2, y: 30, load: { missile: 1 } }, a);
+    assert.equal(r.ok, true, r.error);
+    W.tick(r.op.arriveAt - W.now() + 1); W.war.settle();
+  }
+  const done = W.war.handle("op", { op: "rw0" }, a).op;
+  assert.ok(done.result.spoils > 0, "a factory hit pays spoils");
+  assert.ok(W.war.handle("state", { seq: 0 }, a).charges.some((c) => c.amount < 0 && /غنيمة/.test(c.why)));
+  // the war runs out: the side whose strikes landed more wins
+  W.tick(WAR.T.war + MIN);
+  const st = W.war.handle("state", {}, a);
+  assert.ok(st.notes.some((n) => n.kind === "victory"));
+  assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "defeat"));
+  assert.ok(st.medals[10].some((m) => m.name === "القائد الذكي"));
+  assert.ok(st.medals[10].some((m) => m.name === "بطل الجوف"));
+  // judged once only
+  W.war.handle("state", {}, a);
+  assert.equal(W.war.handle("state", {}, a).notes.filter((n) => n.kind === "victory").length, 1);
 });

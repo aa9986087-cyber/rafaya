@@ -2,7 +2,7 @@
 // ready, how to start (or avoid) a war, how to strike and defend, and every rule that keeps it fair. Every
 // number is read from the rules themselves (js/war.js, js/data.js), so the guide never says something else.
 import { ar, money, sheet } from "./main.js";
-import { WAR_LIVE, WEAPONS, WEAPON_IDS, JOUF_DAY, minutesText, shieldPrice } from "./war.js";
+import { WAR_LIVE, WEAPONS, WEAPON_IDS, JOUF_DAY, minutesText, shieldPrice, SPOILS, MEDALS } from "./war.js";
 import { B, ERAS, MIL } from "./data.js";
 import { weaponIcon } from "./ui-war.js";
 import { sfx } from "./sound.js";
@@ -30,7 +30,7 @@ const li = (items) => `<ul class="wg-list">${items.map((t) => `<li>${t}</li>`).j
 
 export function warGuide(go = "") {
   const T = WAR_LIVE.T;
-  const toc = [["zero", "⏳", "ساعة الصفر"], ["ready", "🏗️", "التجهيز"], ["arms", "🚀", "الأسلحة"], ["before", "🤝", "قبل الحرب"], ["war", "⚔️", "الحرب"], ["defend", "🛡️", "الدفاع"], ["hits", "💥", "النتائج"], ["fair", "⚖️", "العدل"], ["end", "🏳️", "النهاية"], ["watch", "👁️", "المتفرج"], ["tips", "🧠", "نصايح"]];
+  const toc = [["zero", "⏳", "ساعة الصفر"], ["ready", "🏗️", "التجهيز"], ["arms", "🚀", "الأسلحة"], ["before", "🤝", "قبل الحرب"], ["war", "⚔️", "الحرب"], ["defend", "🛡️", "الدفاع"], ["hits", "💥", "النتائج"], ["rewards", "🏆", "المكاسب"], ["fair", "⚖️", "العدل"], ["end", "🏳️", "النهاية"], ["watch", "👁️", "المتفرج"], ["tips", "🧠", "نصايح"]];
   const milRows = [
     ["milhq", "🏛️", "أساس كل شي: بدونه لا سلاح ولا حرب. كل ما ترقّى أدار عمليات أكثر بنفس الوقت."],
     ["dronebase", "🛩️", "تطلق المسيّرات."],
@@ -83,13 +83,21 @@ export function warGuide(go = "") {
         `كل ضربة تطلع بالتقرير والنشرة.`
       ])}`)}
 
+    ${section("rewards", "🏆", "وش تكسب من الحرب؟", `${li([
+        `<b>💰 غنيمة الحرب:</b> كل ضربة ناجحة على مبنى اقتصادي (مصنع، سوق، محطة كهرباء أو ماء…) تعطيك ${ar(Math.round(SPOILS * 100))}٪ من كلفة إصلاحه، تنزل بميزانيتك على طول.`,
+        `<b>🏆 النصر الرسمي:</b> لا خلصت الحرب (بوقتها أو بهدنة أو صلح)، اللي ضرباته وصلت أكثر ينتصر: يطلع بالنشرة، ورضا أهل مدينته يرتفع ١٠ من الفخر.`,
+        `<b>🎖️ الأوسمة:</b> تطلع جنب اسمك بالشات والخريطة: ${MEDALS.map((m) => `${m.icon} «${m.name}» (${m.text})`).join("، ")}. كل وسام لصاحب أعلى رقم بالجوف.`,
+        `<b>🪙 الجزية:</b> فلوس بدون حرب إذا دفعوا.`
+      ])}`)}
+
     ${section("fair", "⚖️", "قوانين العدل", `${li([
         `<b>المتقاربين بس:</b> إذا الفرق بينكم مستويين أو أكثر، ولا واحد يبدأ على الثاني (الحاضرة الكبرى تنحسب حاضرة).`,
         `<b>${ar(WAR_LIVE.maxWars)} حروب بالكثير</b> للمدينة بنفس الوقت.`,
         `<b>المساجد محمية</b> من الضربات ومن مداها.`,
         `<b>القرى محمية</b>، و<b>اللاعب الجديد</b> محمي ${real(WAR_LIVE.newPlayer)}، و<b>المدينة النايمة</b> (صاحبها غايب أسبوع) محمية.`,
         `<b>حماية الغايب:</b> إذا صاحب المدينة ما فتح اللعبة ${real(WAR_LIVE.away)}، ما ياخذ أكثر من ${ar(WAR_LIVE.caps.awayMax)} ضربات كل ${real(WAR_LIVE.caps.awayWindow)}. وإذا هاجم أحد تنكسر حمايته.`,
-        `نفس المكان ما ينضرب أكثر من ${ar(WAR_LIVE.caps.rehitMax)} مرات كل ${real(WAR_LIVE.caps.rehitWindow)}، وما يطير فوق المدينة أكثر من ${ar(WAR_LIVE.caps.inFlightTo)} عمليات بنفس الوقت.`,
+        `نفس المكان ما ينضرب أكثر من ${ar(WAR_LIVE.caps.rehitMax)} مرات كل ${real(WAR_LIVE.caps.rehitWindow)}.`,
+        `<b>زحمة الجو:</b> ما يكون بالجو أكثر من ${ar(WAR_LIVE.caps.inFlightTo)} هجمات رايحة لنفس المدينة بنفس اللحظة (من كل أعدائها مع بعض). الدفعة الوحدة تنحسب هجمة وحدة، ولا وصلت وحدة ينفتح مكان للي بعدها. عشان ما يتجمع الكل على مدينة وحدة بلحظة.`,
         `كل شي يقرره <b>السيرفر</b>، مو جوال اللاعب: ما فيه غش.`
       ])}`, ART.scale)}
 

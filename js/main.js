@@ -1189,6 +1189,7 @@ export async function worldMapSheet(pick) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
         ${!mine && fronts.some((f) => (f.a === sel || f.b === sel) && f.state !== "truce") && !fronts.some((f) => (f.a === sel || f.b === sel) && (f.a === id?.plot || f.b === id?.plot)) ? `<button class="btn ${WARX.follow?.plot === sel ? "" : "go"} block wm-follow" id="wmFollow" type="button">${WARX.follow?.plot === sel ? "👁️ أوقف المتابعة" : "👁️ تابع حربها: تشوف كل ضربة تنزل عليها"}</button>` : ""}
+        ${(WARX.st?.medals?.[sel] || []).length ? `<div class="medals">${WARX.st.medals[sel].map((x) => `<span>${x.icon} ${x.name}<small>${x.text}</small></span>`).join("")}</div>` : ""}
         <div class="rows">${warsOf(sel)}${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
         <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>${t.renamed ? "" : `<button class="btn block" id="wmRename" type="button">✏️ غيّر اسم مدينتك (مرة وحدة بس)</button>`}` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
@@ -1356,6 +1357,7 @@ export function warApply(st) {
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
     for (const n of fresh) if (n.kind === "apology" || n.kind === "gift") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
+    if (fresh.some((n) => n.kind === "victory")) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } } // a war won: the town is proud
     if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
@@ -1381,7 +1383,7 @@ export function chatSheet(keep, draft = $("chatText")?.value || "") {
   const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
   sheet(`<h2>💬 شات الجوف</h2>
     <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
-        <div class="chat-head"><b>${m.name}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
+        <div class="chat-head"><b>${m.name}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${x.icon}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
         <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
     <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
     <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>

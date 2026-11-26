@@ -2,7 +2,7 @@
 // countdown (days of al-Jouf, and the real clock to the second) shows in the town; at zero a grand official
 // announcement opens the war. The first time a player enters the world after this release, the war trailer
 // plays first (once, with a skip button), then the countdown.
-import { $, ar, sheet, store, worldClock, worldMode } from "./main.js";
+import { $, ar, store, worldClock, worldMode } from "./main.js";
 import { JOUF_DAY } from "./war.js";
 import { sfx, warSfx } from "./sound.js";
 import { warGuide } from "./ui-warguide.js";
@@ -60,7 +60,10 @@ export function zeroSheet() {
   const ms = ZERO.at - nowS();
   if (ms <= 0) { maybeAnnounce(true); return; }
   const l = left(ms);
-  sheet(`<div class="zero" id="zeroBig">
+  $("zeroFull")?.remove();
+  const box = document.createElement("div");
+  box.id = "zeroFull"; box.className = "zero-full";
+  box.innerHTML = `<button type="button" class="zero-x" aria-label="إغلاق">✕</button><div class="zero" id="zeroBig">
       <div class="zero-seal"><i></i><b>⚔️</b></div>
       <h2>صراع الجوف</h2><p class="zero-sub">العد التنازلي لساعة الصفر</p>
       <div class="zero-days"><b data-z="d">${ar(l.jouf)}</b><span>يوم بالجوف</span></div>
@@ -68,9 +71,13 @@ export function zeroSheet() {
       <p class="zero-when">الحرب تفتح للكل بنفس اللحظة: ${new Date(ZERO.at - (worldClock.offset || 0)).toLocaleString("ar-SA", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}</p>
       <div class="zero-now"><b>وش تسوي الحين؟</b><ul><li>🏗️ ابنِ مركز القيادة والمباني الحربية</li><li>🚀 اشترِ سلاحك وعبّ دفاعك</li><li>📖 اقرأ قوانين الحرب وخطط لأهدافك</li></ul><small>قبل ساعة الصفر: ما فيه إعلان حرب ولا جزية ولا ضربات.</small></div>
       <div class="sheet-actions keep"><button class="btn go block" type="button" id="zGuide">📖 دليل الحرب وقوانينها</button><button class="btn block" type="button" id="zIntro">🎬 شوف إعلان الحرب</button></div>
-    </div>`, "zero");
-  $("zGuide").addEventListener("click", () => { sfx.tap(); warGuide(); });
-  $("zIntro").addEventListener("click", () => { sfx.tap(); playIntro(() => zeroSheet()); });
+    </div>`;
+  document.body.append(box);
+  requestAnimationFrame(() => box.classList.add("on"));
+  const close = () => { box.classList.remove("on"); setTimeout(() => box.remove(), 300); };
+  box.querySelector(".zero-x").addEventListener("click", () => { sfx.tap(); close(); });
+  $("zGuide").addEventListener("click", () => { sfx.tap(); close(); warGuide(); });
+  $("zIntro").addEventListener("click", () => { sfx.tap(); close(); playIntro(() => zeroSheet()); });
 }
 
 // ---------- the official announcement, at zero ----------
@@ -103,19 +110,21 @@ function maybeAnnounce(force) {
 }
 
 // ---------- the trailer ----------
-/** Full screen, sound on when the phone allows (else a button for it), a skip button; then `done`. */
+/** Full screen, to its end (no skip), sound on when the phone allows (else a button for it); then `done`. */
 export function playIntro(done) {
+  if ($("introVid")) return;
   const src = globalThis.RAFAYA_WAR_INTRO || "media/war-intro.mp4";
   const el = document.createElement("div");
   el.className = "intro-vid"; el.id = "introVid";
-  el.innerHTML = `<video playsinline preload="auto" src="${src}"></video><button type="button" class="iv-skip">تخطّي ›</button><button type="button" class="iv-sound" hidden>🔊 شغّل الصوت</button>`;
+  // no native controls, no play button: the video shows only once it really plays (a gold ring meanwhile)
+  el.innerHTML = `<i class="iv-wait"></i><video playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" src="${src}"></video><button type="button" class="iv-sound" hidden>🔊 شغّل الصوت</button>`;
   document.body.append(el);
   const v = el.querySelector("video");
   let ended = false;
   const end = () => { if (ended) return; ended = true; v.pause(); el.classList.add("out"); setTimeout(() => { el.remove(); done?.(); }, 350); };
   v.addEventListener("ended", end);
+  v.addEventListener("playing", () => el.classList.add("live"));
   v.addEventListener("error", end); // no video (offline): straight on
-  el.querySelector(".iv-skip").addEventListener("click", () => { sfx.tap(); end(); });
   const snd = el.querySelector(".iv-sound");
   snd.addEventListener("click", () => { v.muted = false; v.play().catch(() => {}); snd.hidden = true; });
   v.play().catch(() => { v.muted = true; snd.hidden = false; v.play().catch(end); }); // a phone that blocks sound: muted, with the button

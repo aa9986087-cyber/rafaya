@@ -211,7 +211,8 @@ function diploPanel(st, map, t) {
       ${r.chatOpen ? `<button class="btn danger block" type="button" data-dpdo="endchat">⚔️ أنهِ المحادثة${acts.war ? "" : " وابدأ الحرب"}</button>` : ""}</div>`;
   }
   const watchable = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce" && f.a !== mine && f.b !== mine);
-  return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»</b><small>العمدة ${t.owner} · ${ERAS[t.era || 0].name}</small></div>
+  const med = st.medals?.[t.plot] || [];
+  return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»${med.map((x) => ` <span title="${x.name}">${x.icon}</span>`).join("")}</b><small>العمدة ${t.owner} · ${ERAS[t.era || 0].name}${med.length ? ` · ${med.map((x) => x.name).join(" · ")}` : ""}</small></div>
       <div class="dp-state ${r.state}">${REL_NAMES[r.state]}${relTimer(r)}</div>
       ${ask}${offer}
       ${r.state === "war" ? `<button class="btn go block dp-go" type="button" data-dpdo="attack">🎯 هاجم «${t.town}» الحين</button>` : ""}
@@ -225,8 +226,8 @@ function shieldCard(st) {
   if (!sb) return "";
   if (sb.until > now) return `<div class="dp-shieldcard on"><b>🛡️ درع الحماية شغال</b><small>باقي ${fmtLeft(sb.until - now)} · ما ينضرب فيك شي. إذا هاجمت أحد ينكسر.</small></div>`;
   const wait = sb.next > now ? sb.next - now : 0;
-  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك ٣ أيام بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. مرة وحدة بالشهر. إذا هاجمت وأنت عليه ينكسر.</small>
-    <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع مرة بالشهر: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
+  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك أسبوع بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. بعدها ما ترفعه إلا بعد ٣ أسابيع من رفعه. إذا هاجمت وأنت عليه ينكسر.</small>
+    <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع مرة كل ٣ أسابيع: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
 }
 function defTab(st) {
   const p = st.profile, ars = st.arsenal, caps = st.caps, home = visiting ? visiting.home : S;

@@ -191,7 +191,7 @@ const PV_SCENARIOS = [
   }],
   ["zero", "⏳ ساعة الصفر بعد دقيقة ونص (مع الإعلان)", "يشتغل مقطع الحرب، ثم العداد، ولا وصل صفر يطلع البيان الرسمي وتنفتح الحرب.", () => {
     pvState.warOpenAt = Date.now() + 90000;
-    try { localStorage.removeItem("rafaya-war-intro-v1"); } catch { /* fine */ }
+    store.set("rafaya-war-intro-v1", ""); // the trailer plays again
     setTimeout(() => { setWarOpen(pvState.warOpenAt); ZERO.shown = false; zeroEnter(); }, 300);
     return { plot: null, room: "none", msg: "ساعة الصفر بعد دقيقة ونص." };
   }],

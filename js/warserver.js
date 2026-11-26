@@ -14,7 +14,7 @@ import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
-  MOSQUES, blastArea, shieldPrice, tributeMax, casualties
+  MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS
 } from "./war.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
@@ -36,7 +36,48 @@ export class WarServer {
     a.settings ||= { repair: true, refill: true, budget: this.cfg.autoBudget };
     return a;
   }
-  saveAcct(plot, a) { this.db.put("acct", String(plot), a, { k1: String(plot), at: this.now() }); }
+  saveAcct(plot, a) { a.plot = Number(plot); this.db.put("acct", String(plot), a, { k1: String(plot), at: this.now() }); }
+  /** The war's counts of a town (for the medals): successful strikes, strikes on defences, interceptions, victories. */
+  stat(a, k, n = 1) { a.stats ||= { hits: 0, defHits: 0, intc: 0, wins: 0 }; a.stats[k] = (a.stats[k] || 0) + n; }
+  /** Every town's medals: { plot: [{ icon, name, text }] } (kept a minute: everyone's state shows them). */
+  medals() {
+    const now = this.now();
+    if (this.medalCache && now - this.medalCache.at < 60000) return this.medalCache.map;
+    const rows = this.db.list("acct", {}).filter((a) => a.plot != null && a.stats), map = {};
+    for (const m of MEDALS) {
+      const top = rows.reduce((best, a) => ((a.stats[m.id] || 0) > (best?.stats[m.id] || 0) ? a : best), null);
+      if (top && (top.stats[m.id] || 0) >= m.min) (map[top.plot] ||= []).push({ icon: m.icon, name: m.name, text: m.text, n: top.stats[m.id] });
+    }
+    this.medalCache = { at: now, map };
+    return map;
+  }
+  /**
+   * A war is over (its time ran out, a truce, or peace): the side whose strikes landed more wins it, officially.
+   * Once per war. Returns the relation as it should be stored.
+   */
+  judge(r, now) {
+    if (!r?.warStart || r.judged === r.warStart) return r;
+    const from = r.warStart - this.cfg.T.warning;
+    const landed = (a, b) => this.db.list("op", { k1: String(a), k2: String(b), limit: 300 }).filter((o) => o.status === "done" && o.launchAt >= from && o.result?.dmg > 0).length;
+    const ha = landed(r.a, r.b), hb = landed(r.b, r.a), out = { ...r, judged: r.warStart };
+    if (ha === hb) return out; // a draw: no winner
+    const [w, l, hw, hl] = ha > hb ? [r.a, r.b, ha, hb] : [r.b, r.a, hb, ha];
+    const wn = this.townInfo(w)?.town || "مدينة", ln = this.townInfo(l)?.town || "مدينة";
+    const wa = this.acct(w); this.stat(wa, "wins"); this.saveAcct(w, wa); this.medalCache = null;
+    out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: `انتصار (${nf(hw)} مقابل ${nf(hl)})` }].slice(-30);
+    this.note(w, "victory", `🏆 انتصرت على «${ln}»! ضرباتك وصلت ${nf(hw)} مقابل ${nf(hl)}. أهل مدينتك فخورين فيك.`, { from: l });
+    this.note(l, "defeat", `🏳️ خسرت الحرب أمام «${wn}» (${nf(hl)} مقابل ${nf(hw)}). خطط أحسن للحرب الجاية.`, { from: w });
+    this.news("victory", `🏆 «${wn}» انتصرت على «${ln}» في الحرب (${nf(hw)} مقابل ${nf(hl)})`, l);
+    return out;
+  }
+  /** A stored war whose time ran out since: judge it now (once). */
+  judgeEnded(r, now) {
+    if (!r?.warStart || r.judged === r.warStart || !["war", "warning"].includes(r.state)) return r;
+    if (["war", "warning"].includes(relNow(r, now, this.cfg).state)) return r;
+    const out = this.judge(r, now);
+    this.saveRel(r.a, r.b, out);
+    return out;
+  }
   townInfo(plot) {
     const t = this.world.town(plot);
     if (!t) return null;
@@ -121,7 +162,7 @@ export class WarServer {
   }
   /** A line for the world's bulletin (everyone reads it): only wars, truces, peace and strikes, never who is online. */
   news(kind, text, plot) { try { this.world?.news?.(kind, text, plot); } catch { /* the bulletin never stops the war */ } }
-  rel(a, b) { const r = this.db.get("rel", pairId(a, b)); return r ? this.lapse(r, this.now()) : r; }
+  rel(a, b) { const r = this.db.get("rel", pairId(a, b)); return r ? this.judgeEnded(this.lapse(r, this.now()), this.now()) : r; }
   /** A demand of tribute left without an answer past its day: the war it promised is stored, and both are told (once). */
   lapse(r, now) {
     if (!(r?.tribute && now >= r.tribute.until)) return r;
@@ -161,13 +202,13 @@ export class WarServer {
     if (!info?.snap.list.length) return { error: "زامن مدينتك أول (افتحها شوي)" };
     const a = this.acct(me.plot);
     if (a.shield && a.shield.until > now) return { error: `الدرع شغال: باقي ${minutesText(a.shield.until - now)}` };
-    if (a.shield && now < a.shield.at + this.cfg.T.shieldEvery) return { error: `الدرع مرة بالشهر: تقدر بعد ${minutesText(a.shield.at + this.cfg.T.shieldEvery - now)}` };
+    if (a.shield && now < a.shield.at + this.cfg.T.shieldEvery) return { error: `الدرع مرة كل ٣ أسابيع: تقدر بعد ${minutesText(a.shield.at + this.cfg.T.shieldEvery - now)}` };
     const price = shieldPrice(info.snap.era || info.era || 0, this.cfg);
     if (this.available(info, a) < price) return { error: "ما يكفي المال" };
     a.shield = { at: now, until: now + this.cfg.T.shieldLast };
     const c = this.charge(me.plot, a, price, "درع الحماية");
     this.saveAcct(me.plot, a);
-    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (٣ أيام بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
+    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (أسبوع بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
     for (const r of this.db.list("rel", { either: String(me.plot) })) {
       const v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
       if (["warning", "war"].includes(v.state)) this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: ضرباتك ما توصلها لمدة ${minutesText(this.cfg.T.shieldLast)}.`, { from: me.plot });
@@ -236,7 +277,7 @@ export class WarServer {
     this.settle();
     const now = this.now(), out = [];
     for (const r0 of this.db.list("rel", {})) {
-      const r = this.lapse(r0, now), v = relNow(r, now, this.cfg);
+      const r = this.judgeEnded(this.lapse(r0, now), now), v = relNow(r, now, this.cfg);
       if (!["warning", "war", "truce"].includes(v.state) && !r.tribute) continue;
       const landed = (from, to) => this.db.list("op", { k1: String(from), k2: String(to), limit: 200 }).filter((o) => o.status === "done" && o.launchAt >= (v.warStart || 0) - this.cfg.T.warning && o.result?.dmg > 0).length;
       const started = [...(r.hist || [])].reverse().find((h) => ["war", "refuse", "lapse"].includes(h.kind));
@@ -269,7 +310,7 @@ export class WarServer {
     const now = this.now(), info = this.townInfo(me.plot), a = this.acct(me.plot);
     const p = info ? this.profileOf(info) : milProfile([]);
     const rels = this.db.list("rel", { either: String(me.plot) }).map((r0) => {
-      const r = this.lapse(r0, now), other = r.a === me.plot ? r.b : r.a, o = this.townInfo(other), v = relNow(r, now, this.cfg);
+      const r = this.judgeEnded(this.lapse(r0, now), now), other = r.a === me.plot ? r.b : r.a, o = this.townInfo(other), v = relNow(r, now, this.cfg);
       return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, money: undefined, ...v, hist: (r.hist || []).slice(-20), chat: (r.chat?.lines || []).slice(-40), chatOpen: !!r.chat?.open, lastSay: undefined, lastThreat: undefined };
     }).filter((r) => r.state !== "peace" || r.hist.length || r.chat.length);
     const ops = this.db.list("op", { either: String(me.plot), limit: 40 }).map((o) => this.opPublic(o, me));
@@ -279,7 +320,7 @@ export class WarServer {
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
-      openAt: this.world?.openAt?.() || 0, rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
+      openAt: this.world?.openAt?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }
@@ -432,6 +473,7 @@ export class WarServer {
       this.note(other, act + "Offer", act === "truce" ? `🏳️ «${myName}» تعرض عليك هدنة ${minutesText(this.cfg.T.truce)}.` : `🤝 «${myName}» تعرض عليك الصلح.`, { from: me.plot });
     } else if (act === "accept") {
       const kind = r.offer.kind; r.offer = null;
+      if (["war", "warning"].includes(r.state)) Object.assign(r, this.judge(r, now)); // the war ends here: who won it
       if (kind === "truce") {
         r.state = "truce"; r.since = now; r.truceEnd = now + this.cfg.T.truce;
         log("truce", "هدنة");
@@ -673,6 +715,13 @@ export class WarServer {
       for (const a of hurt) { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y) || { id: a.id }; const c = casualties(t, a.dmg, op.detected, this.cfg); dead += c.dead; hurtN += c.hurt; }
       res.dead = Math.round(dead); res.hurt = Math.round(hurtN);
     }
+    // spoils of war: every economic building hit pays the attacker a share of its repair
+    res.spoils = Math.round(hurt.filter((a) => economic(a.id)).reduce((n, a) => n + repairCostOf(a.id, a.dmg, this.cfg), 0) * SPOILS);
+    if (res.spoils > 0) { const fa = this.acct(op.from); this.charge(op.from, fa, -res.spoils, `غنيمة حرب من «${op.toTown}»`); this.saveAcct(op.from, fa); }
+    // the counts for the medals
+    { const fa = this.acct(op.from), def = hurt.filter((a) => a.id === "airdef" || a.id === "radar").length;
+      if (dmg > 0) { this.stat(fa, "hits"); if (def) this.stat(fa, "defHits", def); this.saveAcct(op.from, fa); this.medalCache = null; }
+      const stopped = res.hits.filter((h) => h.intercepted).length; if (stopped) this.stat(da, "intc", stopped); }
     res.airdef = p ? p.airdefs.filter((x) => x.wd < 85).length : 0; // working batteries (to tell "no defence" from "no interceptors")
     res.intcValue = res.intcUsed * this.cfg.interceptor.price;
     if (dmg > 0) {
@@ -692,7 +741,7 @@ export class WarServer {
       const many = res.area.length > 1 ? ` وتضرر ${nf(res.area.length)} مباني حوله` : "", gone = res.displaced ? `، ونزح ${nf(res.displaced)} ساكن من بيوتهم` : "";
       const toll = res.dead || res.hurt ? ` ⚰️ ${nf(res.dead)} وفاة و🤕 ${nf(res.hurt)} إصابة.` : "";
       this.note(op.to, "hit", `💥 ضربة عسكرية من «${op.fromTown}» على ${op.bname}${many} (أكبر ضرر ${nf(dmg)}٪)${gone}.${toll}${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
-      this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).${toll}`, { op: op.id });
+      this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).${toll}${res.spoils ? ` 💰 غنيمة ${nf(res.spoils)} ريال.` : ""}`, { op: op.id });
       this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»${res.dead || res.hurt ? `: ${nf(res.dead)} وفاة و${nf(res.hurt)} إصابة` : ""}`, op.to);
     } else {
       this.note(op.to, "intercept", `🛡️ دفاعاتك نجحت في اعتراض هجوم «${op.fromTown}».`, { op: op.id });

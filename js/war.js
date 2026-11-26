@@ -25,8 +25,8 @@ export const WAR = {
     warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
     tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
     tributePeace: 30 * JOUF_DAY, // tribute paid: no war and no new demand between the two for a month of al-Jouf
-    shieldLast: 3 * JOUF_DAY,    // a bought shield lasts three days of al-Jouf (less than a war: it shortens one, never cancels it)
-    shieldEvery: 30 * JOUF_DAY,  // and can be bought once a month of al-Jouf
+    shieldLast: 7 * JOUF_DAY,    // a bought shield lasts a week of al-Jouf
+    shieldEvery: 21 * JOUF_DAY,  // and the next one only three weeks of al-Jouf after it was raised
     say: 3000,                   // one line in a threat talk this often
     offer: JOUF_DAY,             // an offer of truce or peace waits a day of al-Jouf for an answer
     heat: 60 * WAR_MIN,          // a launcher that fired lately needs longer to get ready again (each launch in this window adds half)
@@ -218,6 +218,16 @@ export function casualties(b, dmg, warned, cfg = WAR) {
   const reached = people * Math.min(1, dmg / 100), k = warned ? cfg.casualty.warned : 1;
   return { dead: reached * cfg.casualty.dead * k, hurt: reached * cfg.casualty.hurt * k };
 }
+/** Spoils of war: an economic building hit (it makes money, power or water) pays the attacker this share of its repair. */
+export const SPOILS = 0.1;
+export const economic = (id) => !!B[id] && B[id].cat !== "mil" && id !== "house" && !MOSQUES.has(id) && ((B[id].income || 0) > 0 || (B[id].power || 0) > 0 || (B[id].water || 0) > 0);
+/** Medals of al-Jouf: each goes to the town that leads its count (at least `min`). */
+export const MEDALS = [
+  { id: "hits", icon: "🎯", name: "القائد الذكي", text: "أكثر ضربات ناجحة", min: 3 },
+  { id: "defHits", icon: "💥", name: "قاهر الدفاعات", text: "أكثر ضربات على رادارات ودفاعات العدو", min: 2 },
+  { id: "intc", icon: "🛡️", name: "حامي الجوف", text: "أكثر اعتراضات ناجحة", min: 3 },
+  { id: "wins", icon: "🏆", name: "بطل الجوف", text: "أكثر انتصارات بالحروب", min: 1 }
+];
 /** The price of the bought shield for a town at this stage. */
 export const shieldPrice = (era, cfg = WAR) => cfg.shieldPrice[Math.max(0, Math.min(cfg.shieldPrice.length - 1, era || 0))];
 /** The most tribute that may be asked of a town with this budget. */
