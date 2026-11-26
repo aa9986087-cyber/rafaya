@@ -182,6 +182,7 @@ export class Board extends DurableObject {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
       news: (kind, text, plot) => this.news(kind, text, plot),
       badText: (t) => badText(t) || this.moderation.blockedChat(t), // the talk between two mayors goes through the chat's own filter
+      openAt: () => this.warOpenAt(), // ساعة الصفر: no war, tribute or strike before it
       ping: (plot) => this.live({ t: "war" }, plot), // a war note for this town: its game asks for the state now
       notify: (plot, kind, text) => this.push(plot, "⚔️ صراع الجوف", text, `war-${kind}`), // and on the phone, if the game isn't open
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
@@ -558,6 +559,23 @@ export class Board extends DurableObject {
     return json({ error: "not found" }, 404);
   }
 
+  /**
+   * ساعة الصفر: when the wars of al-Jouf open, the same moment for everyone. Set once, the first time this
+   * code runs: 100 days of al-Jouf ahead, at the start of a day. The owner can move it (admin: waropen).
+   */
+  warOpenAt() {
+    const get = (k) => Number(this.sql.exec("SELECT value FROM meta WHERE key = ?", k).toArray()[0]?.value || 0);
+    let at = get("war_open_at");
+    if (!at && !get("war_open_set")) {
+      const clock = { epoch: WORLD_EPOCH, slowAt: get("slow_at") || Date.now(), fastAt: get("fast_at") || Date.now() };
+      const today = dayOf(Math.floor(joufHours(Date.now(), clock)) + 1);
+      at = Math.ceil(joufDayStart(today + 100, clock));
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_at', ?)", String(at));
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_set', '1')");
+    }
+    return at;
+  }
+
   // ---------- the owner's control panel ----------
   async admin(request, p) {
     const post = request.method === "POST", body = post ? await request.json().catch(() => ({})) : {};
@@ -632,6 +650,13 @@ export class Board extends DurableObject {
           .map((x) => { let host = ""; try { host = new URL(x.endpoint).host; } catch { /* blank */ } return { host, created: x.created, status: x.last_status, at: x.last_at, keyed: !!x.keyed }; });
       }
       return json({ list });
+    }
+    if (post && p[0] === "waropen") { // ساعة الصفر: { at } (ms), { days } from now, or { open: true } for now
+      const at = body.open ? Date.now() : body.days ? Date.now() + Number(body.days) * 24 * 50000 : Number(body.at) || 0;
+      if (!(at > 0)) return json({ error: "وقت غير صحيح" });
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_at', ?)", String(Math.round(at)));
+      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_set', '1')");
+      return json({ ok: true, warOpenAt: Math.round(at) });
     }
     if (post && (p[0] === "ban" || p[0] === "remove")) {
       const nm = clean(body.name, 16);
@@ -792,7 +817,7 @@ export class Board extends DurableObject {
       }
       const citizenSupport = this.sql.exec("SELECT day, due, paid_at, recipients FROM citizen_support ORDER BY day")
         .toArray().map(({ day, due, paid_at, recipients }) => ({ day, due, paidAt: paid_at, credited: recipients > 0 }));
-      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport, worldVersion: VERSION });
+      return json({ ...clock, now, gen: WORLD_GEN, citizenSupport, worldVersion: VERSION, warOpenAt: this.warOpenAt() });
     }
     if (!post && p[0] === "chat") {
       const after = int(new URL(request.url).searchParams.get("after"));
