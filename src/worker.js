@@ -68,7 +68,10 @@ const NAMEFIX_REASONS = {
   fake: "الاسم يوهم إنه من الإدارة أو المطور"
 };
 const DEV_NAME = "🛠️ المطور";
-const WAR_OPEN_AT = Date.UTC(2026, 10, 27, 23, 0, 0); // ساعة الصفر: Saturday 28 November 2026, 02:00 in Saudi Arabia // how the owner's messages show in the world's chat
+const WAR_OPEN_AT = Date.UTC(2026, 10, 27, 23, 0, 0);
+// Before the war: every town gets one more move (owner, 2026-11-26). A town that moved before this moment may
+// move once more; one that moves after it has used it.
+const MOVE_ROUND_AT = Date.UTC(2026, 10, 26, 8, 5, 0); // ساعة الصفر: Saturday 28 November 2026, 02:00 in Saudi Arabia // how the owner's messages show in the world's chat
 const CHAT_MUTE_MS = 10 * 60 * 1000;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
@@ -898,7 +901,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       return json({ n: plots.size });
     }
     if (!post && p[0] === "map") {
-      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed, moved > 0 AS moved FROM plots ORDER BY plot LIMIT 3000").toArray();
+      const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed, moved >= ? AS moved FROM plots ORDER BY plot LIMIT 3000", MOVE_ROUND_AT).toArray();
       let fronts = []; try { fronts = this.war.fronts(); } catch { /* the map never fails for the war */ }
       return json({ plots, fronts });
     }
@@ -1052,7 +1055,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       if (this.sql.exec("SELECT 1 FROM plots WHERE plot = ?", to).toArray().length) return json({ error: "الأرض انأخذت، اختر غيرها" });
       const t = this.sql.exec("SELECT town, moved FROM plots WHERE plot = ?", from).toArray()[0];
       if (!t) return json({ error: "ما عندك مدينة تنقلها" });
-      if (t.moved) return json({ error: "نقلت مدينتك قبل، النقل مرة وحدة بس" });
+      if (t.moved >= MOVE_ROUND_AT) return json({ error: "نقلت مدينتك قبل، النقل مرة وحدة بس" });
       if (this.war.inFlight(from)) return json({ error: "فيه عملية حربية بالجو تخص مدينتك، انتظر لين توصل" });
       this.ctx.storage.transactionSync(() => {
         this.sql.exec("UPDATE plots SET plot = ?, moved = ? WHERE plot = ?", to, now, from);

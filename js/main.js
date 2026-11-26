@@ -1198,6 +1198,7 @@ export async function worldMapSheet(pick) {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
         ${id && (id.plot == null) ? `<label class="rg-name">اسم مدينتك <input id="wmTown" type="text" maxlength="20" placeholder="مثلاً: هجرة الشعيب"></label>
           <div class="sheet-actions keep"><button class="btn go block" id="wmClaim" type="button">أسس مدينتك هنا</button></div>` : id && byPlot.get(id.plot) && !byPlot.get(id.plot).moved ? `<p class="hint">كل لاعب له مدينة وحدة بالعالم، بس تقدر تنقل مدينتك هنا بكل اللي فيها (مرة وحدة بس).</p>
+          <div class="need">⚔️ قبل الحرب: المدن القريبة من بعض ضرباتها توصل أسرع (صاروخ الجار يوصل بـ١٢ ثانية، والمسيّرة بـ٢٥). اختر مكانك براحتك، وإذا تبي تبقى بديرتك بكيفك.</div>
           <div class="sheet-actions keep"><button class="btn go block" id="wmMove" type="button">🚚 انقل مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
@@ -1247,6 +1248,7 @@ function moveSheet(t, to) {
   sheet(`<h2>🚚 انقل مدينتك</h2><p>تنقل «<b>${t.town}</b>» من ${worldPlace(id.plot)} إلى ${worldPlace(to)}، أرض ${TERRAINS[worldTerrain(to)].name}.</p>
     <p>كل شي ينتقل معك: المباني والفلوس والسكان والمخازن والحرب والعلاقات والتعليقات. أرضك القديمة تصير فاضية.</p>
     <p class="hint"><b>النقل مرة وحدة بس</b>، وبعدها تثبت مدينتك بمكانها. ويطلع خبر هجرتك بالنشرة.</p>
+    <div class="need">⚔️ تذكّر: كل ما قربت من مدينة، ضرباتها توصلك أسرع وضرباتك توصلها أسرع. الجار القريب يعطيك وقت أقل تشوف الإنذار وتعبّي دفاعك.</div>
     <div class="sheet-actions keep"><button class="btn go block" id="mvGo" type="button">انقلها الحين</button><button class="btn block" id="mvBack" type="button">رجوع</button></div>`, "world");
   $("mvBack").addEventListener("click", () => worldMapSheet(to));
   $("mvGo").addEventListener("click", async (e) => {
