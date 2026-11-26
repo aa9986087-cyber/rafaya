@@ -70,10 +70,20 @@ export function renderCards() {
   }));
 }
 export const FACE_COLORS = ["#d9573f", "#d9a540", "#7cb342", "#3f9a5c"];
-// the mood in the bar: a heart (no faces), its colour from red to green, cracked when the town is unhappy
-const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z", HEART_CRACK = ["M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z", "m12 13-1-1 2-2-3-3 2-2"];
-export const face = (k) => k === 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="${FACE_COLORS[0]}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${HEART_CRACK.map((d) => `<path d="${d}"/>`).join("")}</svg>`
-  : `<svg viewBox="0 0 24 24"><path d="${HEART}" fill="${FACE_COLORS[k]}" stroke="${FACE_COLORS[k]}" stroke-width="1.5" stroke-linejoin="round"/>${k === 3 ? '<path d="M7.6 9.4a2.7 2.7 0 0 1 2.6-2.5" stroke="#fff" stroke-opacity=".75" stroke-width="1.4" fill="none" stroke-linecap="round"/>' : ""}</svg>`;
+// the mood in the bar: a polished face medallion (a gold rim, a lit, coloured face, a shine), never a phone emoji;
+// from a frown to a broad smile with happy eyes as the town grows content
+const FACE_DEEP = ["#8e2414", "#9a6a12", "#3f7a1e", "#1f6b3d"];
+const FACE_EYES = ["M8 10.6h2.2M13.8 10.6H16", "M8.2 10.2a1 1 0 0 0 2 0M13.8 10.2a1 1 0 0 0 2 0", "M8.1 10.4a1.1 1.1 0 0 1 2.2 0M13.7 10.4a1.1 1.1 0 0 1 2.2 0", "M7.9 10.6a1.3 1.3 0 0 1 2.6 0M13.5 10.6a1.3 1.3 0 0 1 2.6 0"];
+const FACE_MOUTH = ["M8.6 16.6c1.9-2.1 4.9-2.1 6.8 0", "M9.2 15.4h5.6", "M8.6 14.4c1.9 2.2 4.9 2.2 6.8 0", "M8 13.6c1.6 3.6 6.4 3.6 8 0z"];
+let faceN = 0;
+export const face = (k) => { const n = `fc${++faceN}`; return `<svg viewBox="0 0 24 24" aria-hidden="true"><defs>
+  <radialGradient id="${n}f" cx=".38" cy=".32" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".25" stop-color="${FACE_COLORS[k]}"/><stop offset="1" stop-color="${FACE_DEEP[k]}"/></radialGradient>
+  <linearGradient id="${n}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1bd"/><stop offset=".45" stop-color="#d9a740"/><stop offset="1" stop-color="#7a5414"/></linearGradient></defs>
+  <circle cx="12" cy="12" r="11.2" fill="url(#${n}g)"/><circle cx="12" cy="12" r="9.4" fill="url(#${n}f)" stroke="#5a3c0c" stroke-opacity=".35" stroke-width=".5"/>
+  <path d="${FACE_EYES[k]}" stroke="#2a1a08" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="${FACE_MOUTH[k]}" stroke="#2a1a08" stroke-width="1.5" fill="${k === 3 ? "#2a1a08" : "none"}" stroke-linecap="round" stroke-linejoin="round"/>
+  ${k >= 2 ? '<circle cx="7.4" cy="13.2" r="1.3" fill="#fff" opacity=".18"/><circle cx="16.6" cy="13.2" r="1.3" fill="#fff" opacity=".18"/>' : ""}
+  <ellipse cx="9" cy="6.6" rx="4.2" ry="1.8" transform="rotate(-24 9 6.6)" fill="#fff" opacity=".28"/></svg>`; };
 export function toast(text, kind = "") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
