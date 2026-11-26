@@ -27,8 +27,8 @@
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
-import { fastWar } from "../js/war.js";
-import { CITY_MILESTONE, ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
+import { fastWar, milTrimPlan, snapBuildings } from "../js/war.js";
+import { B, CITY_MILESTONE, ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
 import { pendingSaveMatches } from "../js/save-version.js";
@@ -194,6 +194,7 @@ export class Board extends DurableObject {
     this.refundDebtFix();
     this.warMoveNotice();
     this.shieldNoticeFix();
+    this.milTrim();
   }
   /**
    * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
@@ -600,6 +601,20 @@ export class Board extends DurableObject {
     if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'notice_war_move_v1'").toArray().length) return;
     this.news("admin", "📢 إعلان من الإدارة ⚔️ ساعة الصفر فجر السبت الساعة ٢، وبعدها تنفتح الحرب للكل 🔥 • 📍 انتبهوا للجيران: كل ما كانت المدينة قريبة منك ضرباتها توصلك أسرع (صاروخ الجار ١٢ ثانية، والمسيّرة ٢٥ ثانية) • 🚚 عشان كذا عطيناكم نقلة ببلاش قبل الحرب، حتى اللي نقل قبل: افتح خريطة الجوف ← اضغط أي أرض فاضية ← «انقل مدينتك هنا»، وكل شي ينتقل معك. واللي مرتاح بديرته يبقى فيها بكيفه 👍 • 🛡️ جهّزوا من الحين: مركز القيادة العسكرية وبطارية دفاع جوي ورادار، عبّوا الصواريخ الاعتراضية، فعّلوا النائب، ودرع الحماية يحميكم ٣ أيام (وإذا خلص ينفتح لكم بعد ٤ أيام) • 📖 كل القوانين في زر «الدليل» تحت «القيادة». بالتوفيق للجميع 🤝🏆", null, null, false);
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('notice_war_move_v1', '1')");
+  }
+  /**
+   * Once: the military count by stage (بلدة ٣ … الحاضرة الكبرى ١١). The buildings over it go (the town's game removes
+   * them when it reads the note) and their worth comes back one and a half times, in the middle of the screen.
+   */
+  milTrim() {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'mil_trim_v1'").toArray().length) return;
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('mil_trim_v1', '1')"); // first: never paid twice
+    for (const r of this.sql.exec("SELECT plot, snapshot FROM plots WHERE snapshot != ''").toArray()) {
+      const t = snapBuildings(r.snapshot), plan = milTrimPlan(t.list, t.era);
+      if (!plan.remove.length) continue;
+      const names = plan.remove.map((b) => B[b.id].name).join("، ");
+      this.war.fine(r.plot, -plan.refund, "refund", `🎖️ النظام الجديد: ${ERAS[t.era]?.name || ""} تبني ${plan.max} مباني عسكرية. شلنا الزايد (${names}) ورجّعنا لك قيمته ومرة ونص: ${plan.refund.toLocaleString("en-US")} ريال.`, "miltrim", { amount: plan.refund, max: plan.max, era: t.era, trim: plan.remove.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
+    }
   }
   /** Once: the shield became three real days (then four to rest): the notice already in the bulletin says so too. */
   shieldNoticeFix() {

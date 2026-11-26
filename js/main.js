@@ -1344,6 +1344,12 @@ export function warApply(st) {
     lost += dead; changed = true;
   }
   home.war.toll = home.war.toll.slice(-200);
+  // the count by stage: the military buildings over it go, once (the server paid their worth back ×1.5)
+  for (const n of st.notes || []) {
+    if (n.kind !== "miltrim" || !Array.isArray(n.trim) || (home.war.trimmed || 0) >= n.at) continue;
+    home.war.trimmed = n.at;
+    for (const b of n.trim) { const t = home.tiles[b.y * N + b.x]; if (t?.b?.id === b.id) { t.b = null; changed = true; } }
+  }
   if (lost && !WARX.scene) toast(`⚰️ فقدت المدينة ${ar(lost)} من أهلها في القصف. الله يرحمهم`, "bad");
   if (world.fx && !visiting) {
     world.fx.repairs = new Map((st.damage || []).filter((r) => r.rep).map((r) => [`${r.x}:${r.y}`, { start: r.rep.start, end: r.rep.end }]));
@@ -1362,10 +1368,10 @@ export function warApply(st) {
   const fresh = (st.notes || []).filter((n) => n.at > warSeen()).sort((a, b) => a.at - b.at);
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
-    for (const n of fresh) if (n.kind === "apology" || n.kind === "gift") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
+    for (const n of fresh) if (n.kind === "apology" || n.kind === "gift" || n.kind === "miltrim") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
     const won = fresh.find((n) => n.kind === "victory");
     if (won) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } victoryScreen(won.enemy); } // a war won: the town is proud
-    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
+    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "miltrim" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
   }

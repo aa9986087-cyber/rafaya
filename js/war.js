@@ -2,7 +2,7 @@
 // same rules run on the server (src/worker.js through js/warserver.js, which decides every result)
 // and in the game (to show prices, reasons and what an attack could do before asking the server).
 // Nothing here is real-world: speeds, ranges and damage are game balance values.
-import { B, MIL, ERAS, GREATER_CITY_STAGE, MAP_SIZE, worldXY } from "./data.js";
+import { B, MIL, MIL_SLOTS, ERAS, GREATER_CITY_STAGE, MAP_SIZE, worldXY } from "./data.js";
 
 const WAR_MIN = 60000, WAR_HOUR = 60 * WAR_MIN;
 /** One day of al-Jouf in real time (24 game hours of 50 s = 20 minutes): the war's weeks and months follow the game's calendar. */
@@ -319,4 +319,22 @@ export function conflictBlocker(a, b, now, cfg = WAR, rel = null) {
   const gap = eraGap(a.era, b.era, cfg);
   if (gap) return gap;
   return "";
+}
+
+/** What a military building is worth: its price and the upgrades paid on it (×1, ×2.5, ×5.5 by level). */
+export const milValue = (id, lvl = 0) => Math.round((B[id]?.cost || 0) * [1, 2.5, 5.5][Math.min(lvl || 0, 2)]);
+/**
+ * Once, when the count by stage came (the owner's rule): the military buildings over the town's count go, and
+ * their worth is paid back one and a half times. What goes: from the kind the town has most of, its lowest
+ * level first, so the town keeps a mix and its best. list: snapBuildings().list → { remove, refund }.
+ */
+export function milTrimPlan(list, era) {
+  const max = MIL_SLOTS[Math.min(era || 0, MIL_SLOTS.length - 1)], mine = list.filter((b) => B[b.id]?.slot).map((b) => ({ x: b.x, y: b.y, id: b.id, lvl: b.lvl || 0 }));
+  const remove = [];
+  while (mine.length > max) {
+    const count = (id) => mine.filter((b) => b.id === id).length;
+    mine.sort((a, b) => count(b.id) - count(a.id) || a.lvl - b.lvl || milValue(a.id, a.lvl) - milValue(b.id, b.lvl));
+    remove.push(mine.shift());
+  }
+  return { remove, refund: Math.round(remove.reduce((n, b) => n + milValue(b.id, b.lvl), 0) * 1.5), max };
 }

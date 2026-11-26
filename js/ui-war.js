@@ -54,7 +54,11 @@ export function apologyBox(n, onClose) {
     el.setAttribute("aria-modal", "true");
     el.setAttribute("aria-label", CITY_MILESTONE.title);
   }
-  el.innerHTML = milestone || n.kind === "gift" ? `<div class="apology-card"><div class="apology-ic">${milestone ? "🎉" : "🎁"}</div><h2>${milestone ? CITY_MILESTONE.title : "هدية من إدارة الجوف"}</h2>
+  el.innerHTML = n.kind === "miltrim" ? `<div class="apology-card"><div class="apology-ic">🎖️</div><h2>النظام العسكري الجديد</h2>
+    <p>صار لكل مرحلة عدد مباني عسكرية: البلدة ٣، المدينة ٥، المحافظة ٧، الحاضرة ٩، والحاضرة الكبرى ١١.</p>
+    <p>مدينتك ${ERAS[n.era]?.name || ""} وكان عندها أكثر من ${ar(n.max || 0)}، فشلنا الزايد: <b>${(n.trim || []).map((b) => B[b.id]?.name).join("، ")}</b></p>
+    <div class="apology-back">رجّعنا لك قيمته ومرة ونص<b>+${money(n.amount || 0)} ريال</b></div>
+    <p class="hint">وتقدر تختار وش تبني بعدده: منصات، قواعد، رادارات، بطاريات… وكبّر مدينتك يزيد عددك 💪</p>` : milestone || n.kind === "gift" ? `<div class="apology-card"><div class="apology-ic">${milestone ? "🎉" : "🎁"}</div><h2>${milestone ? CITY_MILESTONE.title : "هدية من إدارة الجوف"}</h2>
     <div class="apology-back">وصلتك هدية<b>+${money(n.amount || 0)} ريال</b></div>
     ${n.text ? `<p>«${n.text.replace(/[<>]/g, "")}»</p>` : ""}
     ${milestone ? `<p><bdi>— ${CITY_MILESTONE.signature}</bdi></p>` : ""}` : `<div class="apology-card"><div class="apology-ic">🙏</div><h2>نعتذر منك</h2>

@@ -29,7 +29,7 @@ export function setWarOpen(at) {
 /** Right after entering one's town: the trailer (first time only), then the countdown or the announcement. */
 export function zeroEnter() {
   if (!worldMode) return;
-  const next = () => warNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); });
+  const next = () => warNotice(() => milNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); }));
   if (!store.get(INTRO)) { store.set(INTRO, "1"); playIntro(next); } else next();
 }
 
@@ -55,6 +55,26 @@ function warNotice(done) {
   const close = (then) => { el.classList.remove("on"); setTimeout(() => { el.remove(); then?.(); }, 350); };
   el.querySelector("#ntOk").addEventListener("click", () => { sfx.tap(); close(done); });
   el.querySelector("#ntMap").addEventListener("click", () => { sfx.tap(); close(() => document.getElementById("worldBtn")?.click()); });
+}
+
+// ---------- the owner's notice of the military count by stage: once for every player ----------
+const MIL_NOTICE = "rafaya-notice-mil-slots-v1";
+function milNotice(done) {
+  if (store.get(MIL_NOTICE) || !worldMode) { done?.(); return; }
+  store.set(MIL_NOTICE, "1");
+  const el = document.createElement("div");
+  el.className = "zero-ann notice"; el.id = "milNotice";
+  el.innerHTML = `<div class="za-card"><div class="za-seal"><b>🎖️</b></div><small class="za-kicker">إعلان من الإدارة</small>
+      <h2>كم مبنى عسكري تقدر تبني؟</h2>
+      <div class="nt-box"><p>🏘️ البلدة: <b>٣ مباني</b><br>🏙️ المدينة: <b>٥ مباني</b><br>🏛️ المحافظة: <b>٧ مباني</b><br>🌆 الحاضرة: <b>٩ مباني</b><br>👑 الحاضرة الكبرى: <b>١١ مبنى</b></p></div>
+      <div class="nt-box"><b>🎯 وأنت تختار وش تبني</b><p>تبي كلها منصات صواريخ؟ لك.<br>تبي كلها دفاع جوي؟ لك.<br>تبي تخلط؟ لك.<br>(مركز القيادة والمستودع ما ينحسبون)</p></div>
+      <p>اللي كان عنده أكثر من عدده، شلنا الزايد ورجّعنا له قيمته <b>ومرة ونص</b> 💰</p>
+      <p>💪 كبّر مدينتك يزيد عددك</p>
+      <div class="za-acts"><button class="btn go" type="button" id="mnOk">تمام</button></div></div>`;
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add("on"));
+  try { sfx.event(); } catch { /* sound off */ }
+  el.querySelector("#mnOk").addEventListener("click", () => { sfx.tap(); el.classList.remove("on"); setTimeout(() => { el.remove(); done?.(); }, 350); });
 }
 
 // ---------- the chip in the town: always ticking ----------

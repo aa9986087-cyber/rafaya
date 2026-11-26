@@ -500,3 +500,15 @@ test("military buildings: a count by stage, any mix (command centre and armory n
   assert.equal(milSlotsUsed(s), 3); assert.equal(milSlotsMax(s), 3);
   s.era = 5; assert.equal(milSlotsMax(s), 11);
 });
+
+test("military count: the extra buildings go once, from the kind most owned, lowest level first, worth ×1.5 back", async () => {
+  const { milTrimPlan, milValue } = await import("../js/war.js");
+  const list = [["airdef", 0], ["airdef", 1], ["airdef", 0], ["airdef", 2], ["radar", 0], ["radar", 1], ["dronebase", 0], ["dronebase", 0], ["milhq", 0]].map(([id, lvl], i) => ({ x: i, y: 0, id, lvl }));
+  const p = milTrimPlan(list, 1); // a بلدة: 3
+  assert.equal(p.remove.length, 5); assert.equal(p.max, 3);
+  assert.ok(!p.remove.some((b) => b.id === "milhq"));
+  assert.equal(p.refund, Math.round(p.remove.reduce((n, b) => n + milValue(b.id, b.lvl), 0) * 1.5));
+  const kept = list.filter((b) => b.id !== "milhq" && !p.remove.some((r) => r.x === b.x));
+  assert.equal(kept.length, 3); assert.ok(kept.some((b) => b.id === "airdef" && b.lvl === 2));
+  assert.equal(milTrimPlan(list, 5).remove.length, 0);
+});
