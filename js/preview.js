@@ -132,9 +132,9 @@ function pvFill(me) {
   a.reload = {}; pvWar.saveAcct(me.plot, a);
 }
 /** The bot fires a salvo: n spots in the owner's town at once, as the live server allows a player to. */
-function pvSalvo(bot, n, w = "missile") {
+function pvSalvo(bot, n, w = "missile", to = null) {
   pvLandAll();
-  const me = pvMe(), mine = snapBuildings(pvState.plots[me.plot].snapshot);
+  const me = to || pvMe(), mine = snapBuildings(pvState.plots[me.plot].snapshot);
   const spots = mine.list.filter((b) => canTarget(b.id) && !(b.build > 0) && b.id !== "asphalt" && b.id !== "road").sort(() => Math.random() - .5).slice(0, n);
   const a = pvWar.acct(bot.plot); a.arsenal = { drone: 8, drone2: 6, missile: 8, missile2: 6, intc: 6 }; a.reload = {}; pvWar.saveAcct(bot.plot, a);
   // its launchers grow for the scenario so the whole salvo can go at once
@@ -181,6 +181,12 @@ const PV_SCENARIOS = [
   ["bully", "🛡️ أنت الأكبر: جرّب تبدأ على مدينة صغيرة", "ترجع «الخضراء» بسلام معك. جرّب تعلن عليها العداوة: اللعبة تمنعك لأنها أصغر منك بكثير.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 1); pvSetRel(me, bot, "peace");
     return { plot: bot.plot, msg: "«الخضراء» بسلام معك. جرّب «أعلن الحرب» أو «طالب بجزية»." };
+  }],
+  ["watch", "👁️ تابع حرب بين مدينتين", "«هجرة الشعيب» و«الخضراء» بحرب. تتابعها: كل ضربة تنزل على «الخضراء» تشوفها وأنت مو طرف فيها.", () => {
+    const me = pvMe(), a = pvBot("enemy"), b = pvBot("loud"); pvSetEra(a, 4); pvSetEra(b, 3);
+    pvSetRel(me, a, "peace"); pvSetRel(me, b, "peace"); pvSetRel(a, b, "war");
+    setTimeout(() => { const r = pvSalvo(a, 3, "missile", b); pvSave(); if (!r.ok) toast(`ما انطلقت: ${r.error}`, "bad"); }, 4000);
+    return { plot: b.plot, room: "world", follow: true, msg: "تتابع «الخضراء»: بعد ثواني «هجرة الشعيب» تضربها بدفعة، وتشوفها لحظتها." };
   }],
   ["tribute", "🪙 مدينة تطالبك بجزية", "«هجرة الشعيب» تطلب منك مبلغ: ادفع وتاخذ سلام شهر، أو ارفض وتصير حرب.", () => {
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(me, bot, "peace");
@@ -237,6 +243,7 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
     closeSheet(); toast(out.msg, "goal");
     await warPoll(true);
     if (out.plot != null) { ROOM.sel = out.plot; ROOM.form = out.chat ? "chat" : ""; }
+    if (out.follow) followTown(out.plot, pvState.plots[out.plot]?.town || "");
     setTimeout(() => warRoom(out.room || (out.plot != null ? "world" : "log")), 500); // every scenario lands in the war room
   }));
 };

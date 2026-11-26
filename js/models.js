@@ -65,7 +65,19 @@ class Builder {
   box(w, h, d, color, o = {}, set) {
     // walls and big blocks get softly rounded edges that catch the light (small parts stay plain boxes: cheaper)
     const lo = Math.min(w, h, d), hi = Math.max(w, h, d);
-    const geo = !this.far && lo >= 0.1 && hi >= 0.22 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.016, lo / 6)) : new THREE.BoxGeometry(w, h, d);
+    const mid = w + h + d - lo - hi;
+    if (lo <= 0.006 && mid >= 0.012) { // a pane, never a rod (a rod must stay round from every side)
+      // a pane (a window, a lit room, a glass rail): only its two faces can be seen, so it is two faces
+      // (4 triangles) instead of a box (12). Thousands of them in a big town: the same look, a third of the work.
+      const c = { ...o, y: (o.y || 0) + h / 2 };
+      const face = (geoW, geoH, turn, at) => { const g = new THREE.PlaneGeometry(geoW, geoH); turn(g); g.translate(...at); return g; };
+      const pair = d === lo ? [face(w, h, () => {}, [0, 0, d / 2]), face(w, h, (g) => g.rotateY(Math.PI), [0, 0, -d / 2])]
+        : w === lo ? [face(d, h, (g) => g.rotateY(Math.PI / 2), [w / 2, 0, 0]), face(d, h, (g) => g.rotateY(-Math.PI / 2), [-w / 2, 0, 0])]
+          : [face(w, d, (g) => g.rotateX(-Math.PI / 2), [0, h / 2, 0]), face(w, d, (g) => g.rotateX(Math.PI / 2), [0, -h / 2, 0])];
+      for (const g of pair) this.add(g, color, c, set);
+      return this;
+    }
+    const geo =!this.far && lo >= 0.1 && hi >= 0.22 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.016, lo / 6)) : new THREE.BoxGeometry(w, h, d);
     return this.add(geo, color, { ...o, y: (o.y || 0) + h / 2 }, set);
   }
   cyl(rt, rb, h, color, o = {}, seg = 10, set) { return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, { ...o, y: (o.y || 0) + h / 2 }, set); }

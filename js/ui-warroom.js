@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
+import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
@@ -210,13 +210,14 @@ function diploPanel(st, map, t) {
       <div class="dp-send"><input id="wrSay" type="text" maxlength="200" placeholder="اكتب رسالتك…" enterkeyhint="send"><button class="btn go" type="button" data-dpdo="say">إرسال</button></div>
       ${r.chatOpen ? `<button class="btn danger block" type="button" data-dpdo="endchat">⚔️ أنهِ المحادثة${acts.war ? "" : " وابدأ الحرب"}</button>` : ""}</div>`;
   }
+  const watchable = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce" && f.a !== mine && f.b !== mine);
   return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»</b><small>العمدة ${t.owner} · ${ERAS[t.era || 0].name}</small></div>
       <div class="dp-state ${r.state}">${REL_NAMES[r.state]}${relTimer(r)}</div>
       ${ask}${offer}
       ${r.state === "war" ? `<button class="btn go block dp-go" type="button" data-dpdo="attack">🎯 هاجم «${t.town}» الحين</button>` : ""}
       <div class="dp-acts">${big("tribute", "🪙", "طالب بجزية", most >= WAR.tribute.min ? `لين ${money(most)} ريال` : "ميزانيتهم ما تكفي")}${big("war", "⚔️", "أعلن الحرب", `تبدأ بعد ${fmtLeft(WAR.T.warning)}`, "danger")}
         ${big("say", "💬", "محادثة", r.chatOpen ? `${ar((r.chat || []).length)} رسالة` : "تهديد أو شروط بكلامك")}${["warning", "war"].includes(r.state) ? big("truce", "🏳️", "اعرض هدنة", "توقف الضربات فترة") : ""}${r.state !== "peace" ? big("peace", "🤝", "اقترح صلح", "تنتهي الحرب") : ""}</div>
-      ${form}</div>${frontsList(map, t.plot)}`;
+      ${form}${watchable ? `<button class="btn block" type="button" id="dpFollow">${WARX.follow?.plot === t.plot ? "👁️ أوقف المتابعة" : "👁️ تابع حربها: تشوف كل ضربة تنزل عليها"}</button>` : ""}</div>${frontsList(map, t.plot)}`;
 }
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function shieldCard(st) {
@@ -314,6 +315,7 @@ function bind(st) {
     if (act === "war" && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "متأكد؟ اضغط مرة ثانية"; return; }
     relDo(act);
   }));
+  $("dpFollow")?.addEventListener("click", () => { const t = ROOM.map?.plots.find((x) => x.plot === ROOM.sel); if (t) { followTown(t.plot, t.town); warRoom("world"); } });
   $("dpRange")?.addEventListener("input", (e) => { ROOM.amount = Number(e.target.value); $("dpAmt").textContent = money(ROOM.amount); });
   q("[data-dpdo]").forEach((b) => b.addEventListener("click", () => {
     const act = b.dataset.dpdo;

@@ -20,7 +20,7 @@ import { idleClamp, perf, perfHud, perfWatch, runHour } from "./ui-idle.js";
 import { focusTown, howTo, pauseMenu, reachClose, reachView } from "./ui-settings.js";
 import { canDo, canTurn, hoverAt, isMulti, paintAt, paintStarts, pointers, reachLine, roadAim, roadAimStart, roadNext, roadUpWhy, showPending, tileCost, upFits, upgradeWhy, whyNot } from "./ui-tools.js";
 import { arrBill, arrDrop, arrMovable, arrMove, arrPush, arrRemove, arrRender, arrRestore, arrSnapshot, arrUnstroke, arrUp, clearPreview, mosqueGaps, mosqueMap, nearRoad, showMove, showReach } from "./ui-arrange.js";
-import { WARX, apologyBox, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
+import { WARX, apologyBox, followTown, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
 import { F, FIX, NAME_KEEP, face, floatAt, here, nameLandmarks, renderCards, row, toast, toolsBar } from "./ui-build.js";
 import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, showNewsCount, whenSheet, wnewsPoll } from "./ui-news.js";
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
@@ -1185,6 +1185,7 @@ export async function worldMapSheet(pick) {
     if (t) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
+        ${!mine && fronts.some((f) => (f.a === sel || f.b === sel) && f.state !== "truce") && !fronts.some((f) => (f.a === sel || f.b === sel) && (f.a === id?.plot || f.b === id?.plot)) ? `<button class="btn ${WARX.follow?.plot === sel ? "" : "go"} block wm-follow" id="wmFollow" type="button">${WARX.follow?.plot === sel ? "👁️ أوقف المتابعة" : "👁️ تابع حربها: تشوف كل ضربة تنزل عليها"}</button>` : ""}
         <div class="rows">${warsOf(sel)}${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
         <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>${t.renamed ? "" : `<button class="btn block" id="wmRename" type="button">✏️ غيّر اسم مدينتك (مرة وحدة بس)</button>`}` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
@@ -1204,6 +1205,7 @@ export async function worldMapSheet(pick) {
   wmSeen = true;
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
+  $("wmFollow")?.addEventListener("click", () => { sfx.tap(); followTown(sel, t.town); worldMapSheet(sel); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
   $("wmRename")?.addEventListener("click", () => { sfx.tap(); renameSheet(t, plots); });
   $("wmVisit")?.addEventListener("click", () => visitTown(sel));

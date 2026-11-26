@@ -873,3 +873,13 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 .wm-map .wm-war { stroke: #d8392b; stroke-width: .7; stroke-dasharray: 1.6 1; pointer-events: none; animation: wmWar 1.2s linear infinite; }
 .wm-map .wm-war.warning { stroke: #e08a3c; } .wm-map .wm-war.truce { stroke: #9a9381; animation: none; }
 @keyframes wmWar { to { stroke-dashoffset: -2.6; } }
+
+.follow-pill { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255, 90, 74, .6); background: rgba(16, 23, 25, .92); color: #eef0ea; border-radius: 99px; padding: 6px 8px 6px 14px; font: inherit; font-size: 13px; font-weight: 800; box-shadow: 0 6px 18px -8px #000; max-width: calc(100vw - 32px); }
+.follow-pill span { display: grid; text-align: start; } .follow-pill small { font-size: 11px; font-weight: 600; color: #f2c94c !important; }
+.follow-pill b { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); font-size: 12px; flex: none; }
+body.war-scene .follow-pill { display: none; }
+
+/* heat: nothing on the maps moves unless it means something (an animated line repaints the whole map every frame) */
+.wr-world .wm-front, .wr-world .wm-ring, .wm-map .wm-war { animation: none; }
+.wr-world .wm-front.ours.war { animation: wrDash 1.2s linear infinite; }
+body:has(#sheet:not([hidden])) .follow-pill { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }

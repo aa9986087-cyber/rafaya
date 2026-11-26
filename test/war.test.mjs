@@ -399,3 +399,19 @@ test("a strike falls on a spot: the buildings around it are hit too, mosques nev
   assert.ok(res.displaced > 0);
   assert.equal(W.war.publicDamage(2).some((d) => d.x === 40 && d.y === 41), false);
 });
+
+test("watch: anyone can follow the strikes landing on a town at war (public fields only)", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "factory"]] }), c = W.addTown(40, "متفرج", { mil: [] });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 1 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "watch1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  assert.equal(r.ok, true);
+  let v = W.war.handle("watch", { plot: 30 }, c);
+  assert.equal(v.war, true); assert.equal(v.ops[0].status, "flying"); assert.equal(v.ops[0].result, null);
+  W.tick(r.op.arriveAt - W.now() + 1);
+  v = W.war.handle("watch", { plot: 30 }, c);
+  assert.equal(v.ops[0].status, "done"); assert.ok(Array.isArray(v.ops[0].result.hits));
+  assert.equal(v.ops[0].fee, undefined); assert.equal(v.ops[0].value, undefined); assert.equal(v.ops[0].pads, undefined);
+  assert.equal(W.war.handle("watch", { plot: 40 }, c).war, false);
+});

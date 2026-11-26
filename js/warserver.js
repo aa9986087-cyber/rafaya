@@ -198,6 +198,7 @@ export class WarServer {
       case "settings": return this.settings(body, me);
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
+      case "watch": return this.watch(Math.round(Number(body.plot)), me);
       default: return { error: "not found" };
     }
   }
@@ -217,6 +218,23 @@ export class WarServer {
       out.push({ a: r.a, b: r.b, state: v.state, by: started?.kind === "war" ? started.by : null, tribute: !!r.tribute, warStart: v.warStart || 0, warEnd: v.warEnd || 0, truceEnd: v.truceEnd || 0, hitsA: landed(r.a, r.b), hitsB: landed(r.b, r.a) });
     }
     return out;
+  }
+
+  /**
+   * «تابع»: the strikes landing on a town at war, for anyone watching from outside (what the scene needs, the
+   * same as any visitor could see of the damage): the last half hour, and those still in the air.
+   */
+  watch(plot, me) {
+    const info = this.townInfo(plot);
+    if (!info) return { error: "ما لقيت المدينة" };
+    const now = this.now();
+    const ops = this.db.list("op", { k2: String(plot), limit: 60 }).filter((o) => o.status === "flying" || now - (o.doneAt || 0) < 30 * 60000).map((o) => ({
+      id: o.id, salvo: o.salvo || null, from: o.from, to: o.to, fromTown: o.fromTown, toTown: o.toTown, x: o.x, y: o.y, bname: o.bname, load: o.load,
+      launchAt: o.launchAt, arriveAt: o.arriveAt, doneAt: o.doneAt || 0, status: o.status, detected: o.detected, side: "watch",
+      result: o.status === "done" ? { hits: o.result.hits, area: o.result.area, dmg: o.result.dmg, blocked: o.result.blocked, displaced: o.result.displaced || 0, airdef: o.result.airdef || 0 } : null
+    }));
+    const war = this.db.list("rel", { either: String(plot) }).some((r) => ["warning", "war"].includes(relNow(this.lapse(r, now), now, this.cfg).state));
+    return { town: info.town, war, ops, now, mine: plot === me.plot };
   }
 
   // ---------- reading ----------

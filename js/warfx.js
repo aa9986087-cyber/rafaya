@@ -271,7 +271,12 @@ export class WarFX {
    * points: [{ x, y, r, on }], hit: [{ x, y, f }] (f: how hard, 0 … 1).
    */
   showStrike(points, hit) {
-    for (const m of [...this.marks.children]) if (m.userData.strike) { this.marks.remove(m); m.geometry?.dispose(); if (m.userData.own) m.material.dispose(); }
+    for (const m of [...this.marks.children]) if (m.userData.strike) { // drawn again often (each hit): give the GPU its memory back each time
+      this.marks.remove(m);
+      if (!m.isSprite) m.geometry?.dispose(); // a sprite's geometry is three's shared one
+      if (m.userData.ownMap) m.material.map?.dispose();
+      if (m.userData.own) m.material.dispose();
+    }
     if (!points) return;
     const flat = (w, h, color, opacity, map = null, add = true) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, opacity, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false }));
@@ -301,7 +306,7 @@ export class WarFX {
       const g = cv.getContext("2d"); g.fillStyle = on ? "#d63b2f" : "#8f6a24"; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
       g.strokeStyle = "#fff"; g.lineWidth = 4; g.stroke(); g.fillStyle = "#fff"; g.font = "bold 34px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(i + 1).replace(/\d/g, (x) => "٠١٢٣٤٥٦٧٨٩"[x]), 32, 34);
       const tex = new THREE.CanvasTexture(cv), sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-      sp.position.set(c.x, h + 0.2, c.z); sp.scale.set(on ? 0.46 : 0.34, on ? 0.46 : 0.34, 1); sp.renderOrder = 8; sp.userData = { strike: true, own: true, bob: Math.random() * 6, target: true, high: h + 0.2 };
+      sp.position.set(c.x, h + 0.2, c.z); sp.scale.set(on ? 0.46 : 0.34, on ? 0.46 : 0.34, 1); sp.renderOrder = 8; sp.userData = { strike: true, own: true, ownMap: true, bob: Math.random() * 6, target: true, high: h + 0.2 };
       this.marks.add(sp);
     });
   }

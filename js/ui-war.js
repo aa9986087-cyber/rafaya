@@ -642,6 +642,66 @@ export async function warSalvoScene(ops, launch) {
     if (visiting && !WARX.targeting) leaveVisit();
   }
 }
+// ---------- «تابع»: watching a war from outside ----------
+/** Follow a town at war: every strike that lands on it plays here as it lands (one check every 20 s, or right after an arrival). */
+export function followTown(plot, town) {
+  if (WARX.follow?.plot === plot) { stopFollow(); return; }
+  stopFollow(true);
+  WARX.follow = { plot, town, seen: null, t: 0 };
+  followPill("");
+  toast(`👁️ تتابع «${town}»: أي ضربة تنزل عليها تشوفها لحظتها`, "goal");
+  followPoll();
+}
+export function stopFollow(quiet) {
+  if (!WARX.follow) return;
+  clearTimeout(WARX.follow.t); WARX.follow = null;
+  $("followPill")?.remove();
+  if (!quiet) toast("👁️ وقفت المتابعة", "");
+}
+function followPill(sub) {
+  let el = $("followPill");
+  if (!el) { el = document.createElement("button"); el.id = "followPill"; el.type = "button"; el.className = "follow-pill"; el.setAttribute("aria-label", "أوقف المتابعة"); el.addEventListener("click", () => { sfx.tap(); stopFollow(); }); document.body.append(el); }
+  el.innerHTML = `<span>👁️ تتابع «${WARX.follow.town}»${sub ? `<small>${sub}</small>` : ""}</span><b>✕</b>`;
+}
+async function followPoll() {
+  const f = WARX.follow; if (!f) return;
+  clearTimeout(f.t);
+  const next = (ms) => { if (WARX.follow === f) f.t = setTimeout(followPoll, ms); };
+  if (document.hidden) { next(20000); return; } // the phone in a pocket: no checks
+  const r = await warApi("watch", { plot: f.plot });
+  if (WARX.follow !== f) return;
+  if (r.error) { next(30000); return; }
+  if (r.mine) { stopFollow(true); return; } // your own town: its attacks play anyway
+  const done = r.ops.filter((o) => o.status === "done"), flying = r.ops.filter((o) => o.status === "flying").sort((a, b) => a.arriveAt - b.arriveAt);
+  if (!f.seen) f.seen = new Set(done.map((o) => o.id)); // what landed before you started following is not played again
+  const fresh = done.filter((o) => !f.seen.has(o.id) && !(o.salvo && flying.some((x) => x.salvo === o.salvo)));
+  followPill(flying.length ? `هجوم يوصلها بعد ${secLeft(flying[0].arriveAt - r.now)}` : r.war ? "بانتظار الضربة الجاية" : "");
+  if (fresh.length && !WARX.scene && !WARX.targeting && sheetFor !== "decision") { fresh.forEach((o) => f.seen.add(o.id)); spectateScene(fresh); }
+  if (!r.war && !flying.length && !fresh.length) { toast(`🕊️ ما عاد فيه حرب على «${f.town}»: وقفت المتابعة`, ""); stopFollow(true); return; }
+  next(flying.length ? Math.max(2500, Math.min(20000, flying[0].arriveAt - r.now + 1500)) : 20000);
+}
+/** A strike between two other towns, seen from the town it lands on (nothing of yours changes). */
+async function spectateScene(ops) {
+  if (WARX.scene) return;
+  const hurt = ops.reduce((n, o) => n + (o.result?.area?.length || 0), 0), stopped = ops.reduce((n, o) => n + (o.result?.hits || []).filter((h) => h.intercepted).length, 0);
+  const sum = `👁️ «${ops[0].toTown}»: ${ar(hurt)} مباني تضررت · ${ar(stopped)} انعترض`;
+  if (sceneMode() === "off") { toast(sum, ""); return; }
+  WARX.scene = { op: ops[0], watch: true };
+  sceneUi(true); closeSheet(); setTool(null);
+  world.fx.speed = sceneMode() === "fast" ? 2.2 : 1;
+  try {
+    banner(`👁️ «${[...new Set(ops.map((o) => o.fromTown))].join("» و«")}» تضرب «${ops[0].toTown}»`, "bad");
+    if (await sceneTown(ops[0].to)) {
+      salvoBefore(ops);
+      if (ops.some((o) => !o.result.blocked)) await world.fx.playIncoming(salvoOpts(ops, defenceOf(S)));
+    }
+    world.fx.clear();
+    toast(sum, "");
+  } finally {
+    sceneUi(false); WARX.scene = null; world.fx.clear();
+    if (visiting && !WARX.targeting) leaveVisit();
+  }
+}
 /** Watch again everything in a report together (an attack of several towns). */
 async function warReplayAll(ops) {
   if (WARX.scene) return;
