@@ -1011,3 +1011,8 @@ body.war-scene .hud .zero-chip, body.targeting .hud .zero-chip { display: none; 
 /* a smaller zero-hour chip */
 .hud .zero-chip { padding: 3px 8px 3px 5px; gap: 6px; border-radius: 10px; margin-top: 3px; }
 .hud .zero-chip i { font-size: 13px; } .hud .zero-chip b { font-size: 11px; } .hud .zero-chip small { font-size: 9px; }
+
+/* the front map works like the diplomacy map: all of al-Jouf, zoom and drag, names never overlapping */
+.wr-front { max-height: 250px; }
+.wr-front .wr-line { stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
+.wr-front .wm-t.on circle:not(.wm-hit) { stroke: #fff6; }

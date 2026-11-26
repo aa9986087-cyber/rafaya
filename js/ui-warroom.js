@@ -71,22 +71,33 @@ function frontMap(map, st) {
   const mine = me()?.plot, cell = 10, xy = (p) => { const [x, y] = worldXY(p); return [x * cell + cell / 2, y * cell + cell / 2]; };
   const rels = (st?.rels || []).filter((r) => r.state !== "peace"), flying = liveOps(st).filter((o) => o.status === "flying");
   const involved = new Set([mine, ...rels.map((r) => r.other), ...flying.flatMap((o) => [o.from, o.to])].filter((p) => p != null));
-  const pts = [...involved].map(xy), all = map.plots.map((t) => xy(t.plot)), frame = pts.length > 1 ? pts : all;
-  let x0 = Math.min(...frame.map((a) => a[0])) - 40, x1 = Math.max(...frame.map((a) => a[0])) + 40, y0 = Math.min(...frame.map((a) => a[1])) - 30, y1 = Math.max(...frame.map((a) => a[1])) + 30;
-  const minW = 180; if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = c - minW / 2; x1 = c + minW / 2; }
-  if ((y1 - y0) < (x1 - x0) * 0.42) { const c = (y0 + y1) / 2, h = (x1 - x0) * 0.42; y0 = c - h / 2; y1 = c + h / 2; }
-  const k = (x1 - x0) / 340; // user units per screen pixel (about)
-  const name = (p) => p === mine ? "مدينتي" : map.plots.find((t) => t.plot === p)?.town || "";
-  const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl" style="font-size:${8 * k}px">${p.name}</text>`).join("");
-  const dots = map.plots.filter((t) => !involved.has(t.plot)).map((t) => { const [x, y] = xy(t.plot); return `<circle cx="${x}" cy="${y}" r="${2.2 * k}" class="ff-dot"/>`; }).join("");
+  const all = map.plots.map((t) => xy(t.plot));
+  const x0 = Math.max(0, Math.min(...all.map((a) => a[0])) - 30), x1 = Math.min(WORLD.cols * cell, Math.max(...all.map((a) => a[0])) + 30);
+  const y0 = Math.max(0, Math.min(...all.map((a) => a[1])) - 22), y1 = Math.min(WORLD.rows * cell, Math.max(...all.map((a) => a[1])) + 22);
+  // the view starts on the towns in the war (all of al-Jouf when it is quiet); then it is the mayor's to move
+  const Z = (ROOM.fz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
+  const pts = [...involved].map(xy);
+  if (pts.length > 1) {
+    let a0 = Math.min(...pts.map((p) => p[0])) - 40, a1 = Math.max(...pts.map((p) => p[0])) + 40, b0 = Math.min(...pts.map((p) => p[1])) - 30, b1 = Math.max(...pts.map((p) => p[1])) + 30;
+    const w = Math.max(a1 - a0, (b1 - b0) / (Z.full[3] / Z.full[2]), Z.full[2] / 4);
+    Z.start = [(a0 + a1) / 2 - w / 2, (b0 + b1) / 2 - w * Z.full[3] / Z.full[2] / 2, w, w * Z.full[3] / Z.full[2]];
+  } else Z.start = null;
+  const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.start || Z.full;
+  const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
+  const byPop = [...map.plots].sort((a, b) => (b.pop || 0) - (a.pop || 0)), rank = new Map(byPop.map((t, i) => [t.plot, i]));
   const lines = flying.map((o, i) => {
     const [ax, ay] = xy(o.from), [bx, by] = xy(o.to), d = Math.hypot(bx - ax, by - ay) || 1;
-    const lift = (o.side === "in" ? 1 : -1) * (0.22 * d + (i % 3) * 6 * k), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
-    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${o.side}" style="stroke-width:${2 * k}px;stroke-dasharray:${5 * k} ${4 * k}"/><circle r="${4.5 * k}" class="wr-dot ${o.side}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
+    const lift = (o.side === "in" ? 1 : -1) * (0.22 * d + (i % 3) * 4), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
+    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${o.side}"/><circle r="4" data-r="4" class="wr-dot ${o.side}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
   }).join("");
-  const towns = [...involved].map((p) => { const [x, y] = xy(p), rel = rels.find((r) => r.other === p), inN = flying.filter((o) => o.from === p).length, outN = flying.filter((o) => o.to === p).length;
-    return `<g class="wr-town ${p === mine ? "me" : rel?.state || ""}"><circle cx="${x}" cy="${y}" r="${(p === mine ? 7 : 5.5) * k}" style="stroke-width:${1.5 * k}px"/><text x="${x}" y="${y - 10 * k}" style="font-size:${11 * k}px;stroke-width:${2.4 * k}px">${name(p)}</text>${inN || outN ? `<text class="wr-count" x="${x}" y="${y + 18 * k}" style="font-size:${10 * k}px;stroke-width:${2 * k}px">${inN ? `🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>` : ""}</g>`; }).join("");
-  return `<svg class="wr-map wr-map-geo" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" role="img" aria-label="خريطة الجبهة">${places}${dots}${lines}${towns}</svg>`;
+  const towns = map.plots.map((t) => {
+    const [x, y] = xy(t.plot), on = involved.has(t.plot), rel = rels.find((r) => r.other === t.plot), state = t.plot === mine ? "me" : rel?.state || "peace";
+    const inN = flying.filter((o) => o.from === t.plot).length, outN = flying.filter((o) => o.to === t.plot).length;
+    const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
+    return `<g class="wm-t ${state} ${on ? "on" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? "مدينتي" : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
+  }).join("");
+  return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${towns}</svg>
+    <div class="wr-zoom" data-for="wrFront"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الجوف">⤢</button></div></div>`;
 }
 /** Every second while the room is open: the countdowns and the dots move (the tabs are left alone). */
 function tick() {
@@ -193,11 +204,11 @@ function worldSvg(map, st) {
     const pri = (t.plot === mine ? 5e6 : 0) + (sel ? 4e6 : 0) + (r && r.state !== "peace" ? 3e6 : 0) + (atWar ? 2e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
     return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? "مدينتي" : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
   }).join("");
-  ROOM.full = [x0, y0, x1 - x0, y1 - y0];
-  const v = ROOM.mv && ROOM.mvFull === ROOM.full.join() ? ROOM.mv : ROOM.full;
-  ROOM.mvFull = ROOM.full.join();
+  const Z = (ROOM.wz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
+  const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.full;
+  Z.mvFull = Z.full.join();
   return `<div class="wr-world-box"><svg class="wr-world" id="wrWorld" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>
-    <div class="wr-zoom"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الخريطة">⤢</button></div>
+    <div class="wr-zoom" data-for="wrWorld"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الخريطة">⤢</button></div>
     <small class="wr-zoom-hint">قرّب بإصبعين أو بـ＋ عشان تشوف أسماء أكثر</small></div>`;
 }
 async function worldTab(st) {
@@ -420,14 +431,16 @@ function bind(st) {
  * The map of al-Jouf zooms and pans (two fingers to pinch, one to drag, or the buttons). Dots and names keep
  * their size on the screen, and a name shows only where it does not cover another (more show as you zoom in).
  */
-function worldZoom() {
-  const svg = $("wrWorld"); if (!svg || !ROOM.full) return;
-  const [fx, fy, fw, fh] = ROOM.full, ratio = fh / fw;
-  let v = ROOM.mv && ROOM.mvFull === ROOM.full.join() ? [...ROOM.mv] : [...ROOM.full];
+function worldZoom() { zoomable($("wrWorld"), ROOM.wz); zoomable($("wrFront"), ROOM.fz); }
+function zoomable(svg, Z) {
+  if (!svg || !Z?.full) return;
+  const [fx, fy, fw, fh] = Z.full, ratio = fh / fw;
+  let v = Z.mv && Z.mvFull === Z.full.join() ? [...Z.mv] : [...(Z.start || Z.full)];
+  Z.mvFull = Z.full.join();
   const apply = () => {
     v[2] = Math.min(fw, Math.max(fw / 10, v[2])); v[3] = v[2] * ratio;
     v[0] = Math.min(fx + fw - v[2], Math.max(fx, v[0])); v[1] = Math.min(fy + fh - v[3], Math.max(fy, v[1]));
-    ROOM.mv = [...v];
+    Z.mv = [...v];
     svg.setAttribute("viewBox", v.join(" "));
     const k = v[2] / fw, px = v[2] / Math.max(1, svg.clientWidth); // user units in one screen pixel
     svg.querySelectorAll("[data-r]").forEach((c) => c.setAttribute("r", Number(c.dataset.r) * Math.max(0.35, Math.sqrt(k))));
@@ -473,9 +486,9 @@ function worldZoom() {
   const up = (e) => { pts.delete(e.pointerId); start = pts.size ? { v: [...v], pts: new Map([...pts].map(([k, p]) => [k, { ...p }])) } : null; if (!pts.size && ROOM.dragged) setTimeout(() => { ROOM.dragged = false; }, 50); };
   svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up); svg.addEventListener("pointerleave", up);
   svg.addEventListener("wheel", (e) => { e.preventDefault(); const [cx, cy] = toUser(e); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, cx, cy); }, { passive: false });
-  $("sheetBody").querySelectorAll("[data-wrzoom]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); const f = Number(b.dataset.wrzoom); if (!f) { v = [...ROOM.full]; apply(); } else zoomAt(f); }));
+  $("sheetBody").querySelectorAll(`[data-for="${svg.id}"] [data-wrzoom]`).forEach((b) => b.addEventListener("click", () => { sfx.tap(); const f = Number(b.dataset.wrzoom); if (!f) { v = [...Z.full]; apply(); } else zoomAt(f); }));
   // a town chosen from outside the map (an alert, the world map): bring it into view
-  if (ROOM.sel != null && ROOM.focusSel) { ROOM.focusSel = false; const c = svg.querySelector(`[data-wrsel="${ROOM.sel}"]`); if (c) { const cx = Number(c.getAttribute("cx")), cy = Number(c.getAttribute("cy")); v[2] = Math.min(v[2], fw / 3); v[3] = v[2] * ratio; v[0] = cx - v[2] / 2; v[1] = cy - v[3] / 2; } }
+  if (svg.id === "wrWorld" && ROOM.sel != null && ROOM.focusSel) { ROOM.focusSel = false; const c = svg.querySelector(`[data-wrsel="${ROOM.sel}"]`); if (c) { const cx = Number(c.getAttribute("cx")), cy = Number(c.getAttribute("cy")); v[2] = Math.min(v[2], fw / 3); v[3] = v[2] * ratio; v[0] = cx - v[2] / 2; v[1] = cy - v[3] / 2; } }
   apply();
 }
 /** One relation action with the selected town, then the room again (with the talk kept open for a message). */
