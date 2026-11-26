@@ -250,7 +250,7 @@ export function relTimer(r) {
 }
 export async function relSheet(plot) {
   // with a command centre: the town opens in the war room's map (tribute, war, talk, truce, peace)
-  if ((visiting ? visiting.home : S).tiles.some((t) => t.b?.id === "milhq")) { ROOM.sel = plot; ROOM.form = ""; warRoom("world"); return; }
+  if ((visiting ? visiting.home : S).tiles.some((t) => t.b?.id === "milhq")) { ROOM.sel = plot; ROOM.form = ""; ROOM.focusSel = true; warRoom("world"); return; }
   const st = await warPoll(true) || WARX.st;
   let r = st?.rels.find((x) => x.other === plot);
   let info = r ? { town: r.town, owner: r.owner, era: r.era } : null;

@@ -980,3 +980,11 @@ body:has(.zero-full) .zero-chip { display: none; }
 .zero-ann.win h2 { font-size: 36px; }
 .zero-ann .fw { position: absolute; left: var(--x); top: var(--y); width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); opacity: 0; animation: fw 2.4s ease-out var(--d) 3; }
 @keyframes fw { 0% { transform: scale(.2); opacity: 1; box-shadow: 0 0 0 0 var(--c); } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 0; box-shadow: 0 -40px 0 -2px var(--c), 28px -28px 0 -2px var(--c), 40px 0 0 -2px var(--c), 28px 28px 0 -2px var(--c), 0 40px 0 -2px var(--c), -28px 28px 0 -2px var(--c), -40px 0 0 -2px var(--c), -28px -28px 0 -2px var(--c); } }
+
+/* the war room's al-Jouf map: zoom and pan */
+.wr-world-box { position: relative; }
+.wr-world { touch-action: none; max-height: 340px; aspect-ratio: auto; cursor: grab; }
+.wr-world .wm-t text.wm-name { font-size: 9px; }
+.wr-zoom { position: absolute; top: 8px; left: 8px; display: grid; gap: 4px; }
+.wr-zoom button { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--wr-line); background: rgba(16, 23, 25, .85); color: var(--wr-ink); font-size: 16px; font-weight: 800; }
+.wr-zoom-hint { display: block; text-align: center; font-size: 11px; margin-top: 4px; }

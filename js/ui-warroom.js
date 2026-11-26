@@ -157,12 +157,20 @@ function worldSvg(map, st) {
   const fronts = map.fronts.map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b), ours = f.a === mine || f.b === mine;
     return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wm-front ${f.state} ${ours ? "ours" : ""}"/>`; }).join("");
   const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
+  // every town has its name; which names show is decided on the screen (zoom in for more): the most
+  // important first (mine, the chosen one, enemies, towns at war, the biggest), never one over another
+  const byPop = [...plots].sort((a, b) => (b.pop || 0) - (a.pop || 0)), rank = new Map(byPop.map((t, i) => [t.plot, i]));
   const towns = plots.map((t) => {
     const [x, y] = xy(t.plot), r = rel(t.plot), state = t.plot === mine ? "me" : r?.state || "peace", sel = ROOM.sel === t.plot, atWar = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce");
-    const named = t.plot === mine || sel || (r && r.state !== "peace");
-    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}"/>${named ? `<text x="${x}" y="${y - 8}">${t.plot === mine ? "مدينتي" : t.town}</text>` : ""}<circle cx="${x}" cy="${y}" r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
+    const pri = (t.plot === mine ? 5e6 : 0) + (sel ? 4e6 : 0) + (r && r.state !== "peace" ? 3e6 : 0) + (atWar ? 2e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
+    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? "مدينتي" : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
   }).join("");
-  return `<svg class="wr-world" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>`;
+  ROOM.full = [x0, y0, x1 - x0, y1 - y0];
+  const v = ROOM.mv && ROOM.mvFull === ROOM.full.join() ? ROOM.mv : ROOM.full;
+  ROOM.mvFull = ROOM.full.join();
+  return `<div class="wr-world-box"><svg class="wr-world" id="wrWorld" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>
+    <div class="wr-zoom"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الخريطة">⤢</button></div>
+    <small class="wr-zoom-hint">قرّب بإصبعين أو بـ＋ عشان تشوف أسماء أكثر</small></div>`;
 }
 async function worldTab(st) {
   const map = await worldMap();
@@ -305,8 +313,9 @@ function bind(st) {
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
   // al-Jouf and diplomacy
-  q("[data-wrsel]").forEach((c) => c.addEventListener("click", () => { sfx.tap(); const p = Number(c.dataset.wrsel); ROOM.sel = ROOM.sel === p ? null : p; ROOM.form = ""; warRoom("world"); }));
-  q("[data-wrask]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.sel = Number(b.dataset.wrask); const r = st.rels.find((x) => x.other === ROOM.sel); ROOM.form = r?.chatOpen && !r.tribute && !r.offer ? "chat" : ""; warRoom("world"); }));
+  worldZoom();
+  q("[data-wrsel]").forEach((c) => c.addEventListener("click", () => { if (ROOM.dragged) return; sfx.tap(); const p = Number(c.dataset.wrsel); ROOM.sel = ROOM.sel === p ? null : p; ROOM.form = ""; warRoom("world"); }));
+  q("[data-wrask]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.sel = Number(b.dataset.wrask); ROOM.focusSel = true; const r = st.rels.find((x) => x.other === ROOM.sel); ROOM.form = r?.chatOpen && !r.tribute && !r.offer ? "chat" : ""; warRoom("world"); }));
   q("[data-dpform]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.form = b.dataset.dpform; warRoom("world"); }));
   q("[data-dp]").forEach((b) => b.addEventListener("click", () => {
     if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }
@@ -376,6 +385,68 @@ function bind(st) {
   }));
 }
 
+/**
+ * The map of al-Jouf zooms and pans (two fingers to pinch, one to drag, or the buttons). Dots and names keep
+ * their size on the screen, and a name shows only where it does not cover another (more show as you zoom in).
+ */
+function worldZoom() {
+  const svg = $("wrWorld"); if (!svg || !ROOM.full) return;
+  const [fx, fy, fw, fh] = ROOM.full, ratio = fh / fw;
+  let v = ROOM.mv && ROOM.mvFull === ROOM.full.join() ? [...ROOM.mv] : [...ROOM.full];
+  const apply = () => {
+    v[2] = Math.min(fw, Math.max(fw / 10, v[2])); v[3] = v[2] * ratio;
+    v[0] = Math.min(fx + fw - v[2], Math.max(fx, v[0])); v[1] = Math.min(fy + fh - v[3], Math.max(fy, v[1]));
+    ROOM.mv = [...v];
+    svg.setAttribute("viewBox", v.join(" "));
+    const k = v[2] / fw, px = v[2] / Math.max(1, svg.clientWidth); // user units in one screen pixel
+    svg.querySelectorAll("[data-r]").forEach((c) => c.setAttribute("r", Number(c.dataset.r) * Math.max(0.35, Math.sqrt(k))));
+    svg.querySelectorAll(".wm-name").forEach((t) => { t.style.fontSize = `${11 * px}px`; t.setAttribute("y", Number(t.dataset.y) - 9 * px); t.style.strokeWidth = `${2.6 * px}px`; });
+    svg.querySelectorAll(".wm-pl").forEach((t) => { t.style.fontSize = `${9 * px}px`; });
+    declutter();
+  };
+  let pending = 0;
+  const declutter = () => { if (pending) return; pending = requestAnimationFrame(() => {
+    pending = 0;
+    const box = svg.getBoundingClientRect(), placed = [];
+    const labels = [...svg.querySelectorAll(".wm-name")].sort((a, b) => Number(b.dataset.pri) - Number(a.dataset.pri));
+    for (const t of labels) {
+      t.style.display = "";
+      const r = t.getBoundingClientRect();
+      const out = r.right < box.left || r.left > box.right || r.bottom < box.top || r.top > box.bottom;
+      const hit = placed.some((p) => r.left < p.right + 3 && r.right > p.left - 3 && r.top < p.bottom + 1 && r.bottom > p.top - 1);
+      if (out || hit) t.style.display = "none"; else placed.push(r);
+    }
+  }); };
+  const zoomAt = (f, cx = v[0] + v[2] / 2, cy = v[1] + v[3] / 2) => { const w = v[2] / f; v[0] = cx - (cx - v[0]) * (w / v[2]); v[1] = cy - (cy - v[1]) * (w / v[2]); v[2] = w; apply(); };
+  const toUser = (e) => { const r = svg.getBoundingClientRect(); return [v[0] + (e.clientX - r.left) / r.width * v[2], v[1] + (e.clientY - r.top) / r.height * v[3]]; };
+  const pts = new Map(); let start = null;
+  svg.addEventListener("pointerdown", (e) => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); ROOM.dragged = false; start = { v: [...v], pts: new Map([...pts].map(([k, p]) => [k, { ...p }])) }; });
+  svg.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId) || !start) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const r = svg.getBoundingClientRect(), s = start.v[2] / r.width;
+    const now = [...pts.values()], was = [...start.pts.values()];
+    if (now.length >= 2 && was.length >= 2) { // pinch: the spread between the fingers sets the zoom, around their middle
+      const d0 = Math.hypot(was[0].x - was[1].x, was[0].y - was[1].y), d1 = Math.hypot(now[0].x - now[1].x, now[0].y - now[1].y);
+      const mx = (was[0].x + was[1].x) / 2 - r.left, my = (was[0].y + was[1].y) / 2 - r.top;
+      const cx = start.v[0] + mx * s, cy = start.v[1] + my * s, w = start.v[2] * d0 / Math.max(10, d1);
+      v = [cx - (cx - start.v[0]) * (w / start.v[2]), cy - (cy - start.v[1]) * (w / start.v[2]), w, w * ratio];
+      ROOM.dragged = true; apply();
+    } else if (now.length === 1 && was.length === 1) {
+      const dx = now[0].x - was[0].x, dy = now[0].y - was[0].y;
+      if (!ROOM.dragged && Math.hypot(dx, dy) < 6) return; // a tap stays a tap
+      ROOM.dragged = true;
+      v = [start.v[0] - dx * s, start.v[1] - dy * s, start.v[2], start.v[3]]; apply();
+    }
+  });
+  const up = (e) => { pts.delete(e.pointerId); start = pts.size ? { v: [...v], pts: new Map([...pts].map(([k, p]) => [k, { ...p }])) } : null; if (!pts.size && ROOM.dragged) setTimeout(() => { ROOM.dragged = false; }, 50); };
+  svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up); svg.addEventListener("pointerleave", up);
+  svg.addEventListener("wheel", (e) => { e.preventDefault(); const [cx, cy] = toUser(e); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, cx, cy); }, { passive: false });
+  $("sheetBody").querySelectorAll("[data-wrzoom]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); const f = Number(b.dataset.wrzoom); if (!f) { v = [...ROOM.full]; apply(); } else zoomAt(f); }));
+  // a town chosen from outside the map (an alert, the world map): bring it into view
+  if (ROOM.sel != null && ROOM.focusSel) { ROOM.focusSel = false; const c = svg.querySelector(`[data-wrsel="${ROOM.sel}"]`); if (c) { const cx = Number(c.getAttribute("cx")), cy = Number(c.getAttribute("cy")); v[2] = Math.min(v[2], fw / 3); v[3] = v[2] * ratio; v[0] = cx - v[2] / 2; v[1] = cy - v[3] / 2; } }
+  apply();
+}
 /** One relation action with the selected town, then the room again (with the talk kept open for a message). */
 async function relDo(act, extra = {}) {
   const other = ROOM.sel;
