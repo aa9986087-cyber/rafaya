@@ -975,8 +975,14 @@ body.war-scene .zero-chip, body.targeting .zero-chip, body:has(#sheet:not([hidde
 .zero-x { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 14px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(224,189,114,.4); background: rgba(255,255,255,.08); color: #f1e7cc; font-size: 16px; z-index: 1; }
 body:has(.zero-full) .zero-chip { display: none; }
 
-.medal { margin-inline-start: 3px; font-size: 13px; }
-.medals { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; } .medals span { display: grid; border-radius: 12px; padding: 6px 10px; background: linear-gradient(180deg, #f6e3b0, #e0bd72); color: #3a2c10; font-weight: 800; font-size: 13px; } .medals small { font-weight: 600; font-size: 11px; color: #5a4520 !important; }
+.medal { margin-inline-start: 3px; display: inline-flex; vertical-align: middle; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+.medal-svg { display: block; flex: none; }
+.medals { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.medals > span { display: flex; align-items: center; gap: 8px; border-radius: 14px; padding: 6px 12px 6px 8px; background: linear-gradient(160deg, #2a2216, #17130c); border: 1px solid rgba(217,180,106,.55); box-shadow: inset 0 1px 0 rgba(255,236,180,.18), 0 2px 6px rgba(0,0,0,.25); }
+.medals > span b { display: grid; color: #f1d98f; font-size: 13px; font-weight: 800; } .medals small { font-weight: 600; font-size: 11px; color: #cdb98a !important; }
+.wg-medals { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+.wg-medals > span { display: grid; justify-items: center; text-align: center; gap: 2px; padding: 10px 6px; border-radius: 14px; background: linear-gradient(160deg, #2a2216, #17130c); border: 1px solid rgba(217,180,106,.55); }
+.wg-medals b { color: #f1d98f; font-size: 13px; } .wg-medals small { color: #cdb98a; font-size: 11px; }
 .war-spoils { text-align: center; margin: 8px 0; border-radius: 12px; padding: 8px; background: rgba(47, 143, 106, .12); border: 1px solid rgba(47, 143, 106, .4); font-size: 14px; } .war-spoils b { color: #2f8f6a; font-size: 18px; }
 /* heat: the war button pulses a few times when a war starts, then stays red (an animation that never stops keeps the phone working) */
 #warBtn.wr-hot { animation-iteration-count: 6; }

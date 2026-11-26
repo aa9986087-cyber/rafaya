@@ -9,8 +9,8 @@ import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgra
 import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
-import { watchIcons, ICON_PATHS } from "./icons.js";
-import { WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
+import { watchIcons, ICON_PATHS, medalSvg } from "./icons.js";
+import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
 import { sfx, ambience, warSfx } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
@@ -1192,7 +1192,7 @@ export async function worldMapSheet(pick) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
         ${!mine && fronts.some((f) => (f.a === sel || f.b === sel) && f.state !== "truce") && !fronts.some((f) => (f.a === sel || f.b === sel) && (f.a === id?.plot || f.b === id?.plot)) ? `<button class="btn ${WARX.follow?.plot === sel ? "" : "go"} block wm-follow" id="wmFollow" type="button">${WARX.follow?.plot === sel ? "👁️ أوقف المتابعة" : "👁️ تابع حربها: تشوف كل ضربة تنزل عليها"}</button>` : ""}
-        ${(WARX.st?.medals?.[sel] || []).length ? `<div class="medals">${WARX.st.medals[sel].map((x) => `<span>${x.icon} ${x.name}<small>${x.text}</small></span>`).join("")}</div>` : ""}
+        ${(WARX.st?.medals?.[sel] || []).length ? `<div class="medals">${WARX.st.medals[sel].map((x) => `<span>${medalSvg(medalId(x), 46)}<b>${x.name}<small>${x.text}</small></b></span>`).join("")}</div>` : ""}
         <div class="rows">${warsOf(sel)}${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
         <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>${t.renamed ? "" : `<button class="btn block" id="wmRename" type="button">✏️ غيّر اسم مدينتك (مرة وحدة بس)</button>`}` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
@@ -1398,7 +1398,7 @@ export function chatSheet(keep, draft = $("chatText")?.value || "") {
   const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
   sheet(`<h2>💬 شات الجوف</h2>
     <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
-        <div class="chat-head"><b>${m.name}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${x.icon}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
+        <div class="chat-head"><b>${m.name}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${medalSvg(medalId(x), 18)}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
         <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
     <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
     <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>

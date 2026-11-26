@@ -10,7 +10,8 @@ import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
-import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
+import { medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
+import { medalSvg } from "./icons.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
 const TABS = [["attack", "🎯 هجوم"], ["world", "🗺️ الجوف والتفاوض"], ["rank", "🏆 الترتيب"], ["def", "🛡️ الدفاع والدرع"], ["log", "📜 السجل"]];
@@ -279,7 +280,7 @@ function diploPanel(st, map, t) {
   }
   const watchable = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce" && f.a !== mine && f.b !== mine);
   const med = st.medals?.[t.plot] || [];
-  return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»${med.map((x) => ` <span title="${x.name}">${x.icon}</span>`).join("")}</b><small>العمدة ${t.owner} · ${ERAS[t.era || 0].name}${med.length ? ` · ${med.map((x) => x.name).join(" · ")}` : ""}</small></div>
+  return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»${med.map((x) => ` <span class="medal" title="${x.name}">${medalSvg(medalId(x), 24)}</span>`).join("")}</b><small>${t.owner ? `العمدة ${t.owner} · ` : ""}${ERAS[t.era || 0].name}${med.length ? ` · ${med.map((x) => x.name).join(" · ")}` : ""}</small></div>
       <div class="dp-state ${r.state}">${REL_NAMES[r.state]}${relTimer(r)}</div>
       ${ask}${offer}
       ${r.state === "war" ? `<button class="btn go block dp-go" type="button" data-dpdo="attack">🎯 هاجم «${t.town}» الحين</button>` : ""}

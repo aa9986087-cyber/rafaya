@@ -232,6 +232,8 @@ export const MEDALS = [
 export const shieldPrice = (era, cfg = WAR) => cfg.shieldPrice[Math.max(0, Math.min(cfg.shieldPrice.length - 1, era || 0))];
 /** The most tribute that may be asked of a town with this budget. */
 export const tributeMax = (money, cfg = WAR) => Math.max(0, Math.floor(Math.max(0, money || 0) * cfg.tribute.share / 100) * 100);
+/** Which medal a server row is (rows from before the id came carry the name). */
+export const medalId = (x) => x?.id || MEDALS.find((m) => m.name === x?.name)?.id || "wins";
 export const REL_ICONS = { peace: "🕊️", tension: "😠", hostile: "⚔️", warning: "⏳", war: "🔥", truce: "🏳️" };
 
 /** The ready-made threats a mayor can send (no free text: nothing to moderate). */

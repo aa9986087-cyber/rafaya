@@ -5,6 +5,7 @@ import { ar, money, sheet } from "./main.js";
 import { WAR_LIVE, WEAPONS, WEAPON_IDS, JOUF_DAY, minutesText, shieldPrice, SPOILS, MEDALS } from "./war.js";
 import { B, ERAS, MIL, MIL_SLOTS } from "./data.js";
 import { weaponIcon } from "./ui-war.js";
+import { medalSvg } from "./icons.js";
 import { sfx } from "./sound.js";
 
 const days = (ms) => { const d = Math.round(ms / JOUF_DAY); return d === 1 ? "يوم" : d === 2 ? "يومين" : d === 7 ? "أسبوع" : d === 14 ? "أسبوعين" : d === 30 ? "شهر" : `${ar(d)} ${d <= 10 ? "أيام" : "يوم"}`; };
@@ -87,7 +88,7 @@ export function warGuide(go = "") {
     ${section("rewards", "🏆", "وش تكسب من الحرب؟", `${li([
         `<b>💰 غنيمة الحرب:</b> كل ضربة ناجحة على مبنى اقتصادي (مصنع، سوق، محطة كهرباء أو ماء…) تعطيك ${ar(Math.round(SPOILS * 100))}٪ من كلفة إصلاحه، تنزل بميزانيتك على طول.`,
         `<b>🏆 النصر الرسمي:</b> لا خلصت الحرب (بوقتها أو بهدنة أو صلح)، اللي ضرباته وصلت أكثر ينتصر: يطلع بالنشرة، ورضا أهل مدينته يرتفع ١٠ من الفخر.`,
-        `<b>🎖️ الأوسمة:</b> تطلع جنب اسمك بالشات والخريطة: ${MEDALS.map((m) => `${m.icon} «${m.name}» (${m.text})`).join("، ")}. كل وسام لصاحب أعلى رقم بالجوف.`,
+        `<b>🎖️ الأوسمة:</b> تطلع جنب اسمك بالشات والخريطة، وكل وسام لصاحب أعلى رقم بالجوف.<span class="wg-medals">${MEDALS.map((m) => `<span>${medalSvg(m.id, 64)}<b>${m.name}</b><small>${m.text}</small></span>`).join("")}</span>`,
         `<b>🪙 الجزية:</b> فلوس بدون حرب إذا دفعوا.`
       ])}`)}
 

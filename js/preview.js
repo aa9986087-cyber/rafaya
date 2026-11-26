@@ -183,6 +183,9 @@ const PV_SCENARIOS = [
     pvState.zeroAt = 0; pvState.zeroLock = false; setTimeout(() => setWarOpen(0), 100);
     // and three of the trial's own towns strike us now, so the attack map has paths in the air
     pvFill(me);
+    // medals to see: mine for strikes and victories, the two others' for defence and interceptions
+    [[me.plot, { hits: 9, wins: 2 }], [bots[0].plot, { defHits: 4 }], [bots[1].plot, { intc: 6 }]].forEach(([p, st]) => { const a = pvWar.acct(p); for (const [k, n] of Object.entries(st)) pvWar.stat(a, k, n); pvWar.saveAcct(p, a); });
+    pvWar.medalCache = null;
     bots.forEach((b, i) => { pvSetEra(b, 4); pvSetRel(b, me, "war"); pvStrike(b, 1 + i, { [i ? "drone" : "missile"]: 1 }); });
     return { plot: null, room: "world", msg: `«الجوف والتفاوض»: ${fronts.length} جبهة بين المدن. وفي «هجوم» تشوف الضربات اللي بالجو.` };
   }],

@@ -69,9 +69,11 @@ export function renderCards() {
     setTool(tool?.id === id && tool.cat === cat ? null : { id, cat });
   }));
 }
-export const MOUTHS = ["M8.5 16.5c1.8-2 5.2-2 7 0", "M9 15.5h6", "M8.5 14.5c1.8 2 5.2 2 7 0", "M8 13.5c2 3.5 6 3.5 8 0z"];
 export const FACE_COLORS = ["#d9573f", "#d9a540", "#7cb342", "#3f9a5c"];
-export const face = (k) => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="${FACE_COLORS[k]}"/><circle cx="9" cy="10" r="1.3" fill="#2f2114"/><circle cx="15" cy="10" r="1.3" fill="#2f2114"/><path d="${MOUTHS[k]}" stroke="#2f2114" stroke-width="1.6" fill="${k === 3 ? "#2f2114" : "none"}" stroke-linecap="round"/></svg>`;
+// the mood in the bar: a heart (no faces), its colour from red to green, cracked when the town is unhappy
+const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z", HEART_CRACK = ["M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z", "m12 13-1-1 2-2-3-3 2-2"];
+export const face = (k) => k === 0 ? `<svg viewBox="0 0 24 24" fill="none" stroke="${FACE_COLORS[0]}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${HEART_CRACK.map((d) => `<path d="${d}"/>`).join("")}</svg>`
+  : `<svg viewBox="0 0 24 24"><path d="${HEART}" fill="${FACE_COLORS[k]}" stroke="${FACE_COLORS[k]}" stroke-width="1.5" stroke-linejoin="round"/>${k === 3 ? '<path d="M7.6 9.4a2.7 2.7 0 0 1 2.6-2.5" stroke="#fff" stroke-opacity=".75" stroke-width="1.4" fill="none" stroke-linecap="round"/>' : ""}</svg>`;
 export function toast(text, kind = "") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;

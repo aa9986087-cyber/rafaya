@@ -46,7 +46,7 @@ export class WarServer {
     const rows = this.db.list("acct", {}).filter((a) => a.plot != null && a.stats), map = {};
     for (const m of MEDALS) {
       const top = rows.reduce((best, a) => ((a.stats[m.id] || 0) > (best?.stats[m.id] || 0) ? a : best), null);
-      if (top && (top.stats[m.id] || 0) >= m.min) (map[top.plot] ||= []).push({ icon: m.icon, name: m.name, text: m.text, n: top.stats[m.id] });
+      if (top && (top.stats[m.id] || 0) >= m.min) (map[top.plot] ||= []).push({ id: m.id, icon: m.icon, name: m.name, text: m.text, n: top.stats[m.id] });
     }
     this.medalCache = { at: now, map };
     return map;
