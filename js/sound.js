@@ -60,56 +60,6 @@ function startAmbience() {
   recording("sound/rain.mp3").then((buf) => { if (buf) { first.stop(); play(buf); } });
   amb = { wind: make("bandpass", 420, 0.6), rain: rg, nextChirp: 0 };
 }
-// ---------- background music: soft and cinematic, under everything ----------
-// A looping track (media/music.m4a) played through Web Audio: its volume is a gain node (iPhones ignore an
-// audio element's own volume), a gentle low-pass keeps it warm and far, and it never starts before the
-// player's first touch (both iPhone and Android require that). It rests while the page is hidden, the trailer
-// plays, or the sound is off, and steps back during a war scene. The player sets it on/off and its level.
-let musicOn = true, musicVol = 0.5, mus = null;
-try { musicOn = localStorage.getItem("rafaya-music") !== "0"; const v = localStorage.getItem("rafaya-music-vol"); if (v !== null) musicVol = Math.max(0, Math.min(1, Number(v))); } catch { /* defaults */ }
-const musicUrl = () => globalThis.RAFAYA_MUSIC || "media/music.m4a";
-let musicWant = 0; // the level wanted now (0: silent)
-function musicStart() {
-  if (mus) return mus;
-  try {
-    const a = ac(), el = new Audio();
-    el.src = musicUrl(); el.loop = true; el.preload = "auto"; el.setAttribute("playsinline", ""); // same site: no cross-origin flag (it would block a local copy)
-    const src = a.createMediaElementSource(el), warm = a.createBiquadFilter(), gain = a.createGain();
-    warm.type = "lowpass"; warm.frequency.value = 5200; warm.Q.value = 0.4;
-    gain.gain.value = 0;
-    src.connect(warm); warm.connect(gain); gain.connect(a.destination);
-    mus = { el, gain, broken: false, idleAt: 0 };
-    el.addEventListener("error", () => { mus.broken = true; }); // no track: the game goes on in silence
-  } catch { mus = { broken: true }; }
-  return mus;
-}
-function musicApply() {
-  if (!mus || mus.broken || !ctx) return;
-  const t = ctx.currentTime;
-  mus.gain.gain.setTargetAtTime(musicWant, t, musicWant ? 1.6 : 0.5); // fades: slow in, quicker out
-  if (musicWant > 0 && mus.el.paused) mus.el.play().catch(() => {}); // (the first time, from a touch: see below)
-  if (musicWant === 0 && !mus.el.paused) { clearTimeout(mus.stop); mus.stop = setTimeout(() => { if (musicWant === 0) mus.el.pause(); }, 2500); } // asleep: no decoding, no battery
-}
-// the first touch starts it (a phone allows audio only from a touch)
-addEventListener("pointerdown", () => { if (musicWant > 0 && (!mus || mus.el?.paused)) { musicStart(); musicApply(); } }, { passive: true });
-document.addEventListener("visibilitychange", () => { if (document.hidden && mus?.el && !mus.broken) { mus.el.pause(); } });
-export const music = {
-  get on() { return musicOn; },
-  get vol() { return musicVol; },
-  set(v) { musicOn = !!v; try { localStorage.setItem("rafaya-music", v ? "1" : "0"); } catch { /* fine */ } if (musicOn) musicStart(); musicWant = 0; this.update(this.last || {}); },
-  setVol(v) { musicVol = Math.max(0, Math.min(1, v)); try { localStorage.setItem("rafaya-music-vol", String(musicVol)); } catch { /* fine */ } this.update(this.last || {}); },
-  /** For checks: is it playing, at what level. */
-  state() { return { want: musicWant, playing: !!mus?.el && !mus.el.paused, gain: mus?.gain ? Math.round(mus.gain.gain.value * 1000) / 1000 : 0, broken: !!mus?.broken, t: mus?.el ? Math.round(mus.el.currentTime) : 0 }; },
-  /** A few times a second: where the game is (the level follows). */
-  update(o = {}) {
-    this.last = o;
-    const level = musicOn && on && !document.hidden && !o.intro ? 0.24 * musicVol * musicVol * (o.scene ? 0.35 : 1) : 0;
-    musicWant = level;
-    if (level > 0) musicStart();
-    musicApply();
-  }
-};
-
 export const ambience = {
   /** Call a few times a second with what is going on. */
   update({ playing, night, raining, season, dusty }) {
@@ -130,7 +80,7 @@ export const ambience = {
 
 export const sfx = {
   get on() { return on; },
-  set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } music.update(music.last || {}); },
+  set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } },
   tap() { tone(620, 0.05, { type: "triangle", vol: 0.05 }); },
   build() { tone(180, 0.12, { type: "square", vol: 0.05, slide: -60 }); tone(330, 0.1, { type: "triangle", vol: 0.06, at: 0.06 }); },
   road() { tone(260, 0.04, { type: "triangle", vol: 0.03 }); },
