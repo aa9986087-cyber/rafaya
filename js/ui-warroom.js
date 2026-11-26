@@ -42,6 +42,14 @@ function stripHtml(st) {
  * The front, drawn as a plan (not to scale, so names never overlap): our town on the right, the towns we are
  * in conflict with spread down the left, and every operation in the air on its own curved path.
  */
+/** The own town on every war map: its real name with a pin (a town elsewhere may well be called «مدينتي»). */
+const myLabel = () => `📍 ${(visiting ? visiting.home : S)?.name || "مدينتك"}`;
+/** A front between two towns: a gentle arc (so two fronts from one town part), thicker the more strikes it saw. */
+function frontPath(ax, ay, bx, by, f, cls) {
+  const d = Math.hypot(bx - ax, by - ay) || 1, lift = Math.min(18, d * 0.12), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
+  const w = 1.6 + Math.min(2.4, ((f.hitsA || 0) + (f.hitsB || 0)) * 0.25);
+  return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wm-front ${f.state} ${cls}" style="stroke-width:${cls === "ours" ? w + 1.2 : w * 0.6}px"/>`;
+}
 function mapHtml(st) {
   const mine = me()?.plot, rels = (st?.rels || []).filter((r) => r.state !== "peace");
   const others = [...new Set([...rels.map((r) => r.other), ...liveOps(st).flatMap((o) => [o.from, o.to]).filter((p) => p !== mine)])];
@@ -49,7 +57,7 @@ function mapHtml(st) {
   const me0 = [W - 62, H / 2];
   const pos = new Map(others.map((p, i) => [p, [70, others.length === 1 ? H / 2 : 30 + i * ((H - 60) / Math.max(1, others.length - 1))]]));
   pos.set(mine, me0);
-  const name = (p) => p === mine ? "مدينتي" : rels.find((r) => r.other === p)?.town || liveOps(st).find((o) => o.from === p)?.fromTown || liveOps(st).find((o) => o.to === p)?.toTown || "";
+  const name = (p) => p === mine ? myLabel() : rels.find((r) => r.other === p)?.town || liveOps(st).find((o) => o.from === p)?.fromTown || liveOps(st).find((o) => o.to === p)?.toTown || "";
   const flying = liveOps(st).filter((o) => o.status === "flying");
   const lines = flying.map((o, i) => {
     const [ax, ay] = pos.get(o.from) || me0, [bx, by] = pos.get(o.to) || me0;
@@ -85,7 +93,12 @@ function frontMap(map, st) {
   const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.start || Z.full;
   const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
   const byPop = [...map.plots].sort((a, b) => (b.pop || 0) - (a.pop || 0)), rank = new Map(byPop.map((t, i) => [t.plot, i]));
-  const lines = flying.map((o, i) => {
+  // my fronts, always (not only while something flies): one arc to each town I am at war with or warned
+  const myFronts = rels.filter((r) => ["war", "warning", "hostile"].includes(r.state) && map.plots.some((t) => t.plot === r.other)).map((r) => {
+    const f = (map.fronts || []).find((x) => (x.a === mine && x.b === r.other) || (x.b === mine && x.a === r.other)) || { state: r.state };
+    const [ax, ay] = xy(mine), [bx, by] = xy(r.other); return frontPath(ax, ay, bx, by, { ...f, state: r.state === "hostile" ? "warning" : r.state }, "ours");
+  }).join("");
+  const lines = myFronts + flying.map((o, i) => {
     const [ax, ay] = xy(o.from), [bx, by] = xy(o.to), d = Math.hypot(bx - ax, by - ay) || 1;
     const lift = (o.side === "in" ? 1 : -1) * (0.22 * d + (i % 3) * 4), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
     return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${o.side}"/><circle r="4" data-r="4" class="wr-dot ${o.side}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
@@ -94,7 +107,7 @@ function frontMap(map, st) {
     const [x, y] = xy(t.plot), on = involved.has(t.plot), rel = rels.find((r) => r.other === t.plot), state = t.plot === mine ? "me" : rel?.state || "peace";
     const inN = flying.filter((o) => o.from === t.plot).length, outN = flying.filter((o) => o.to === t.plot).length;
     const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
-    return `<g class="wm-t ${state} ${on ? "on" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? "مدينتي" : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
+    return `<g class="wm-t ${state} ${on ? "on" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? myLabel() : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
   }).join("");
   return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${towns}</svg>
     <div class="wr-zoom" data-for="wrFront"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الجوف">⤢</button></div></div>`;
@@ -193,8 +206,10 @@ function worldSvg(map, st) {
   const x0 = Math.max(0, Math.min(...all.map((a) => a[0])) - 30), x1 = Math.min(WORLD.cols * cell, Math.max(...all.map((a) => a[0])) + 30);
   const y0 = Math.max(0, Math.min(...all.map((a) => a[1])) - 22), y1 = Math.min(WORLD.rows * cell, Math.max(...all.map((a) => a[1])) + 22);
   const rel = (p) => st.rels.find((r) => r.other === p);
-  const fronts = map.fronts.map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b), ours = f.a === mine || f.b === mine;
-    return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wm-front ${f.state} ${ours ? "ours" : ""}"/>`; }).join("");
+  // everyone's fronts pale, mine on top in full colour
+  const ours = (f) => f.a === mine || f.b === mine;
+  const fronts = [...map.fronts.filter((f) => !ours(f)), ...map.fronts.filter(ours)].map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b);
+    return frontPath(ax, ay, bx, by, f, ours(f) ? "ours" : "theirs"); }).join("");
   const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
   // every town has its name; which names show is decided on the screen (zoom in for more): the most
   // important first (mine, the chosen one, enemies, towns at war, the biggest), never one over another
@@ -202,7 +217,7 @@ function worldSvg(map, st) {
   const towns = plots.map((t) => {
     const [x, y] = xy(t.plot), r = rel(t.plot), state = t.plot === mine ? "me" : r?.state || "peace", sel = ROOM.sel === t.plot, atWar = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce");
     const pri = (t.plot === mine ? 5e6 : 0) + (sel ? 4e6 : 0) + (r && r.state !== "peace" ? 3e6 : 0) + (atWar ? 2e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
-    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? "مدينتي" : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
+    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? myLabel() : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
   }).join("");
   const Z = (ROOM.wz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
   const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.full;
@@ -215,7 +230,7 @@ async function worldTab(st) {
   const map = await worldMap();
   if (!map) return `<div class="need">ما قدرت أحمّل خريطة الجوف.</div>`;
   const mine = me()?.plot, t = map.plots.find((x) => x.plot === ROOM.sel);
-  const legend = `<div class="wm-legend"><span class="me">مدينتي</span><span class="war">حرب</span><span class="hostile">توتر</span><span class="truce">هدنة</span><span class="front">جبهة بين مدن</span></div>`;
+  const legend = `<div class="wm-legend"><span class="me">📍 مدينتك</span><span class="war">حرب</span><span class="hostile">توتر</span><span class="truce">هدنة</span><span class="front">جبهتك</span><span class="front theirs">جبهات غيرك</span></div>`;
   return `${worldSvg(map, st)}${legend}${t ? diploPanel(st, map, t) : `<p class="hint">اضغط أي مدينة بالخريطة: تطالبها بجزية، تكلّمها، أو تعلن عليها الحرب.</p>${frontsList(map, null)}`}`;
 }
 /** The wars of al-Jouf in words (everyone can read them): who fights whom, and how many strikes landed. */

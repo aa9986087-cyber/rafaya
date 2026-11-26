@@ -1180,7 +1180,8 @@ export async function worldMapSheet(pick) {
   const labels = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-place">${p.name}</text>`).join("");
   // the fronts of al-Jouf, for everyone: a red line between every two towns at war (a pale one in a truce)
   const fxy = (p) => { const [x, y] = worldXY(p); return [x * cell + cell / 2, y * cell + cell / 2]; };
-  cells += fronts.map((f) => { const [ax, ay] = fxy(f.a), [bx, by] = fxy(f.b); return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wm-war ${f.state}"/>`; }).join("");
+  cells += fronts.map((f) => { const [ax, ay] = fxy(f.a), [bx, by] = fxy(f.b), d = Math.hypot(bx - ax, by - ay) || 1, lift = Math.min(6, d * 0.12), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift, ours = f.a === id?.plot || f.b === id?.plot;
+    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wm-war ${f.state} ${ours ? "ours" : ""}"/>`; }).join(""); // a gentle arc each; mine stand out
   const sel = worldPick, t = sel != null ? byPlot.get(sel) : null;
   const warsOf = (p) => fronts.filter((f) => f.a === p || f.b === p).map((f) => { const o = f.a === p ? f.b : f.a, mine = f.a === p ? f.hitsA : f.hitsB, theirs = f.a === p ? f.hitsB : f.hitsA;
     return row(`${REL_ICONS[f.state] || "⚔️"} ${f.tribute ? "طلب جزية مع" : f.state === "truce" ? "هدنة مع" : f.state === "warning" ? "إنذار حرب مع" : "حرب مع"} «${byPlot.get(o)?.town || "مدينة"}»`, f.state === "war" ? `ضربات ${ar(mine)} مقابل ${ar(theirs)}` : ""); }).join("");

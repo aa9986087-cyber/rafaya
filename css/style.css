@@ -801,13 +801,17 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 .wr-world .wm-t.fire:not(.me):not(.war):not(.warning) circle { stroke: #ff5a4a; stroke-width: 1.6; }
 .wr-world .wm-ring { fill: none !important; stroke: #f2c94c !important; stroke-width: 1.6 !important; stroke-dasharray: 3 2; animation: wrDash 1s linear infinite; }
 .wr-world .wm-hit { fill: transparent !important; stroke: none !important; cursor: pointer; filter: none !important; }
-.wr-world .wm-front { stroke: rgba(255, 90, 74, .45); stroke-width: 1.4; stroke-dasharray: 4 3; animation: wrDash 1.2s linear infinite; }
-.wr-world .wm-front.ours { stroke: #ff5a4a; stroke-width: 2.2; }
-.wr-world .wm-front.truce { stroke: rgba(233, 227, 210, .5); animation: none; }
+.wr-world .wm-front { fill: none; stroke-linecap: round; pointer-events: none; vector-effect: non-scaling-stroke; } /* the same width on screen at every zoom */
+.wr-world .wm-front.theirs { stroke: rgba(235, 222, 200, .38); }
+.wr-world .wm-front.theirs.war { stroke: rgba(255, 140, 120, .42); }
+.wr-world .wm-front.ours { stroke: #ff4d3d; filter: drop-shadow(0 0 2px rgba(255, 77, 61, .8)); stroke-dasharray: 6 4; animation: wrDash 1.2s linear infinite; }
+.wr-world .wm-front.ours.warning { stroke: #f0a040; filter: none; }
+.wr-world .wm-front.truce { stroke: rgba(233, 227, 210, .45); stroke-dasharray: 2 3; animation: none; filter: none; }
 .wm-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 2px 10px; font-size: 11px; color: var(--wr-dim); }
 .wm-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 4px; background: #8f8a78; vertical-align: middle; }
 .wm-legend .me::before { background: #f2c94c; } .wm-legend .war::before { background: #ff5a4a; } .wm-legend .hostile::before { background: #e08a3c; } .wm-legend .truce::before { background: #e9e3d2; }
 .wm-legend .front::before { width: 14px; height: 0; border-radius: 0; border-top: 2px dashed #ff5a4a; }
+.wm-legend .front.theirs::before { border-top: 2px solid rgba(255, 140, 120, .45); }
 .dp-card { border: 1px solid var(--wr-line); border-radius: 16px; padding: 12px; background: var(--wr-card); display: grid; gap: 10px; margin-bottom: 10px; }
 .dp-top { display: grid; gap: 2px; } .dp-top b { font-size: 18px; color: var(--wr-ink); } .dp-top small { font-size: 12px; }
 .dp-state { justify-self: start; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,.07); color: var(--wr-ink); }
@@ -873,7 +877,8 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 .tb-head b { font-size: 15px; } .tb-close { width: 32px; height: 32px; font-size: 14px; }
 .tb-fire { padding: 9px; } .tb-fire b { font-size: 15px; }
 .tb-row { padding: 4px 6px; } .tb-step2 button, .tb-bin { width: 28px; height: 28px; }
-.wm-map .wm-war { stroke: #d8392b; stroke-width: .7; stroke-dasharray: 1.6 1; pointer-events: none; animation: wmWar 1.2s linear infinite; }
+.wm-map .wm-war { fill: none; stroke: rgba(216, 57, 43, .55); stroke-width: .55; stroke-linecap: round; pointer-events: none; }
+.wm-map .wm-war.ours { stroke: #ff3b2b; stroke-width: 1; stroke-dasharray: 1.6 1; animation: wmWar 1.2s linear infinite; }
 .wm-map .wm-war.warning { stroke: #e08a3c; } .wm-map .wm-war.truce { stroke: #9a9381; animation: none; }
 @keyframes wmWar { to { stroke-dashoffset: -2.6; } }
 

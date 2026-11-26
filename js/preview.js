@@ -173,16 +173,18 @@ function pvStrike(bot, n, load) {
 const PV_SCENARIOS = [
   ["jouf", "🔥 كل الجوف بحرب (المدن الحقيقية)", "خريطة الجوف الحالية بأماكن المدن الحقيقية، وكل مدينة تقدر تحارب داخلة حرب مع لين ٣ من جيرانها، ومدينتك معهم: شوف الجبهات بالخريطة، وضربات جاية عليك من ٣ مدن.", () => {
     const me = pvMe(), mine = pvState.plots[me.plot], era = mine?.era || 5, top = (e) => Math.min(e || 0, 4);
-    const plots = [...PV_JOUF.plots.filter((t) => t.plot !== me.plot), { plot: me.plot, town: mine?.town || "مدينتي", era, pop: mine?.pop || 0 }];
+    const bots = ["enemy", "loud"].map((k) => pvBot(k)), own = [me.plot, ...bots.map((b) => b.plot)];
+    // the trial's own towns (mine and the two that strike) stand on the map too, so every path starts at a town
+    const plots = [...PV_JOUF.plots.filter((t) => !own.includes(t.plot)), ...own.map((p) => ({ plot: p, town: pvState.plots[p]?.town || "مدينة", era: p === me.plot ? era : 4, pop: pvState.plots[p]?.pop || 0 }))];
     const [mx, my] = worldXY(me.plot), near = PV_JOUF.plots.filter((t) => (t.era || 0) >= 1 && Math.abs(top(t.era) - top(era)) < 2 && t.plot !== me.plot)
-      .sort((a, b) => Math.hypot(worldXY(a.plot)[0] - mx, worldXY(a.plot)[1] - my) - Math.hypot(worldXY(b.plot)[0] - mx, worldXY(b.plot)[1] - my)).slice(0, 3);
-    const fronts = [...PV_JOUF.fronts, ...near.map((t, i) => ({ a: me.plot, b: t.plot, state: "war", hitsA: i + 1, hitsB: 2 - i }))];
+      .sort((a, b) => Math.hypot(worldXY(a.plot)[0] - mx, worldXY(a.plot)[1] - my) - Math.hypot(worldXY(b.plot)[0] - mx, worldXY(b.plot)[1] - my)).slice(0, 1);
+    const fronts = [...PV_JOUF.fronts.filter((f) => !own.includes(f.a) && !own.includes(f.b)), ...[...near.map((t) => t.plot), ...bots.map((b) => b.plot)].map((p, i) => ({ a: me.plot, b: p, state: "war", hitsA: i + 1, hitsB: 3 - i }))];
     ROOM.map = { at: Date.now() + 1e9, plots, fronts }; ROOM.wz = {}; ROOM.fz = {};
     pvState.zeroAt = 0; pvState.zeroLock = false; setTimeout(() => setWarOpen(0), 100);
     // and three of the trial's own towns strike us now, so the attack map has paths in the air
-    const bots = ["enemy", "loud"].map((k) => pvBot(k)); pvFill(me);
+    pvFill(me);
     bots.forEach((b, i) => { pvSetEra(b, 4); pvSetRel(b, me, "war"); pvStrike(b, 1 + i, { [i ? "drone" : "missile"]: 1 }); });
-    return { plot: null, room: "world", msg: `«الجوف والتفاوض»: ${PV_JOUF.fronts.length + near.length} جبهة بين المدن الحقيقية. وفي «هجوم» تشوف الضربات اللي بالجو.` };
+    return { plot: null, room: "world", msg: `«الجوف والتفاوض»: ${fronts.length} جبهة بين المدن. وفي «هجوم» تشوف الضربات اللي بالجو.` };
   }],
   ["small", "🎯 محافظة تعلن عليك الحرب وتضربك", "«الخضراء» (محافظة، أصغر منك بمستوى) تبدأ الحرب وتضرب. ردّ عليها.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 3); pvSetRel(bot, me, "war");
