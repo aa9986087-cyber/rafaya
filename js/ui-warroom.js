@@ -3,16 +3,16 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, threatSheet, stateTag } from "./ui-war.js";
+import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { unpack } from "./sim.js";
-import { B, ERAS, worldXY } from "./data.js";
-import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState } from "./war.js";
+import { B, ERAS, WORLD, worldXY } from "./data.js";
+import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax } from "./war.js";
 
-export const ROOM = { tab: "attack", enemy: null, talk: null, pick: {}, towns: new Map(), tick: null, back: false };
-const TABS = [["attack", "🎯 هجوم"], ["def", "🛡️ دفاع وتعبئة"], ["enemies", "👥 الأعداء"], ["talk", "🤝 تفاوض"], ["log", "📜 السجل والأضرار"]];
+export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
+const TABS = [["attack", "🎯 هجوم"], ["world", "🗺️ الجوف والتفاوض"], ["def", "🛡️ الدفاع والدرع"], ["log", "📜 السجل"]];
 
 /** The operations to show in the strip: in the air, and those that landed in the last three minutes. */
 function liveOps(st) {
@@ -125,7 +125,7 @@ async function attackTab(st) {
   const wars = st.rels.filter((r) => r.state === "war");
   const ars = st.arsenal, p = st.profile;
   const stock = WEAPON_IDS.filter((w) => !weaponBlocker(p, w)).map((w) => `<span class="wr-stock">${weaponIcon(w)} ${WEAPONS[w].name} <b>${ar(ars[w])}</b><small>مدى ${ar(WEAPONS[w].blast)}</small></span>`).join("");
-  if (!wars.length) return `<h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}<p class="hint">ما فيه حرب الحين. الهجوم يفتح لا صار بينك وبين مدينة حرب: من «🤝 تفاوض» أو خريطة الجوف.</p>`;
+  if (!wars.length) return `<h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}<p class="hint">ما فيه حرب الحين. الهجوم يفتح لا صار بينك وبين مدينة حرب: من «🗺️ الجوف والتفاوض» اضغط أي مدينة وأعلن عليها الحرب أو طالبها بجزية.</p>`;
   if (!wars.some((r) => r.other === ROOM.enemy)) ROOM.enemy = wars[0].other;
   const enemy = wars.find((r) => r.other === ROOM.enemy);
   return `<div class="wr-enemies">${wars.map((r) => `<button type="button" class="${r.other === enemy.other ? "on" : ""}" data-wrenemy="${r.other}">🔥 «${r.town}»<small>${relTimer(r).replace(/^\s*·\s*/, "")}</small></button>`).join("")}</div>
@@ -133,6 +133,99 @@ async function attackTab(st) {
       <button class="btn go block" type="button" id="wrMapTarget">🎯 افتح مدينة «${enemy.town}» واختر الأماكن</button></div>
     <h3>🚀 جاهزية المنصات</h3>${launchersHtml(st)}
     <h3>📦 الذخيرة</h3><div class="wr-stocks">${stock || "—"}</div>`;
+}
+/** al-Jouf's towns and fronts (the public map), kept a short while. */
+async function worldMap(force) {
+  if (!force && ROOM.map && Date.now() - ROOM.map.at < 20000) return ROOM.map;
+  try { const d = await api("/world/map"); ROOM.map = { at: Date.now(), plots: d.plots || [], fronts: d.fronts || [] }; } catch { /* the last one, or none */ }
+  return ROOM.map;
+}
+/** Why a relation action is closed for this town (the same rules the server checks). */
+function relBlock(r, era) {
+  const home = visiting ? visiting.home : S;
+  return (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (era || 0) < WAR.minEra ? "القرى محمية من الحروب"
+    : (home.era || 0) - (era || 0) >= WAR.bully && !["hostile", "warning", "war"].includes(r.state) ? "مدينتك أكبر منها بكثير: ما تبدأ على الصغار" : "";
+}
+/** The map of al-Jouf in the room: every town, the fronts between them; a tap opens that town's panel below. */
+function worldSvg(map, st) {
+  const mine = me()?.plot, cell = 10, plots = map.plots;
+  const xy = (p) => { const [x, y] = worldXY(p); return [x * cell + cell / 2, y * cell + cell / 2]; };
+  const all = plots.map((t) => xy(t.plot));
+  const x0 = Math.max(0, Math.min(...all.map((a) => a[0])) - 30), x1 = Math.min(WORLD.cols * cell, Math.max(...all.map((a) => a[0])) + 30);
+  const y0 = Math.max(0, Math.min(...all.map((a) => a[1])) - 22), y1 = Math.min(WORLD.rows * cell, Math.max(...all.map((a) => a[1])) + 22);
+  const rel = (p) => st.rels.find((r) => r.other === p);
+  const fronts = map.fronts.map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b), ours = f.a === mine || f.b === mine;
+    return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wm-front ${f.state} ${ours ? "ours" : ""}"/>`; }).join("");
+  const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
+  const towns = plots.map((t) => {
+    const [x, y] = xy(t.plot), r = rel(t.plot), state = t.plot === mine ? "me" : r?.state || "peace", sel = ROOM.sel === t.plot, atWar = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce");
+    const named = t.plot === mine || sel || (r && r.state !== "peace");
+    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}"/>${named ? `<text x="${x}" y="${y - 8}">${t.plot === mine ? "مدينتي" : t.town}</text>` : ""}<circle cx="${x}" cy="${y}" r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
+  }).join("");
+  return `<svg class="wr-world" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>`;
+}
+async function worldTab(st) {
+  const map = await worldMap();
+  if (!map) return `<div class="need">ما قدرت أحمّل خريطة الجوف.</div>`;
+  const mine = me()?.plot, t = map.plots.find((x) => x.plot === ROOM.sel);
+  const legend = `<div class="wm-legend"><span class="me">مدينتي</span><span class="war">حرب</span><span class="hostile">توتر</span><span class="truce">هدنة</span><span class="front">جبهة بين مدن</span></div>`;
+  return `${worldSvg(map, st)}${legend}${t ? diploPanel(st, map, t) : `<p class="hint">اضغط أي مدينة بالخريطة: تطالبها بجزية، تكلّمها، أو تعلن عليها الحرب.</p>${frontsList(map, null)}`}`;
+}
+/** The wars of al-Jouf in words (everyone can read them): who fights whom, and how many strikes landed. */
+function frontsList(map, plot) {
+  const name = (p) => map.plots.find((x) => x.plot === p)?.town || "مدينة", list = map.fronts.filter((f) => plot == null || f.a === plot || f.b === plot);
+  if (!list.length) return plot == null ? `<p class="hint">🕊️ ما فيه حروب بالجوف الحين.</p>` : "";
+  return `<h3>🔥 جبهات الجوف</h3><div class="rows">${list.map((f) => { const first = f.by === f.b ? f.b : f.a, second = first === f.a ? f.b : f.a, hf = first === f.a ? f.hitsA : f.hitsB, hs = first === f.a ? f.hitsB : f.hitsA;
+    return row(`${REL_ICONS[f.state] || "⚔️"} «${name(first)}» ⟵ «${name(second)}»`, f.state === "war" ? `ضربات ${ar(hf)} مقابل ${ar(hs)}` : f.state === "warning" ? "إنذار حرب" : f.state === "truce" ? "هدنة" : "طلب جزية"); }).join("")}</div>`;
+}
+/** One town: what stands between us, and everything we can do with it (tribute, war, talk, truce, peace). */
+function diploPanel(st, map, t) {
+  const mine = me()?.plot, now = warNow();
+  if (t.plot === mine) {
+    const sb = st.shieldBuy || {};
+    return `<div class="dp-card"><div class="dp-top"><b>📍 مدينتك «${t.town}»</b><small>${ERAS[t.era || 0].name}</small></div>
+      ${sb.until > now ? `<p class="dp-shield">🛡️ درعك شغال · باقي ${fmtLeft(sb.until - now)}</p>` : `<p class="hint">ما عليك درع. ترفعه من «🛡️ الدفاع والدرع».</p>`}</div>${frontsList(map, t.plot)}`;
+  }
+  const r = st.rels.find((x) => x.other === t.plot) || { state: "peace", hist: [], chat: [] };
+  const block = relBlock(r, t.era);
+  const acts = relActions(r.state === "peace" && !r.hist?.length && !r.chat?.length ? null : { ...r, a: Math.min(mine, t.plot), b: Math.max(mine, t.plot) }, mine, now, block);
+  const most = tributeMax(t.money);
+  const big = (act, icon, label, sub, cls = "") => `<button type="button" class="dp-act ${cls}" data-dp="${act}" ${acts[act] ? `data-why="${acts[act]}" aria-disabled="true"` : ""}><i>${icon}</i><b>${label}</b><small>${acts[act] || sub}</small></button>`;
+  const ask = r.tribute && r.tribute.by !== mine ? `<div class="dp-alert"><b>🪙 يطالبونك بجزية ${money(r.tribute.amount)} ريال</b><small>ادفع: سلام شهر بالجوف · ارفض أو لا ترد خلال ${fmtLeft(r.tribute.until - now)}: حرب</small>
+      <div class="dp-row"><button class="btn go" type="button" data-dpdo="pay">🪙 ادفع ${money(r.tribute.amount)}</button><button class="btn danger" type="button" data-dpdo="refuse">✋ ارفض (حرب)</button></div></div>`
+    : r.tribute ? `<div class="dp-wait">🪙 طلبت جزية ${money(r.tribute.amount)} ريال · ينتظر ردهم ${fmtLeft(r.tribute.until - now)}، بعدها حرب</div>` : "";
+  const offer = r.offer && r.offer.by !== mine ? `<div class="dp-alert calm"><b>${r.offer.kind === "truce" ? "🏳️ يعرضون هدنة" : "🤝 يعرضون صلح"}</b><div class="dp-row"><button class="btn go" type="button" data-dpdo="accept">✓ اقبل</button><button class="btn" type="button" data-dpdo="reject">✋ ارفض</button></div></div>` : "";
+  let form = "";
+  if (ROOM.form === "tribute" && !acts.tribute) {
+    const v = Math.min(most, Math.max(WAR.tribute.min, ROOM.amount || Math.round(most / 2 / 500) * 500));
+    form = `<div class="dp-form"><b>🪙 كم تطلب من «${t.town}»؟</b>
+      <div class="dp-amount"><output id="dpAmt">${money(v)}</output><small>ريال</small></div>
+      <input type="range" id="dpRange" min="${WAR.tribute.min}" max="${most}" step="500" value="${v}">
+      <div class="dp-scale"><small>${money(WAR.tribute.min)}</small><small>الحد ${money(most)} (٣٠٪ من ميزانيتهم)</small></div>
+      <p class="hint">إذا دفعوا: يوصلك المبلغ، وسلام بينكم شهر بالجوف (${fmtLeft(WAR.T.tributePeace)}). إذا رفضوا أو ما ردوا خلال يوم بالجوف (${fmtLeft(WAR.T.tributeAnswer)}): الحرب تنعلن لحالها.</p>
+      <div class="dp-row"><button class="btn go" type="button" data-dpdo="tribute">أرسل الطلب</button><button class="btn" type="button" data-dpform="">إلغاء</button></div></div>`;
+  } else if (ROOM.form === "chat") {
+    const lines = r.chat || [];
+    form = `<div class="dp-chat"><div class="dp-lines" id="dpLines">${lines.length ? lines.map((l) => `<p class="${l.by === mine ? "me" : "them"}"><span>${escapeHtml(l.text)}</span><small>${new Date(l.at - (WARX.offset || 0)).toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" })}</small></p>`).join("") : `<p class="dp-empty">اكتب تهديدك أو شروطك. يوصلهم إشعار ويقدرون يردون هنا.</p>`}</div>
+      <div class="dp-send"><input id="wrSay" type="text" maxlength="200" placeholder="اكتب رسالتك…" enterkeyhint="send"><button class="btn go" type="button" data-dpdo="say">إرسال</button></div>
+      ${r.chatOpen ? `<button class="btn danger block" type="button" data-dpdo="endchat">⚔️ أنهِ المحادثة${acts.war ? "" : " وابدأ الحرب"}</button>` : ""}</div>`;
+  }
+  return `<div class="dp-card"><div class="dp-top"><b>${REL_ICONS[r.state]} «${t.town}»</b><small>العمدة ${t.owner} · ${ERAS[t.era || 0].name}</small></div>
+      <div class="dp-state ${r.state}">${REL_NAMES[r.state]}${relTimer(r)}</div>
+      ${ask}${offer}
+      ${r.state === "war" ? `<button class="btn go block dp-go" type="button" data-dpdo="attack">🎯 هاجم «${t.town}» الحين</button>` : ""}
+      <div class="dp-acts">${big("tribute", "🪙", "طالب بجزية", most >= WAR.tribute.min ? `لين ${money(most)} ريال` : "ميزانيتهم ما تكفي")}${big("war", "⚔️", "أعلن الحرب", `تبدأ بعد ${fmtLeft(WAR.T.warning)}`, "danger")}
+        ${big("say", "💬", "محادثة", r.chatOpen ? `${ar((r.chat || []).length)} رسالة` : "تهديد أو شروط بكلامك")}${["warning", "war"].includes(r.state) ? big("truce", "🏳️", "اعرض هدنة", "توقف الضربات فترة") : ""}${r.state !== "peace" ? big("peace", "🤝", "اقترح صلح", "تنتهي الحرب") : ""}</div>
+      ${form}</div>${frontsList(map, t.plot)}`;
+}
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function shieldCard(st) {
+  const sb = st.shieldBuy, now = warNow();
+  if (!sb) return "";
+  if (sb.until > now) return `<div class="dp-shieldcard on"><b>🛡️ درع الحماية شغال</b><small>باقي ${fmtLeft(sb.until - now)} · ما ينضرب فيك شي. إذا هاجمت أحد ينكسر.</small></div>`;
+  const wait = sb.next > now ? sb.next - now : 0;
+  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك أسبوع بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. مرة وحدة بالشهر. إذا هاجمت وأنت عليه ينكسر.</small>
+    <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع مرة بالشهر: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
 }
 function defTab(st) {
   const p = st.profile, ars = st.arsenal, caps = st.caps, home = visiting ? visiting.home : S;
@@ -142,7 +235,7 @@ function defTab(st) {
     ${why ? "" : w !== "intc" && caps.open
       ? `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="5" ${home.money < price * 5 ? "disabled" : ""}>+٥</button></span>`
       : `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${room(w) <= 0 || home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="${Math.max(0, room(w))}" ${room(w) <= 0 ? "disabled" : ""}>عبّي (${ar(Math.max(0, room(w)))})</button></span>`}</div>`;
-  return `<div class="war-grid">
+  return `${shieldCard(st)}<div class="war-grid">
       <div><b>${ar(drones)}${caps.open ? "" : `<small>/${ar(caps.drones)}</small>`}</b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}${caps.open ? "" : `<small>/${ar(caps.missiles)}</small>`}</b><span>🚀 صواريخ</span></div>
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
@@ -155,32 +248,6 @@ function defTab(st) {
     <div class="wr-modes">${[["full", "مشاهد كاملة", "كل الهجمات بمشهد واحد"], ["fast", "مشاهد سريعة", "نفس المشهد بضعف السرعة"], ["off", "التقرير بس", "بدون مشاهد"]].map(([k, n, t]) => `<button type="button" class="${sceneMode() === k ? "on" : ""}" data-wrmode="${k}"><b>${n}</b><small>${t}</small></button>`).join("")}</div>
     <p class="hint">كل اللي يوصلك من هجمات، من مدينة وحدة أو أكثر، ينعرض مرة وحدة مع بعض، وبعده تقرير واحد.</p>
     <button class="btn block" type="button" id="wrDeputy">⚙️ أوامر النائب والقيادة التفصيلية</button>`;
-}
-function enemiesTab(st) {
-  const mine = me()?.plot, rels = st.rels.filter((r) => r.state !== "peace");
-  if (!rels.length) return `<p class="hint">ما عندك أعداء الحين. 🕊️</p>`;
-  return rels.map((r) => {
-    const theirs = st.ops.filter((o) => o.from === r.other && o.status === "done"), ours = st.ops.filter((o) => o.to === r.other && o.status === "done");
-    const hit = (l) => l.filter((o) => o.result?.dmg).length;
-    return `<div class="rg-card wr-enemy"><div class="rg-top"><b>${REL_ICONS[r.state]} «${r.town}»</b><small>العمدة ${r.owner} · ${ERAS[r.era || 0].name}</small></div>
-      <div class="rows">${row("الحالة", `${REL_NAMES[r.state]}${relTimer(r)}`)}${row("ضرباتهم علينا", `${ar(theirs.length)} · أصابت ${ar(hit(theirs))}`)}${row("ضرباتنا عليهم", `${ar(ours.length)} · أصابت ${ar(hit(ours))}`)}
-        ${r.offer && r.offer.by !== mine ? row("عرض", `<b class="plus">${r.offer.kind === "truce" ? "يعرضون هدنة" : "يعرضون صلح"}</b>`) : ""}</div>
-      <div class="wr-acts">${r.state === "war" ? `<button class="btn go" type="button" data-wrattack="${r.other}">🎯 هاجمها</button>` : ""}<button class="btn" type="button" data-wrtalk="${r.other}">🤝 تفاوض</button></div></div>`;
-  }).join("");
-}
-function talkTab(st) {
-  const mine = me()?.plot, rels = st.rels;
-  if (!rels.length) return `<p class="hint">ما بينك وبين أحد شي. من خريطة الجوف اضغط أي مدينة وتشوف «⚔️ العلاقات العسكرية».</p>`;
-  if (!rels.some((r) => r.other === ROOM.talk)) ROOM.talk = (rels.find((r) => r.offer && r.offer.by !== mine) || rels.find((r) => r.state !== "peace") || rels[0]).other;
-  const r = rels.find((x) => x.other === ROOM.talk), home = visiting ? visiting.home : S;
-  const block = (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (r.era || 0) < WAR.minEra ? "القرى محمية من الحروب" : (home.era || 0) - (r.era || 0) >= WAR.bully && !["hostile", "warning", "war"].includes(r.state) ? "مدينتك أكبر منها بكثير: ما تبدأ على الصغار (لكن إذا بدأوا عليك تقدر ترد)" : "";
-  const acts = relActions(r.state === "peace" && !r.hist?.length ? null : { ...r, a: Math.min(mine, r.other), b: Math.max(mine, r.other) }, mine, warNow(), block);
-  const btn = (act, label, cls = "") => `<button class="btn block ${cls}" type="button" data-wract="${act}" ${acts[act] ? `aria-disabled=true data-why="${acts[act]}"` : ""}>${label}${acts[act] ? `<small>${acts[act]}</small>` : ""}</button>`;
-  return `<div class="wr-enemies">${rels.map((x) => `<button type="button" class="${x.other === r.other ? "on" : ""}" data-wrtalkto="${x.other}">${REL_ICONS[x.state]} «${x.town}»${x.offer && x.offer.by !== mine ? " 📩" : ""}</button>`).join("")}</div>
-    <div class="rows">${row("الحالة", `${REL_NAMES[r.state]}${relTimer(r)}`)}${r.offer ? row("عرض", `${r.offer.kind === "truce" ? "هدنة" : "صلح"} من ${r.offer.by === mine ? "عندك (ينتظر ردهم)" : `«${r.town}»`}`) : ""}</div>
-    <div class="war-acts keep">${r.offer && r.offer.by !== mine ? `${btn("accept", r.offer.kind === "truce" ? "🏳️ اقبل الهدنة" : "🤝 اقبل الصلح", "go")}${btn("reject", "✋ ارفض")}` : ""}
-      ${btn("truce", "🏳️ اعرض هدنة")}${btn("peace", "🤝 اقترح صلح")}${btn("threat", "😠 أرسل تهديد")}${btn("hostile", "⚔️ إعلان عداوة")}${btn("war", "🔥 إعلان حرب", "danger")}</div>
-    ${(r.hist || []).length ? `<h3>تاريخ النزاع</h3><div class="rows">${r.hist.slice(-8).reverse().map((h) => row(`${h.by === mine ? "أنت" : `«${r.town}»`}: ${h.text}`, new Date(h.at - (WARX.offset || 0)).toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" }))).join("")}</div>` : ""}`;
 }
 function logTab(st) {
   const home = visiting ? visiting.home : S, N = Math.round(Math.sqrt(home.tiles.length));
@@ -198,27 +265,33 @@ function logTab(st) {
 /** Open the war room (or draw it again) on a tab. */
 export async function warRoom(tab = ROOM.tab) {
   if (!worldMode) return;
+  if (tab === "talk" || tab === "enemies") { if (ROOM.talk != null) ROOM.sel = ROOM.talk; tab = "world"; }
   ROOM.tab = tab;
+  const draft = $("wrSay")?.value || "", typing = document.activeElement?.id === "wrSay";
   const home = visiting ? visiting.home : S;
   if (!home.tiles.some((t) => t.b?.id === "milhq")) { warSheet(); return; } // no command centre yet: the old page explains how to start
   if (!WARX.st) { sheet(`<h2>⚔️ غرفة العمليات</h2><p class="hint">نحمّل…</p>`, "warroom"); await warPoll(true); }
   const st = WARX.st;
   if (!st) { sheet(`<h2>⚔️ غرفة العمليات</h2><div class="need">ما قدرت أوصل للسيرفر.</div>`, "warroom"); return; }
-  const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "enemies" ? enemiesTab(st) : tab === "talk" ? talkTab(st) : logTab(st);
+  const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "world" ? await worldTab(st) : logTab(st);
+  const mine = me()?.plot, asks = st.rels.filter((r) => (r.tribute && r.tribute.by !== mine) || (r.offer && r.offer.by !== mine) || (r.chatOpen && r.chat?.at(-1)?.by === r.other));
   const wars = st.rels.filter((r) => ["war", "warning"].includes(r.state)).length, inc = st.ops.filter((o) => o.side === "in" && o.status === "flying"), incoming = inc.length, attackers = new Set(inc.map((o) => o.from)).size;
   const keep = $("sheetBody").querySelector(".wr-body")?.scrollTop || 0;
   sheet(`<div class="wr-head"><span class="wr-radar"><i></i></span><span><h2>غرفة العمليات</h2><small>صراع الجوف · ${ERAS[home.era || 0].name}</small></span></div>
     <div class="wr-kpis"><div class="${wars ? "hot" : ""}"><b>${ar(wars)}</b><span>🔥 حروب</span></div><div class="${incoming ? "hot" : ""}"><b>${ar(incoming)}</b><span>🚨 ${attackers > 1 ? `هجوم من ${ar(attackers)} مدن` : "هجوم جاي"}</span></div>
       <div><b>${ar(st.arsenal.intc)}</b><span>🛡️ اعتراض</span></div><div><b>${home.money >= 1e6 ? `${ar((home.money / 1e6).toFixed(1))} م` : money(home.money)}</b><span>💰 الميزانية</span></div></div>
     <div class="wr-strip" id="wrStrip">${stripHtml(st)}</div>
-    ${mapHtml(st)}
-    <div class="war-tabs wr-tabs">${TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wrtab="${k}">${n}</button>`).join("")}</div>
+    ${tab === "world" ? "" : mapHtml(st)}
+    ${asks.filter((r) => !(tab === "world" && ROOM.sel === r.other)).map((r) => `<button type="button" class="wr-ask" data-wrask="${r.other}">${r.tribute && r.tribute.by !== mine ? `🪙 «${r.town}» تطالبك بجزية ${money(r.tribute.amount)} · باقي ${fmtLeft(r.tribute.until - warNow())}` : r.offer && r.offer.by !== mine ? `${r.offer.kind === "truce" ? "🏳️" : "🤝"} «${r.town}» تعرض ${r.offer.kind === "truce" ? "هدنة" : "صلح"}` : `💬 رسالة من «${r.town}»`}<b>افتح ←</b></button>`).join("")}
+    <div class="war-tabs wr-tabs">${TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wrtab="${k}">${n}${k === "world" && asks.length ? " 🔴" : ""}</button>`).join("")}</div>
     <div class="wr-body">${body}</div>`, "warroom");
   $("sheet").classList.add("warroom");
   const wb = $("sheetBody").querySelector(".wr-body"); if (wb && tab === ROOM.lastTab) wb.scrollTop = keep;
   ROOM.lastTab = tab;
   clearInterval(ROOM.tick); ROOM.tick = setInterval(tick, 1000);
   bind(st);
+  const say = $("wrSay"); if (say) { say.value = draft; if (typing) say.focus(); }
+  const lines = $("dpLines"); if (lines) lines.scrollTop = lines.scrollHeight;
 }
 function bind(st) {
   const q = (sel) => $("sheetBody").querySelectorAll(sel);
@@ -229,6 +302,38 @@ function bind(st) {
   q("[data-wrtalk]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalk); warRoom("talk"); }));
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
+  // al-Jouf and diplomacy
+  q("[data-wrsel]").forEach((c) => c.addEventListener("click", () => { sfx.tap(); const p = Number(c.dataset.wrsel); ROOM.sel = ROOM.sel === p ? null : p; ROOM.form = ""; warRoom("world"); }));
+  q("[data-wrask]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.sel = Number(b.dataset.wrask); const r = st.rels.find((x) => x.other === ROOM.sel); ROOM.form = r?.chatOpen && !r.tribute && !r.offer ? "chat" : ""; warRoom("world"); }));
+  q("[data-dpform]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.form = b.dataset.dpform; warRoom("world"); }));
+  q("[data-dp]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }
+    sfx.tap();
+    const act = b.dataset.dp;
+    if (act === "tribute" || act === "say") { ROOM.form = act === "say" ? "chat" : ROOM.form === "tribute" ? "" : "tribute"; ROOM.amount = 0; warRoom("world"); return; }
+    if (act === "war" && !b.dataset.sure) { b.dataset.sure = "1"; b.querySelector("small").textContent = "متأكد؟ اضغط مرة ثانية"; return; }
+    relDo(act);
+  }));
+  $("dpRange")?.addEventListener("input", (e) => { ROOM.amount = Number(e.target.value); $("dpAmt").textContent = money(ROOM.amount); });
+  q("[data-dpdo]").forEach((b) => b.addEventListener("click", () => {
+    const act = b.dataset.dpdo;
+    if (act === "attack") { closeSheet(); startTargeting(ROOM.sel); return; }
+    if (["refuse", "endchat"].includes(act) && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = act === "refuse" ? "متأكد؟ الرفض = حرب" : "متأكد؟ اضغط مرة ثانية"; return; }
+    if (act === "say") { const text = $("wrSay").value.trim(); if (!text) return; relDo("say", { text }); return; }
+    if (act === "tribute") { relDo("tribute", { amount: ROOM.amount || Number($("dpRange").value) }); return; }
+    relDo(act);
+  }));
+  $("wrSay")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("sheetBody").querySelector('[data-dpdo="say"]')?.click(); } });
+  $("wrShield")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = `متأكد؟ ${money(st.shieldBuy.price)} ريال`; return; }
+    b.disabled = true; await warSyncNow();
+    const r = await warApi("shield", { req: warReq() });
+    if (r.error) { toast(r.error, "bad"); sfx.deny(); b.disabled = false; return; }
+    sfx.goal(); toast(`🛡️ رفعت درع الحماية (−${money(r.charge.amount)} ريال)`, "goal");
+    await warPoll(true); warRoom("def");
+  });
   $("wrMapTarget")?.addEventListener("click", () => { closeSheet(); startTargeting(ROOM.enemy); });
   // defence and refilling
   const buy = async (kind, n) => { const r = await warApi("buy", { req: warReq(), kind, n }); if (r.error) { toast(r.error, "bad"); sfx.deny(); return false; } return r; };
@@ -258,18 +363,6 @@ function bind(st) {
   });
   $("wrDeputy")?.addEventListener("click", () => warSheet("deputy"));
   q("[data-wrmode]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); setSceneMode(b.dataset.wrmode); toast({ full: "🎬 المشاهد كاملة", fast: "⏩ المشاهد سريعة", off: "📋 التقرير بس، بدون مشاهد" }[b.dataset.wrmode], "goal"); warRoom("def"); }));
-  // negotiation
-  q("[data-wract]").forEach((b) => b.addEventListener("click", async () => {
-    if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }
-    const act = b.dataset.wract, r = st.rels.find((x) => x.other === ROOM.talk);
-    if (act === "threat") { threatSheet(ROOM.talk, { town: r.town, owner: r.owner, era: r.era }); return; }
-    if (act === "war" && !confirm(`تعلن الحرب على «${r.town}»؟`)) return;
-    b.disabled = true; await warSyncNow();
-    const res = await warApi("rel", { req: warReq(), other: ROOM.talk, act });
-    if (res.error) { toast(res.error, "bad"); sfx.deny(); b.disabled = false; return; }
-    sfx.tap(); toast({ accept: "✓ قبلت", reject: "رفضت العرض", truce: "🏳️ أرسلت عرض الهدنة", peace: "🤝 أرسلت عرض الصلح", hostile: "⚔️ أعلنت العداوة", war: "🔥 أعلنت الحرب" }[act] || "✓", "goal");
-    await warPoll(true); warRoom("talk");
-  }));
   // repairs and replays
   q("[data-wrfix]").forEach((b) => b.addEventListener("click", async () => {
     const [x, y] = b.dataset.wrfix.split(":").map(Number);
@@ -280,13 +373,26 @@ function bind(st) {
   }));
 }
 
+/** One relation action with the selected town, then the room again (with the talk kept open for a message). */
+async function relDo(act, extra = {}) {
+  const other = ROOM.sel;
+  await warSyncNow();
+  const res = await warApi("rel", { req: warReq(), other, act, ...extra });
+  if (res.error) { toast(res.error, "bad"); sfx.deny(); return; }
+  if (act === "say") { const say = $("wrSay"); if (say) say.value = ""; }
+  else { ROOM.form = ""; toast({ tribute: "🪙 وصلهم طلب الجزية", pay: "🪙 دفعت الجزية: سلام شهر", refuse: "✋ رفضت: الحرب تبدأ قريب", war: "⚔️ أعلنت الحرب", endchat: "⚔️ انتهت المحادثة", truce: "🏳️ أرسلت عرض الهدنة", peace: "🤝 أرسلت عرض الصلح", accept: "✓ قبلت", reject: "رفضت العرض" }[act] || "✓", ["war", "refuse", "endchat"].includes(act) ? "bad" : "goal"); }
+  (["war", "refuse", "endchat"].includes(act) ? sfx.deny : sfx.goal)();
+  await warPoll(true);
+  if (act === "say") ROOM.form = "chat";
+  warRoom("world");
+}
 /** The war button: red and pulsing while there is a war or an attack on its way. */
 export function warRoomBadge(st) {
   const btn = $("warBtn"); if (!btn || !st) return;
   const hot = st.rels?.some((r) => ["war", "warning"].includes(r.state)) || st.ops?.some((o) => o.side === "in" && o.status === "flying");
   btn.classList.toggle("wr-hot", !!hot);
   // the room is drawn again only when something it shows changed (relations, operations, ammunition, damage)
-  const sig = JSON.stringify([st.rels?.map((r) => [r.other, r.state, r.offer?.at]), st.ops?.map((o) => [o.id, o.status]), st.arsenal, (visiting ? visiting.home : S)?.tiles.reduce((n, t) => n + (t.b?.wd ? 1 : 0), 0)]);
+  const sig = JSON.stringify([st.rels?.map((r) => [r.other, r.state, r.offer?.at, r.tribute?.at, r.chat?.length, r.chatOpen]), st.shieldBuy?.until, st.ops?.map((o) => [o.id, o.status]), st.arsenal, (visiting ? visiting.home : S)?.tiles.reduce((n, t) => n + (t.b?.wd ? 1 : 0), 0)]);
   if (sig === ROOM.sig) return;
   ROOM.sig = sig;
   if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }

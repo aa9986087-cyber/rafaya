@@ -250,7 +250,7 @@ export function relActions(rel, me, now, ok, cfg = WAR) {
   out.tribute = blockAll || warWhy;
   out.pay = r.tribute && r.tribute.by !== me ? "" : "ما فيه طلب جزية";
   out.refuse = out.pay;
-  out.say = blockAll || (rel?.lastSay?.[me] && now - rel.lastSay[me] < cfg.T.say ? "شوي شوي" : "");
+  out.say = rel?.lastSay?.[me] && now - rel.lastSay[me] < cfg.T.say ? "شوي شوي" : ""; // talking is open to anyone (the words go through the filter)
   out.endchat = r.chat?.open ? "" : "ما فيه محادثة";
   out.truce = ["warning", "war"].includes(r.state) ? (r.offer?.by === me ? "عرضك ينتظر رد" : "") : "ما فيه حرب";
   out.peace = ["tension", "hostile", "warning", "war", "truce"].includes(r.state) ? (r.offer?.by === me ? "عرضك ينتظر رد" : "") : "أنتم بسلام";

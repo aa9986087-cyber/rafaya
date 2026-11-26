@@ -180,7 +180,18 @@ const PV_SCENARIOS = [
   }],
   ["bully", "🛡️ أنت الأكبر: جرّب تبدأ على مدينة صغيرة", "ترجع «الخضراء» بسلام معك. جرّب تعلن عليها العداوة: اللعبة تمنعك لأنها أصغر منك بكثير.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 1); pvSetRel(me, bot, "peace");
-    return { plot: bot.plot, msg: "«الخضراء» بسلام معك. جرّب «إعلان عداوة»." };
+    return { plot: bot.plot, msg: "«الخضراء» بسلام معك. جرّب «أعلن الحرب» أو «طالب بجزية»." };
+  }],
+  ["tribute", "🪙 مدينة تطالبك بجزية", "«هجرة الشعيب» تطلب منك مبلغ: ادفع وتاخذ سلام شهر، أو ارفض وتصير حرب.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(me, bot, "peace");
+    const most = tributeMax(pvWar.townInfo(me.plot)?.snap.money || 0), amount = Math.max(1000, Math.round(most / 2 / 500) * 500);
+    const r = pvWar.handle("rel", { req: `sctr${Date.now()}`, other: me.plot, act: "tribute", amount }, bot);
+    return { plot: bot.plot, room: "world", msg: r.ok ? "وصلك طلب جزية: قرر." : `ما وصل: ${r.error}` };
+  }],
+  ["talk", "💬 مدينة تهددك بالمحادثة", "«الخضراء» تكتب لك تهديد. رد عليها، أو أنهِ المحادثة وتبدأ الحرب.", () => {
+    const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 3); pvSetRel(me, bot, "peace");
+    const r = pvWar.handle("rel", { req: `sctk${Date.now()}`, other: me.plot, act: "say", text: "يا جارنا، الوادي حقنا. ابعد عنه وإلا بتشوف مسيّراتنا فوقك 😠" }, bot);
+    return { plot: bot.plot, room: "world", chat: true, msg: r.ok ? "وصلتك رسالة تهديد." : `ما وصلت: ${r.error}` };
   }],
   ["wave", "💥 دفعة: ٣ صواريخ ومسيّرة بنفس الوقت", "«هجرة الشعيب» تطلق دفعة على ٤ أماكن بمدينتك بنفس اللحظة، والدفاع يتصدى.", () => {
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
@@ -225,8 +236,8 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
     try { out = sc[3](); pvSave(); } catch (e) { toast(`ما زبط: ${e.message}`, "bad"); return; }
     closeSheet(); toast(out.msg, "goal");
     await warPoll(true);
-    setTimeout(() => warRoom(out.room || (out.plot != null ? "talk" : "log")), 500); // every scenario lands in the war room
-    if (out.plot != null) ROOM.talk = out.plot;
+    if (out.plot != null) { ROOM.sel = out.plot; ROOM.form = out.chat ? "chat" : ""; }
+    setTimeout(() => warRoom(out.room || (out.plot != null ? "world" : "log")), 500); // every scenario lands in the war room
   }));
 };
 
@@ -264,7 +275,7 @@ function pvRoute(p, body) {
     return { items: pvState.news.slice(-60).reverse(), now: Date.now() };
   }
   if (post && p[0] === "me") { const pl = pvState.players[body?.name]; return { name: body?.name, started: pl?.created || Date.now() - 3 * 86400000, played: pl?.played ?? 4 * 3600 + 25 * 60, renamed: !!pl?.renamed }; } // the trial: the player's own time
-  if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t) };
+  if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t), fronts: pvWar.fronts() };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];
     if (!t) throw new Error("404");

@@ -231,6 +231,8 @@ export function relTimer(r) {
   return "";
 }
 export async function relSheet(plot) {
+  // with a command centre: the town opens in the war room's map (tribute, war, talk, truce, peace)
+  if ((visiting ? visiting.home : S).tiles.some((t) => t.b?.id === "milhq")) { ROOM.sel = plot; ROOM.form = ""; warRoom("world"); return; }
   const st = await warPoll(true) || WARX.st;
   let r = st?.rels.find((x) => x.other === plot);
   let info = r ? { town: r.town, owner: r.owner, era: r.era } : null;
@@ -250,7 +252,7 @@ export async function relSheet(plot) {
     </div>
     <h3>تاريخ النزاع</h3>
     ${r.hist?.length ? `<div class="rows">${r.hist.slice().reverse().map((h) => `<div class="row"><span>${h.by === mine ? "أنت" : `«${info.town}»`}: ${h.text}</span><b><small>${new Date(h.at - (WARX.offset || 0)).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</small></b></div>`).join("")}</div>` : `<p class="hint">ما بينكم شي للحين.</p>`}
-    <p class="hint">العداوة لازم تمضي ${minutesText(WAR.T.hostileToWar)} قبل إعلان الحرب، وبعد الإعلان فيه إنذار ${minutesText(WAR.T.warning)}، والحرب تدوم ${minutesText(WAR.T.war)}.</p>`, "war-rel");
+    <p class="hint">بعد إعلان الحرب فيه إنذار ${minutesText(WAR.T.warning)}، والحرب تدوم ${minutesText(WAR.T.war)}. للجزية والمحادثة ابنِ مركز القيادة العسكرية.</p>`, "war-rel");
   $("relTarget")?.addEventListener("click", () => startTargeting(plot));
   $("sheetBody").querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
     if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }

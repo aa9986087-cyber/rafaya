@@ -202,6 +202,23 @@ export class WarServer {
     }
   }
 
+  /**
+   * The fronts of al-Jouf for everyone (the world map shows them): only who fights whom, since when and how many
+   * strikes landed each way. Never budgets, weapons or defences.
+   */
+  fronts() {
+    this.settle();
+    const now = this.now(), out = [];
+    for (const r0 of this.db.list("rel", {})) {
+      const r = this.lapse(r0, now), v = relNow(r, now, this.cfg);
+      if (!["warning", "war", "truce"].includes(v.state) && !r.tribute) continue;
+      const landed = (from, to) => this.db.list("op", { k1: String(from), k2: String(to), limit: 200 }).filter((o) => o.status === "done" && o.launchAt >= (v.warStart || 0) - this.cfg.T.warning && o.result?.dmg > 0).length;
+      const started = [...(r.hist || [])].reverse().find((h) => ["war", "refuse", "lapse"].includes(h.kind));
+      out.push({ a: r.a, b: r.b, state: v.state, by: started?.kind === "war" ? started.by : null, tribute: !!r.tribute, warStart: v.warStart || 0, warEnd: v.warEnd || 0, truceEnd: v.truceEnd || 0, hitsA: landed(r.a, r.b), hitsB: landed(r.b, r.a) });
+    }
+    return out;
+  }
+
   // ---------- reading ----------
   state(body, me) {
     // what this town's game has applied (the bills and gifts up to this number): the owner's panel shows a gift as arrived
