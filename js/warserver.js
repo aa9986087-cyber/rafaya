@@ -328,6 +328,7 @@ export class WarServer {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
       openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
+      cityMilestoneSeq: a.cityMilestoneSeq || 0,
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }

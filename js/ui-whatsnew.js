@@ -1,7 +1,7 @@
 // «وش الجديد»: showing the release notes of js/whats-new.js.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { WHATS_NEW } from "./whats-new.js";
-import { $, A, S, ar, bankSheet, closeSheet, fine, money, refresh, save, sheet, sheetFor, store, tool, world, worldMode } from "./main.js";
+import { $, A, S, ar, bankSheet, closeSheet, fine, money, refresh, save, sheet, sheetFor, store, sync, tool, world, worldMode } from "./main.js";
 import { WORLD_SAVE, me } from "./ui-online.js";
 import { nameLandmarks, row, toast } from "./ui-build.js";
 import { MAP_SIZE as N, worldPlace } from "./data.js";
@@ -138,6 +138,7 @@ export const MONEY_MOVES = {
   election: ["🗳️", "دعم الفوز بالانتخابات"], grant: ["🎉", "دعم من المحافظ"],
   fee: ["🏦", "رسوم المحافظة السنوية"], cleaning: ["🛣️", "تنظيف الطرق"],
   citizenSupport: ["💰", "دعم حساب المواطن"], gift: ["🎁", "هدية من إدارة الجوف"], refund: ["↩", "مبلغ رجّعته إدارة الجوف"],
+  cityMilestone: ["🎉", "هدية وصول عالم الجوف إلى ٨٠ مدينة"],
   worldBill: ["📋", "عملية في عالم الجوف"], transfer: ["↔", "تحويل بين المدن"], advisor: ["💼", "المستشار المالي"],
   awayLimit: ["🔒", "خصم كسب الغياب الزايد"], idleLimit: ["🔒", "كسب فوق حدّ الخمول"],
   idleCover: ["🛡️", "تغطية مصروف من كسب الخمول"]
@@ -174,13 +175,25 @@ export function moneyMoveRow(entry, open) {
 }
 export function budget() {
   const h = S.history;
-  const open = new Set(sheetFor === "budget" ? [...$("sheetBody").querySelectorAll("details[open]")].map((part) => part.dataset.budgetDetails) : []);
+  const wasOpen = sheetFor === "budget";
+  const open = new Set(wasOpen ? [...$("sheetBody").querySelectorAll("details[open]")].map((part) => part.dataset.budgetDetails) : []);
   const section = (id, title) => `<details class="budget-details" data-budget-details="${id}" ${open.has(id) ? "open" : ""}><summary>${title}</summary>`;
   const entries = (S.moneyLog || []).slice().reverse();
+  const loans = S.loans || [];
   const income = A.income + A.farmIncome + A.tax, cap = moneyCap(S);
   const nextNet = Math.min(A.net, Math.max(0, cap - S.money));
   sheet(`<h2>الميزانية</h2>
     <div class="budget-balance"><span>الرصيد الحالي</span><strong><bdi>${money(S.money)}</bdi> <small>ريال</small></strong></div>
+    <div class="rows budget-actions">
+      <div class="row"><span><b>البنك</b><small>${loans.length ? `عليك ${ar(loans.length)} · الأقساط ${fine(loans.reduce((n, l) => n + l.per, 0))} ريال بالساعة` : "ما عليك قروض"}</small></span>
+        <button class="btn" id="openBank" type="button">🏦 افتح البنك</button></div>
+      <div class="row"><span><b>صيانة المباني</b><small>${A.repairBill ? `كلفة التصليح ${money(A.repairBill)} ريال` : "كل المباني سليمة"}</small></span>
+        <button class="btn go" id="repairAll" type="button" ${A.repairBill ? "" : "disabled"}>🔧 صلّح الكل</button></div>
+      <div class="row budget-tax">
+        <div class="tax"><label for="taxIn"><b>الضريبة</b></label><input id="taxIn" type="range" min="0" max="25" step="1" value="${S.tax}"><b id="taxOut">${ar(S.tax)}٪</b></div>
+        <small>رفع الضريبة يزيد الدخل ويقلّل الرضا.</small>
+      </div>
+    </div>
     <h3>تقدير الساعة الجاية</h3>
     <div class="budget-totals">
       <div><span>↓ يدخل</span><b class="plus"><bdi>${signedMoney(income)}</bdi></b></div>
@@ -222,7 +235,7 @@ export function budget() {
       ${row("المجموع بالساعة", `−${fine(A.upkeep)}`, "minus")}
       ${provinceFee(S) ? row(`رسوم المحافظة بعد ${ar(Math.ceil(hoursToElection(S) / 24))} يوم`, `تقريبًا −${money(provinceFee(S))} ريال`, "minus") : ""}
     </div></details>
-    ${section("manage", "🏦 الخزنة والبنك وإدارة الميزانية")}
+    ${section("manage", "🏦 الخزنة وإدارة الميزانية")}
     ${S.world ? row("🔒 سعة الخزنة", `${money(Math.max(0, S.money))} من ${money(cap)} ريال`) : ""}
     ${S.staffRaise ? `<p>رواتب البلدية زادت ${ar(Math.round(S.staffRaise * 100))}٪ من العلاوات السنوية. وكل سنة تدفع رسوم المحافظة.</p>` : ""}
     <h3>🚦 المرور</h3><div class="rows">
@@ -231,19 +244,9 @@ export function budget() {
       ${A.congestion > 0.02 ? `<div class="need">الزحمة تأخر الموظفين وتبعد الزباين: المحلات تخسر ${ar(Math.round(A.congestion * 100))}٪. سفلت الطرق المزحومة، أو حط شارع رئيسي ودوارات.</div>` : ""}
       <button class="btn block" id="showTraffic" type="button">🚦 اعرض الزحمة على الخريطة</button></div>
     ${productionHtml()}
-    <h3>البنك</h3>
-    <div class="rows">${(S.loans || []).length ? row("قروض عليك", `${ar(S.loans.length)} · ${fine(S.loans.reduce((n, l) => n + l.per, 0))} بالساعة`, "minus") : row("القروض", "ما عليك قروض")}
-      <button class="btn block" id="openBank" type="button">🏦 افتح البنك</button></div>
-    <h3>الصيانة</h3>
-    <div class="rows">
-      ${row("كلفة ترميم كل المباني", A.repairBill ? `${money(A.repairBill)} ريال` : "كلها سليمة", A.repairBill ? "minus" : "plus")}
-      ${A.repairBill ? `<button class="btn go block" id="repairAll" type="button">رمّم الكل (الأسوأ أول)</button>` : ""}
-    </div>
     <h3>التأمين</h3>
     <p>يكلف ${fine(A.value * 0.0003)} بالساعة، ويعوضك ٧٠٪ من أي مبنى يروح بحريق أو سيل أو انهيار.</p>
     <div class="rows"><label class="row toggle"><span>${S.insured ? "المباني مؤمّنة ✓" : "المباني بدون تأمين"}</span><input type="checkbox" id="insureIn" ${S.insured ? "checked" : ""}></label></div>
-    <h3>الضريبة</h3><p>ضريبة أعلى = دخل أكثر بس رضا أقل.</p>
-    <div class="tax"><input id="taxIn" type="range" min="0" max="25" step="1" value="${S.tax}" aria-label="نسبة الضريبة"><b id="taxOut">${ar(S.tax)}٪</b></div>
     <h3>الناس</h3>
     <div class="rows">
       ${row("السكان / السعة", `${money(S.pop)} / ${money(A.cap)}`)}
@@ -255,6 +258,8 @@ export function budget() {
     </div>
     <h3>السكان</h3>${spark(h.map((x) => x.p), "#2c8a7a")}
     <h3>الميزانية</h3>${spark(h.map((x) => x.m), "#c48a24")}</details>`, "budget");
+  if (sheetFor !== "budget") return;
+  if (!wasOpen) $("sheetBody").closest(".sheet-box").scrollTop = 0;
   $("openBank").addEventListener("click", () => { sfx.tap(); bankSheet(); });
   $("showTraffic").addEventListener("click", () => {
     closeSheet();
@@ -264,7 +269,17 @@ export function budget() {
     toast("الأخضر سالك، والأصفر يتزحم، والأحمر زحمة", "");
     setTimeout(() => { if (!tool) world.setOverlay(null); }, 7000);
   });
-  $("repairAll")?.addEventListener("click", () => { const r = repairAll(S); if (!r.n) { toast("ما يكفي المال", "bad"); sfx.deny(); return; } sfx.build(); toast(`رممت ${ar(r.n)} مبنى بـ${money(r.spent)} ريال`, "goal"); refresh(); save(); budget(); });
+  $("repairAll").addEventListener("click", () => {
+    const { n, spent } = repairAll(S);
+    if (!n) { toast("ما يكفي المال", "bad"); sfx.deny(); return; }
+    sfx.build();
+    toast(`رممت ${ar(n)} مبنى بـ${money(spent)} ريال`, "goal");
+    refresh();
+    sync(false);
+    save();
+    budget();
+  });
   $("insureIn").addEventListener("change", (e) => { S.insured = e.target.checked; sfx.tap(); refresh(); save(); budget(); });
   $("taxIn").addEventListener("input", (e) => { S.tax = Number(e.target.value); $("taxOut").textContent = `${ar(S.tax)}٪`; refresh(); });
+  $("taxIn").addEventListener("change", () => save());
 }

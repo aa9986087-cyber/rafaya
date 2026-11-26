@@ -599,6 +599,9 @@ body.world .speeds { display: none !important; }
 .budget-balance { display: grid; gap: 3px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); }
 .budget-balance strong { font-size: 26px; line-height: 1.2; }
 .budget-balance small { font-size: 13px; }
+.budget-actions { margin-block-start: 8px; }
+.budget-tax { display: grid; gap: 2px; }
+.budget-tax small { color: var(--ink-2); font-size: 12px; }
 .budget-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
 .budget-totals > div { display: grid; gap: 3px; padding: 7px 3px; text-align: center; border: 1px solid var(--line); border-radius: 10px; }
 .budget-totals span { font-size: 12px; }

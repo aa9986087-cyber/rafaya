@@ -2,7 +2,7 @@
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { $, S, ar, arrange, closeSheet, gsi, leaveArrange, leaveWorld, loadClock, money, refresh, save, sheet, sheetFor, showMenu, store, visiting, worldMapSheet, worldMode } from "./main.js";
 import { FIX, row, toast } from "./ui-build.js";
-import { WORLD_ID, WORLD_SAVE, api, esc, handoffSheet, makeWorldTown, me, onlineOk, prepareWorldSave } from "./ui-online.js";
+import { WORLD_ID, WORLD_SAVE, api, esc, handoffSheet, keepDeviceSave, makeWorldTown, me, onlineOk, prepareWorldSave } from "./ui-online.js";
 import { DEPUTY, pack, unpack } from "./sim.js";
 import { sfx } from "./sound.js";
 import { menuBackdrop } from "./ui-whatsnew.js";
@@ -253,10 +253,16 @@ export async function readOwnTown(id) {
   if (id?.plot == null) return null;
   try {
     const local = unpack(store.get(WORLD_SAVE));
-    if (local.world?.plot === id.plot) {
+    if (local.world?.plot === id.plot && (!local.world.owner || local.world.owner === id.name)) {
       local.world.owner = id.name;
-      if (local.world.syncConflict || typeof local.world.saveVersion !== "string") {
-        if (await prepareWorldSave(local, id).catch(() => null) === false) local.world.syncConflict = true;
+      if (!globalThis.RAFAYA_PREVIEW && (local.world.syncConflict || typeof local.world.saveVersion !== "string")) {
+        const cloud = await readCloudTown(id).catch(() => null);
+        const active = me();
+        if (active?.plot !== id.plot || active.name !== id.name) return null;
+        if (cloud && !prepareWorldSave(local, cloud)) {
+          local.world.syncConflict = true;
+          if (keepDeviceSave(local, id)) return cloud.state;
+        }
       }
       return local;
     }

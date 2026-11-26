@@ -15,12 +15,12 @@ import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
 import { sfx, ambience, warSfx } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
-import { API, LIVE, PUSH, VISIT_OK, VISIT_SHEETS, WORLD_GEN_KEY, WORLD_ID, WORLD_SAVE, activePushWorker, api, b64, checkPush, conflictCopyKey, freshWorldTown, gunzipText, gzipText, handoffSheet, iosPrepareMove, liveClose, liveOpen, makeWorldTown, me, moveCodeSheet, onlineOk, onlinePoll, ownsActiveSave, pendingSummary, prepareWorldSave, pushDeniedHelp, pushKey, pushOff, pushOffer, pushOn, pushState, registerPushEndpoint, registerPushWorker, saveWriters, takeMove, unb64, versionCheck, visitComments, worldHourNow, worldHours, worldSnapshot, worldSync } from "./ui-online.js";
+import { API, LIVE, PUSH, VISIT_OK, VISIT_SHEETS, WORLD_GEN_KEY, WORLD_ID, WORLD_SAVE, activePushWorker, api, b64, checkPush, conflictCopyKey, freshWorldTown, gunzipText, gzipText, handoffSheet, iosPrepareMove, keepDeviceSave, liveClose, liveOpen, makeWorldTown, me, moveCodeSheet, onlineOk, onlinePoll, ownsActiveSave, pendingSummary, prepareWorldSave, pushDeniedHelp, pushKey, pushOff, pushOffer, pushOn, pushState, registerPushEndpoint, registerPushWorker, saveWriters, takeMove, unb64, versionCheck, visitComments, worldHourNow, worldHours, worldSnapshot, worldSync } from "./ui-online.js";
 import { idleClamp, perf, perfHud, perfWatch, runHour } from "./ui-idle.js";
 import { focusTown, howTo, pauseMenu, reachClose, reachView } from "./ui-settings.js";
 import { canDo, canTurn, hoverAt, isMulti, paintAt, paintStarts, pointers, reachLine, roadAim, roadAimStart, roadNext, roadUpWhy, showPending, tileCost, upFits, upgradeWhy, whyNot } from "./ui-tools.js";
 import { arrBill, arrDrop, arrMovable, arrMove, arrPush, arrRemove, arrRender, arrRestore, arrSnapshot, arrUnstroke, arrUp, clearPreview, mosqueGaps, mosqueMap, nearRoad, showMove, showReach } from "./ui-arrange.js";
-import { WARX, apologyBox, followTown, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
+import { WARX, apologyBox, cityMilestonePopup, followTown, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
 import { F, FIX, NAME_KEEP, face, floatAt, here, nameLandmarks, renderCards, row, toast, toolsBar } from "./ui-build.js";
 import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, showNewsCount, whenSheet, wnewsPoll } from "./ui-news.js";
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
@@ -922,12 +922,12 @@ export async function loadClock() {
 export const canRegisterWorker = "serviceWorker" in navigator && onlineOk() && !globalThis.RAFAYA_PREVIEW && isSecureContext;
 if (canRegisterWorker) registerPushWorker();
 /** The server says this town started again (from another phone) after this copy: take the new one. */
-function syncReply(r, home) {
+async function syncReply(r, home, cloud) {
   if (!r || !ownsActiveSave(home)) return;
   if (r.conflict || (r.hasSave && r.restarted > (home.world.restartAt || 0))) {
     home.world.syncConflict = true;
     if (!arrange) store.set(WORLD_SAVE, pack(home));
-    if (!document.hidden && !arrange && !["update", "namefix", "decision"].includes(sheetFor)) saveConflictSheet();
+    await recoverWorldSave(home, cloud);
     return;
   }
   if (!r.restarted || (home.world.restartAt || 0) >= r.restarted) {
@@ -1007,39 +1007,48 @@ document.addEventListener("visibilitychange", () => {
 // back on the phone after a while: the socket may have died while asleep
 document.addEventListener("visibilitychange", () => { if (!document.hidden && worldMode && !LIVE.ws) { LIVE.tries = 0; liveOpen(); } });
 
-function saveConflictSheet() {
-  const id = me(), home = visiting?.home ?? S;
-  if (!ownsActiveSave(home) || !home.world.syncConflict || sheetFor === "update" || sheetFor === "namefix") return;
-  sheet(`<h2>تعارض حفظ المدينة</h2><p>حفظ هذا الجهاز يختلف عن حفظ السيرفر. وقفنا المزامنة عشان نحافظ على النسختين.</p>
-    <p>إذا فتحت حفظ السيرفر، بنحتفظ بنسخة هذا الجهاز في الإعدادات.</p>
-    <div class="sheet-actions keep"><button class="btn go block" id="openServerSave" type="button">افتح حفظ السيرفر</button></div>`, "save-conflict");
-  $("openServerSave").addEventListener("click", async (event) => {
-    if (arrange) { toast("احفظ الترتيب أو ألغِه أول", "bad"); return; }
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      const { state } = await readCloudTown(id);
-      if (!button.isConnected || !ownsActiveSave(home) || arrange) return;
-      const backup = pack(home), key = conflictCopyKey(id);
-      store.set(key, backup);
-      if (store.get(key) !== backup) { toast("ما فيه مساحة كافية لحفظ نسخة هذا الجهاز", "bad"); return; }
-      if (visiting) leaveVisit();
-      S = state;
-      store.set(WORLD_SAVE, pack(S));
-      await enterWorldTown();
-      toast("فتحنا حفظ السيرفر وحفظنا نسخة هذا الجهاز في الإعدادات", "goal");
-    } catch {
-      toast("ما قدرنا نفتح حفظ السيرفر. جرّب بعد شوي", "bad");
-    } finally {
-      button.disabled = false;
+const saveRecoveries = new WeakMap();
+let saveRetryAt = 0;
+export function recoverWorldSave(home, fetched) {
+  if (!ownsActiveSave(home) || !home.world.syncConflict || arrange || WARX.scene || document.hidden || navigator.onLine === false) return;
+  if (saveRecoveries.has(home)) return saveRecoveries.get(home);
+  saveRetryAt = performance.now() + 10000;
+  const id = me();
+  const task = (async () => {
+    const cloud = await (fetched || readCloudTown(id));
+    if (!ownsActiveSave(home) || arrange || WARX.scene || document.hidden) return;
+    // A response lost on this device is still the same save. Resume from its acknowledged revision.
+    if (prepareWorldSave(home, cloud)) {
+      store.set(WORLD_SAVE, pack(home));
+      return;
     }
-  });
+    if (!keepDeviceSave(home, id)) return;
+    const state = cloud.state;
+    store.set(WORLD_SAVE, pack(state));
+    lastSync = Date.now();
+    if (visiting) {
+      visiting.home = state;
+      visiting.cam = state.cam;
+      return;
+    }
+    closeSheet();
+    openCat = null;
+    S = state;
+    setTool(null);
+    world.newTown();
+    world.sync(S, { tiles: true, roads: true, buildings: true });
+    restoreTownCamera(S.cam);
+    refresh();
+  })().catch(() => { /* keep the device copy active and retry when the world is reachable */ })
+    .finally(() => saveRecoveries.delete(home));
+  saveRecoveries.set(home, task);
+  return task;
 }
 export async function sendWorldSave(mine, id, leaving) {
   if (typeof mine.world.saveVersion !== "string" && !globalThis.RAFAYA_PREVIEW) {
-    const matched = await prepareWorldSave(mine, id);
+    const cloud = await readCloudTown(id);
     if (!ownsActiveSave(mine) || arrange) return;
-    if (!matched) { syncReply({ conflict: true }, mine); return; }
+    if (!prepareWorldSave(mine, cloud)) { await syncReply({ conflict: true }, mine, cloud); return; }
   }
   lastSync = Date.now();
   // the money moves too, for the owner's statement of this town (what came in, what went out, and why)
@@ -1065,13 +1074,6 @@ export async function sendWorldSave(mine, id, leaving) {
     }
     const response = await fetch(API + "/world/sync", { method: "POST", headers: { "content-type": "application/json" }, body });
     r = await response.json();
-    if (r.conflict && ownsActiveSave(mine) && !arrange) {
-      const matched = await prepareWorldSave(mine, id).catch(() => false);
-      if (matched) {
-        if (ownsActiveSave(mine) && !arrange) store.set(WORLD_SAVE, pack(mine));
-        return;
-      }
-    }
     if (r.ok && r.saveVersion === saveWrite) {
       mine.world.saveVersion = saveWrite;
       delete mine.world.pendingWrites;
@@ -1079,7 +1081,7 @@ export async function sendWorldSave(mine, id, leaving) {
     }
   }
   if (r?.ok && ownsActiveSave(mine)) { WARX.syncTown = mine; WARX.syncKey = key; lastSync = Date.now(); }
-  syncReply(r, mine);
+  await syncReply(r, mine);
 }
 addEventListener("online", () => worldSync(true));
 
@@ -1291,7 +1293,7 @@ async function enterWorldTown() {
   startPlaying();
   save(); worldSync(true);
   setTimeout(zeroEnter, 1200); // the war trailer the first time, then the countdown to zero hour (or its announcement)
-  if (S.world.syncConflict) { saveConflictSheet(); return; }
+  if (S.world.syncConflict) return;
   if (report && gap > 1) deputyReport(report);
   warBack(!!report && gap > 1);
   if (!globalThis.RAFAYA_PREVIEW_SAMPLE) setTimeout(maybeWhatsNew, 1200); // after the deputy's report
@@ -1306,7 +1308,7 @@ export function warApply(st) {
   const home = visiting ? visiting.home : S;
   home.war ||= { seq: 0 };
   let paid = 0, supportPaid = 0, posted = false;
-  const reasons = new Map([["gift", "gift"], ["citizenSupport", "citizenSupport"], ["refund", "refund"], ["away cap", "awayLimit"]]);
+  const reasons = new Map([["gift", "gift"], ["citizenSupport", "citizenSupport"], ["cityMilestone", "cityMilestone"], ["refund", "refund"], ["away cap", "awayLimit"]]);
   for (const c of st.charges || []) {
     if (!(c.seq > home.war.seq)) continue;
     const kind = reasons.get(c.why) || "worldBill";
@@ -1364,6 +1366,7 @@ export function warApply(st) {
     warNews(fresh);
   }
   if (supportPaid > 0) toast(`💰 مبروك نزلك حساب مواطن بقيمة ${money(supportPaid)} ريال، ويمكن نسترده بعدين 🏃🏻`, "goal");
+  cityMilestonePopup(st);
   $("warDot").hidden = !(st.rels || []).some((r) => r.offer && r.offer.by !== me()?.plot) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
   if (sheetFor === "war") warSheet(WARX.tab);
 }
@@ -1601,7 +1604,6 @@ export function settingsSheet(fromMenu) {
   const id = me();
   if (pushStatus === "off" && id?.plot != null) pushKey().catch(() => {});
   const deviceCopy = id?.plot != null ? store.get(conflictCopyKey(id)) : null;
-  const syncConflict = worldMode && (visiting?.home ?? S).world?.syncConflict;
   sheet(`<h2>الإعدادات</h2>
     <h3>الرسوم</h3><p>«عالية» فيها توهّج الانفجارات والأضواء وأعلى دقة. لو الجوال يسخن أو البطارية تخلص بسرعة، اختر «متوسطة» أو «خفيفة».</p>
     <div class="seg seg-wrap">${[["auto", "✨ تلقائي"], ["saver", "🔋 توفير"], ["low", "خفيفة"], ["medium", "متوازنة"], ["high", "عالية"], ["ultra", "فائقة"]].map(([k, n]) => `<button type="button" class="${q === k ? "on" : ""}" data-q="${k}">${n}</button>`).join("")}</div>
@@ -1622,7 +1624,6 @@ export function settingsSheet(fromMenu) {
     <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
     <div id="backupBox"></div>
     <div class="sheet-actions two"><button class="btn" id="copySave" type="button">🔑 اطلع كود</button><button class="btn" id="loadSave" type="button">استرجع من كود</button></div>
-    ${syncConflict ? `<button class="btn block" id="saveConflict" type="button">مزامنة حفظ المدينة</button>` : ""}
     ${deviceCopy ? `<button class="btn block" id="copyDeviceSave" type="button">نسخة الجهاز قبل المزامنة</button>` : ""}
     <h3>عن اللعبة</h3>
     <p>صُنعت في الرافعية بيد Vamos. الرسم ثلاثي الأبعاد بمكتبة three.js (ترخيص MIT)، وكل المباني مصممة داخل اللعبة.</p>`, fromMenu ? "settings-menu" : "settings");
@@ -1633,7 +1634,6 @@ export function settingsSheet(fromMenu) {
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
   googleSection(); nameSection();
   $("worldRestart")?.addEventListener("click", () => restartSheet());
-  $("saveConflict")?.addEventListener("click", saveConflictSheet);
   $("copyDeviceSave")?.addEventListener("click", () => {
     const box = $("backupBox");
     box.innerHTML = `<label class="rg-name">كود نسخة هذا الجهاز <textarea id="deviceSaveCode" dir="ltr" readonly></textarea></label>`;
@@ -1840,7 +1840,10 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const paused = ["away", "pause", "settings", "how", "decision", "election", "whatsnew", "update"].includes(sheetFor);
-  if (arrange || (worldMode && S.world?.syncConflict)) { /* wait for the layout or save to be settled */ } else if (playing && !visiting && worldMode) {
+  if (arrange) { /* wait for the layout to be settled */ }
+  else if (worldMode && (visiting?.home ?? S).world?.syncConflict) {
+    if (now >= saveRetryAt) { saveRetryAt = now + 10000; worldSync(true); }
+  } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
     if (!paused && wh - S.day > 3) {
@@ -1909,7 +1912,8 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) save(true);
   else if (playing) {
     refresh();
-    if (!sheetFor) saveConflictSheet();
+    if (worldMode && (visiting?.home ?? S).world?.syncConflict) worldSync(true);
+    cityMilestonePopup(WARX.st);
   }
 });
 addEventListener("pagehide", () => save(true));
