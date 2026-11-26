@@ -51,6 +51,7 @@ ${body}
 </script>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
 <script>globalThis.RAFAYA_ASSETS = ${JSON.stringify(assets)};</script>
+${preview ? `<script>globalThis.RAFAYA_MUSIC = "data:audio/mpeg;base64,${(await readFile(new URL("../media/music.mp3", import.meta.url))).toString("base64")}";</script>` : ""}
 <script type="module">
 import * as THREE from "three";
 ${code}
