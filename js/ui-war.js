@@ -313,36 +313,54 @@ function strikeView() {
   const tg = WARX.targeting; if (!tg) return;
   const hit = new Map();
   tg.points.forEach((p) => { for (const b of blastArea(tg.list, p.x, p.y, WEAPONS[p.w].blast)) hit.set(`${b.x}:${b.y}`, { x: b.x, y: b.y, f: Math.max(b.f, hit.get(`${b.x}:${b.y}`)?.f || 0) }); });
-  world.fx.showStrike(tg.points.map((p, i) => ({ x: p.x, y: p.y, r: WEAPONS[p.w].blast, on: i === tg.sel })), [...hit.values()]);
+  world.fx.showStrike(tg.points.map((p, i) => ({ x: p.x, y: p.y, r: WEAPONS[p.w].blast, on: tg.sel < 0 || i === tg.sel })), [...hit.values()]);
   return hit;
 }
+const W_POWER = { drone: "ضرر خفيف", drone2: "ضرر متوسط", missile: "ضرر قوي", missile2: "ضرر مدمّر" };
+/**
+ * The attack panel, in two plain steps: pick the weapon (big cards with what is left), then tap the town where
+ * it falls. Every spot is a row (what is there, how many buildings it reaches, how many weapons) with − + and a
+ * bin; the launch button says exactly what goes, what it costs and when it lands.
+ */
 export function targetBar() {
   const tg = WARX.targeting, bar = $("targetBar");
   if (!tg) { bar.hidden = true; return; }
   bar.hidden = false;
   const st = WARX.st, ars = st?.arsenal || {}, weapons = readyWeapons(), hit = strikeView();
-  const need = {}; let fee = 0, eta = 0;
-  for (const p of tg.points) { need[p.w] = (need[p.w] || 0) + p.n; fee += WEAPONS[p.w].fee * p.n; eta = Math.max(eta, flightMs(me().plot, tg.plot, p.w)); }
-  const short = Object.entries(need).find(([w, n]) => (ars[w] || 0) < n);
+  const used = (w, skip) => tg.points.reduce((n, p) => n + (p !== skip && p.w === w ? p.n : 0), 0);
   const sel = tg.points[tg.sel];
-  const near = sel ? blastArea(tg.list, sel.x, sel.y, WEAPONS[sel.w].blast) : [];
-  const ready = (st?.profile ? launcherTimes(st) : []).filter((x) => x.left > 0);
+  if (!tg.w || !weapons.includes(tg.w)) tg.w = sel?.w || weapons[0];
+  const brush = sel ? sel.w : tg.w;
+  const need = {}; let fee = 0, eta = 0, total = 0;
+  for (const p of tg.points) { need[p.w] = (need[p.w] || 0) + p.n; fee += WEAPONS[p.w].fee * p.n; total += p.n; eta = Math.max(eta, flightMs(me().plot, tg.plot, p.w)); }
+  const short = Object.entries(need).find(([w, n]) => (ars[w] || 0) < n);
+  const waits = (st?.profile ? launcherTimes(st) : []).filter((x) => x.left > 0);
+  const spotName = (p) => { const near = blastArea(tg.list, p.x, p.y, WEAPONS[p.w].blast); return { name: near[0] && near[0].d < 0.5 ? B[near[0].id].name : "أرض", n: near.length }; };
   bar.innerHTML = `<div class="tb-strike">
-    <div class="tb-head"><b>🎯 «${tg.town}»</b><small>${tg.points.length ? `${ar(tg.points.length)} أماكن · ${ar(hit?.size || 0)} مبنى بالمدى` : "اضغط أي مكان بالمدينة (٦ أماكن بالكثير)"}</small></div>
-    ${tg.points.length ? `<div class="tb-pts">${tg.points.map((p, i) => `<button type="button" class="${i === tg.sel ? "on" : ""}" data-pt="${i}">${ar(i + 1)} ${weaponIcon(p.w)}${p.n > 1 ? `×${ar(p.n)}` : ""}</button>`).join("")}</div>` : ""}
-    ${sel ? `<div class="tb-sel"><span><b>${ar(tg.sel + 1)}. ${near[0] && near[0].d < 0.5 ? B[near[0].id].name : "أرض"}</b><small>يوصل لـ${ar(near.length)} مبنى · نصف قطر ${ar(WEAPONS[sel.w].blast)} مربع</small></span>
-      <span class="tb-w">${weapons.map((w) => { const l = (ars[w] || 0) - tg.points.reduce((n, p) => n + (p !== sel && p.w === w ? p.n : 0), 0); return `<button type="button" class="${w === sel.w ? "on" : ""} ${l < 1 ? "out" : ""}" data-tw="${w}">${weaponIcon(w)}<b>${WEAPONS[w].name.replace(/^(صاروخ|مسيّرة) /, "")}</b><small>${ar(Math.max(0, l))} باقي</small></button>`; }).join("")}</span>
-      <span class="step"><button type="button" id="tbDec">−</button><b>${ar(sel.n)}</b><button type="button" id="tbInc">+</button></span><button type="button" class="tb-del" id="tbDel" aria-label="شيل المكان">✕</button></div>` : ""}
-    <small class="tb-hint">اضغط على المدينة تضيف مكان · اضغط المكان المختار مرة ثانية تشيله</small>
-    ${ready.length ? `<small class="tb-ready">⏳ ${ready.map((x) => `${x.name}: ${secLeft(x.left)}`).join(" · ")}</small>` : ""}
-    <div class="tb-go"><span><small>${short ? `<b class="minus">ما يكفي ${WEAPONS[short[0]].name}</b>` : fee ? `التشغيل ${money(fee)} ريال · يوصل خلال ${secLeft(eta)}` : weapons.length ? "" : "<b class='minus'>ما عندك ذخيرة جاهزة: عبّ من غرفة العمليات</b>"}</small></span>
-      <button class="btn go" type="button" id="tbGo" ${!tg.points.length || short ? "disabled" : ""}>🚀 أطلق</button><button class="btn" type="button" id="tbX">✕</button></div></div>`;
-  bar.querySelectorAll("[data-pt]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); tg.sel = Number(b.dataset.pt); targetBar(); }));
-  const left = (w) => (ars[w] || 0) - tg.points.reduce((n, p) => n + (p !== sel && p.w === w ? p.n : 0), 0);
-  bar.querySelectorAll("[data-tw]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); if (left(b.dataset.tw) < 1) { toast(`ما بقى ${WEAPONS[b.dataset.tw].name}: موزّعة على أماكن ثانية`, "bad"); return; } sel.w = b.dataset.tw; sel.n = Math.min(sel.n, left(sel.w)); targetBar(); }));
-  $("tbInc")?.addEventListener("click", () => { sel.n = Math.min(8, Math.max(1, left(sel.w)), sel.n + 1); sfx.tap(); targetBar(); });
-  $("tbDec")?.addEventListener("click", () => { sel.n = Math.max(1, sel.n - 1); sfx.tap(); targetBar(); });
-  $("tbDel")?.addEventListener("click", () => { tg.points.splice(tg.sel, 1); tg.sel = tg.points.length - 1; sfx.tap(); targetBar(); });
+    <div class="tb-head"><b>🎯 الهجوم على «${tg.town}»</b><button type="button" class="tb-close" id="tbX" aria-label="إلغاء الهجوم">✕</button></div>
+    <div class="tb-step"><i>١</i><b>اختر السلاح</b></div>
+    ${weapons.length ? `<div class="tb-cards">${weapons.map((w) => { const l = (ars[w] || 0) - used(w, sel); return `<button type="button" class="tb-card ${w === brush ? "on" : ""} ${l < 1 ? "out" : ""}" data-tw="${w}">${weaponIcon(w)}<b>${WEAPONS[w].name}</b><small>${W_POWER[w]} · عندك ${ar(Math.max(0, l))}</small></button>`; }).join("")}</div>`
+      : `<div class="tb-empty">ما عندك ذخيرة جاهزة. اشترِ من «غرفة العمليات ← الدفاع والدرع».</div>`}
+    <div class="tb-step ${tg.points.length ? "" : "now"}"><i>٢</i><b>${tg.points.length ? `أماكن الضربة (${ar(tg.points.length)} من ٦)` : "اضغط على المدينة مكان الضربة"}</b></div>
+    ${tg.points.length ? `<div class="tb-list">${tg.points.map((p, i) => { const sp = spotName(p); return `<div class="tb-row ${i === tg.sel ? "on" : ""}" data-pt="${i}"><span class="tb-num">${ar(i + 1)}</span>
+      <span class="tb-what"><b>${sp.name}</b><small>${WEAPONS[p.w].name} · يوصل لـ${ar(sp.n)} ${sp.n === 1 ? "مبنى" : "مباني"}</small></span>
+      <span class="tb-step2"><button type="button" data-dec="${i}" aria-label="أقل">−</button><b>${ar(p.n)}</b><button type="button" data-inc="${i}" aria-label="أكثر">+</button></span>
+      <button type="button" class="tb-bin" data-del="${i}" aria-label="شيل المكان">✕</button></div>`; }).join("")}</div>
+      <small class="tb-hint">تضيف مكان بالضغط على المدينة · لتغيير سلاح مكان: اضغط صفّه ثم السلاح</small>` : `<small class="tb-hint">المكان ينضرب هو واللي حوله حسب مدى السلاح. المساجد محمية.</small>`}
+    ${waits.length ? `<small class="tb-ready">⏳ يتجهز: ${waits.map((x) => `${x.name} ${secLeft(x.left)}`).join(" · ")}</small>` : ""}
+    <button class="tb-fire" type="button" id="tbGo" ${!tg.points.length || short ? "disabled" : ""}>
+      <b>${short ? `ما يكفي ${WEAPONS[short[0]].name}` : tg.points.length ? `🚀 أطلق ${ar(total)} ${total === 1 ? "ضربة" : "ضربات"} على ${ar(tg.points.length)} ${tg.points.length === 1 ? "مكان" : "أماكن"}` : "🚀 أطلق"}</b>
+      ${fee && !short ? `<small>التشغيل ${money(fee)} ريال · يوصل خلال ${secLeft(eta)} · ${ar(hit?.size || 0)} مبنى بالمدى</small>` : ""}</button></div>`;
+  const left = (w, p) => (ars[w] || 0) - used(w, p);
+  bar.querySelectorAll("[data-tw]").forEach((b) => b.addEventListener("click", () => {
+    const w = b.dataset.tw; sfx.tap();
+    if (sel) { if (left(w, sel) < 1) { toast(`ما بقى ${WEAPONS[w].name}`, "bad"); return; } sel.w = w; sel.n = Math.min(sel.n, left(w, sel)); }
+    tg.w = w; targetBar();
+  }));
+  bar.querySelectorAll("[data-pt]").forEach((r) => r.addEventListener("click", (e) => { if (e.target.closest("button")) return; sfx.tap(); const i = Number(r.dataset.pt); tg.sel = tg.sel === i ? -1 : i; targetBar(); }));
+  bar.querySelectorAll("[data-inc]").forEach((b) => b.addEventListener("click", () => { const p = tg.points[Number(b.dataset.inc)]; if (left(p.w, p) <= p.n) { toast(`ما بقى ${WEAPONS[p.w].name}`, "bad"); return; } p.n = Math.min(8, p.n + 1); sfx.tap(); targetBar(); }));
+  bar.querySelectorAll("[data-dec]").forEach((b) => b.addEventListener("click", () => { const p = tg.points[Number(b.dataset.dec)]; p.n = Math.max(1, p.n - 1); sfx.tap(); targetBar(); }));
+  bar.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { tg.points.splice(Number(b.dataset.del), 1); tg.sel = -1; sfx.tap(); targetBar(); }));
   $("tbGo")?.addEventListener("click", () => fireStrike());
   $("tbX").addEventListener("click", () => { sfx.tap(); stopTargeting(); });
 }
@@ -381,14 +399,14 @@ export function targetTap(x, y) {
   if (b && !canTarget(b.id)) { toast("المساجد محمية: ما تنقصف", "bad"); sfx.deny(); return; }
   if (!tg.list.some((t) => Math.hypot(t.x - x, t.y - y) <= 3)) { toast("اختر مكان قريب من مباني المدينة", "bad"); return; }
   const at = tg.points.findIndex((p) => Math.abs(p.x - x) <= 0 && Math.abs(p.y - y) <= 0);
-  if (at >= 0 && at === tg.sel) { tg.points.splice(at, 1); tg.sel = tg.points.length - 1; sfx.tap(); targetBar(); return; } // the chosen spot tapped again: taken off
-  if (at >= 0) { tg.sel = at; sfx.tap(); targetBar(); return; }
+  if (at >= 0) { tg.points.splice(at, 1); tg.sel = -1; sfx.tap(); targetBar(); return; } // a chosen spot tapped again: taken off
   if (tg.points.length >= 6) { toast("الدفعة ٦ أماكن بالكثير", "bad"); sfx.deny(); return; }
   // the strongest weapon still left after the spots already chosen
   const used = {}; for (const p of tg.points) used[p.w] = (used[p.w] || 0) + p.n;
-  const ars = WARX.st?.arsenal || {}, w = readyWeapons().find((k) => (ars[k] || 0) - (used[k] || 0) >= 1);
+  const ars = WARX.st?.arsenal || {}, has = (k) => (ars[k] || 0) - (used[k] || 0) >= 1;
+  const w = tg.w && has(tg.w) ? tg.w : readyWeapons().find(has); // the weapon picked in step one (or the next one left)
   if (!w) { toast("خلصت الذخيرة الجاهزة: كل اللي عندك موزّع على الأماكن", "bad"); sfx.deny(); return; }
-  tg.points.push({ x, y, w, n: 1 }); tg.sel = tg.points.length - 1;
+  tg.points.push({ x, y, w, n: 1 }); tg.sel = -1;
   sfx.tap(); warSfx?.lock?.();
   targetBar();
 }
