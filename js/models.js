@@ -43,6 +43,9 @@ class Builder {
     const c = new THREE.Color(color);
     // near-white surfaces (roofs, plaster, trim) stop a little short of pure white: in the full sun pure white
     // burns out and glares; light colours keep their hue (only the whites and pale greys are touched)
+    // pale surfaces on the mirror-like sets (greenhouse film, white steel, frosted glass) turn to plain paint:
+    // a light colour that also reflects the sun is what blinds the view at noon
+    if ((set === "shiny" || set === "glass" || set === "metal") && Math.min(c.r, c.g, c.b) > 0.35) set = "paint";
     if (set !== "lights" && set !== "glow" && Math.min(c.r, c.g, c.b) > 0.55) { const top = Math.max(c.r, c.g, c.b); if (top > 0.7) c.multiplyScalar(0.7 / top); }
     const n = g.attributes.position.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
@@ -1971,7 +1974,7 @@ function bizExtras(b, id, lvl) {
     return;
   }
   if (id === "veg") {
-    const tunnel = (z) => b.add(new THREE.CylinderGeometry(0.17, 0.17, 0.84, 10, 1, true, 0, Math.PI), "#cfe3ea", { y: 0.015, z, rz: Math.PI / 2 }, "shiny");
+    const tunnel = (z) => b.add(new THREE.CylinderGeometry(0.17, 0.17, 0.84, 10, 1, true, 0, Math.PI), "#9fb0ad", { y: 0.015, z, rz: Math.PI / 2 }, "matte");
     tunnel(0.24);
     if (lvl >= 2) { tunnel(-0.12); b.cyl(0.07, 0.07, 0.22, C.white, { x: -0.38, z: -0.38 }, 10); }
     return;
