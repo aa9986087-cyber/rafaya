@@ -13,7 +13,8 @@ const pvDb = memWarDb(pvState.war);
 const pvWorld = {
   town: (plot) => { const t = pvState.plots[plot]; return t ? { ...t } : null; },
   player: (name) => pvState.players[name] || null,
-  news: (kind, text, plot) => pvNews(kind, text, plot)
+  news: (kind, text, plot) => pvNews(kind, text, plot),
+  openAt: () => pvState.warOpenAt || 0
 };
 /** The trial's world bulletin, like the live one (src/worker.js news()). */
 function pvNews(kind, text, plot = null, n = null) {
@@ -188,6 +189,13 @@ const PV_SCENARIOS = [
     setTimeout(() => { const r = pvSalvo(a, 3, "missile", b); pvSave(); if (!r.ok) toast(`ما انطلقت: ${r.error}`, "bad"); }, 4000);
     return { plot: b.plot, room: "world", follow: true, msg: "تتابع «الخضراء»: بعد ثواني «هجرة الشعيب» تضربها بدفعة، وتشوفها لحظتها." };
   }],
+  ["zero", "⏳ ساعة الصفر بعد دقيقة ونص (مع الإعلان)", "يشتغل مقطع الحرب، ثم العداد، ولا وصل صفر يطلع البيان الرسمي وتنفتح الحرب.", () => {
+    pvState.warOpenAt = Date.now() + 90000;
+    try { localStorage.removeItem("rafaya-war-intro-v1"); } catch { /* fine */ }
+    setTimeout(() => { setWarOpen(pvState.warOpenAt); ZERO.shown = false; zeroEnter(); }, 300);
+    return { plot: null, room: "none", msg: "ساعة الصفر بعد دقيقة ونص." };
+  }],
+  ["open", "🔓 افتح الحرب الحين", "يلغي العداد وتنفتح الحرب.", () => { pvState.warOpenAt = 0; setTimeout(() => setWarOpen(0), 100); return { plot: null, msg: "الحرب مفتوحة." }; }],
   ["tribute", "🪙 مدينة تطالبك بجزية", "«هجرة الشعيب» تطلب منك مبلغ: ادفع وتاخذ سلام شهر، أو ارفض وتصير حرب.", () => {
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(me, bot, "peace");
     const most = tributeMax(pvWar.townInfo(me.plot)?.snap.money || 0), amount = Math.max(1000, Math.round(most / 2 / 500) * 500);
@@ -244,7 +252,7 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
     await warPoll(true);
     if (out.plot != null) { ROOM.sel = out.plot; ROOM.form = out.chat ? "chat" : ""; }
     if (out.follow) followTown(out.plot, pvState.plots[out.plot]?.town || "");
-    setTimeout(() => warRoom(out.room || (out.plot != null ? "world" : "log")), 500); // every scenario lands in the war room
+    if (out.room !== "none") setTimeout(() => warRoom(out.room || (out.plot != null ? "world" : "log")), 500); // every scenario lands in the war room
   }));
 };
 
@@ -270,7 +278,7 @@ async function pvApi(path, body) {
 }
 function pvRoute(p, body) {
   const post = !!body;
-  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) };
+  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), warOpenAt: pvState.warOpenAt || 0 };
   if (!post && p[0].startsWith("chat")) {
     const after = Number((p[0].split("after=")[1]) || 0);
     pvState.chat ||= [];

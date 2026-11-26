@@ -225,7 +225,7 @@ function shieldCard(st) {
   if (!sb) return "";
   if (sb.until > now) return `<div class="dp-shieldcard on"><b>🛡️ درع الحماية شغال</b><small>باقي ${fmtLeft(sb.until - now)} · ما ينضرب فيك شي. إذا هاجمت أحد ينكسر.</small></div>`;
   const wait = sb.next > now ? sb.next - now : 0;
-  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك أسبوع بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. مرة وحدة بالشهر. إذا هاجمت وأنت عليه ينكسر.</small>
+  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك ٣ أيام بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. مرة وحدة بالشهر. إذا هاجمت وأنت عليه ينكسر.</small>
     <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع مرة بالشهر: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
 }
 function defTab(st) {

@@ -25,7 +25,7 @@ export const WAR = {
     warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
     tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
     tributePeace: 30 * JOUF_DAY, // tribute paid: no war and no new demand between the two for a month of al-Jouf
-    shieldLast: 7 * JOUF_DAY,    // a bought shield lasts a week of al-Jouf
+    shieldLast: 3 * JOUF_DAY,    // a bought shield lasts three days of al-Jouf (less than a war: it shortens one, never cancels it)
     shieldEvery: 30 * JOUF_DAY,  // and can be bought once a month of al-Jouf
     say: 3000,                   // one line in a threat talk this often
     offer: JOUF_DAY,             // an offer of truce or peace waits a day of al-Jouf for an answer
@@ -51,6 +51,8 @@ export const WAR = {
   autoBudget: 5000            // the deputy's default repair and refill budget, per day
 };
 
+/** The live rules as written (the trial copy shortens WAR's waits in place; the war guide always tells these). */
+export const WAR_LIVE = JSON.parse(JSON.stringify(WAR));
 /** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
 export function fastWar(div = 30) {
   const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));

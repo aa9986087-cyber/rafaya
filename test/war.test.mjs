@@ -448,3 +448,17 @@ test("fair play: three wars at most, launchers slow down when fired often, an ab
   for (let k = 0; k < 3; k++) { const r = war31(k, 30 + k); assert.equal(r.ok, true, r.error); }
   assert.match(war31(9, 34).error, /غايب/);
 });
+
+test("zero hour: before it no war, tribute or strike; talk and building are fine; after it, war opens", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE });
+  let open = W.now() + 100 * 20 * 60000;
+  W.war.world.openAt = () => open;
+  assert.match(W.war.handle("rel", { req: "z1", other: 30, act: "war" }, a).error, /ساعة الصفر/);
+  assert.match(W.war.handle("rel", { req: "z2", other: 30, act: "tribute", amount: 1000 }, a).error, /ساعة الصفر/);
+  assert.equal(W.war.handle("rel", { req: "z3", other: 30, act: "say", text: "استعدوا" }, a).ok, true);
+  assert.equal(W.war.handle("buy", { req: "z4", kind: "drone", n: 1 }, a).ok, true);
+  assert.equal(W.war.handle("state", {}, a).openAt, open);
+  open = W.now() - 1;
+  assert.equal(W.war.handle("rel", { req: "z5", other: 30, act: "war" }, a).ok, true);
+});

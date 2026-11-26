@@ -167,13 +167,18 @@ export class WarServer {
     a.shield = { at: now, until: now + this.cfg.T.shieldLast };
     const c = this.charge(me.plot, a, price, "درع الحماية");
     this.saveAcct(me.plot, a);
-    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (أسبوع بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
+    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (٣ أيام بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
     for (const r of this.db.list("rel", { either: String(me.plot) })) {
       const v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
       if (["warning", "war"].includes(v.state)) this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: ضرباتك ما توصلها لمدة ${minutesText(this.cfg.T.shieldLast)}.`, { from: me.plot });
     }
     this.news("shield", `🛡️ «${info.town}» رفعت درع الحماية`, me.plot);
     return { ok: true, shield: this.shieldView(info, a, now), charge: c };
+  }
+  /** ساعة الصفر: before it, no war is declared, no tribute asked, no strike launched. Why not, or "". */
+  notOpen(now) {
+    const at = this.world?.openAt?.() || 0;
+    return now < at ? `⏳ الحرب ما بدأت: ساعة الصفر بعد ${minutesText(at - now)}` : "";
   }
   /** Wars (and declared warnings) a town is in now. */
   warsOf(plot, now) { return this.db.list("rel", { either: String(plot) }).filter((r) => ["warning", "war"].includes(relNow(this.lapse(r, now), now, this.cfg).state)).length; }
@@ -274,7 +279,7 @@ export class WarServer {
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
-      rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
+      openAt: this.world?.openAt?.() || 0, rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }
@@ -351,6 +356,7 @@ export class WarServer {
     r.hist ||= []; r.lastThreat ||= {};
     const allowed = relActions(stored ? r : null, me.plot, now, block, this.cfg);
     if (!(act in allowed)) return { error: "طلب غير معروف" };
+    if ((act === "war" || act === "tribute") && this.notOpen(now)) return { error: this.notOpen(now) };
     if (allowed[act]) return { error: allowed[act] };
     const myName = mine.town, theirName = them.town;
     const log = (kind, text) => { r.hist.push({ at: now, by: me.plot, kind, text }); r.hist = r.hist.slice(-30); };
@@ -456,6 +462,7 @@ export class WarServer {
     const r = relNow(this.rel(me.plot, to), now, this.cfg);
     const block = conflictBlocker({ ...mine, era: mine.snap.era || mine.era, created: me.created || mine.created }, { ...them, era: them.snap.era || them.era }, now, this.cfg, r);
     if (block) return { error: block };
+    if (this.notOpen(now)) return { error: this.notOpen(now) };
     if (r.state === "warning") return { error: `الحرب تبدأ بعد ${minutesText(r.warStart - now)}` };
     if (r.state !== "war") return { error: r.state === "truce" ? "فيه هدنة: ما يصير تضرب" : "ما فيه حرب مع هالمدينة" };
     // a spot in the town: whatever stands there and around it is hit (never a mosque)

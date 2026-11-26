@@ -26,6 +26,8 @@ import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, s
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
 import { advisorSheet, chainInfo, effectHtml, familySheet, followFamily, goals, kidsWord, matsNote, utilSheet } from "./ui-people.js";
 import { CHAT, chatCount, chatPoll, developerNoteSheet, warCardHtml } from "./ui-chat.js";
+import { setWarOpen, zeroEnter } from "./ui-zero.js";
+import { warGuide } from "./ui-warguide.js";
 import { MENU, budget, maybeWhatsNew, menuBackdrop, shareGameSheet, showWhatsNewDot, whatsNewSheet } from "./ui-whatsnew.js";
 import { noteNeighbours } from "./ui-region.js";
 
@@ -908,6 +910,7 @@ export let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.
 export async function loadClock() {
   try {
     const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch };
+    setWarOpen(c.warOpenAt); // ساعة الصفر: the same moment for everyone
     // the world was wiped (a new generation): forget the old name and world town on this phone
     if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
       try { localStorage.removeItem(WORLD_ID); localStorage.removeItem(WORLD_SAVE); } catch { /* fine */ }
@@ -1286,6 +1289,7 @@ async function enterWorldTown() {
   restoreTownCamera(S.cam);
   startPlaying();
   save(); worldSync(true);
+  setTimeout(zeroEnter, 1200); // the war trailer the first time, then the countdown to zero hour (or its announcement)
   if (S.world.syncConflict) { saveConflictSheet(); return; }
   if (report && gap > 1) deputyReport(report);
   warBack(!!report && gap > 1);
@@ -1297,6 +1301,7 @@ async function enterWorldTown() {
 // ---------- «صراع الجوف»: war in the world of al-Jouf (the server decides; see js/warserver.js) ----------
 /** Charges, damage and repairs onto the own town (the server's numbers win over the town's own). */
 export function warApply(st) {
+  if (st.openAt != null) setWarOpen(st.openAt);
   const home = visiting ? visiting.home : S;
   home.war ||= { seq: 0 };
   let paid = 0, supportPaid = 0, posted = false;
@@ -1318,6 +1323,21 @@ export function warApply(st) {
     const r = rows.get(`${i % N}:${Math.floor(i / N)}`), wd = r && r.bid === t.b.id ? Math.round(r.wd * 10) / 10 : 0;
     if ((t.b.wd || 0) !== wd) { if (wd) t.b.wd = wd; else delete t.b.wd; changed = true; }
   });
+  // the dead and the injured of every strike that landed on us leave the town (each strike once): fewer people,
+  // and a town in mourning (the people come back as it grows again; the grief fades over the hours)
+  home.war.toll ||= [];
+  let lost = 0;
+  for (const o of st.ops || []) {
+    if (o.side !== "in" || o.status !== "done" || !o.result || home.war.toll.includes(o.id)) continue;
+    home.war.toll.push(o.id);
+    const dead = o.result.dead || 0, hurt = o.result.hurt || 0;
+    if (!dead && !hurt) continue;
+    home.pop = Math.max(0, (home.pop || 0) - dead - Math.round(hurt / 2)); // the injured stay in hospital a while
+    home.happy = Math.max(0, (home.happy || 0) - Math.min(20, dead * 0.4 + hurt * 0.05));
+    lost += dead; changed = true;
+  }
+  home.war.toll = home.war.toll.slice(-200);
+  if (lost && !WARX.scene) toast(`⚰️ فقدت المدينة ${ar(lost)} من أهلها في القصف. الله يرحمهم`, "bad");
   if (world.fx && !visiting) {
     world.fx.repairs = new Map((st.damage || []).filter((r) => r.rep).map((r) => [`${r.x}:${r.y}`, { start: r.rep.start, end: r.rep.end }]));
     const ds = (st.arsenal?.drone || 0) + (st.arsenal?.drone2 || 0), ms = (st.arsenal?.missile || 0) + (st.arsenal?.missile2 || 0);
@@ -1565,6 +1585,7 @@ $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 // ---------- المستشار المالي: a paid reading of the town (js/advisor.js), the first one free ----------
 $("advisorBtn").addEventListener("click", () => { sfx.tap(); advisorSheet(); });
 $("warBtn").addEventListener("click", async () => { sfx.tap(); warRoom(); }); // «غرفة العمليات»: the whole war in one screen
+$("warGuideBtn").addEventListener("click", () => { sfx.tap(); warGuide(); }); // «دليل الحرب»: how war works and its rules
 $("warAlert").addEventListener("click", () => { sfx.tap(); warRoom(ROOM.tab); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
 
