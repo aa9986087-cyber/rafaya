@@ -10,7 +10,7 @@ import { REL_ICONS, REL_NAMES } from "./war.js";
 export const CHAT = { msgs: [], last: 0, polled: 0, busy: false };
 export const chatSeen = () => Number(store.get("rafaya-chat-seen") || 0);
 export async function chatPoll(force) {
-  if (!worldMode || CHAT.busy || (!force && Date.now() - CHAT.polled < (LIVE.ok ? 120000 : sheetFor === "chat" ? 4000 : 20000))) return; // live: messages arrive by themselves
+  if (!worldMode || CHAT.busy || (!force && Date.now() - CHAT.polled < (LIVE.ok ? 300000 : sheetFor === "chat" ? 4000 : 20000))) return; // live: messages arrive by themselves
   CHAT.busy = true; CHAT.polled = Date.now();
   try {
     const r = await api(`/world/chat${CHAT.last ? `?after=${CHAT.last}` : ""}`);

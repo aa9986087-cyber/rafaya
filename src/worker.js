@@ -307,7 +307,9 @@ export class Board extends DurableObject {
       // time played: the gap since the last sign of life, at most 45 s (a ping comes every 30 s while in front)
       if (a.name && a.seen) { const gap = Math.min(45, Math.max(0, Math.round((now - a.seen) / 1000))); if (gap) this.sql.exec("UPDATE players SET played = played + ? WHERE name = ? AND banned = 0", gap, a.name); }
       ws.serializeAttachment({ ...a, seen: now });
-      try { ws.send('{"t":"pong"}'); } catch { /* gone */ }
+      // the pong carries what every open game used to ask for each minute (a request each, against the daily limit):
+      // how many towns are being played, and the release it must run. Socket messages are not counted as requests.
+      try { ws.send(JSON.stringify({ t: "pong", n: this.onlineCount(now), v: REQUIRED ?? VERSION })); } catch { /* gone */ }
       return;
     }
     if (m.t === "hello") { // who this socket belongs to (only so war news reaches the right town)
@@ -316,6 +318,12 @@ export class Board extends DurableObject {
       ws.serializeAttachment({ plot: ok ? row.plot : null, name: ok ? row.name : null, seen: Date.now() });
       try { ws.send(JSON.stringify({ t: "hi", ok: !!ok })); } catch { /* gone */ }
     }
+  }
+  /** How many towns are being played right now: a number only, never who. */
+  onlineCount(now) {
+    const plots = new Set();
+    for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot != null && now - (a.seen || 0) < 70000) plots.add(a.plot); }
+    return plots.size;
   }
   webSocketClose(ws) { try { ws.close(); } catch { /* already */ } }
   webSocketError() { /* the game reconnects by itself */ }
@@ -939,9 +947,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
     if (!post && p[0] === "online") { // how many towns are being played right now (a number only: never who)
-      const plots = new Set();
-      for (const ws of this.ctx.getWebSockets()) { const a = ws.deserializeAttachment(); if (a?.plot != null && Date.now() - (a.seen || 0) < 70000) plots.add(a.plot); }
-      return json({ n: plots.size });
+      return json({ n: this.onlineCount(Date.now()) });
     }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed, moved >= ? AS moved FROM plots ORDER BY plot LIMIT 3000", MOVE_ROUND_AT).toArray();

@@ -989,7 +989,7 @@ function restartSheet() {
 
 // ---------- updates are a must: an older copy of the game asks to update and can't be used until it does ----------
 versionCheck();
-setInterval(versionCheck, 60000); // every minute (a small request), so an installed app notices a release without being reopened
+setInterval(() => versionCheck(true), 60000); // every minute, so an installed app notices a release without being reopened (only every 10 while the live socket brings it)
 addEventListener("pageshow", () => { versionCheck(); checkPush(); });
 addEventListener("online", versionCheck);
 addEventListener("focus", versionCheck); // installed apps on some phones come back without a visibility change

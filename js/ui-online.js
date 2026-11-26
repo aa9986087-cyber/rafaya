@@ -283,8 +283,12 @@ export async function moveCodeSheet() {
   $("mvCopy").addEventListener("click", () => navigator.clipboard?.writeText(m.code).then(() => toast("نسخت الرمز ✓", "goal")));
 }
 export const UPDATE_PARAM = "rafaya-release";
-export async function versionCheck() {
+export async function versionCheck(timed = false) {
   if (VERSION === "dev" || globalThis.RAFAYA_PREVIEW || !onlineOk() || sheetFor === "update") return;
+  // the minute's check: while the live socket answers, its pong says the release, so ask only every 10 minutes
+  if (timed && document.hidden) return; // in the background: checked again the moment it comes back (visibilitychange)
+  if (timed && LIVE.ok && Date.now() - (LIVE.pongAt || 0) < 90000 && Date.now() - (versionCheck.at || 0) < 10 * 60000) return;
+  versionCheck.at = Date.now();
   let v;
   try { v = (await (await fetch("/api/version", { cache: "no-store" })).json()).version; } catch { return; } // the oldest release that may carry on
   if (!v || v === "dev") return;
@@ -353,12 +357,20 @@ export async function onlinePoll(force) {
   const chip = $("sOnline");
   if (!worldMode || globalThis.RAFAYA_PREVIEW || !onlineOk()) { chip.hidden = true; return; }
   if (ONLINE.busy || document.hidden || (!force && Date.now() - ONLINE.at < 45000)) return;
+  if (!force && LIVE.ok && Date.now() - (LIVE.pongAt || 0) < 70000) return; // the live socket's pong brings the number
   ONLINE.busy = true; ONLINE.at = Date.now();
   try { const r = await api("/world/online"); if (Number.isFinite(r.n) && worldMode) { chip.textContent = `${ar(Math.max(1, r.n))} متصل`; chip.hidden = false; } } catch { /* next time */ }
   finally { ONLINE.busy = false; }
 }
 /** What the server said changed: ask for it now. */
 export function liveHint(m) {
+  if (m.t === "pong") { // every 30 s while in front: the number playing and the release to run, without a request
+    LIVE.pongAt = Date.now();
+    const chip = $("sOnline");
+    if (Number.isFinite(m.n) && worldMode && chip) { chip.textContent = `${ar(Math.max(1, m.n))} متصل`; chip.hidden = false; }
+    if (m.v && m.v !== "dev" && VERSION !== "dev" && m.v !== VERSION && m.v !== REQUIRED) versionCheck(); // a new release: ask once and show it
+    return;
+  }
   if (!worldMode) return;
   if (m.t === "chat" && m.message) {
     if (!CHAT.msgs.some((x) => x.id === m.message.id)) { CHAT.msgs = [...CHAT.msgs, m.message].slice(-120); CHAT.last = Math.max(CHAT.last || 0, m.message.id); }

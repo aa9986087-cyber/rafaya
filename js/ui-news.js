@@ -122,7 +122,7 @@ export const WNEWS = { items: [], polled: 0, busy: false, tab: "town", map: null
 export const wnewsSeen = () => Number(store.get("rafaya-wnews-seen") || 0);
 export const wnewsUnread = () => WNEWS.items.filter((x) => x.id > wnewsSeen() && x.plot !== S.world?.plot).length;
 export async function wnewsPoll(force) {
-  if (!worldMode || WNEWS.busy || (!force && Date.now() - WNEWS.polled < (LIVE.ok ? 300000 : 60000))) return; // live: the server tells us
+  if (!worldMode || WNEWS.busy || (!force && Date.now() - WNEWS.polled < (LIVE.ok ? 600000 : 60000))) return; // live: the server tells us
   WNEWS.busy = true; WNEWS.polled = Date.now();
   try { const r = await api("/world/news"); WNEWS.items = r.items || []; } catch { /* the next time */ }
   WNEWS.busy = false;
