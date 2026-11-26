@@ -1068,3 +1068,21 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .wr-world .wm-t.quiet > circle:not(.wm-hit) { opacity: .45; transform-box: fill-box; transform-origin: center; transform: scale(.6); }
 .wr-allfronts { display: block; margin: 6px auto 0; border: 1px solid var(--wr-line); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 700; color: var(--wr-ink); background: rgba(255,255,255,.06); cursor: pointer; }
 .wr-allfronts.on { background: rgba(255, 90, 74, .18); border-color: rgba(255, 90, 74, .5); }
+/* «🔍 بحث»: the town's buildings, grouped by kind, and the bar that steps through one kind */
+.fd-q { width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 11px 14px; border-radius: 14px; border: 1px solid rgba(120, 90, 50, .35); background: #fffaf0; margin: 4px 0 8px; }
+.fd-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; } .fd-chips::-webkit-scrollbar { display: none; }
+.fd-chips button { flex: none; border: 1px solid rgba(120, 90, 50, .3); background: #fffaf0; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 700; color: #4a3520; }
+.fd-chips button.on { background: #2f8a6e; border-color: #2f8a6e; color: #fff; }
+.fd-chips.flt button.on { background: #b8862c; border-color: #b8862c; }
+.fd-body { display: grid; gap: 6px; }
+.fd-group { border: 1px solid rgba(120, 90, 50, .22); border-radius: 14px; background: #fffaf0; overflow: hidden; }
+.fd-group.open { border-color: #2f8a6e; }
+.fd-head, .fd-one { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: none; font: inherit; text-align: start; padding: 10px 12px; color: inherit; cursor: pointer; }
+.fd-head span, .fd-one span { flex: 1; display: grid; gap: 2px; min-width: 0; } .fd-head b, .fd-one b { font-size: 15px; } .fd-head small, .fd-one small { font-size: 12px; opacity: .75; }
+.fd-head i, .fd-one i { flex: none; font-style: normal; font-size: 12px; font-weight: 800; color: #2f8a6e; }
+.fd-list { border-top: 1px solid rgba(120, 90, 50, .15); } .fd-list .fd-one { border-bottom: 1px solid rgba(120, 90, 50, .1); padding-inline-start: 22px; }
+.fd-one.hurt small { color: #c0392b; opacity: 1; } .fd-one.idle small { color: #b8730f; opacity: 1; } .fd-one.up small { color: #2f8a6e; opacity: 1; }
+.find-bar { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); top: calc(var(--top, 0px) + 8px); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: rgba(30, 22, 12, .88); box-shadow: 0 4px 14px rgba(0,0,0,.3); backdrop-filter: blur(6px); }
+.find-bar button { border: 0; background: rgba(255,255,255,.1); color: #fff; font: inherit; border-radius: 999px; min-width: 40px; height: 40px; font-size: 15px; cursor: pointer; }
+.find-bar .fb-mid { display: grid; padding: 0 14px; line-height: 1.15; } .find-bar .fb-mid b { font-size: 14px; } .find-bar .fb-mid small { font-size: 11px; opacity: .8; }
+.find-bar .fb-x { background: none; min-width: 32px; }

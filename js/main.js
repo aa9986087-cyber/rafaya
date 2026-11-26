@@ -10,6 +10,7 @@ import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS, medalSvg } from "./icons.js";
+import { findSheet } from "./ui-find.js";
 import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
 import { sfx, ambience, warSfx } from "./sound.js";
@@ -1602,6 +1603,7 @@ $("deputyBtn").addEventListener("click", () => { sfx.tap(); deputySheet(); });
 // ---------- المستشار المالي: a paid reading of the town (js/advisor.js), the first one free ----------
 $("advisorBtn").addEventListener("click", () => { sfx.tap(); advisorSheet(); });
 $("warBtn").addEventListener("click", async () => { sfx.tap(); warRoom(); }); // «غرفة العمليات»: the whole war in one screen
+$("findBtn").addEventListener("click", () => { sfx.tap(); findSheet(); }); // «بحث»: any building of the town, and fly to it
 $("warGuideBtn").addEventListener("click", () => { sfx.tap(); warGuide(); }); // «دليل الحرب»: how war works and its rules
 $("warAlert").addEventListener("click", () => { sfx.tap(); warRoom(ROOM.tab); });
 $("warSkip").addEventListener("click", () => { sfx.tap(); WARX.skipFlight = true; world.fx.skip(); });
