@@ -870,3 +870,6 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 .tb-head b { font-size: 15px; } .tb-close { width: 32px; height: 32px; font-size: 14px; }
 .tb-fire { padding: 9px; } .tb-fire b { font-size: 15px; }
 .tb-row { padding: 4px 6px; } .tb-step2 button, .tb-bin { width: 28px; height: 28px; }
+.wm-map .wm-war { stroke: #d8392b; stroke-width: .7; stroke-dasharray: 1.6 1; pointer-events: none; animation: wmWar 1.2s linear infinite; }
+.wm-map .wm-war.warning { stroke: #e08a3c; } .wm-map .wm-war.truce { stroke: #9a9381; animation: none; }
+@keyframes wmWar { to { stroke-dashoffset: -2.6; } }

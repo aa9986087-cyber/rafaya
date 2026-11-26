@@ -1158,8 +1158,8 @@ export async function worldMapSheet(pick) {
   worldPick = pick ?? worldPick;
   if (sheetFor !== "world") sheet(`<h2>🌍 عالم الجوف</h2><p class="hint">نحمّل الخريطة…</p>`, "world"); // something on screen at once (the map comes from the server)
   const id = me();
-  let plots = [];
-  try { plots = (await api("/world/map")).plots; } catch (e) { if (e.message === "maintenance") worldClosedSheet(); else toast("ما قدرت أوصل للسيرفر", "bad"); return; }
+  let plots = [], fronts = [];
+  try { const d = await api("/world/map"); plots = d.plots; fronts = d.fronts || []; } catch (e) { if (e.message === "maintenance") worldClosedSheet(); else toast("ما قدرت أوصل للسيرفر", "bad"); return; }
   const byPlot = new Map(plots.map((p) => [p.plot, p]));
   const { cols, rows } = WORLD, cell = 5;
   const colors = { mountain: "#b9a58a", plain: "#e6cf9c", bigwadi: "#c9b878", wadi: "#d8c38e", dunes: "#efc98a", meadow: "#b8c27a" };
@@ -1173,14 +1173,19 @@ export async function worldMapSheet(pick) {
     if (rel && rel.state !== "peace") cells += `<circle cx="${x + cell - 0.9}" cy="${y + 0.9}" r="1.25" class="wm-rel-bg ${rel.state}"/><svg x="${x + cell - 1.8}" y="${y}" width="1.8" height="1.8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="wm-rel">${ICON_PATHS[REL_ICONS[rel.state].replace(/\uFE0F/g, "")] || ""}</svg>`;
   }
   const labels = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-place">${p.name}</text>`).join("");
+  // the fronts of al-Jouf, for everyone: a red line between every two towns at war (a pale one in a truce)
+  const fxy = (p) => { const [x, y] = worldXY(p); return [x * cell + cell / 2, y * cell + cell / 2]; };
+  cells += fronts.map((f) => { const [ax, ay] = fxy(f.a), [bx, by] = fxy(f.b); return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="wm-war ${f.state}"/>`; }).join("");
   const sel = worldPick, t = sel != null ? byPlot.get(sel) : null;
+  const warsOf = (p) => fronts.filter((f) => f.a === p || f.b === p).map((f) => { const o = f.a === p ? f.b : f.a, mine = f.a === p ? f.hitsA : f.hitsB, theirs = f.a === p ? f.hitsB : f.hitsA;
+    return row(`${REL_ICONS[f.state] || "⚔️"} ${f.tribute ? "طلب جزية مع" : f.state === "truce" ? "هدنة مع" : f.state === "warning" ? "إنذار حرب مع" : "حرب مع"} «${byPlot.get(o)?.town || "مدينة"}»`, f.state === "war" ? `ضربات ${ar(mine)} مقابل ${ar(theirs)}` : ""); }).join("");
   let detail = `<p class="hint">اضغط على أي أرض: المدن بالأخضر، ومدينتك بالذهبي.</p>`;
   if (sel != null) {
     const terr = TERRAINS[worldTerrain(sel)];
     if (t) {
       const mine = id?.plot === sel, ago = Math.max(0, Math.round((Date.now() - t.updated) / 60000));
       detail = `<div class="rg-card"><div class="rg-top"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · قرب ${worldPlace(sel)} · أرض ${terr.name}</small></div>
-        <div class="rows">${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
+        <div class="rows">${warsOf(sel)}${row("العمدة", t.owner)}${row("السكان", money(t.pop || 0))}${row("الرضا", `${ar(t.happy || 0)}٪`)}${row("آخر تحديث", ago < 1 ? "الحين" : ago < 60 ? `قبل ${ar(ago)} دقيقة` : ago < 1440 ? `قبل ${ar(Math.round(ago / 60))} ساعة` : `قبل ${ar(Math.round(ago / 1440))} يوم`)}</div>
         <div class="sheet-actions keep">${mine ? `<button class="btn go block" id="wmEnter" type="button">ادخل مدينتي</button>${t.renamed ? "" : `<button class="btn block" id="wmRename" type="button">✏️ غيّر اسم مدينتك (مرة وحدة بس)</button>`}` : `${warCardHtml(sel)}<button class="btn go block" id="wmVisit" type="button">ادخلها وشوفها</button><button class="btn block" id="wmReport" type="button">بلّغ عن اسم أو كلام مسيء</button>`}</div></div>`;
     } else {
       detail = `<div class="rg-card"><div class="rg-top"><b>أرض فاضية قرب ${worldPlace(sel)}</b><small>أرض ${terr.name}</small></div><p>${terr.text}</p>
@@ -1189,7 +1194,7 @@ export async function worldMapSheet(pick) {
           <div class="sheet-actions keep"><button class="btn go block" id="wmMove" type="button">🚚 انقل مدينتك هنا</button></div>` : id ? `<p class="hint">عندك مدينة. كل لاعب له مدينة وحدة بالعالم.</p>` : ""}</div>`;
     }
   }
-  sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم</p>
+  sheet(`<h2>🌍 عالم الجوف</h2><p>${id ? `أهلًا <b>${id.name}</b> · ` : ""}${ar(plots.length)} مدينة بالعالم${fronts.filter((f) => f.state === "war").length ? ` · <b class="minus">🔥 ${ar(fronts.filter((f) => f.state === "war").length)} حروب</b>` : ""}</p>
     <div class="wm-wrap"><svg class="wm-map" id="wmMap" viewBox="0 0 ${cols * cell} ${rows * cell}" role="img" aria-label="خريطة الجوف">${cells}${labels}</svg>
       <div class="wm-zoom"><button type="button" id="wmIn" aria-label="قرّب">＋</button><button type="button" id="wmOut" aria-label="بعّد">－</button></div></div>
     ${detail}
