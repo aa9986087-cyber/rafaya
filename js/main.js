@@ -12,7 +12,7 @@ import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS } from "./icons.js";
 import { WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
-import { sfx, ambience, warSfx } from "./sound.js";
+import { sfx, ambience, warSfx, music } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
 import { API, LIVE, PUSH, VISIT_OK, VISIT_SHEETS, WORLD_GEN_KEY, WORLD_ID, WORLD_SAVE, activePushWorker, api, b64, checkPush, conflictCopyKey, freshWorldTown, gunzipText, gzipText, handoffSheet, iosPrepareMove, keepDeviceSave, liveClose, liveOpen, makeWorldTown, me, moveCodeSheet, onlineOk, onlinePoll, ownsActiveSave, pendingSummary, prepareWorldSave, pushDeniedHelp, pushKey, pushOff, pushOffer, pushOn, pushState, registerPushEndpoint, registerPushWorker, saveWriters, takeMove, unb64, versionCheck, visitComments, worldHourNow, worldHours, worldSnapshot, worldSync } from "./ui-online.js";
@@ -1612,6 +1612,8 @@ export function settingsSheet(fromMenu) {
       ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
+      <label class="row toggle"><span>🎵 الموسيقى</span><input type="checkbox" id="setMusic" ${music.on ? "checked" : ""}></label>
+      <label class="row music-vol ${music.on ? "" : "off"}" id="musicVolRow"><span>مستوى الموسيقى</span><input type="range" id="setMusicVol" min="0" max="100" step="5" value="${Math.round(music.vol * 100)}" aria-label="مستوى الموسيقى"><b id="musicVolNum">${ar(Math.round(music.vol * 100))}٪</b></label>
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
     ${me()?.plot != null ? `<h3>🔔 تنبيهات الجوف</h3><p>الهجوم والحرب، ولما أحد يذكرك بالشات، ولما مواطنينك يبونك. حتى واللعبة مسكّرة.</p>
@@ -1698,6 +1700,8 @@ export function settingsSheet(fromMenu) {
   });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
+  $("setMusic").addEventListener("change", (e) => { music.set(e.target.checked); $("musicVolRow").classList.toggle("off", !e.target.checked); sfx.tap(); });
+  $("setMusicVol").addEventListener("input", (e) => { const v = Number(e.target.value) / 100; music.setVol(v); $("musicVolNum").textContent = `${ar(Math.round(v * 100))}٪`; });
   // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
   const short = onlineOk() && !globalThis.RAFAYA_PREVIEW && typeof CompressionStream !== "undefined";
   $("copySave").addEventListener("click", async (e) => {
@@ -1877,7 +1881,7 @@ function frame(now) {
   ambT -= dt;
   // lightning far off while it rains: a flash in the clouds, the rumble a moment later
   if (playing && world.raining && !document.hidden && Math.random() < dt / 22) { world.skyFlash(); sfx.thunder(0.15 + Math.random() * 0.25, 1 + Math.random() * 2.5); }
-  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); }
+  if (ambT <= 0) { ambT = 0.5; ambience.update({ playing, night: world.nightTime, raining: world.raining, season: seasonOf(S.day).id, dusty: world.dusty }); music.update({ playing, scene: !!WARX.scene, intro: !!$("introVid") }); }
   const t0 = performance.now();
   const previewLight = globalThis.RAFAYA_PREVIEW_LIGHT?.(), previewWeather = globalThis.RAFAYA_PREVIEW_WEATHER?.();
   if (previewWeather) {

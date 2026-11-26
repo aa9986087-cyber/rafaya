@@ -1024,3 +1024,6 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .tb-head { gap: 8px; } .tb-head b { flex: 1; }
 .tb-fold { border: 1px solid rgba(217,180,106,.35); background: rgba(255,255,255,.07); color: #e0bd72; border-radius: 12px; width: 32px; height: 32px; font-size: 15px; flex: none; }
 .tb-min { gap: 6px; } .tb-min .tb-fire { padding: 8px; }
+
+.row.music-vol { display: flex; align-items: center; gap: 10px; } .row.music-vol input { flex: 1; accent-color: #b8913f; } .row.music-vol b { min-width: 44px; text-align: center; }
+.row.music-vol.off { opacity: .45; pointer-events: none; }

@@ -8,7 +8,8 @@ const PV_CFG = fastWar(20);
 Object.assign(WAR, PV_CFG); // the game shows the same short waits the trial server uses
 const pvLoad = () => { try { return JSON.parse(localStorage.getItem(PV_KEY) || "null"); } catch { return null; } };
 const pvState = pvLoad() || { players: {}, plots: {}, comments: [], war: {}, bots: false, made: Date.now() };
-globalThis.__ROOM = () => ROOM; // the trial's checks look at the war room's map
+globalThis.__ROOM = () => ROOM;
+globalThis.__music = () => music.state(); // the trial's checks look at the war room's map
 const pvSave = () => { try { localStorage.setItem(PV_KEY, JSON.stringify({ ...pvState, war: pvDb.dump() })); } catch { /* full: the trial still runs */ } };
 const pvDb = memWarDb(pvState.war);
 const pvWorld = {
