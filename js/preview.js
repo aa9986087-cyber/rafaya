@@ -256,6 +256,8 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
   document.querySelectorAll("[data-sc]").forEach((b) => b.addEventListener("click", async () => {
     const sc = PV_SCENARIOS.find(([id]) => id === b.dataset.sc);
     let out;
+    // a war scenario needs the war open (the live rule): it lifts the trial's countdown (one button brings it back)
+    if (!["zero", "count100", "win", "peace"].includes(sc[0]) && pvState.zeroAt > Date.now()) { pvState.zeroAt = 0; pvState.zeroLock = false; setWarOpen(0); }
     try { out = sc[3](); pvSave(); } catch (e) { toast(`ما زبط: ${e.message}`, "bad"); return; }
     closeSheet(); toast(out.msg, "goal");
     await warPoll(true);

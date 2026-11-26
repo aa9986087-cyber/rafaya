@@ -405,7 +405,8 @@ export class WarServer {
     r.hist ||= []; r.lastThreat ||= {};
     const allowed = relActions(stored ? r : null, me.plot, now, block, this.cfg);
     if (!(act in allowed)) return { error: "طلب غير معروف" };
-    if ((act === "war" || act === "tribute") && this.notOpen(now)) return { error: this.notOpen(now) };
+    // before zero hour nothing that leads to a war: no declaration, no tribute, no threats or talk, no hostility
+    if (["war", "tribute", "say", "endchat", "threat", "hostile"].includes(act) && this.notOpen(now)) return { error: this.notOpen(now) };
     if (allowed[act]) return { error: allowed[act] };
     const myName = mine.town, theirName = them.town;
     const log = (kind, text) => { r.hist.push({ at: now, by: me.plot, kind, text }); r.hist = r.hist.slice(-30); };

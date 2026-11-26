@@ -5,6 +5,7 @@
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
 import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
+import { ZERO } from "./ui-zero.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { unpack } from "./sim.js";
@@ -197,6 +198,9 @@ function diploPanel(st, map, t) {
   const r = st.rels.find((x) => x.other === t.plot) || { state: "peace", hist: [], chat: [] };
   const block = relBlock(r, t.era);
   const acts = relActions(r.state === "peace" && !r.hist?.length && !r.chat?.length ? null : { ...r, a: Math.min(mine, t.plot), b: Math.max(mine, t.plot) }, mine, now, block);
+  // ساعة الصفر: before it, the buttons say when they open (the server refuses them too)
+  const zeroLeft = ZERO.at - (Date.now() + (WARX.offset || 0));
+  if (zeroLeft > 0) for (const k of ["war", "tribute", "say", "endchat"]) acts[k] = `⏳ تنفتح بساعة الصفر: بعد ${fmtLeft(zeroLeft)}`;
   const most = tributeMax(t.money);
   const big = (act, icon, label, sub, cls = "") => `<button type="button" class="dp-act ${cls}" data-dp="${act}" ${acts[act] ? `data-why="${acts[act]}" aria-disabled="true"` : ""}><i>${icon}</i><b>${label}</b><small>${acts[act] || sub}</small></button>`;
   const ask = r.tribute && r.tribute.by !== mine ? `<div class="dp-alert"><b>🪙 يطالبونك بجزية ${money(r.tribute.amount)} ريال</b><small>ادفع: سلام شهر بالجوف · ارفض أو لا ترد خلال ${fmtLeft(r.tribute.until - now)}: حرب</small>
