@@ -1059,3 +1059,6 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .wr-guard > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
 .wr-guard span { display: grid; justify-items: center; gap: 1px; border-radius: 10px; padding: 4px 2px; background: rgba(0,0,0,.18); }
 .wr-guard span svg, .wr-guard span img { width: 22px; height: 22px; } .wr-guard span small { font-size: 10px; opacity: .8; } .wr-guard span b { font-size: 16px; }
+.wr-world .wm-t.quiet > circle:not(.wm-hit) { opacity: .45; transform-box: fill-box; transform-origin: center; transform: scale(.6); }
+.wr-allfronts { display: block; margin: 6px auto 0; border: 1px solid var(--wr-line); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 700; color: var(--wr-ink); background: rgba(255,255,255,.06); cursor: pointer; }
+.wr-allfronts.on { background: rgba(255, 90, 74, .18); border-color: rgba(255, 90, 74, .5); }

@@ -106,8 +106,8 @@ function frontMap(map, st) {
   const towns = map.plots.map((t) => {
     const [x, y] = xy(t.plot), on = involved.has(t.plot), rel = rels.find((r) => r.other === t.plot), state = t.plot === mine ? "me" : rel?.state || "peace";
     const inN = flying.filter((o) => o.from === t.plot).length, outN = flying.filter((o) => o.to === t.plot).length;
-    const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
-    return `<g class="wm-t ${state} ${on ? "on" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? myLabel() : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
+    const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0)), quiet = !on && (t.era || 0) < 1;
+    return `<g class="wm-t ${state} ${on ? "on" : ""} ${quiet ? "quiet" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel() : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
   }).join("");
   return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${towns}</svg>
     <div class="wr-zoom" data-for="wrFront"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الجوف">⤢</button></div></div>`;
@@ -208,7 +208,7 @@ function worldSvg(map, st) {
   const rel = (p) => st.rels.find((r) => r.other === p);
   // everyone's fronts pale, mine on top in full colour
   const ours = (f) => f.a === mine || f.b === mine;
-  const fronts = [...map.fronts.filter((f) => !ours(f)), ...map.fronts.filter(ours)].map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b);
+  const fronts = [...(ROOM.allFronts ? map.fronts.filter((f) => !ours(f)) : []), ...map.fronts.filter(ours)].map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b);
     return frontPath(ax, ay, bx, by, f, ours(f) ? "ours" : "theirs"); }).join("");
   const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
   // every town has its name; which names show is decided on the screen (zoom in for more): the most
@@ -217,13 +217,15 @@ function worldSvg(map, st) {
   const towns = plots.map((t) => {
     const [x, y] = xy(t.plot), r = rel(t.plot), state = t.plot === mine ? "me" : r?.state || "peace", sel = ROOM.sel === t.plot, atWar = map.fronts.some((f) => (f.a === t.plot || f.b === t.plot) && f.state !== "truce");
     const pri = (t.plot === mine ? 5e6 : 0) + (sel ? 4e6 : 0) + (r && r.state !== "peace" ? 3e6 : 0) + (atWar ? 2e6 : 0) + (1e5 - (rank.get(t.plot) || 0));
-    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name">${t.plot === mine ? myLabel() : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
+    const quiet = !sel && !atWar && t.plot !== mine && (!r || r.state === "peace") && (t.era || 0) < 1; // a village at peace: a small dot, its name when zoomed in
+    return `<g class="wm-t ${state} ${sel ? "sel" : ""} ${atWar ? "fire" : ""} ${quiet ? "quiet" : ""}">${sel ? `<circle cx="${x}" cy="${y}" r="9" class="wm-ring" data-r="9"/>` : ""}<circle cx="${x}" cy="${y}" r="${t.plot === mine ? 5 : 3.6}" data-r="${t.plot === mine ? 5 : 3.6}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel() : t.town}</text><circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/></g>`;
   }).join("");
   const Z = (ROOM.wz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
   const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.full;
   Z.mvFull = Z.full.join();
   return `<div class="wr-world-box"><svg class="wr-world" id="wrWorld" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>
     <div class="wr-zoom" data-for="wrWorld"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الخريطة">⤢</button></div>
+    <button type="button" class="wr-allfronts ${ROOM.allFronts ? "on" : ""}" data-wrall>${ROOM.allFronts ? "🔥 أخفِ حروب غيرك" : `🔥 شوف كل حروب الجوف (${ar(map.fronts.filter((f) => !ours(f)).length)})`}</button>
     <small class="wr-zoom-hint">قرّب بإصبعين أو بـ＋ عشان تشوف أسماء أكثر</small></div>`;
 }
 async function worldTab(st) {
@@ -383,6 +385,7 @@ function bind(st) {
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
   rankGo();
+  q("[data-wrall]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.allFronts = !ROOM.allFronts; warRoom("world"); }));
   q("[data-rkonly]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.rankOnly = b.dataset.rkonly === "1"; warRoom("rank"); }));
   // al-Jouf and diplomacy
   worldZoom();
@@ -473,6 +476,7 @@ function zoomable(svg, Z) {
     Z.mv = [...v];
     svg.setAttribute("viewBox", v.join(" "));
     const k = v[2] / fw, px = v[2] / Math.max(1, svg.clientWidth); // user units in one screen pixel
+    svg.dataset.k = k;
     // towns sit 10 units apart: a dot, however important, never reaches its neighbour, and each town's tap area is its own half
     svg.querySelectorAll("[data-r]").forEach((c) => {
       const r = Number(c.dataset.r) * Math.max(0.35, Math.sqrt(k));
@@ -487,8 +491,10 @@ function zoomable(svg, Z) {
     pending = 0;
     const box = svg.getBoundingClientRect(), placed = [];
     const labels = [...svg.querySelectorAll(".wm-name")].sort((a, b) => Number(b.dataset.pri) - Number(a.dataset.pri));
+    const close = Number(svg.dataset.k || 1) < 0.4; // the quiet villages' names only once zoomed well in
     for (const t of labels) {
       t.style.display = "";
+      if (t.classList.contains("quiet") && !close) { t.style.display = "none"; continue; }
       const r = t.getBoundingClientRect();
       const out = r.right < box.left || r.left > box.right || r.bottom < box.top || r.top > box.bottom;
       const hit = placed.some((p) => r.left < p.right + 3 && r.right > p.left - 3 && r.top < p.bottom + 1 && r.bottom > p.top - 1);
