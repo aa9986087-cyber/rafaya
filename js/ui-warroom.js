@@ -61,6 +61,33 @@ function mapHtml(st) {
     return `<g class="wr-town ${p === mine ? "me" : rel?.state || ""}"><circle cx="${x}" cy="${y}" r="${p === mine ? 10 : 8}"/><text x="${x}" y="${y + (p === mine ? 24 : 21)}">${name(p)}</text>${in_ || out ? `<text class="wr-count" x="${x}" y="${y - 13}">${in_ ? `🔴${ar(in_)}` : ""}${out ? ` 🟢${ar(out)}` : ""}</text>` : ""}</g>`; }).join("");
   return `<svg class="wr-map" viewBox="0 0 ${W} ${H}" style="height:${Math.round(H * 0.95)}px" role="img" aria-label="خريطة الجبهة">${lines}${towns}</svg>`;
 }
+/**
+ * The attacks in the air, on the real map of al-Jouf (the same look as «الجوف والتفاوض»): every town a faint
+ * dot, ours in gold, the towns we fight in red and named, and each operation on its own arc with a moving dot.
+ * The view frames the towns involved (or all of al-Jouf when it is quiet).
+ */
+function frontMap(map, st) {
+  if (!map?.plots?.length) return mapHtml(st);
+  const mine = me()?.plot, cell = 10, xy = (p) => { const [x, y] = worldXY(p); return [x * cell + cell / 2, y * cell + cell / 2]; };
+  const rels = (st?.rels || []).filter((r) => r.state !== "peace"), flying = liveOps(st).filter((o) => o.status === "flying");
+  const involved = new Set([mine, ...rels.map((r) => r.other), ...flying.flatMap((o) => [o.from, o.to])].filter((p) => p != null));
+  const pts = [...involved].map(xy), all = map.plots.map((t) => xy(t.plot)), frame = pts.length > 1 ? pts : all;
+  let x0 = Math.min(...frame.map((a) => a[0])) - 40, x1 = Math.max(...frame.map((a) => a[0])) + 40, y0 = Math.min(...frame.map((a) => a[1])) - 30, y1 = Math.max(...frame.map((a) => a[1])) + 30;
+  const minW = 180; if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = c - minW / 2; x1 = c + minW / 2; }
+  if ((y1 - y0) < (x1 - x0) * 0.42) { const c = (y0 + y1) / 2, h = (x1 - x0) * 0.42; y0 = c - h / 2; y1 = c + h / 2; }
+  const k = (x1 - x0) / 340; // user units per screen pixel (about)
+  const name = (p) => p === mine ? "مدينتي" : map.plots.find((t) => t.plot === p)?.town || "";
+  const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl" style="font-size:${8 * k}px">${p.name}</text>`).join("");
+  const dots = map.plots.filter((t) => !involved.has(t.plot)).map((t) => { const [x, y] = xy(t.plot); return `<circle cx="${x}" cy="${y}" r="${2.2 * k}" class="ff-dot"/>`; }).join("");
+  const lines = flying.map((o, i) => {
+    const [ax, ay] = xy(o.from), [bx, by] = xy(o.to), d = Math.hypot(bx - ax, by - ay) || 1;
+    const lift = (o.side === "in" ? 1 : -1) * (0.22 * d + (i % 3) * 6 * k), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
+    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${o.side}" style="stroke-width:${2 * k}px;stroke-dasharray:${5 * k} ${4 * k}"/><circle r="${4.5 * k}" class="wr-dot ${o.side}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
+  }).join("");
+  const towns = [...involved].map((p) => { const [x, y] = xy(p), rel = rels.find((r) => r.other === p), inN = flying.filter((o) => o.from === p).length, outN = flying.filter((o) => o.to === p).length;
+    return `<g class="wr-town ${p === mine ? "me" : rel?.state || ""}"><circle cx="${x}" cy="${y}" r="${(p === mine ? 7 : 5.5) * k}" style="stroke-width:${1.5 * k}px"/><text x="${x}" y="${y - 10 * k}" style="font-size:${11 * k}px;stroke-width:${2.4 * k}px">${name(p)}</text>${inN || outN ? `<text class="wr-count" x="${x}" y="${y + 18 * k}" style="font-size:${10 * k}px;stroke-width:${2 * k}px">${inN ? `🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>` : ""}</g>`; }).join("");
+  return `<svg class="wr-map wr-map-geo" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" role="img" aria-label="خريطة الجبهة">${places}${dots}${lines}${towns}</svg>`;
+}
 /** Every second while the room is open: the countdowns and the dots move (the tabs are left alone). */
 function tick() {
   if (sheetFor !== "warroom") { clearInterval(ROOM.tick); ROOM.tick = null; $("sheet").classList.remove("warroom"); return; }
@@ -295,7 +322,7 @@ export async function warRoom(tab = ROOM.tab) {
     <div class="wr-kpis"><div class="${wars ? "hot" : ""}"><b>${ar(wars)}</b><span>🔥 حروب</span></div><div class="${incoming ? "hot" : ""}"><b>${ar(incoming)}</b><span>🚨 ${attackers > 1 ? `هجوم من ${ar(attackers)} مدن` : "هجوم جاي"}</span></div>
       <div><b>${ar(st.arsenal.intc)}</b><span>🛡️ اعتراض</span></div><div><b>${home.money >= 1e6 ? `${ar((home.money / 1e6).toFixed(1))} م` : money(home.money)}</b><span>💰 الميزانية</span></div></div>
     <div class="wr-strip" id="wrStrip">${stripHtml(st)}</div>
-    ${tab === "world" ? "" : mapHtml(st)}
+    ${tab === "world" ? "" : frontMap(await worldMap(), st)}
     ${asks.filter((r) => !(tab === "world" && ROOM.sel === r.other)).map((r) => `<button type="button" class="wr-ask" data-wrask="${r.other}">${r.tribute && r.tribute.by !== mine ? `🪙 «${r.town}» تطالبك بجزية ${money(r.tribute.amount)} · باقي ${fmtLeft(r.tribute.until - warNow())}` : r.offer && r.offer.by !== mine ? `${r.offer.kind === "truce" ? "🏳️" : "🤝"} «${r.town}» تعرض ${r.offer.kind === "truce" ? "هدنة" : "صلح"}` : `💬 رسالة من «${r.town}»`}<b>افتح ←</b></button>`).join("")}
     <div class="war-tabs wr-tabs">${TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wrtab="${k}">${n}${k === "world" && asks.length ? " 🔴" : ""}</button>`).join("")}</div>
     <div class="wr-body">${body}</div>`, "warroom");

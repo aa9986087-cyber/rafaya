@@ -994,3 +994,20 @@ body:has(.zero-full) .zero-chip { display: none; }
 .hud .zero-chip i { font-size: 16px; } .hud .zero-chip b { font-size: 13px; } .hud .zero-chip small { font-size: 10px; }
 body:has(#sheet:not([hidden])) .hud .zero-chip { display: flex; }
 body.war-scene .hud .zero-chip, body.targeting .hud .zero-chip { display: none; }
+
+/* the front, on the real map of al-Jouf (the same look as the diplomacy map) */
+.wr-map.wr-map-geo { height: auto; max-height: 230px; aspect-ratio: auto; background: radial-gradient(ellipse at 50% 40%, #2a2619, #121512 75%); }
+.wr-map-geo .ff-dot { fill: #6f6a5a; }
+.wr-map-geo .wm-pl { fill: #8d7f5c; text-anchor: middle; opacity: .35; font-family: Almarai, system-ui; font-weight: 700; }
+.wr-map-geo text { paint-order: stroke; stroke: #0b1012; }
+/* the attack's flight across al-Jouf (in a scene): the same dark map */
+.wf-map { background: radial-gradient(ellipse at 50% 40%, #2a2619, #121512 75%); }
+.wf-map > rect { fill: transparent !important; }
+.wf-map .wm-place { fill: #8d7f5c; opacity: .5; }
+.wf-name { fill: #f1e7cc; paint-order: stroke; stroke: #0b1012; stroke-width: .8px; }
+.wf-path { stroke: #ff5a4a; filter: drop-shadow(0 0 1px #ff5a4a); }
+.wf-from { fill: #f2c94c; stroke: #fff; } .wf-to { fill: #ff5a4a; stroke: #fff; } .wf-ping { stroke: #ff5a4a; }
+.war-map { background: linear-gradient(180deg, rgba(16, 23, 25, .96), rgba(9, 13, 14, .97)); border: 1px solid rgba(217,180,106,.35); color: #eef0ea; }
+/* a smaller zero-hour chip */
+.hud .zero-chip { padding: 3px 8px 3px 5px; gap: 6px; border-radius: 10px; margin-top: 3px; }
+.hud .zero-chip i { font-size: 13px; } .hud .zero-chip b { font-size: 11px; } .hud .zero-chip small { font-size: 9px; }
