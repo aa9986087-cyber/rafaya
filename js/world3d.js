@@ -212,8 +212,8 @@ export class World {
       ghost: new THREE.MeshStandardMaterial({ color: "#7ee0b8", transparent: true, opacity: 0.55, roughness: 0.6 }),
       // the realistic sets (military first): painted steel, bare steel, tinted glass, lamps that bloom
       paint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.18, normalMap: plasterNormal, normalScale: new THREE.Vector2(0.35, 0.35) }),
-      carPaint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.27, metalness: 0.28 }),
-      metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.75, normalMap: quality === "high" ? normalTex("tex/grain-normal.webp", 2) : null, normalScale: new THREE.Vector2(0.25, 0.25) }),
+      carPaint: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.22 }), // glossy, but no sun-glare spots
+      metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.7, /* broad metal roofs no longer mirror the sun into a glare */ normalMap: quality === "high" ? normalTex("tex/grain-normal.webp", 2) : null, normalScale: new THREE.Vector2(0.25, 0.25) }),
       glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: quality === "low" ? .28 : .14, metalness: quality === "low" ? .23 : .64 }),
       glow: new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(7, 7, 7), toneMapped: false }),
       ghostBad: new THREE.MeshStandardMaterial({ color: "#ff7a6a", transparent: true, opacity: 0.55, roughness: 0.6 })
@@ -1131,7 +1131,7 @@ export class World {
       this.carWheels = batch(model("carWheel").matte, this.mats.matte, limit * 4);
       this.initVehicleShadows();
       this.carPose = { matrix: new THREE.Matrix4(), child: new THREE.Matrix4(), wheel: new THREE.Matrix4(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0), point: new THREE.Vector3(), scale: new THREE.Vector3(1, 1, 1) };
-      this.carColors = ["#e5e4d9", "#275e61", "#a84a3f", "#d5b16c", "#879397", "#334052", "#f4e4cb"].map((color) => new THREE.Color(color));
+      this.carColors = ["#d2d1c6", "#275e61", "#a84a3f", "#d5b16c", "#879397", "#334052", "#ddd0ba"] /* the white cars a touch off-white: no glare in the sun */.map((color) => new THREE.Color(color));
     }
     this.cars = this.cars.filter((c) => (c.tx !== c.x || c.ty !== c.y) && isRoad(c.x, c.y) && isRoad(c.tx, c.ty) && isRoad(c.px, c.py));
     while (this.cars.length < want) {

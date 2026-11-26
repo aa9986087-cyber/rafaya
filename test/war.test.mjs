@@ -235,7 +235,7 @@ test("caps: one building twice in 6 hours; the bought shield stops strikes, once
   assert.equal(back.ok, true);
   assert.equal(W.war.handle("state", {}, b).shield, 0);
   assert.equal(fire(21, 36).ok, true);
-  assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /٣ أسابيع/);
+  assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /٤ أيام/);
 });
 
 test("repairs: paid on the server, damage comes off over time; the deputy repairs within its budget", () => {

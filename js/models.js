@@ -41,6 +41,9 @@ class Builder {
     const g = geo.index ? geo.toNonIndexed() : geo.clone();
     g.applyMatrix4(tmp.matrix);
     const c = new THREE.Color(color);
+    // near-white surfaces (roofs, plaster, trim) stop a little short of pure white: in the full sun pure white
+    // burns out and glares; light colours keep their hue (only the whites and pale greys are touched)
+    if (set !== "lights" && set !== "glow" && Math.min(c.r, c.g, c.b) > 0.55) { const top = Math.max(c.r, c.g, c.b); if (top > 0.7) c.multiplyScalar(0.7 / top); }
     const n = g.attributes.position.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -994,8 +997,9 @@ const MAKERS = {
   livestock(b) {
     b.box(0.94, 0.015, 0.94, "#cdb48a");
     for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.1], [0.42, 0.1]]) b.cyl(0.018, 0.018, 0.4, C.wood, { x, z }, 5);
-    b.box(.915,.028,.599,"#bbb69d",{y:.4,z:-.16},"metal");
-    for(const z of [-.431,-.325,-.219,-.113,-.007,.099]) b.box(.92,.009,.018,"#888d7d",{y:.426,z},"metal");
+    // the shade roof: painted sheet (bare metal facing the sun mirrored it into a blinding glare)
+    b.box(.915,.028,.599,"#b3ae96",{y:.4,z:-.16},"paint");
+    for(const z of [-.431,-.325,-.219,-.113,-.007,.099]) b.box(.92,.009,.018,"#888d7d",{y:.426,z},"paint");
     for(const x of [-.398,.398]) b.box(.073,.024,.55,"#ad9877",{x,y:.016,z:.15},"stone");
     b.box(0.92, 0.04, 0.02, C.red, { y: 0.38, z: 0.14 });
     for (const x of [-0.25, 0.25]) { b.box(0.36, 0.06, 0.02, C.wood, { x, y: 0.1, z: -0.02 }); b.box(0.02, 0.12, 0.3, C.wood, { x: x - 0.18, y: 0.015, z: -0.17 }); }

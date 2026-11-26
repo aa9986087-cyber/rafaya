@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { ROOM, warRoom } from "./ui-warroom.js";
+import { rankSheet, ROOM, warRoom } from "./ui-warroom.js";
 import { VERSION, REQUIRED } from "./version.js";
 import { WHATS_NEW } from "./whats-new.js";
 import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
@@ -1206,12 +1206,14 @@ export async function worldMapSheet(pick) {
     <div class="wm-wrap"><svg class="wm-map" id="wmMap" viewBox="0 0 ${cols * cell} ${rows * cell}" role="img" aria-label="خريطة الجوف">${cells}${labels}</svg>
       <div class="wm-zoom"><button type="button" id="wmIn" aria-label="قرّب">＋</button><button type="button" id="wmOut" aria-label="بعّد">－</button></div></div>
     ${detail}
-    ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}`, "world");
+    ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}
+    <button class="btn block" id="wmRank" type="button">🏆 الترتيب ومين يحارب مين</button>`, "world");
   // first time open: close in on your own town (or the middle), the whole of al-Jouf is a pinch away
   if (!wmView && !wmSeen) { const [mx, my] = id?.plot != null ? worldXY(id.plot) : [WORLD.cols / 2, WORLD.rows / 2]; const w = cols * cell / 2, h = rows * cell / 2; wmView = { x: mx * cell - w / 2, y: my * cell - h / 2, w, h }; }
   wmSeen = true;
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
+  $("wmRank")?.addEventListener("click", () => { sfx.tap(); rankSheet(); });
   $("wmFollow")?.addEventListener("click", () => { sfx.tap(); followTown(sel, t.town); worldMapSheet(sel); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
   $("wmRename")?.addEventListener("click", () => { sfx.tap(); renameSheet(t, plots); });

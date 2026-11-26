@@ -193,6 +193,7 @@ export class Board extends DurableObject {
     }, env?.WAR_TEST === "1" ? { cfg: fastWar(30) } : {}); // WAR_TEST: local testing only (wrangler dev --var WAR_TEST:1), never set on the live site
     this.refundDebtFix();
     this.warMoveNotice();
+    this.shieldNoticeFix();
   }
   /**
    * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
@@ -597,8 +598,14 @@ export class Board extends DurableObject {
   /** Once: the owner's notice before the war (too long for the chat), into the bulletin for everyone. */
   warMoveNotice() {
     if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'notice_war_move_v1'").toArray().length) return;
-    this.news("admin", "📢 إعلان من الإدارة ⚔️ ساعة الصفر فجر السبت الساعة ٢، وبعدها تنفتح الحرب للكل 🔥 • 📍 انتبهوا للجيران: كل ما كانت المدينة قريبة منك ضرباتها توصلك أسرع (صاروخ الجار ١٢ ثانية، والمسيّرة ٢٥ ثانية) • 🚚 عشان كذا عطيناكم نقلة ببلاش قبل الحرب، حتى اللي نقل قبل: افتح خريطة الجوف ← اضغط أي أرض فاضية ← «انقل مدينتك هنا»، وكل شي ينتقل معك. واللي مرتاح بديرته يبقى فيها بكيفه 👍 • 🛡️ جهّزوا من الحين: مركز القيادة العسكرية وبطارية دفاع جوي ورادار، عبّوا الصواريخ الاعتراضية، فعّلوا النائب، ودرع الحماية يحميكم أسبوع (مرة كل ٣ أسابيع) • 📖 كل القوانين في زر «الدليل» تحت «القيادة». بالتوفيق للجميع 🤝🏆", null, null, false);
+    this.news("admin", "📢 إعلان من الإدارة ⚔️ ساعة الصفر فجر السبت الساعة ٢، وبعدها تنفتح الحرب للكل 🔥 • 📍 انتبهوا للجيران: كل ما كانت المدينة قريبة منك ضرباتها توصلك أسرع (صاروخ الجار ١٢ ثانية، والمسيّرة ٢٥ ثانية) • 🚚 عشان كذا عطيناكم نقلة ببلاش قبل الحرب، حتى اللي نقل قبل: افتح خريطة الجوف ← اضغط أي أرض فاضية ← «انقل مدينتك هنا»، وكل شي ينتقل معك. واللي مرتاح بديرته يبقى فيها بكيفه 👍 • 🛡️ جهّزوا من الحين: مركز القيادة العسكرية وبطارية دفاع جوي ورادار، عبّوا الصواريخ الاعتراضية، فعّلوا النائب، ودرع الحماية يحميكم ٣ أيام (وإذا خلص ينفتح لكم بعد ٤ أيام) • 📖 كل القوانين في زر «الدليل» تحت «القيادة». بالتوفيق للجميع 🤝🏆", null, null, false);
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('notice_war_move_v1', '1')");
+  }
+  /** Once: the shield became three real days (then four to rest): the notice already in the bulletin says so too. */
+  shieldNoticeFix() {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'notice_shield_v2'").toArray().length) return;
+    this.sql.exec("UPDATE wnews SET text = replace(text, 'ودرع الحماية يحميكم أسبوع (مرة كل ٣ أسابيع)', 'ودرع الحماية يحميكم ٣ أيام (وإذا خلص ينفتح لكم بعد ٤ أيام)') WHERE kind = 'admin'");
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('notice_shield_v2', '1')");
   }
 
   /**

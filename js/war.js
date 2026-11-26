@@ -25,8 +25,8 @@ export const WAR = {
     warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
     tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
     tributePeace: 30 * JOUF_DAY, // tribute paid: no war and no new demand between the two for a month of al-Jouf
-    shieldLast: 7 * JOUF_DAY,    // a bought shield lasts a week of al-Jouf
-    shieldEvery: 21 * JOUF_DAY,  // and the next one only three weeks of al-Jouf after it was raised
+    shieldLast: 3 * 24 * WAR_HOUR, // a bought shield lasts three real days (owner, 2026-11-26)
+    shieldEvery: 7 * 24 * WAR_HOUR, // and the next one four real days after it ends (seven after it was raised)
     say: 3000,                   // one line in a threat talk this often
     offer: JOUF_DAY,             // an offer of truce or peace waits a day of al-Jouf for an answer
     heat: 60 * WAR_MIN,          // a launcher that fired lately needs longer to get ready again (each launch in this window adds half)

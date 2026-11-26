@@ -13,7 +13,7 @@ import { B, ERAS, WORLD, worldXY } from "./data.js";
 import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
-const TABS = [["attack", "🎯 هجوم"], ["world", "🗺️ الجوف والتفاوض"], ["def", "🛡️ الدفاع والدرع"], ["log", "📜 السجل"]];
+const TABS = [["attack", "🎯 هجوم"], ["world", "🗺️ الجوف والتفاوض"], ["rank", "🏆 الترتيب"], ["def", "🛡️ الدفاع والدرع"], ["log", "📜 السجل"]];
 
 /** The operations to show in the strip: in the air, and those that landed in the last three minutes. */
 function liveOps(st) {
@@ -276,8 +276,8 @@ function shieldCard(st) {
   if (!sb) return "";
   if (sb.until > now) return `<div class="dp-shieldcard on"><b>🛡️ درع الحماية شغال</b><small>باقي ${fmtLeft(sb.until - now)} · ما ينضرب فيك شي. إذا هاجمت أحد ينكسر.</small></div>`;
   const wait = sb.next > now ? sb.next - now : 0;
-  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك أسبوع بالجوف (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. بعدها ما ترفعه إلا بعد ٣ أسابيع من رفعه. إذا هاجمت وأنت عليه ينكسر.</small>
-    <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع مرة كل ٣ أسابيع: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
+  return `<div class="dp-shieldcard"><b>🛡️ درع الحماية</b><small>يحميك ٣ أيام (${fmtLeft(sb.last)}) حتى لو كنت بنص حرب. إذا خلص، ما ترفعه مرة ثانية إلا بعد ٤ أيام. إذا هاجمت وأنت عليه ينكسر.</small>
+    <button class="btn go block" type="button" id="wrShield" ${wait ? `data-why="الدرع ينفتح لك بعد ٤ أيام من نهايته: تقدر بعد ${fmtLeft(wait)}" aria-disabled="true"` : ""}>${wait ? `متاح بعد ${fmtLeft(wait)}` : `ارفع الدرع · ${money(sb.price)} ريال`}</button></div>`;
 }
 function defTab(st) {
   const p = st.profile, ars = st.arsenal, caps = st.caps, home = visiting ? visiting.home : S;
@@ -325,7 +325,7 @@ export async function warRoom(tab = ROOM.tab) {
   if (!WARX.st) { sheet(`<h2>⚔️ غرفة العمليات</h2><p class="hint">نحمّل…</p>`, "warroom"); await warPoll(true); }
   const st = WARX.st;
   if (!st) { sheet(`<h2>⚔️ غرفة العمليات</h2><div class="need">ما قدرت أوصل للسيرفر.</div>`, "warroom"); return; }
-  const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "world" ? await worldTab(st) : logTab(st);
+  const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "world" ? await worldTab(st) : tab === "rank" ? rankHtml(await worldMap(), "room") : logTab(st);
   const mine = me()?.plot, asks = st.rels.filter((r) => (r.tribute && r.tribute.by !== mine) || (r.offer && r.offer.by !== mine) || (r.chatOpen && r.chat?.at(-1)?.by === r.other));
   const wars = st.rels.filter((r) => ["war", "warning"].includes(r.state)).length, inc = st.ops.filter((o) => o.side === "in" && o.status === "flying"), incoming = inc.length, attackers = new Set(inc.map((o) => o.from)).size;
   const keep = $("sheetBody").querySelector(".wr-body")?.scrollTop || 0;
@@ -354,6 +354,7 @@ function bind(st) {
   q("[data-wrtalk]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalk); warRoom("talk"); }));
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
+  q("[data-rkonly]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.rankOnly = b.dataset.rkonly === "1"; warRoom("rank"); }));
   // al-Jouf and diplomacy
   worldZoom();
   q("[data-wrsel]").forEach((c) => c.addEventListener("click", () => { if (ROOM.dragged) return; sfx.tap(); const p = Number(c.dataset.wrsel); ROOM.sel = ROOM.sel === p ? null : p; ROOM.form = ""; warRoom("world"); }));
@@ -494,6 +495,40 @@ function zoomable(svg, Z) {
   // a town chosen from outside the map (an alert, the world map): bring it into view
   if (svg.id === "wrWorld" && ROOM.sel != null && ROOM.focusSel) { ROOM.focusSel = false; const c = svg.querySelector(`[data-wrsel="${ROOM.sel}"]`); if (c) { const cx = Number(c.getAttribute("cx")), cy = Number(c.getAttribute("cy")); v[2] = Math.min(v[2], fw / 3); v[3] = v[2] * ratio; v[0] = cx - v[2] / 2; v[1] = cy - v[3] / 2; } }
   apply();
+}
+// ---------- «الترتيب»: every town of al-Jouf, and who may fight whom ----------
+/**
+ * The ranking (stage, then people) and, for the one reading it, whether each town is within reach of a war:
+ * the same rules as the server (villages are protected; two stages apart or more, neither side may start).
+ * Read from the public map, so it is always as fresh as the map (every 20 s while it is open).
+ */
+export function rankHtml(map, where = "sheet") {
+  if (!map?.plots?.length) return `<div class="need">ما قدرت أحمّل مدن الجوف.</div>`;
+  const mine = me()?.plot, home = visiting ? visiting.home : S, my = map.plots.find((t) => t.plot === mine), myEra = my ? my.era || 0 : home?.era || 0;
+  const list = [...map.plots].sort((a, b) => (b.era || 0) - (a.era || 0) || (b.pop || 0) - (a.pop || 0));
+  const why = (t) => t.plot === mine ? ["me", "📍 مدينتك"] : (t.era || 0) < WAR.minEra ? ["safe", "🛡️ قرية محمية"] : myEra < WAR.minEra ? ["safe", "🛡️ أنت قرية"] : eraGap(myEra, t.era) ? ["no", eraGap(myEra, t.era).startsWith("مدينتك أكبر") ? "🚫 أصغر منك بكثير" : "🚫 أكبر منك بكثير"] : ["ok", "⚔️ تقدر تحاربها"];
+  const only = ROOM.rankOnly && where === "room";
+  const rows = list.map((t, i) => { const [k, w] = why(t); if (only && k !== "ok") return ""; return `<div class="rk-row ${k}"><span class="rk-n">${ar(i + 1)}</span><span class="rk-t"><b>${t.town}</b><small>${ERAS[t.era || 0].name} · ${money(t.pop || 0)} ساكن</small></span><span class="rk-w">${w}</span></div>`; }).join("");
+  const stages = ERAS.slice(WAR.minEra).map((e) => e.id);
+  const top = (e) => Math.min(e, ERAS.length - 2); // the greater city counts as a حاضرة
+  const grid = `<div class="rk-grid" style="grid-template-columns: 74px repeat(${stages.length}, 1fr)"><span></span>${stages.map((e) => `<b>${ERAS[e].name}</b>`).join("")}
+    ${stages.map((a) => `<b>${ERAS[a].name}</b>${stages.map((b) => `<i class="${Math.abs(top(a) - top(b)) >= WAR.bully ? "no" : "ok"}">${Math.abs(top(a) - top(b)) >= WAR.bully ? "🚫" : "⚔️"}</i>`).join("")}`).join("")}</div>`;
+  const count = list.filter((t) => why(t)[0] === "ok").length, byEra = ERAS.map((e) => list.filter((t) => (t.era || 0) === e.id).length);
+  return `<div class="rk">
+    <div class="rk-head"><b>🏆 ترتيب مدن الجوف</b><small>يتحدث لحاله · ${ar(list.length)} مدينة · ${ERAS.map((e, i) => byEra[i] ? `${ERAS[i].name} ${ar(byEra[i])}` : "").filter(Boolean).join(" · ")}</small></div>
+    ${my ? `<div class="rk-me">مدينتك «${my.town}» ${ERAS[myEra].name}: تقدر تحارب <b>${ar(count)}</b> ${count === 1 ? "مدينة" : "مدن"}${myEra < WAR.minEra ? " (لا صرت بلدة تدخل الحروب)" : ""}</div>` : ""}
+    <h3>⚔️ مين يقدر يحارب مين</h3>${grid}
+    <p class="hint">القرى محمية من الحروب. والفرق مستويين أو أكثر: ولا وحدة تبدأ على الثانية. الحاضرة الكبرى تنحسب حاضرة.</p>
+    <h3>📋 الترتيب</h3>
+    ${where === "room" ? `<div class="wr-enemies"><button type="button" class="${only ? "" : "on"}" data-rkonly="0">الكل</button><button type="button" class="${only ? "on" : ""}" data-rkonly="1">⚔️ اللي أقدر أحاربهم</button></div>` : ""}
+    <div class="rk-list">${rows || `<p class="hint">ما فيه مدن تقدر تحاربها الحين.</p>`}</div></div>`;
+}
+/** The same table on its own (from the world map; anyone, with or without a command centre). */
+export async function rankSheet() {
+  sheet(`<h2>🏆 الترتيب ومين يحارب مين</h2><p class="hint">نحمّل…</p>`, "rank");
+  const draw = async () => { if (sheetFor !== "rank") { clearInterval(ROOM.rankT); return; } const map = await worldMap(true); if (sheetFor !== "rank") return; const keep = $("sheetBody").scrollTop; sheet(`<h2>🏆 الترتيب ومين يحارب مين</h2>${rankHtml(map)}`, "rank"); $("sheetBody").scrollTop = keep; };
+  await draw();
+  clearInterval(ROOM.rankT); ROOM.rankT = setInterval(draw, 20000); // as fresh as the map
 }
 /** One relation action with the selected town, then the room again (with the talk kept open for a message). */
 async function relDo(act, extra = {}) {

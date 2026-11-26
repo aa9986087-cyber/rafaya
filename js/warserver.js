@@ -209,13 +209,13 @@ export class WarServer {
     if (!info?.snap.list.length) return { error: "زامن مدينتك أول (افتحها شوي)" };
     const a = this.acct(me.plot);
     if (a.shield && a.shield.until > now) return { error: `الدرع شغال: باقي ${minutesText(a.shield.until - now)}` };
-    if (a.shield && now < a.shield.at + this.cfg.T.shieldEvery) return { error: `الدرع مرة كل ٣ أسابيع: تقدر بعد ${minutesText(a.shield.at + this.cfg.T.shieldEvery - now)}` };
+    if (a.shield && now < a.shield.at + this.cfg.T.shieldEvery) return { error: `الدرع ينفتح لك بعد ٤ أيام من نهايته: تقدر بعد ${minutesText(a.shield.at + this.cfg.T.shieldEvery - now)}` };
     const price = shieldPrice(info.snap.era || info.era || 0, this.cfg);
     if (this.available(info, a) < price) return { error: "ما يكفي المال" };
     a.shield = { at: now, until: now + this.cfg.T.shieldLast };
     const c = this.charge(me.plot, a, price, "درع الحماية");
     this.saveAcct(me.plot, a);
-    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (أسبوع بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
+    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (٣ أيام). إذا هاجمت أحد ينكسر.`, {}, false);
     for (const r of this.db.list("rel", { either: String(me.plot) })) {
       const v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
       if (["warning", "war"].includes(v.state)) this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: ضرباتك ما توصلها لمدة ${minutesText(this.cfg.T.shieldLast)}.`, { from: me.plot });
