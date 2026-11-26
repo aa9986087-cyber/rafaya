@@ -3,7 +3,7 @@
 // number is read from the rules themselves (js/war.js, js/data.js), so the guide never says something else.
 import { ar, money, sheet } from "./main.js";
 import { WAR_LIVE, WEAPONS, WEAPON_IDS, JOUF_DAY, minutesText, shieldPrice, SPOILS, MEDALS } from "./war.js";
-import { B, ERAS, MIL } from "./data.js";
+import { B, ERAS, MIL, MIL_SLOTS } from "./data.js";
 import { weaponIcon } from "./ui-war.js";
 import { sfx } from "./sound.js";
 
@@ -46,7 +46,8 @@ export function warGuide(go = "") {
     ${section("zero", "⏳", "ساعة الصفر", `<p>الحرب تفتح <b>للكل بنفس اللحظة</b>. قبلها تشوف عداد ساعة الصفر: تبني وتجهّز وتشتري سلاحك، لكن ما فيه إعلان حرب ولا جزية ولا ضربات لين يخلص العداد. أول ما يوصل صفر يطلع البيان الرسمي وتبدأ الحرب.</p>`)}
 
     ${section("ready", "🏗️", "التجهيز: المباني الحربية", `<p>من «البناء ← الدفاع والعسكرية». القرية ما تدخل حروب: تبدأ من <b>${era(WAR_LIVE.minEra)}</b>.</p>
-      <div class="wg-table">${milRows.map(([id, i, t]) => `<div class="wg-row"><span class="wg-ic">${i}</span><span><b>${B[id].name}</b><small>${t}</small><small class="wg-num2">بناء ${money(B[id].cost)} · ترقية ${MIL[id][1] ? `${money(Math.round(B[id].cost * 1.5))} ثم ${money(B[id].cost * 3)}` : "ما فيه"} · ${B[id].max ? `لين ${ar(B[id].max)}` : "واحد"} · من ${era(MIL[id][0].era)}</small></span></div>`).join("")}</div>
+      <div class="wg-slots"><b>🎖️ كم مبنى عسكري تقدر تبني؟</b><div>${ERAS.slice(1).map((e) => `<span><small>${e.name}</small><b>${ar(MIL_SLOTS[e.id])}</b></span>`).join("")}</div><small>وأنت تختار وش تبني: منصات، قواعد مسيّرات، رادارات، بطاريات دفاع… أي خلطة تبيها. مركز القيادة والمستودع ما ينحسبون (واحد من كل واحد). اللي بانيه من قبل يبقى لك.</small></div>
+      <div class="wg-table">${milRows.map(([id, i, t]) => `<div class="wg-row"><span class="wg-ic">${i}</span><span><b>${B[id].name}</b><small>${t}</small><small class="wg-num2">بناء ${money(B[id].cost)} · ترقية ${MIL[id][1] ? `${money(Math.round(B[id].cost * 1.5))} ثم ${money(B[id].cost * 3)}` : "ما فيه"} · ${B[id].slot ? "ينحسب من عددك" : "واحد"} · من ${era(MIL[id][0].era)}</small></span></div>`).join("")}</div>
       <p class="wg-note">المستوى الثاني لكل المباني يحتاج «${era(2)}»، والثالث يحتاج «${era(3)}». الحاضرة والحاضرة الكبرى ما عندها سلاح زيادة: القوة بالتخطيط مو بالحجم.</p>`)}
 
     ${section("arms", "🚀", "الأسلحة", `<div class="wg-table">${WEAPON_IDS.map((w) => { const W = WEAPONS[w], need = MIL[W.needs[0]][W.needs[1]]; return `<div class="wg-row"><span class="wg-ic wg-w">${weaponIcon(w)}</span><span><b>${W.name}</b><small>${W.text}</small><small class="wg-num2">السعر ${money(W.price)} · تشغيل كل ضربة ${money(W.fee)} · القوة ${ar(W.power)} · من ${era(need.era)}</small></span></div>`; }).join("")}

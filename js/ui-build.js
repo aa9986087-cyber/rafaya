@@ -1,6 +1,6 @@
 // The build dock, the HUD, toasts and sheets (screens): the parts of main.js that draw them.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
-import { ACHIEVEMENTS, B, CATS, ERAS, EVENTS, FILL_COST, GOALS, GREATER_CITY_STAGE, MAP_SIZE as N, SUBSIDY, TECH, VAULT } from "./data.js";
+import { ACHIEVEMENTS, B, CATS, ERAS, EVENTS, FILL_COST, GOALS, GREATER_CITY_STAGE, MAP_SIZE as N, milSlotsMax, milSlotsUsed, SUBSIDY, TECH, VAULT } from "./data.js";
 import { $, S, ar, money, openCat, scheduleLayout, setTool, sheet, sheetFor, speed, tool, world, worldMode } from "./main.js";
 import { greaterCityProjectBlocker, housePrice, houseTop, priceOf, techUnlocked, upgradeCost } from "./sim.js";
 import { PLACE_STYLE, modelKey, setLandStyle } from "./models.js";
@@ -17,6 +17,7 @@ export function lockReason(id) {
   if (d.unique && S.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (d.hq && !S.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة أول";
   if (d.max && S.tiles.filter((t) => t.b?.id === id).length >= d.max) return `الحد ${ar(d.max)}`;
+  if (d.slot && milSlotsUsed(S) >= milSlotsMax(S)) return `الحد ${ar(milSlotsMax(S))} مباني عسكرية`;
   if (d.era > S.era) return `تنفتح لما تصير ${ERAS[d.era].name}`;
   const civicLock = greaterCityProjectBlocker(S, id);
   if (civicLock) return ar(civicLock);
@@ -54,6 +55,7 @@ export function renderCards() {
       ${lock ? `<span class="lock">${lock}</span>` : `<span class="price">${B[id].fullCost ? `<s>${money(B[id].fullCost)}</s> ` : ""}${money(priceOf(S, id))} ريال</span>`}
       ${B[id].fullCost && !lock ? `<span class="hours">دعم الدولة −${ar(Math.round(SUBSIDY[B[id].cat] * 100))}٪</span>` : ""}
       ${B[id].buildHours && !lock ? `<span class="hours">يُبنى في ${ar(B[id].buildHours / 24)} أيام</span>` : ""}
+      ${B[id].slot && !lock ? `<span class="hours">🎖️ عسكري ${ar(milSlotsUsed(S))} من ${ar(milSlotsMax(S))}</span>` : ""}
       ${id === "vault" ? `<span class="hours">+${money(VAULT[0].cap)} سعة · كل خزنة زيادة أغلى</span>` : ""}
       ${!lock && (B[id].income || B[id].upkeep) ? `<span class="money-line">${B[id].income ? `<i class="plus">+${money(B[id].income)}</i>` : ""}${B[id].upkeep ? `<i class="minus">−${money(B[id].upkeep)}</i>` : ""}<small>بالساعة</small></span>` : ""}</button>`;
   }).join("");

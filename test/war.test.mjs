@@ -490,3 +490,13 @@ test("rewards: spoils from economic buildings, medals for the leaders, an offici
   W.war.handle("state", {}, a);
   assert.equal(W.war.handle("state", {}, a).notes.filter((n) => n.kind === "victory").length, 1);
 });
+
+test("military buildings: a count by stage, any mix (command centre and armory not counted)", async () => {
+  const { B, MIL_SLOTS, milSlotsUsed, milSlotsMax } = await import("../js/data.js");
+  assert.deepEqual(MIL_SLOTS, [0, 3, 5, 7, 9, 11]);
+  for (const id of ["dronebase", "radar", "airdef", "missilepad"]) { assert.equal(B[id].slot, true); assert.equal(B[id].max, undefined); }
+  assert.ok(!B.milhq.slot && !B.armory.slot);
+  const s = { era: 1, tiles: [{ b: { id: "milhq" } }, { b: { id: "armory" } }, { b: { id: "airdef" } }, { b: { id: "airdef" } }, { b: { id: "radar" } }, {}] };
+  assert.equal(milSlotsUsed(s), 3); assert.equal(milSlotsMax(s), 3);
+  s.era = 5; assert.equal(milSlotsMax(s), 11);
+});

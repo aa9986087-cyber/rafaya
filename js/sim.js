@@ -1,6 +1,6 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
 import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES, LIGHTNING } from "./data.js";
-import { CENTRAL_VAULT_LEVEL, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
+import { milSlotsMax, milSlotsUsed, CENTRAL_VAULT_LEVEL, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -302,6 +302,7 @@ export function cantBuild(s, x, y, id) {
   if (def.unique && s.tiles.some((t) => t.b?.id === id)) return "عندك واحد منه";
   if (def.hq && !s.tiles.some((t) => t.b?.id === "milhq")) return "ابنِ مركز القيادة العسكرية أول";
   if (def.max && s.tiles.filter((t) => t.b?.id === id).length >= def.max) return `الحد ${def.max} بالمدينة`;
+  if (def.slot && milSlotsUsed(s) >= milSlotsMax(s)) return `عندك ${milSlotsUsed(s)} مباني عسكرية، وهذا حد ${ERAS[s.era].name} (${milSlotsMax(s)}). كبّر مدينتك يزيد عددك`;
   if (def.monument && t.b?.id === "roundabout") return t.b.monument ? "الدوار فيه نصب من قبل" : s.money < def.cost ? "ما يكفي المال" : ""; // in the middle of a roundabout
   if (def.span) { // a big decoration: its 2×2 must all be free and yours
     for (let dy = 0; dy < def.span; dy++) for (let dx = 0; dx < def.span; dx++) {

@@ -29,6 +29,15 @@ export const ERAS = [
   { id: GREATER_CITY_STAGE, name: "الحاضرة الكبرى", pop: 23000, worldOnly: true }
 ];
 
+/**
+ * How many military buildings a town may have by stage (the owner's rule): any mix of drone bases, missile pads,
+ * radars and air-defence batteries. The command centre and the armory are not counted (one each).
+ * Buildings over the limit from before stay; only new ones are refused.
+ */
+export const MIL_SLOTS = [0, 3, 5, 7, 9, 11];
+export const milSlotsUsed = (s) => s.tiles.filter((t) => t.b && B[t.b.id]?.slot).length;
+export const milSlotsMax = (s) => MIL_SLOTS[Math.min(s.era || 0, MIL_SLOTS.length - 1)];
+
 export const CITY_MILESTONE = {
   goal: 80,
   amount: 1000,
@@ -164,10 +173,10 @@ export const B = {
   // Defence (world of al-Jouf only). Levels, capacities and the rest of the war rules are in MIL below and js/war.js.
   // hq: everything military needs the command centre first; max: how many a town may have.
   milhq: { cat: "mil", worldOnly: true, unique: true, name: "مركز القيادة العسكرية", cost: 2500, upkeep: 15, era: 1, power: -4, text: "قلب القوة العسكرية: منه تدير الترسانة والدفاع والعمليات والعلاقات مع المدن. كل شي عسكري يحتاجه أول." },
-  dronebase: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "قاعدة المسيّرات", cost: 1200, upkeep: 10, era: 1, power: -3, text: "هنقر يجهّز المسيّرات ويخزنها ويطلقها. كل تطوير يزيد السعة ويفتح مسيّرات أقوى." },
-  radar: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "محطة الرادار والإنذار المبكر", cost: 1000, upkeep: 8, era: 1, power: -6, text: "رادار يدور طول الوقت: يرصد الهجمات قبل وصولها ويرفع دقة الدفاع الجوي. بدونه الدفاع شبه أعمى." },
-  airdef: { cat: "mil", worldOnly: true, hq: true, max: 4, name: "بطارية الدفاع الجوي", cost: 1600, upkeep: 12, era: 1, power: -3, text: "تعترض الصواريخ والمسيّرات الجاية لمدينتك بذخيرة اعتراضية تشتريها. كل مستوى أدق وأقوى ضد الصواريخ." },
-  missilepad: { cat: "mil", worldOnly: true, hq: true, max: 2, name: "منصة الصواريخ", cost: 3000, upkeep: 20, era: 2, power: -5, text: "منصة إطلاق صواريخ بعيدة المدى، تنرفع قبل الإطلاق وتنجهز بعده. كل تطوير يزيد الصواريخ ويقصّر وقت التجهيز." },
+  dronebase: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "قاعدة المسيّرات", cost: 1200, upkeep: 10, era: 1, power: -3, text: "هنقر يجهّز المسيّرات ويخزنها ويطلقها. كل تطوير يزيد السعة ويفتح مسيّرات أقوى." },
+  radar: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "محطة الرادار والإنذار المبكر", cost: 1000, upkeep: 8, era: 1, power: -6, text: "رادار يدور طول الوقت: يرصد الهجمات قبل وصولها ويرفع دقة الدفاع الجوي. بدونه الدفاع شبه أعمى." },
+  airdef: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "بطارية الدفاع الجوي", cost: 1600, upkeep: 12, era: 1, power: -3, text: "تعترض الصواريخ والمسيّرات الجاية لمدينتك بذخيرة اعتراضية تشتريها. كل مستوى أدق وأقوى ضد الصواريخ." },
+  missilepad: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "منصة الصواريخ", cost: 3000, upkeep: 20, era: 2, power: -5, text: "منصة إطلاق صواريخ بعيدة المدى، تنرفع قبل الإطلاق وتنجهز بعده. كل تطوير يزيد الصواريخ ويقصّر وقت التجهيز." },
   armory: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "مستودع الذخائر", cost: 1500, upkeep: 5, era: 1, text: "يزيد سعة تخزين المسيّرات والصواريخ والذخيرة الاعتراضية ٥٠٪، ويعرض المخزون كله." },
 
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },

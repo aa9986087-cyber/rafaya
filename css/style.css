@@ -1045,3 +1045,7 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .rk-go { flex: none; border: 0; border-radius: 10px; padding: 7px 9px; font: inherit; font-size: 12px; font-weight: 800; color: #fff; background: #b8433a; cursor: pointer; }
 .rk-row.ok .rk-w { color: #c8463a; } .rk-row.no .rk-w, .rk-row.safe .rk-w { opacity: .6; } .rk-row.me { border-color: #e0bd72; background: rgba(224,189,114,.14); }
 .sheet.warroom .rk-row { border-color: var(--wr-line); } .sheet.warroom .rk-row.ok .rk-w { color: #ff8a7d; } .sheet.warroom .rk-grid i.ok { background: rgba(224,87,74,.22); } .sheet.warroom .rk-grid i.no { background: rgba(255,255,255,.05); }
+
+.wg-slots { border-radius: 14px; padding: 10px; margin: 8px 0; background: rgba(224,189,114,.14); border: 1px solid rgba(224,189,114,.45); display: grid; gap: 6px; }
+.wg-slots > div { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center; }
+.wg-slots span { display: grid; border-radius: 10px; padding: 6px 2px; background: rgba(0,0,0,.18); } .wg-slots span b { font-size: 20px; } .wg-slots span small, .wg-slots > small { font-size: 11px; }
