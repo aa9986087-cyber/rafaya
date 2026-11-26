@@ -3,7 +3,7 @@
 import { ROOM, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
-import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker } from "./war.js";
+import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker } from "./war.js";
 import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
@@ -239,7 +239,7 @@ export async function relSheet(plot) {
   if (!info) { try { const d = await api(`/world/town/${plot}`); info = { town: d.town.town, owner: d.town.owner, era: d.town.era }; } catch { toast("ما لقيت المدينة", "bad"); return; } }
   r ||= { state: "peace", hist: [] };
   const mine = me()?.plot, home = visiting ? visiting.home : S;
-  const block = (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (info.era || 0) < WAR.minEra ? "القرى محمية من الحروب" : (home.era || 0) - (info.era || 0) >= WAR.bully && !["hostile", "warning", "war"].includes(r.state) ? "مدينتك أكبر منها بكثير: ما تبدأ على الصغار (لكن إذا بدأوا عليك تقدر ترد)" : "";
+  const block = (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (info.era || 0) < WAR.minEra ? "القرى محمية من الحروب" : !["hostile", "warning", "war"].includes(r.state) ? eraGap(home.era, info.era) : "";
   const acts = relActions(r.state === "peace" && !r.hist?.length ? null : { ...r, a: Math.min(mine, plot), b: Math.max(mine, plot) }, mine, warNow(), block);
   const btn = (act, label, cls = "") => `<button class="btn block ${cls}" type="button" data-act="${act}" ${acts[act] ? `data-why="${acts[act]}"` : ""} ${acts[act] ? "aria-disabled=true" : ""}>${label}${acts[act] ? `<small>${acts[act]}</small>` : ""}</button>`;
   sheet(`<h2>⚔️ العلاقات العسكرية</h2>
@@ -363,6 +363,14 @@ export function targetBar() {
   bar.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { tg.points.splice(Number(b.dataset.del), 1); tg.sel = -1; sfx.tap(); targetBar(); }));
   $("tbGo")?.addEventListener("click", () => fireStrike());
   $("tbX").addEventListener("click", () => { sfx.tap(); stopTargeting(); });
+  // the launchers' countdown runs every second (only this line changes; a launcher that gets ready redraws the panel)
+  clearInterval(WARX.tbTick);
+  if (waits.length) WARX.tbTick = setInterval(() => {
+    const el = bar.querySelector(".tb-ready"), w = WARX.st?.profile ? launcherTimes(WARX.st).filter((x) => x.left > 0) : [];
+    if (!WARX.targeting || !el) { clearInterval(WARX.tbTick); return; }
+    if (w.length !== waits.length) { targetBar(); return; }
+    el.textContent = `⏳ يتجهز: ${w.map((x) => `${x.name} ${secLeft(x.left)}`).join(" · ")}`;
+  }, 1000);
 }
 /** When each launcher of ours is ready again (a pad or a drone base reloading). */
 export function launcherTimes(st) {
@@ -386,7 +394,7 @@ async function fireStrike() {
   warPoll(true);
 }
 export function stopTargeting() {
-  WARX.targeting = null;
+  WARX.targeting = null; clearInterval(WARX.tbTick);
   document.body.classList.remove("targeting");
   world.fx?.showTargets(null);
   world.fx?.showStrike(null);
@@ -643,7 +651,7 @@ export async function warSalvoScene(ops, launch) {
   }
 }
 // ---------- «تابع»: watching a war from outside ----------
-/** Follow a town at war: every strike that lands on it plays here as it lands (one check every 20 s, or right after an arrival). */
+/** Follow a town at war: every strike that lands on it plays here as it lands (a small check every 8 s while the war is on). */
 export function followTown(plot, town) {
   if (WARX.follow?.plot === plot) { stopFollow(); return; }
   stopFollow(true);
@@ -654,7 +662,7 @@ export function followTown(plot, town) {
 }
 export function stopFollow(quiet) {
   if (!WARX.follow) return;
-  clearTimeout(WARX.follow.t); WARX.follow = null;
+  clearTimeout(WARX.follow.t); clearInterval(WARX.follow.tick); WARX.follow = null;
   $("followPill")?.remove();
   if (!quiet) toast("👁️ وقفت المتابعة", "");
 }
@@ -675,10 +683,14 @@ async function followPoll() {
   const done = r.ops.filter((o) => o.status === "done"), flying = r.ops.filter((o) => o.status === "flying").sort((a, b) => a.arriveAt - b.arriveAt);
   if (!f.seen) f.seen = new Set(done.map((o) => o.id)); // what landed before you started following is not played again
   const fresh = done.filter((o) => !f.seen.has(o.id) && !(o.salvo && flying.some((x) => x.salvo === o.salvo)));
-  followPill(flying.length ? `هجوم يوصلها بعد ${secLeft(flying[0].arriveAt - r.now)}` : r.war ? "بانتظار الضربة الجاية" : "");
+  // the countdown runs every second on the phone's own clock (the server is asked only every 20 s)
+  f.arrive = flying.length ? Date.now() + (flying[0].arriveAt - r.now) : 0; f.n = flying.length; f.war = r.war;
+  const show = () => { if (WARX.follow !== f) return; const left = f.arrive - Date.now(); followPill(f.arrive ? (left > 500 ? `${f.n > 1 ? `${ar(f.n)} ضربات` : "ضربة"} توصلها بعد ${secLeft(left)}` : "💥 توصل الحين") : f.war ? "بانتظار الضربة الجاية" : ""); };
+  show();
+  clearInterval(f.tick); f.tick = f.arrive ? setInterval(show, 1000) : 0;
   if (fresh.length && !WARX.scene && !WARX.targeting && sheetFor !== "decision") { fresh.forEach((o) => f.seen.add(o.id)); spectateScene(fresh); }
   if (!r.war && !flying.length && !fresh.length) { toast(`🕊️ ما عاد فيه حرب على «${f.town}»: وقفت المتابعة`, ""); stopFollow(true); return; }
-  next(flying.length ? Math.max(2500, Math.min(20000, flying[0].arriveAt - r.now + 1500)) : 20000);
+  next(flying.length ? Math.max(2500, Math.min(8000, flying[0].arriveAt - r.now + 1500)) : r.war ? 8000 : 20000); // a war on: a new launch shows within seconds
 }
 /** A strike between two other towns, seen from the town it lands on (nothing of yours changes). */
 async function spectateScene(ops) {

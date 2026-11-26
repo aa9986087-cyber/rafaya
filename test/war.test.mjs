@@ -150,7 +150,8 @@ test("protections: villages, new players, sleeping towns and bullies are out of 
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { era: 3 }), v = W.addTown(11, "قرية", { era: 0 }), small = W.addTown(12, "بلدة", { era: 1 });
   assert.match(W.war.handle("rel", { req: "1", other: 11, act: "hostile" }, a).error, /القرى/);
-  assert.match(W.war.handle("rel", { req: "2", other: 12, act: "hostile" }, a).error, /الصغار/);
+  assert.match(W.war.handle("rel", { req: "2", other: 12, act: "hostile" }, a).error, /أكبر منها/);
+  assert.match(W.war.handle("rel", { req: "2b", other: 10, act: "war" }, small).error, /أصغر منها/); // and the small one may not start on the big one either
   const fresh = W.addTown(13, "جديد", { era: 2 });
   W.world.player("جديد").created = W.now();
   assert.match(W.war.handle("rel", { req: "3", other: 13, act: "hostile" }, a).error, /جديد/);
@@ -214,7 +215,7 @@ test("air defence: radar, battery and interceptors decide the chance; each attem
 test("caps: one building twice in 6 hours; the bought shield stops strikes, once a month, and breaks when its town attacks", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2]] });
-  const b = W.addTown(30, "صفان", { era: 4, mil: [[20, 20, "milhq"], [24, 20, "missilepad"], ...Array.from({ length: 8 }, (_, k) => [30 + k, 30, "factory"])] });
+  const b = W.addTown(30, "صفان", { era: 3, mil: [[20, 20, "milhq"], [24, 20, "missilepad"], ...Array.from({ length: 8 }, (_, k) => [30 + k, 30, "factory"])] });
   W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
   W.war.handle("buy", { req: "bm", kind: "missile", n: 2 }, b);
   atWar(W, a, b);
@@ -223,9 +224,9 @@ test("caps: one building twice in 6 hours; the bought shield stops strikes, once
   assert.equal(fire(2, 30).ok, true);
   assert.match(fire(3, 30).error, /محمي/);
   for (let k = 0; k < 2; k++) assert.equal(fire(10 + k, 31 + k).ok, true); // no shield from hits any more
-  // b buys the shield (price by stage: a حاضرة pays 55,000)
+  // b buys the shield (price by stage: a محافظة pays 35,000)
   const sh = W.war.handle("shield", { req: "sh" }, b);
-  assert.equal(sh.ok, true); assert.equal(sh.charge.amount, 55000);
+  assert.equal(sh.ok, true); assert.equal(sh.charge.amount, 35000);
   assert.match(fire(20, 36).error, /درع/);
   assert.match(W.war.handle("shield", { req: "sh2" }, b).error, /شغال/);
   // b attacks: its shield breaks
@@ -339,13 +340,14 @@ test("a town that moves to other land takes its war with it", () => {
   assert.equal(war.inFlight(20), true);
 });
 
-test("حق الرد: a much bigger town never starts a war, but answers one the smaller town started", () => {
+test("near size only: two stages apart, neither starts a war; a war already going on (a town grew) is fought to its end", () => {
   const W = makeWorld();
   const big = W.addTown(1, "الكبيرة", { era: 4, mil: BASE }), small = W.addTown(2, "الصغيرة", { era: 2, mil: BASE });
-  // the big one may not start
-  assert.match(W.war.handle("rel", { req: "b1", other: small.plot, act: "hostile" }, big).error, /أكبر منها/);
-  // the small one starts it and goes to war
-  atWar(W, small, big);
+  assert.match(W.war.handle("rel", { req: "b1", other: small.plot, act: "war" }, big).error, /أكبر منها/);
+  assert.match(W.war.handle("rel", { req: "s1", other: big.plot, act: "war" }, small).error, /أصغر منها/);
+  assert.match(W.war.handle("rel", { req: "s2", other: big.plot, act: "tribute", amount: 1000 }, small).error, /أصغر منها/);
+  // a war that started when they were near in size goes on
+  W.war.saveRel(1, 2, { a: 1, b: 2, state: "war", since: W.now(), warStart: W.now() - 1000, warEnd: W.now() + WAR.T.war, hist: [], lastThreat: {} });
   // now the big one can strike back
   const a = W.war.acct(big.plot); a.arsenal.drone = 3; W.war.saveAcct(big.plot, a);
   const t = W.towns.get(small.plot).s.tiles.findIndex((x) => x.b?.id === "dronebase");

@@ -267,7 +267,17 @@ export function minutesText(ms) {
   return h === 1 ? "ساعة" : h === 2 ? "ساعتين" : `${ar(h)} ${h <= 10 ? "ساعات" : "ساعة"}`;
 }
 
-/** Can these two towns be in a conflict at all (both past village, not a bully, protections)? Why not, or "". */
+/**
+ * Wars are between towns of near size: two stages apart or more, neither may start on the other (the greater
+ * city counts as a حاضرة). Why not, or "".
+ */
+export function eraGap(mine, theirs, cfg = WAR) {
+  const top = (e) => Math.min(e || 0, GREATER_CITY_STAGE - 1), d = top(mine) - top(theirs);
+  if (d >= cfg.bully) return "مدينتك أكبر منها بكثير: الحرب بين المدن المتقاربة بس";
+  if (-d >= cfg.bully) return "مدينتك أصغر منها بكثير: الحرب بين المدن المتقاربة بس";
+  return "";
+}
+/** Can these two towns be in a conflict at all (both past village, near in size, protections)? Why not, or "". */
 export function conflictBlocker(a, b, now, cfg = WAR, rel = null) {
   // a, b: { era, created, updated, plot, name }
   if (!b) return "ما لقيت المدينة";
@@ -277,9 +287,9 @@ export function conflictBlocker(a, b, now, cfg = WAR, rel = null) {
   if (now - (b.created || 0) < cfg.newPlayer) return "لاعب جديد: محمي فترة البداية";
   if (now - (a.created || 0) < cfg.newPlayer) return `أنت لاعب جديد: تقدر تدخل الحروب بعد ${minutesText(cfg.newPlayer - (now - a.created))}`;
   if (now - (b.updated || 0) > cfg.sleep) return "المدينة نايمة (صاحبها غايب من زمان): محمية";
-  const warEra = (town) => Math.min(town.era || 0, GREATER_CITY_STAGE - 1);
-  // حق الرد: the big town never starts it, but once the smaller one turned hostile or went to war, both may fight
+  // a conflict already under way (from before a town grew) goes on to its end
   if (rel && ["hostile", "warning", "war"].includes(rel.state)) return "";
-  if (warEra(a) - warEra(b) >= cfg.bully) return "مدينتك أكبر منها بكثير: ما تبدأ على الصغار (لكن إذا بدأوا عليك تقدر ترد)";
+  const gap = eraGap(a.era, b.era, cfg);
+  if (gap) return gap;
   return "";
 }

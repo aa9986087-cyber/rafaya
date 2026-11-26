@@ -9,7 +9,7 @@ import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
-import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax } from "./war.js";
+import { WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
 const TABS = [["attack", "🎯 هجوم"], ["world", "🗺️ الجوف والتفاوض"], ["def", "🛡️ الدفاع والدرع"], ["log", "📜 السجل"]];
@@ -144,7 +144,7 @@ async function worldMap(force) {
 function relBlock(r, era) {
   const home = visiting ? visiting.home : S;
   return (home.era || 0) < WAR.minEra ? `مدينتك لازم تصير ${ERAS[WAR.minEra].name} أول` : (era || 0) < WAR.minEra ? "القرى محمية من الحروب"
-    : (home.era || 0) - (era || 0) >= WAR.bully && !["hostile", "warning", "war"].includes(r.state) ? "مدينتك أكبر منها بكثير: ما تبدأ على الصغار" : "";
+    : !["hostile", "warning", "war"].includes(r.state) ? eraGap(home.era, era) : "";
 }
 /** The map of al-Jouf in the room: every town, the fronts between them; a tap opens that town's panel below. */
 function worldSvg(map, st) {
