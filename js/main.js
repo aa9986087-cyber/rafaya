@@ -437,7 +437,9 @@ $("arrAll").addEventListener("click", () => {
   if (!arrange) return;
   if (arrange.held) arrDrop(null);
   arrPush();
-  S.tiles.forEach((t) => { if (arrMovable(t.b)) { arrange.tray.push(t.b); t.b = null; } });
+  const one = arrange.sel != null && arrMovable(S.tiles[arrange.sel]?.b) ? arrange.sel : null; // one chosen: only it goes to the store
+  if (one != null) { arrange.tray.push(S.tiles[one].b); S.tiles[one].b = null; }
+  else S.tiles.forEach((t) => { if (arrMovable(t.b)) { arrange.tray.push(t.b); t.b = null; } });
   arrange.sel = null; sfx.remove(); arrSync(); arrRender();
 });
 $("arrUndo").addEventListener("click", () => {

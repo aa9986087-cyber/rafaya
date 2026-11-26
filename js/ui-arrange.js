@@ -10,7 +10,7 @@ import { modelKey } from "./models.js";
 import { thumbnail } from "./world3d.js";
 
 // Touch a building and drag it; drop it on an empty tile, or on another building to swap them.
-// A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom; a tap
+// A tap selects one (↻ turns it). «شيل الكل» lifts every building into the tray at the bottom (with one chosen, only it: «شيله للمخزن»); a tap
 // on the tray picks one up, a tap on the land puts it down. ↶ undoes, ✕ puts everything back as it was,
 // ✓ keeps it (once the tray is empty). The town waits while you arrange; roads stay where they are.
 export const arrMovable = (b) => !!b && !(b.build > 0) && !(b.wd > 0) && !b.span && b.id !== "decopart";
@@ -200,8 +200,10 @@ export function arrRender() {
     : arrange.tray.length ? `باقي ${ar(arrange.tray.length)} ${arrange.tray.length >= 3 && arrange.tray.length <= 10 ? "مباني" : "مبنى"} بالمخزن: اضغط واحد ثم اضغط مكانه`
     : arrange.erase ? "اسحب إصبعك على الطرق وتنشال للمخزن. بعدها اختر الطريق من المخزن وارسمه بإصبعك."
     : arrange.del ? "🗑️ وضع الإزالة: اضغط أو اسحب إصبعك على اللي تبي تشيله (مباني، طرق، صخور). تقدر ترجعه بـ↶، وما ينحسب إلا إذا ضغطت ✓."
-    : sel != null ? (arrMovable(S.tiles[sel].b) ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه، أو 🗑️ تشيله` : `«${levelName(S.tiles[sel].b)}»: ما ينقل${S.tiles[sel].b.build > 0 ? " (تحت الإنشاء)" : S.tiles[sel].b.wd > 0 ? " (فيه ضرر عسكري)" : ""}، بس تقدر 🗑️ تشيله`)
+    : sel != null ? (arrMovable(S.tiles[sel].b) ? `«${levelName(S.tiles[sel].b)}»: اسحبه لمكان ثاني، أو ↻ تلفه، أو 📦 تحطه بالمخزن وترجعه بعدين، أو 🗑️ تشيله نهائي` : `«${levelName(S.tiles[sel].b)}»: ما ينقل${S.tiles[sel].b.build > 0 ? " (تحت الإنشاء)" : S.tiles[sel].b.wd > 0 ? " (فيه ضرر عسكري)" : ""}، بس تقدر 🗑️ تشيله`)
     : "اضغط على مبنى عشان تختاره، بعدها اسحبه بإصبعك لمكانه أو شيله بـ🗑️. حطه على مبنى ثاني ويتبادلون مكانهم.";
+  const one = sel != null && arrMovable(S.tiles[sel]?.b); // «شيل الكل» becomes «للمخزن» for the chosen one
+  $("arrAll").innerHTML = one ? "📦<small>شيله للمخزن</small>" : "📦<small>شيل الكل</small>";
   $("arrRot").disabled = sel == null || !arrMovable(S.tiles[sel]?.b) || !canTurn(S.tiles[sel]?.b?.id);
   $("arrUndo").disabled = !arrange.hist.length;
   $("arrRedo").disabled = !arrange.future.length;
