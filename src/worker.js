@@ -52,6 +52,9 @@ const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن
 // The second round (the owner, 2026-11-25): 250 riyals a game week (7 days of al-Jouf) for three weeks, to towns under 1,000; it may be taken back later.
 const CITIZEN2_AMOUNT = 250, CITIZEN2_WEEKS = 3;
 const CITIZEN2_NOTE = () => "💰 مبروك نزلك حساب مواطن بقيمة ٢٥٠ ريال، ويمكن نسترده بعدين 🏃🏻";
+// the third round (the owner, 26 Nov 2026): once, 744 riyals for every town under 1,500
+const CITIZEN3_AMOUNT = 744, CITIZEN3_LIMIT = 1500;
+const CITIZEN3_NOTE = "💰 مبروك نزلك حساب مواطن بقيمة ٧٤٤ ريال 🏃🏻";
 // Maintenance switch for the world of al-Jouf: while false, every /api/world/* call answers 503
 // { error: "maintenance" } and nothing in the world tables is read or changed. Towns stay saved;
 // the solo game keeps working. Set back to true to reopen.
@@ -110,6 +113,7 @@ export class Board extends DurableObject {
     try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN amount INTEGER"); } catch { /* already there */ } // empty: the first round's 100
     try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN note TEXT"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN round TEXT"); } catch { /* already there */ }
+    try { this.sql.exec("ALTER TABLE citizen_support ADD COLUMN lim INTEGER"); } catch { /* already there */ } // empty: under 1,000
     this.sql.exec(`CREATE TABLE IF NOT EXISTS citizen_support_push (day INTEGER, plot INTEGER, k TEXT, next_at INTEGER NOT NULL, attempts INTEGER DEFAULT 0, PRIMARY KEY (day, k))`);
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN renamed INTEGER DEFAULT 0"); } catch { /* already there */ }
     try { this.sql.exec("ALTER TABLE plots ADD COLUMN pending TEXT"); } catch { /* already there */ }
@@ -361,15 +365,23 @@ export class Board extends DurableObject {
       });
     });
   }
+  /** The third round: one payment, now, of 744 to every town under 1,500 (once). */
+  startCitizenSupport3(now) {
+    this.ctx.storage.transactionSync(() => {
+      if (this.sql.exec("SELECT 1 FROM citizen_support WHERE round = 'c3' LIMIT 1").toArray().length) return;
+      const day = (this.sql.exec("SELECT MAX(day) d FROM citizen_support").toArray()[0]?.d || 0) + 1;
+      this.sql.exec("INSERT INTO citizen_support (day, due, closes, amount, note, round, lim) VALUES (?, ?, ?, ?, ?, 'c3', ?)", day, now, now + 24 * 3600000, CITIZEN3_AMOUNT, CITIZEN3_NOTE, CITIZEN3_LIMIT);
+    });
+  }
   /** Credit balances, save the player notices and queue phone delivery as one SQLite transaction. */
   payCitizenSupport(now) {
     const payout = this.ctx.storage.transactionSync(() => {
       // A delayed alarm never catches up multiple payments in the same game day.
       this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = 0 WHERE paid_at IS NULL AND closes <= ?", now, now);
-      const round = this.sql.exec("SELECT day, amount, note, round FROM citizen_support WHERE paid_at IS NULL AND due <= ? AND closes > ? ORDER BY day LIMIT 1", now, now).toArray()[0];
+      const round = this.sql.exec("SELECT day, amount, note, round, lim FROM citizen_support WHERE paid_at IS NULL AND due <= ? AND closes > ? ORDER BY day LIMIT 1", now, now).toArray()[0];
       if (!round) return null;
       const amount = round.amount || CITIZEN_AMOUNT, note = round.note || CITIZEN_NOTE;
-      const plots = this.sql.exec("SELECT plot FROM plots WHERE money < ? ORDER BY plot", CITIZEN_LIMIT).toArray().map((row) => row.plot);
+      const plots = this.sql.exec("SELECT plot FROM plots WHERE money < ? ORDER BY plot", round.lim || CITIZEN_LIMIT).toArray().map((row) => row.plot);
       for (const plot of plots) {
         const account = this.war.acct(plot);
         this.war.charge(plot, account, -amount, "citizenSupport");
@@ -380,7 +392,7 @@ export class Board extends DurableObject {
       }
       this.sql.exec("UPDATE citizen_support SET paid_at = ?, recipients = ? WHERE day = ?", now, plots.length, round.day);
       this.news("citizenSupport", plots.length
-        ? (round.round === "c2" ? "💰 نزل حساب المواطن للي رصيدهم أقل من ألف 🏃🏻" : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
+        ? (round.round === "c3" ? "💰 نزل حساب المواطن ٧٤٤ ريال للي رصيدهم أقل من ١٬٥٠٠ 🏃🏻" : round.round === "c2" ? "💰 نزل حساب المواطن للي رصيدهم أقل من ألف 🏃🏻" : "💰 صُرفت دفعة حساب المواطن اليوم للمدن المستحقة في عالم الجوف.")
         : "💰 جرت مراجعة دفعة حساب المواطن اليوم. ما كانت فيه مدن مستحقة.", null, null, false);
       return plots;
     });
@@ -867,6 +879,7 @@ export class Board extends DurableObject {
       const clock = { epoch: WORLD_EPOCH, slowAt, fastAt }, now = Date.now();
       this.startCitizenSupport(clock, now);
       this.startCitizenSupport2(clock, now);
+      this.startCitizenSupport3(now);
       this.publishCityMilestone(this.ctx.storage.transactionSync(() => this.celebrateCityCount(now)));
       if (this.sql.exec("SELECT 1 FROM citizen_support WHERE paid_at IS NULL AND due <= ? LIMIT 1", now).toArray().length) {
         await this.armWar();
