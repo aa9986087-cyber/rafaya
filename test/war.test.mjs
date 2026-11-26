@@ -28,8 +28,6 @@ function makeWorld({ db = memWarDb(), rolls } = {}) {
 }
 const BASE = [[20, 20, "milhq"], [22, 20, "dronebase"], [24, 20, "missilepad"], [26, 20, "radar"], [28, 20, "airdef"]];
 const atWar = (W, a, b) => {
-  assert.equal(W.war.handle("rel", { req: "h1", other: b.plot, act: "hostile" }, a).ok, true);
-  W.tick(WAR.T.hostileToWar + MIN);
   assert.equal(W.war.handle("rel", { req: "w1", other: b.plot, act: "war" }, a).ok, true);
   W.tick(WAR.T.warning + MIN);
 };
@@ -82,15 +80,12 @@ test("buying: needs the right building, room and money; a request sent twice buy
   assert.equal(W.war.handle("state", { seq: 1 }, a).charges.length, 0);
 });
 
-test("relations: hostility first, a wait, a warning, then war; truce and peace by offer and answer", () => {
+test("relations: war straight away (open war), a warning, then war; truce and peace by offer and answer", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE });
-  assert.match(W.war.handle("rel", { req: "x", other: 30, act: "war" }, a).error, /العداوة أول/);
   assert.equal(W.war.handle("rel", { req: "t", other: 30, act: "threat", text: 1 }, a).ok, true);
-  assert.equal(W.war.handle("rel", { req: "h", other: 30, act: "hostile" }, a).ok, true);
-  assert.match(W.war.handle("rel", { req: "w0", other: 30, act: "war" }, a).error, /باقي/);
-  W.tick(WAR.T.hostileToWar + MIN);
   assert.equal(W.war.handle("rel", { req: "w", other: 30, act: "war" }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "w2", other: 30, act: "war" }, a).error, /حرب أصلاً/);
   assert.equal(W.war.handle("state", {}, b).rels[0].state, "warning");
   assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "war"));
   W.tick(WAR.T.warning + MIN);
@@ -105,7 +100,50 @@ test("relations: hostility first, a wait, a warning, then war; truce and peace b
   assert.equal(W.war.handle("rel", { req: "p", other: 30, act: "peace" }, a).ok, true);
   assert.equal(W.war.handle("rel", { req: "pa", other: 10, act: "accept" }, b).ok, true);
   assert.equal(W.war.handle("state", {}, a).rels[0].state, "peace");
-  assert.match(W.war.handle("rel", { req: "h2", other: 30, act: "hostile" }, a).error, /صلح/);
+  // after peace: two weeks of al-Jouf before a new war
+  assert.match(W.war.handle("rel", { req: "w3", other: 30, act: "war" }, a).error, /صلح/);
+  W.tick(WAR.T.peaceCool + MIN);
+  assert.equal(W.war.handle("rel", { req: "w4", other: 30, act: "war" }, a).ok, true);
+});
+
+test("tribute: up to 30% of their budget; paid = a month of peace; refused or unanswered = war", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE, money: 100000 }), c = W.addTown(40, "طبرجل", { mil: BASE, money: 100000 });
+  assert.match(W.war.handle("rel", { req: "t0", other: 30, act: "tribute", amount: 40000 }, a).error, /٣٠٪/);
+  assert.equal(W.war.handle("rel", { req: "t1", other: 30, act: "tribute", amount: 30000 }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "t2", other: 30, act: "war" }, a).error, /جزية/);
+  assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "tribute"));
+  assert.equal(W.war.handle("rel", { req: "pay", other: 10, act: "pay" }, b).ok, true);
+  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.at(-1).amount, 30000);
+  assert.equal(W.war.handle("state", { seq: 0 }, a).charges.at(-1).amount, -30000);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "peace");
+  assert.match(W.war.handle("rel", { req: "t3", other: 30, act: "tribute", amount: 1000 }, a).error, /الجزية/);
+  assert.match(W.war.handle("rel", { req: "t4", other: 30, act: "war" }, a).error, /الجزية/);
+  // refused: war
+  assert.equal(W.war.handle("rel", { req: "c1", other: 40, act: "tribute", amount: 5000 }, a).ok, true);
+  assert.equal(W.war.handle("rel", { req: "no", other: 10, act: "refuse" }, c).ok, true);
+  assert.equal(W.war.handle("state", {}, a).rels.find((r) => r.other === 40).state, "warning");
+  // unanswered for a day of al-Jouf: war
+  W.tick(WAR.T.tributePeace + MIN);
+  assert.equal(W.war.handle("rel", { req: "t5", other: 30, act: "tribute", amount: 2000 }, a).ok, true);
+  W.tick(WAR.T.tributeAnswer + WAR.T.warning + MIN);
+  assert.equal(W.war.handle("state", {}, b).rels.find((r) => r.other === 10).state, "war");
+  assert.ok(W.war.handle("state", {}, a).notes.some((n) => n.kind === "war" && /ما ردت/.test(n.text)));
+});
+
+test("threat talk: both write, a bad word is refused, ending it starts the war", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "صفان", { mil: BASE });
+  W.war.world.badText = (t) => t.includes("كلمة_سيئة");
+  assert.equal(W.war.handle("rel", { req: "s1", other: 30, act: "say", text: "سلّم وإلا ترى الحرب جاية" }, a).ok, true);
+  assert.match(W.war.handle("rel", { req: "s1b", other: 30, act: "say", text: "ثاني" }, a).error, /شوي/); // one line every few seconds
+  W.tick(5000);
+  assert.match(W.war.handle("rel", { req: "s2", other: 30, act: "say", text: "كلمة_سيئة" }, a).error, /ما يصلح/);
+  assert.equal(W.war.handle("rel", { req: "s3", other: 10, act: "say", text: "جرّب" }, b).ok, true);
+  const rel = W.war.handle("state", {}, a).rels[0];
+  assert.equal(rel.chat.length, 2); assert.equal(rel.chatOpen, true);
+  assert.equal(W.war.handle("rel", { req: "end", other: 10, act: "endchat" }, b).ok, true);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "warning");
 });
 
 test("protections: villages, new players, sleeping towns and bullies are out of reach", () => {
@@ -173,22 +211,30 @@ test("air defence: radar, battery and interceptors decide the chance; each attem
   assert.equal(W.war.publicDamage(30).length, 0);
 });
 
-test("caps: one building twice in 6 hours, a town six hits then a shield", () => {
+test("caps: one building twice in 6 hours; the bought shield stops strikes, once a month, and breaks when its town attacks", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2]] });
-  const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], ...Array.from({ length: 8 }, (_, k) => [30 + k, 30, "factory"])] });
+  const b = W.addTown(30, "صفان", { era: 4, mil: [[20, 20, "milhq"], [24, 20, "missilepad"], ...Array.from({ length: 8 }, (_, k) => [30 + k, 30, "factory"])] });
   W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
+  W.war.handle("buy", { req: "bm", kind: "missile", n: 2 }, b);
   atWar(W, a, b);
   const fire = (k, x) => { const r = W.war.handle("launch", { op: `f${k}`, to: 30, x, y: 30, load: { missile: 1 } }, a); if (r.ok) { W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); W.tick(5 * MIN); } return r; };
-  W.war.handle("buy", { req: "m2", kind: "missile", n: 0 }, a);
   assert.equal(fire(1, 30).ok, true);
-  W.war.handle("buy", { req: "m3", kind: "missile", n: 1 }, a);
   assert.equal(fire(2, 30).ok, true);
-  W.war.handle("buy", { req: "m4", kind: "missile", n: 1 }, a);
   assert.match(fire(3, 30).error, /محمي/);
-  for (let k = 0; k < 4; k++) { W.war.handle("buy", { req: `n${k}`, kind: "missile", n: 1 }, a); assert.equal(fire(10 + k, 31 + k).ok, true); }
-  W.war.handle("buy", { req: "last", kind: "missile", n: 1 }, a);
+  for (let k = 0; k < 2; k++) assert.equal(fire(10 + k, 31 + k).ok, true); // no shield from hits any more
+  // b buys the shield (price by stage: a حاضرة pays 55,000)
+  const sh = W.war.handle("shield", { req: "sh" }, b);
+  assert.equal(sh.ok, true); assert.equal(sh.charge.amount, 55000);
   assert.match(fire(20, 36).error, /درع/);
+  assert.match(W.war.handle("shield", { req: "sh2" }, b).error, /شغال/);
+  // b attacks: its shield breaks
+  W.tick(30 * MIN);
+  const back = W.war.handle("launch", { op: "b1", to: 10, x: 20, y: 20, load: { missile: 1 } }, b);
+  assert.equal(back.ok, true);
+  assert.equal(W.war.handle("state", {}, b).shield, 0);
+  assert.equal(fire(21, 36).ok, true);
+  assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /مرة بالشهر/);
 });
 
 test("repairs: paid on the server, damage comes off over time; the deputy repairs within its budget", () => {

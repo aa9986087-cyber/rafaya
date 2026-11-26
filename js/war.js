@@ -5,6 +5,8 @@
 import { B, MIL, ERAS, GREATER_CITY_STAGE, MAP_SIZE, worldXY } from "./data.js";
 
 const WAR_MIN = 60000, WAR_HOUR = 60 * WAR_MIN;
+/** One day of al-Jouf in real time (24 game hours of 50 s = 20 minutes): the war's weeks and months follow the game's calendar. */
+export const JOUF_DAY = 24 * 50000;
 const warClamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /** Balance: every timing is in real milliseconds (the world runs on real time for everyone). */
@@ -19,22 +21,26 @@ export const WAR = {
     warning: 15 * WAR_MIN,       // after a declaration of war, no strike until this has passed
     war: 24 * WAR_HOUR,          // how long a war lasts, then it goes back to hostility
     truce: 6 * WAR_HOUR,         // a truce stops strikes this long
-    peaceCool: 24 * WAR_HOUR,    // after peace, no new hostility between the two for this long
-    warCool: 6 * WAR_HOUR,       // after a war ends, no new war between the two for this long
+    peaceCool: 14 * JOUF_DAY,    // after peace, no new hostility or war between the two for two weeks of al-Jouf
+    warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
+    tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
+    tributePeace: 30 * JOUF_DAY, // tribute paid: no war and no new demand between the two for a month of al-Jouf
+    shieldLast: 7 * JOUF_DAY,    // a bought shield lasts a week of al-Jouf
+    shieldEvery: 30 * JOUF_DAY,  // and can be bought once a month of al-Jouf
+    say: 3000,                   // one line in a threat talk this often
     offer: 6 * WAR_HOUR,         // an offer of truce or peace waits this long for an answer
-    threat: 30 * WAR_MIN         // one threat per pair this often
+    threat: 30 * WAR_MIN         // one threat per pair this often (the old ready-made threats)
   },
   flight: { missile: { base: 12000, perCell: 800 }, drone: { base: 25000, perCell: 2200 } },
   caps: {
     perOp: 60,               // most damage one operation can do to its building
     building: 100,           // a building's war damage never passes this (it is out of action, never removed)
     rehitWindow: 6 * WAR_HOUR, rehitMax: 2,   // the same building is hit at most twice in 6 hours
-    cityWindow: 12 * WAR_HOUR, cityMax: 6,    // a town takes at most 6 landed hits in 12 hours,
-    awayMax: 3,                           // or 3 while its owner is away,
-    shield: 12 * WAR_HOUR,                    // and after that it is shielded this long
     inFlightTo: 3                          // operations flying at one town at once (from everyone)
   },
   interceptor: { price: 600, name: "صاروخ اعتراضي" },
+  shieldPrice: [5000, 10000, 20000, 35000, 55000, 75000], // the bought shield, by the town's stage (village … greater city)
+  tribute: { min: 1000, share: 0.3 },  // a demand of tribute: at least this, at most this share of the other town's budget
   repairPerPoint: 45 * 1000,  // repair time: 45 s per point of damage (a building at 60% → 45 min)
   repairPrice: 0.012,         // repair: × the building's price, per point of damage
   autoBudget: 5000            // the deputy's default repair and refill budget, per day
@@ -43,7 +49,7 @@ export const WAR = {
 /** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
 export function fastWar(div = 30) {
   const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));
-  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, cityWindow: WAR.caps.cityWindow / div, shield: WAR.caps.shield / div }, repairPerPoint: WAR.repairPerPoint / 6 };
+  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
 }
 
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
@@ -195,6 +201,10 @@ export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint)
 // ---------- relations between two towns ----------
 
 export const REL_NAMES = { peace: "سلام", tension: "توتر", hostile: "عداوة معلنة", warning: "إنذار حرب", war: "حرب", truce: "هدنة" };
+/** The price of the bought shield for a town at this stage. */
+export const shieldPrice = (era, cfg = WAR) => cfg.shieldPrice[Math.max(0, Math.min(cfg.shieldPrice.length - 1, era || 0))];
+/** The most tribute that may be asked of a town with this budget. */
+export const tributeMax = (money, cfg = WAR) => Math.max(0, Math.floor(Math.max(0, money || 0) * cfg.tribute.share / 100) * 100);
 export const REL_ICONS = { peace: "🕊️", tension: "😠", hostile: "⚔️", warning: "⏳", war: "🔥", truce: "🏳️" };
 
 /** The ready-made threats a mayor can send (no free text: nothing to moderate). */
@@ -214,6 +224,10 @@ export const THREATS = [
 export function relNow(rel, now, cfg = WAR) {
   if (!rel) return { state: "peace", since: 0, offer: null };
   const r = { ...rel };
+  if (r.tribute && now >= r.tribute.until) { // no answer to the demand of tribute in time: war, declared at the deadline
+    r.state = "warning"; r.since = r.tribute.until; r.warStart = r.tribute.until + cfg.T.warning; r.warEnd = r.warStart + cfg.T.war;
+    r.lapsed = r.tribute; r.tribute = null; r.offer = null;
+  }
   if (r.state === "warning" && now >= r.warStart) r.state = "war";
   if (r.state === "war" && now >= r.warEnd) { r.state = "hostile"; r.since = r.warEnd; r.warCool = r.warEnd + cfg.T.warCool; }
   if (r.state === "truce" && now >= r.truceEnd) { r.state = "hostile"; r.since = r.truceEnd; }
@@ -228,9 +242,16 @@ export function relActions(rel, me, now, ok, cfg = WAR) {
   const coolLeft = (t) => (t && now < t ? `باقي ${minutesText(t - now)}` : "");
   out.threat = blockAll || (rel?.lastThreat?.[me] && now - rel.lastThreat[me] < cfg.T.threat ? "أرسلت تهديد قبل شوي" : "");
   out.hostile = blockAll || (["peace", "tension"].includes(r.state) ? (coolLeft(r.cool) ? `فيه صلح جديد: ${coolLeft(r.cool)}` : "") : "فيه عداوة أو حرب أصلاً");
-  out.war = blockAll || (r.state !== "hostile" ? (["warning", "war"].includes(r.state) ? "فيه حرب أصلاً" : "لازم تعلن العداوة أول")
-    : now - r.since < cfg.T.hostileToWar ? `العداوة لازم تمضي ${minutesText(cfg.T.hostileToWar)}: باقي ${minutesText(cfg.T.hostileToWar - (now - r.since))}`
-      : coolLeft(r.warCool) ? `توكم طالعين من حرب: ${coolLeft(r.warCool)}` : "");
+  // war straight away (open war): never twice at once, never right after a war, a peace or a tribute paid
+  const warWhy = ["warning", "war"].includes(r.state) ? "فيه حرب أصلاً" : r.state === "truce" ? "فيه هدنة بينكم"
+    : coolLeft(r.tributePeace) ? `دفعوا الجزية: سلام ${coolLeft(r.tributePeace)}` : coolLeft(r.warCool) ? `توكم طالعين من حرب: ${coolLeft(r.warCool)}`
+      : coolLeft(r.cool) ? `فيه صلح جديد: ${coolLeft(r.cool)}` : r.tribute ? "فيه طلب جزية ينتظر رد" : "";
+  out.war = blockAll || warWhy;
+  out.tribute = blockAll || warWhy;
+  out.pay = r.tribute && r.tribute.by !== me ? "" : "ما فيه طلب جزية";
+  out.refuse = out.pay;
+  out.say = blockAll || (rel?.lastSay?.[me] && now - rel.lastSay[me] < cfg.T.say ? "شوي شوي" : "");
+  out.endchat = r.chat?.open ? "" : "ما فيه محادثة";
   out.truce = ["warning", "war"].includes(r.state) ? (r.offer?.by === me ? "عرضك ينتظر رد" : "") : "ما فيه حرب";
   out.peace = ["tension", "hostile", "warning", "war", "truce"].includes(r.state) ? (r.offer?.by === me ? "عرضك ينتظر رد" : "") : "أنتم بسلام";
   out.accept = r.offer && r.offer.by !== me ? "" : "ما فيه عرض";

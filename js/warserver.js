@@ -14,7 +14,7 @@ import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
-  MOSQUES, blastArea
+  MOSQUES, blastArea, shieldPrice, tributeMax
 } from "./war.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
@@ -121,7 +121,20 @@ export class WarServer {
   }
   /** A line for the world's bulletin (everyone reads it): only wars, truces, peace and strikes, never who is online. */
   news(kind, text, plot) { try { this.world?.news?.(kind, text, plot); } catch { /* the bulletin never stops the war */ } }
-  rel(a, b) { return this.db.get("rel", pairId(a, b)); }
+  rel(a, b) { const r = this.db.get("rel", pairId(a, b)); return r ? this.lapse(r, this.now()) : r; }
+  /** A demand of tribute left without an answer past its day: the war it promised is stored, and both are told (once). */
+  lapse(r, now) {
+    if (!(r?.tribute && now >= r.tribute.until)) return r;
+    const t = r.tribute, v = relNow(r, now, this.cfg), by = t.by, other = r.a === by ? r.b : r.a;
+    const out = { ...r, state: "warning", since: t.until, warStart: v.warStart, warEnd: v.warEnd, tribute: null, offer: null };
+    out.hist = [...(r.hist || []), { at: t.until, by: other, kind: "lapse", text: "ما رد على الجزية" }].slice(-30);
+    const bn = this.townInfo(by)?.town || "مدينة", on = this.townInfo(other)?.town || "مدينة";
+    this.note(by, "war", `⏳ «${on}» ما ردت على الجزية: الحرب بينكم ${now >= v.warStart ? "بدأت" : `تبدأ بعد ${minutesText(v.warStart - now)}`}.`, { from: other });
+    this.note(other, "war", `⏳ ما رديت على جزية «${bn}»: الحرب بينكم ${now >= v.warStart ? "بدأت" : `تبدأ بعد ${minutesText(v.warStart - now)}`}.`, { from: by });
+    this.news("war", `⚔️ «${on}» ما دفعت جزية «${bn}»: حرب`, other);
+    this.saveRel(r.a, r.b, out);
+    return out;
+  }
   saveRel(a, b, r) { this.db.put("rel", pairId(a, b), r, { k1: String(Math.min(a, b)), k2: String(Math.max(a, b)), at: this.now() }); }
   /** A request already answered (the same request id sent again) gives back the same answer. */
   once(plot, req, fn) {
@@ -133,14 +146,40 @@ export class WarServer {
     if (!res.error) this.db.put("req", key, { res }, { k1: String(plot), at: this.now() });
     return res;
   }
-  /** Shield: a town that took too many hits lately cannot be hit again for a while. Returns the end time or 0. */
+  /** The shield the mayor bought (a week of al-Jouf, once a month): nothing lands on the town. Returns the end time or 0. */
   shieldUntil(info, now = this.now()) {
-    const hits = this.db.list("hit", { k1: String(info.plot) }).filter((h) => now - h.at < this.cfg.caps.cityWindow);
-    const away = now - (info.updated || 0) > this.cfg.away;
-    const max = away ? this.cfg.caps.awayMax : this.cfg.caps.cityMax;
-    if (hits.length < max) return 0;
-    const last = Math.max(...hits.map((h) => h.at));
-    return last + this.cfg.caps.shield > now ? last + this.cfg.caps.shield : 0;
+    const sh = this.acct(info.plot).shield;
+    return sh && sh.until > now ? sh.until : 0;
+  }
+  /** The bought shield as the town's own panel shows it. */
+  shieldView(info, a, now) {
+    const sh = a.shield || null, era = info ? info.snap.era || info.era || 0 : 0;
+    return { until: sh && sh.until > now ? sh.until : 0, next: sh ? sh.at + this.cfg.T.shieldEvery : 0, price: shieldPrice(era, this.cfg), last: this.cfg.T.shieldLast };
+  }
+  buyShield(body, me) {
+    const now = this.now(), info = this.townInfo(me.plot);
+    if (!info?.snap.list.length) return { error: "زامن مدينتك أول (افتحها شوي)" };
+    const a = this.acct(me.plot);
+    if (a.shield && a.shield.until > now) return { error: `الدرع شغال: باقي ${minutesText(a.shield.until - now)}` };
+    if (a.shield && now < a.shield.at + this.cfg.T.shieldEvery) return { error: `الدرع مرة بالشهر: تقدر بعد ${minutesText(a.shield.at + this.cfg.T.shieldEvery - now)}` };
+    const price = shieldPrice(info.snap.era || info.era || 0, this.cfg);
+    if (this.available(info, a) < price) return { error: "ما يكفي المال" };
+    a.shield = { at: now, until: now + this.cfg.T.shieldLast };
+    const c = this.charge(me.plot, a, price, "درع الحماية");
+    this.saveAcct(me.plot, a);
+    this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (أسبوع بالجوف). إذا هاجمت أحد ينكسر.`, {}, false);
+    for (const r of this.db.list("rel", { either: String(me.plot) })) {
+      const v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
+      if (["warning", "war"].includes(v.state)) this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: ضرباتك ما توصلها لمدة ${minutesText(this.cfg.T.shieldLast)}.`, { from: me.plot });
+    }
+    this.news("shield", `🛡️ «${info.town}» رفعت درع الحماية`, me.plot);
+    return { ok: true, shield: this.shieldView(info, a, now), charge: c };
+  }
+  /** Attacking breaks the attacker's own shield (a shield is for staying out of the fight). */
+  breakShield(plot, a, now) {
+    if (!(a.shield && a.shield.until > now)) return;
+    a.shield.until = now;
+    this.note(plot, "shield", "🛡️ انكسر درعك لأنك هاجمت.", {}, false);
   }
 
   // ---------- the entry point ----------
@@ -157,6 +196,7 @@ export class WarServer {
       case "op": return this.opView(String(body.op || ""), me);
       case "repair": return this.once(me.plot, body.req, () => this.repair(body, me));
       case "settings": return this.settings(body, me);
+      case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
       default: return { error: "not found" };
     }
@@ -168,10 +208,10 @@ export class WarServer {
     { const a0 = this.acct(me.plot), seen = Math.round(Number(body.seq) || 0); if (seen > (a0.seenSeq || 0)) { a0.seenSeq = seen; this.saveAcct(me.plot, a0); } }
     const now = this.now(), info = this.townInfo(me.plot), a = this.acct(me.plot);
     const p = info ? this.profileOf(info) : milProfile([]);
-    const rels = this.db.list("rel", { either: String(me.plot) }).map((r) => {
-      const other = r.a === me.plot ? r.b : r.a, o = this.townInfo(other), v = relNow(r, now, this.cfg);
-      return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, ...v, hist: (r.hist || []).slice(-20) };
-    }).filter((r) => r.state !== "peace" || r.hist.length);
+    const rels = this.db.list("rel", { either: String(me.plot) }).map((r0) => {
+      const r = this.lapse(r0, now), other = r.a === me.plot ? r.b : r.a, o = this.townInfo(other), v = relNow(r, now, this.cfg);
+      return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, money: undefined, ...v, hist: (r.hist || []).slice(-20), chat: (r.chat?.lines || []).slice(-40), chatOpen: !!r.chat?.open, lastSay: undefined, lastThreat: undefined };
+    }).filter((r) => r.state !== "peace" || r.hist.length || r.chat.length);
     const ops = this.db.list("op", { either: String(me.plot), limit: 40 }).map((o) => this.opPublic(o, me));
     const notes = this.db.list("note", { k1: String(me.plot), limit: 60 }); // the newest 60 (the game knows which it has seen)
     const charges = this.db.list("charge", { k1: String(me.plot) }).filter((c) => c.seq > (Number(body.seq) || 0)).sort((x, y) => x.seq - y.seq);
@@ -179,7 +219,7 @@ export class WarServer {
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
-      rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0,
+      rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }
@@ -259,6 +299,14 @@ export class WarServer {
     if (allowed[act]) return { error: allowed[act] };
     const myName = mine.town, theirName = them.town;
     const log = (kind, text) => { r.hist.push({ at: now, by: me.plot, kind, text }); r.hist = r.hist.slice(-30); };
+    const declare = (why) => {
+      r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null; r.tribute = null;
+      if (r.chat) r.chat.open = false;
+      log("war", why);
+      this.note(other, "war", `⚔️ مدينة «${myName}» أعلنت عليك الحرب! أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: me.plot });
+      this.note(me.plot, "war", `⚔️ أعلنت الحرب على «${theirName}». أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}.`, { from: other });
+      this.news("war", `⚔️ «${myName}» أعلنت الحرب على «${theirName}»`, other);
+    };
     if (act === "threat") {
       const text = THREATS[Math.max(0, Math.min(THREATS.length - 1, Math.round(Number(body.text) || 0)))];
       if (r.state === "peace") { r.state = "tension"; r.since = now; }
@@ -270,11 +318,49 @@ export class WarServer {
       log("hostile", "إعلان عداوة");
       this.note(other, "hostile", `⚔️ «${myName}» أعلنت عليك العداوة!`, { from: me.plot });
     } else if (act === "war") {
+      declare("إعلان حرب");
+    } else if (act === "tribute") {
+      // a demand of money: paid, a month of peace; refused or left without an answer for a day of al-Jouf, war
+      const most = tributeMax(them.snap.money, this.cfg), amount = Math.round(Number(body.amount) || 0);
+      if (most < this.cfg.tribute.min) return { error: "ميزانيتهم ما تكفي لجزية" };
+      if (!(amount >= this.cfg.tribute.min && amount <= most)) return { error: `الجزية من ${nf(this.cfg.tribute.min)} إلى ${nf(most)} ريال (٣٠٪ من ميزانيتهم)` };
+      r.tribute = { by: me.plot, amount, at: now, until: now + this.cfg.T.tributeAnswer };
+      if (r.state === "peace") { r.state = "tension"; r.since = now; }
+      log("tribute", `طلب جزية ${nf(amount)} ريال`);
+      this.note(other, "tribute", `🪙 «${myName}» تطالبك بجزية ${nf(amount)} ريال. إذا دفعت: سلام شهر بالجوف. إذا رفضت أو ما رديت خلال ${minutesText(this.cfg.T.tributeAnswer)}: حرب.`, { from: me.plot, amount });
+      this.news("tribute", `🪙 «${myName}» تطالب «${theirName}» بالجزية`, other);
+    } else if (act === "pay") {
+      const t = r.tribute;
+      if (this.available(mine, this.acct(me.plot)) < t.amount) return { error: "ما يكفي المال للجزية" };
+      const ma = this.acct(me.plot); this.charge(me.plot, ma, t.amount, `جزية لـ«${theirName}»`); this.saveAcct(me.plot, ma);
+      const ta = this.acct(other); this.charge(other, ta, -t.amount, `جزية من «${myName}»`); this.saveAcct(other, ta);
+      r.tribute = null; r.state = "peace"; r.since = now; r.tributePeace = now + this.cfg.T.tributePeace; r.offer = null;
+      log("paid", `دفع الجزية ${nf(t.amount)} ريال`);
+      this.note(other, "paid", `🪙 «${myName}» دفعت الجزية: ${nf(t.amount)} ريال وصلت ميزانيتك. سلام بينكم ${minutesText(this.cfg.T.tributePeace)} (شهر بالجوف).`, { from: me.plot, amount: t.amount });
+      this.note(me.plot, "paid", `🪙 دفعت الجزية لـ«${theirName}» (${nf(t.amount)} ريال): سلام ${minutesText(this.cfg.T.tributePeace)} (شهر بالجوف).`, { from: other }, false);
+      this.news("paid", `🪙 «${myName}» دفعت الجزية لـ«${theirName}»`, other);
+    } else if (act === "refuse") {
+      r.tribute = null;
+      log("refuse", "رفض الجزية");
+      // the refusal is the war the demand promised: declared in the name of the one who asked
       r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null;
-      log("war", "إعلان حرب");
-      this.note(other, "war", `⚔️ مدينة «${myName}» أعلنت عليك الحرب! أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: me.plot });
-      this.note(me.plot, "war", `⚔️ أعلنت الحرب على «${theirName}». أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}.`, { from: other });
-      this.news("war", `⚔️ «${myName}» أعلنت الحرب على «${theirName}»`, other);
+      this.note(other, "war", `✋ «${myName}» رفضت الجزية: الحرب بينكم تبدأ بعد ${minutesText(this.cfg.T.warning)}.`, { from: me.plot });
+      this.note(me.plot, "war", `✋ رفضت الجزية: الحرب مع «${theirName}» تبدأ بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: other }, false);
+      this.news("war", `⚔️ «${myName}» رفضت جزية «${theirName}»: حرب`, other);
+    } else if (act === "say") {
+      // a talk between the two mayors (the threat, in their own words): both may answer, either may end it with war
+      const text = String(body.text || "").replace(/\s+/g, " ").trim().slice(0, 200);
+      if (!text) return { error: "اكتب شي" };
+      if (this.world?.badText?.(text)) return { error: "الكلام هذا ما يصلح" };
+      r.chat ||= { lines: [], open: true }; r.chat.open = true;
+      r.chat.lines.push({ by: me.plot, at: now, text }); r.chat.lines = r.chat.lines.slice(-40);
+      r.lastSay = { ...(r.lastSay || {}), [me.plot]: now };
+      if (r.state === "peace") { r.state = "tension"; r.since = now; }
+      this.note(other, "say", `💬 «${myName}»: ${text}`, { from: me.plot });
+    } else if (act === "endchat") {
+      const why = relActions(stored ? r : null, me.plot, now, block, this.cfg).war;
+      if (why) { r.chat.open = false; log("endchat", "إنهاء المحادثة"); this.note(other, "say", `💬 «${myName}» أنهت المحادثة.`, { from: me.plot }); }
+      else declare("أنهى المحادثة وأعلن الحرب");
     } else if (act === "truce" || act === "peace") {
       r.offer = { kind: act, by: me.plot, at: now };
       log(act + "Offer", act === "truce" ? "عرض هدنة" : "عرض صلح");
@@ -406,6 +492,7 @@ export class WarServer {
     for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = now + milStat("dronebase", b.lvl).reload * 60000; }
     left = missiles;
     for (const b of readyPads.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = now + milStat("missilepad", b.lvl).reload * 60000; }
+    this.breakShield(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `دفعة على «${them.town}» (${nf(plans.length)} أهداف)`);
     this.saveAcct(me.plot, a);
     const detected = detects(this.profileOf(them));
@@ -436,6 +523,7 @@ export class WarServer {
     for (const [w, n] of Object.entries(load)) a.arsenal[w] -= n;
     if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = now + milStat("dronebase", b.lvl).reload * 60000; }
     if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = now + milStat("missilepad", b.lvl).reload * 60000; } }
+    this.breakShield(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `تشغيل عملية على «${them.town}»`);
     this.saveAcct(me.plot, a);
     const theirP = this.profileOf(them);

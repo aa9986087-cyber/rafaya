@@ -181,6 +181,7 @@ export class Board extends DurableObject {
     this.war = new WarServer(warDb, {
       town: (plot) => this.sql.exec("SELECT plot, owner, town, era, pop, updated, snapshot FROM plots WHERE plot = ?", plot).toArray()[0] || null,
       news: (kind, text, plot) => this.news(kind, text, plot),
+      badText: (t) => badText(t) || this.moderation.blockedChat(t), // the talk between two mayors goes through the chat's own filter
       ping: (plot) => this.live({ t: "war" }, plot), // a war note for this town: its game asks for the state now
       notify: (plot, kind, text) => this.push(plot, "⚔️ صراع الجوف", text, `war-${kind}`), // and on the phone, if the game isn't open
       player: (name) => this.sql.exec("SELECT name, plot, created FROM players WHERE name = ?", name).toArray()[0] || null
