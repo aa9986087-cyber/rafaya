@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { B, CENTRAL_VAULT_LEVEL, ELECTION_GRANT, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, GREATER_CITY_UPGRADES, MAP_SIZE as N, PROVINCE_FEES, YEAR_HOURS } from "../js/data.js";
+import { B, BASE_VAULT, VAULT, CENTRAL_VAULT_LEVEL, ELECTION_GRANT, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, GREATER_CITY_UPGRADES, MAP_SIZE as N, PROVINCE_FEES, YEAR_HOURS } from "../js/data.js";
 import { analyze, build, cantBuild, greaterCityProgress, housePrice, idx, moneyCap, newGame, pack, provinceFee, step, unpack, upgradeAt, upgradeBlocker, upgradePrice } from "../js/sim.js";
 
 function city(world = true) {
@@ -8,7 +8,7 @@ function city(world = true) {
   if (world) town.world = { plot: 42 };
   town.tiles = town.tiles.map(() => ({ t: "sand", b: null }));
   town.era = GREATER_CITY_STAGE - 1;
-  town.money = 400000;
+  town.money = 1500000;
   town.happy = 99;
   return town;
 }
@@ -81,7 +81,7 @@ test("real neighborhood services unlock residential towers and the new levels su
   assert.equal(b.lvl, 5);
   assert.match(upgradeBlocker(town, analyze(town), 36, 36), /الحاضرة الكبرى/);
   town.era = GREATER_CITY_STAGE;
-  const prices = [39280, 78560];
+  const prices = [56280, 112560]; // 49,000 and 98,000 (raised ×1.53 with the 23,000 threshold) plus the missing building materials
   for (const total of prices) {
     const before = town.money;
     assert.equal(upgradePrice(town, b).total, total);
@@ -90,7 +90,7 @@ test("real neighborhood services unlock residential towers and the new levels su
   }
   assert.equal(b.lvl, 7);
   assert.equal(B.house.levels[7].cap, 270);
-  assert.equal(housePrice(town, 7).total, 150170);
+  assert.equal(housePrice(town, 7).total, 201170);
   const restored = unpack(pack(town));
   assert.equal(restored.tiles[pos].b.lvl, 7);
   assert.equal(restored.houseTop, 7);
@@ -122,14 +122,14 @@ test("treasury requirements and project prices work through the whole civic path
   };
   place("civic_offices", 34);
   assert.match(cantBuild(town, 35, initialY + 1, "civic_expo"), /خزينة الحاضرة/);
-  const caps = [1115000, 1810000, 2505000, 3200000];
+  const caps = [1, 2, 3, 4].map((n) => BASE_VAULT[GREATER_CITY_STAGE] + n * VAULT[CENTRAL_VAULT_LEVEL].cap + (4 - n) * VAULT[0].cap);
   for (let n = 0; n < B.vault.max; n++) {
     const x = 28 + n, vault = town.tiles[idx(x, initialY)].b;
     while (vault.lvl < CENTRAL_VAULT_LEVEL) {
       town.money = moneyCap(town);
       assert.equal(upgradeAt(town, x, initialY, analyze(town)), "");
       if (n === 0 && vault.lvl === CENTRAL_VAULT_LEVEL - 1) {
-        assert.equal(moneyCap(town), 765000);
+        assert.equal(moneyCap(town), BASE_VAULT[GREATER_CITY_STAGE] + VAULT[CENTRAL_VAULT_LEVEL - 1].cap + 3 * VAULT[0].cap);
         place("civic_expo", 35);
       }
     }
@@ -160,7 +160,7 @@ test("treasury requirements and project prices work through the whole civic path
   assert.equal(town.money, before - GREATER_CITY_UPGRADES.skyline.cost);
   const vault = town.tiles[idx(28, initialY)].b;
   vault.wd = 100;
-  assert.equal(moneyCap(town), 2500000);
+  assert.equal(moneyCap(town), BASE_VAULT[GREATER_CITY_STAGE] + 3 * VAULT[CENTRAL_VAULT_LEVEL].cap);
   assert.match(cantBuild(town, 40, initialY + 1, "civic_culture"), /3 من 4/);
   vault.wd = 0;
   const connection = town.tiles[idx(38, initialY)];

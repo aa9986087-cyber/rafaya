@@ -75,8 +75,8 @@ export const B = {
       { name: "فيلا", cap: 16, cost: 2000, needs: { road: 1, water: 1, power: 1, happy: 60, services: 2 } },
       { name: "عمارة", cap: 48, cost: 6000, needs: { road: 1, water: 1, power: 1, happy: 70, services: 4 }, era: 2 },
       { name: "برج سكني", cap: 120, cost: 16000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 4 }, era: 3 },
-      { name: "برج سكني شاهق", cap: 180, cost: 32000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 4 }, era: GREATER_CITY_STAGE },
-      { name: "مجمّع أبراج سكنية", cap: 270, cost: 64000, needs: { road: 1, water: 1, power: 1, happy: 80, services: 4 }, era: GREATER_CITY_STAGE }
+      { name: "برج سكني شاهق", cap: 180, cost: 49000, needs: { road: 1, water: 1, power: 1, happy: 75, services: 4 }, era: GREATER_CITY_STAGE },
+      { name: "مجمّع أبراج سكنية", cap: 270, cost: 98000, needs: { road: 1, water: 1, power: 1, happy: 80, services: 4 }, era: GREATER_CITY_STAGE }
     ],
     text: "طوّر السكن من خيمة إلى بيت ثم عمارة وبرج. المستويات الأعلى تحتاج طريق وماء وكهرباء وخدمات قريبة."
   },
@@ -184,14 +184,16 @@ for (const d of Object.values(B)) {
 }
 
 // These are final prices after the ordinary catalog's price adjustments.
+// The greater city opens at 23,000 people (it was 15,000): its prices, its strongroom and its vaults were all
+// raised by the same ×1.53 (owner, 2026-11-26), so the path costs the same effort for the bigger town.
 export const GREATER_CITY_PROJECTS = {
-  civic_offices: { name: "مجمّع الأعمال", cost: 280000, upkeep: 650, jobs: 350, income: 1200, power: -45, water: -30, buildHours: 48, text: "مكاتب وشركات توفر وظائف للمدينة." },
-  civic_expo: { name: "مركز معارض الجوف", cost: 550000, upkeep: 1350, jobs: 360, income: 1000, visitors: true, power: -85, water: -50, buildHours: 72, text: "معارض تجيب الزوار وتخدم سياحة المدينة." },
-  civic_freight: { name: "مركز شحن الجوف", cost: 1000000, upkeep: 2100, jobs: 460, income: 1700, power: -90, water: -40, buildHours: 96, text: "مركز لشحن بضائع المصانع والمزارع ويوفر وظائف." },
-  civic_water: { name: "مجمّع المياه", cost: 950000, upkeep: 2200, jobs: 100, water: 2600, power: -180, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالمياه." },
-  civic_energy: { name: "مجمّع الطاقة", cost: 1050000, upkeep: 2000, jobs: 120, power: 2200, water: -55, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالكهرباء. ينبني بعد تشغيل مجمّع المياه." },
-  civic_tower: { name: "برج الحاضرة", cost: 1400000, upkeep: 3100, jobs: 330, income: 1900, visitors: true, power: -120, water: -70, radius: 16, happy: 20, buildHours: 144, text: "معلم يظهر من بعيد. يحتاج تشغيل خزائن الحاضرة الأربع ومجمّعي المياه والطاقة." },
-  civic_culture: { name: "المجمّع الثقافي", cost: 2100000, upkeep: 2800, jobs: 230, income: 1800, visitors: true, power: -140, water: -90, radius: 18, happy: 24, buildHours: 168, text: "مسرح ومتاحف وساحات تفرّح أهل المدينة وتجيب زوار." }
+  civic_offices: { name: "مجمّع الأعمال", cost: 430000, upkeep: 650, jobs: 350, income: 1200, power: -45, water: -30, buildHours: 48, text: "مكاتب وشركات توفر وظائف للمدينة." },
+  civic_expo: { name: "مركز معارض الجوف", cost: 845000, upkeep: 1350, jobs: 360, income: 1000, visitors: true, power: -85, water: -50, buildHours: 72, text: "معارض تجيب الزوار وتخدم سياحة المدينة." },
+  civic_freight: { name: "مركز شحن الجوف", cost: 1535000, upkeep: 2100, jobs: 460, income: 1700, power: -90, water: -40, buildHours: 96, text: "مركز لشحن بضائع المصانع والمزارع ويوفر وظائف." },
+  civic_water: { name: "مجمّع المياه", cost: 1455000, upkeep: 2200, jobs: 100, water: 2600, power: -180, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالمياه." },
+  civic_energy: { name: "مجمّع الطاقة", cost: 1610000, upkeep: 2000, jobs: 120, power: 2200, water: -55, reach: 20, buildHours: 120, text: "يزيد إمداد أحياء الحاضرة بالكهرباء. ينبني بعد تشغيل مجمّع المياه." },
+  civic_tower: { name: "برج الحاضرة", cost: 2145000, upkeep: 3100, jobs: 330, income: 1900, visitors: true, power: -120, water: -70, radius: 16, happy: 20, buildHours: 144, text: "معلم يظهر من بعيد. يحتاج تشغيل خزائن الحاضرة الأربع ومجمّعي المياه والطاقة." },
+  civic_culture: { name: "المجمّع الثقافي", cost: 3220000, upkeep: 2800, jobs: 230, income: 1800, visitors: true, power: -140, water: -90, radius: 18, happy: 24, buildHours: 168, text: "مسرح ومتاحف وساحات تفرّح أهل المدينة وتجيب زوار." }
 };
 for (const [id, project] of Object.entries(GREATER_CITY_PROJECTS)) {
   B[id] = { ...project, cat: "proj", unique: true, worldOnly: true, era: GREATER_CITY_STAGE };
@@ -225,17 +227,17 @@ export const BIZ_UP = [
   { cost: 2.6, income: 3.3, jobs: 2.3, upkeep: 2.7, happy: 2.1, radius: 3, era: 3 }
 ];
 export const GREATER_CITY_UPGRADES = {
-  mall: { name: "مول الجوف الكبير", from: 0, cost: 21840, income: 1.45, jobs: 1.45, upkeep: 1.5, happy: 1.2, radius: 1 },
-  hospital: { name: "مستشفى إقليمي", from: 3, cost: 71820, mats: 57, jobs: 2.9, upkeep: 3.4, happy: 2.4, radius: 5 },
-  university: { name: "جامعة الجوف البحثية", from: 0, cost: 18000, jobs: 1.55, upkeep: 1.55, happy: 1.3, radius: 2 },
-  themepark: { name: "مدينة ألعاب كبرى", from: 0, cost: 90000, income: 1.45, jobs: 1.4, upkeep: 1.5, happy: 1.2, radius: 1 },
-  airport: { name: "مطار دولي", from: 0, cost: 135000, income: 1.5, jobs: 1.5, upkeep: 1.6 },
-  station: { name: "محطة قطار الجوف الكبرى", from: 0, cost: 165000, income: 1.45, jobs: 1.4, upkeep: 1.45, radius: 1 },
-  bigstadium: { name: "استاد الجوف الكبير", from: 0, cost: 210000, income: 1.5, jobs: 1.45, upkeep: 1.55, happy: 1.25, radius: 1 },
-  skyline: { name: "أبراج الرافعية الكبرى", from: 0, cost: 420000, income: 1.55, jobs: 1.5, upkeep: 1.7, happy: 1.25, radius: 1 },
-  desal: { name: "محطة تحلية كبرى", from: 0, cost: 13500, capacity: 1.65, upkeep: 1.55 },
-  powerplant: { name: "محطة كهرباء كبرى", from: 0, cost: 15000, capacity: 1.65, upkeep: 1.55 },
-  avenue: { name: "شارع سريع", from: 0, cost: 120, capacity: 1.6, upkeep: 1.4 }
+  mall: { name: "مول الجوف الكبير", from: 0, cost: 33500, income: 1.45, jobs: 1.45, upkeep: 1.5, happy: 1.2, radius: 1 },
+  hospital: { name: "مستشفى إقليمي", from: 3, cost: 110000, mats: 57, jobs: 2.9, upkeep: 3.4, happy: 2.4, radius: 5 },
+  university: { name: "جامعة الجوف البحثية", from: 0, cost: 27500, jobs: 1.55, upkeep: 1.55, happy: 1.3, radius: 2 },
+  themepark: { name: "مدينة ألعاب كبرى", from: 0, cost: 138000, income: 1.45, jobs: 1.4, upkeep: 1.5, happy: 1.2, radius: 1 },
+  airport: { name: "مطار دولي", from: 0, cost: 207000, income: 1.5, jobs: 1.5, upkeep: 1.6 },
+  station: { name: "محطة قطار الجوف الكبرى", from: 0, cost: 253000, income: 1.45, jobs: 1.4, upkeep: 1.45, radius: 1 },
+  bigstadium: { name: "استاد الجوف الكبير", from: 0, cost: 322000, income: 1.5, jobs: 1.45, upkeep: 1.55, happy: 1.25, radius: 1 },
+  skyline: { name: "أبراج الرافعية الكبرى", from: 0, cost: 644000, income: 1.55, jobs: 1.5, upkeep: 1.7, happy: 1.25, radius: 1 },
+  desal: { name: "محطة تحلية كبرى", from: 0, cost: 20700, capacity: 1.65, upkeep: 1.55 },
+  powerplant: { name: "محطة كهرباء كبرى", from: 0, cost: 23000, capacity: 1.65, upkeep: 1.55 },
+  avenue: { name: "شارع سريع", from: 0, cost: 185, capacity: 1.6, upkeep: 1.4 }
 };
 export const greaterCityUpgrade = (b) => GREATER_CITY_UPGRADES[b?.id];
 export const bizLevel = (b) => {
@@ -252,7 +254,7 @@ export const bizLevel = (b) => {
  * a year's province fee; the dearest projects (27k at بلدة, 90k مدينة, 210k محافظة, 420k حاضرة) need vaults.
  * `up` is the price of reaching that level; upkeepX × the vault's upkeep (2) an hour.
  */
-export const BASE_VAULT = [5000, 15000, 50000, 150000, 400000, 400000];
+export const BASE_VAULT = [5000, 15000, 50000, 150000, 400000, 615000];
 export const CENTRAL_VAULT_LEVEL = 5;
 // Prices (2026-11-24, the owner: "not easy, but fair"): about 40% of the capacity a level adds, roughly a
 // game day of a careful town's net income at that stage, and always less than the stage's own strongroom
@@ -263,7 +265,7 @@ export const VAULT = [
   { name: "خزنة مصفّحة", era: 2, cap: 40000, up: 18000, upkeepX: 4 },
   { name: "بيت المال", era: 3, cap: 120000, up: 50000, upkeepX: 7.5 },
   { name: "خزينة الحاضرة", era: 4, cap: 350000, up: 140000, upkeepX: 15 },
-  { name: "الخزنة المركزية", era: GREATER_CITY_STAGE, cap: 700000, up: 700000, upkeepX: 30 }
+  { name: "الخزنة المركزية", era: GREATER_CITY_STAGE, cap: 1075000, up: 950000, upkeepX: 30 } // up stays under what one strongroom and one خزينة الحاضرة hold, so the first central vault is always within reach
 ];
 export const VAULT_MORE = 0.5;
 
@@ -306,7 +308,7 @@ export const DISTRICT_NAMES = ["الحارة الشمالية الغربية", "
 
 // Elections for the municipal council, at the end of every year. Winning brings a grant from the
 // province; losing doubles next year's province fee (the province sends an inspector).
-export const ELECTION_GRANT = [1500, 5000, 15000, 40000, 40000, 40000];
+export const ELECTION_GRANT = [1500, 5000, 15000, 40000, 40000, 60000];
 
 // Groundwater under the town: wells and tanks pump it, rain and dam lakes refill it.
 // Below LOW the wells give less water, down to 35% when it is empty.

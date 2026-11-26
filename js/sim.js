@@ -1644,7 +1644,7 @@ export function catchUp(s, now = Date.now()) {
 /** Standing orders the mayor leaves the deputy. */
 export const DEPUTY = { repair: true, floor: 2000, tax: true };
 /** The most a town can gain while its mayor is away, by its stage (قرية … حاضرة); losses are not capped (the shield guards them). */
-export const AWAY_CAP = [5000, 10000, 20000, 40000, 80000, 80000];
+export const AWAY_CAP = [5000, 10000, 20000, 40000, 80000, 120000];
 /** How many hours the deputy runs the town in full; after that the town is kept steady. */
 export const DEPUTY_FULL_HOURS = 168;
 /** After this long away (a week of real time, in town hours) the town sleeps: nothing changes. */
