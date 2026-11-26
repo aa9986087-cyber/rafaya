@@ -1016,3 +1016,11 @@ body.war-scene .hud .zero-chip, body.targeting .hud .zero-chip { display: none; 
 .wr-front { max-height: 250px; }
 .wr-front .wr-line { stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
 .wr-front .wm-t.on circle:not(.wm-hit) { stroke: #fff6; }
+
+/* aiming: the town gets the screen. The target town's numbers at the top go (the panel names the town), the
+   spots list is shorter, and the panel folds to a slim bar with ▾ */
+body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .goal, body.targeting .hud .zero-chip { display: none !important; }
+.tb-list { max-height: 104px; }
+.tb-head { gap: 8px; } .tb-head b { flex: 1; }
+.tb-fold { border: 1px solid rgba(217,180,106,.35); background: rgba(255,255,255,.07); color: #e0bd72; border-radius: 12px; width: 32px; height: 32px; font-size: 15px; flex: none; }
+.tb-min { gap: 6px; } .tb-min .tb-fire { padding: 8px; }

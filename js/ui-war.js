@@ -334,6 +334,9 @@ function strikeView() {
   world.fx.showStrike(tg.points.map((p, i) => ({ x: p.x, y: p.y, r: WEAPONS[p.w].blast, on: tg.sel < 0 || i === tg.sel })), [...hit.values()]);
   return hit;
 }
+/** Counts said the Arabic way: one, two, then the number. */
+const spotsText = (n) => (n === 1 ? "مكان واحد" : n === 2 ? "مكانين" : `${ar(n)} ${n <= 10 ? "أماكن" : "مكان"}`);
+const hitsText = (n) => (n === 1 ? "ضربة وحدة" : n === 2 ? "ضربتين" : `${ar(n)} ${n <= 10 ? "ضربات" : "ضربة"}`);
 const W_POWER = { drone: "ضرر خفيف", drone2: "ضرر متوسط", missile: "ضرر قوي", missile2: "ضرر مدمّر" };
 /**
  * The attack panel, in two plain steps: pick the weapon (big cards with what is left), then tap the town where
@@ -354,8 +357,17 @@ export function targetBar() {
   const short = Object.entries(need).find(([w, n]) => (ars[w] || 0) < n);
   const waits = (st?.profile ? launcherTimes(st) : []).filter((x) => x.left > 0);
   const spotName = (p) => { const near = blastArea(tg.list, p.x, p.y, WEAPONS[p.w].blast); return { name: near[0] && near[0].d < 0.5 ? B[near[0].id].name : "أرض", n: near.length }; };
+  // folded: only a slim bar (the town, the spots, the launch), so the whole town can be seen and aimed at
+  if (tg.min) {
+    bar.innerHTML = `<div class="tb-strike tb-min"><div class="tb-head"><button type="button" class="tb-fold" id="tbFold" aria-label="افتح القائمة">▴</button><b>🎯 «${tg.town}»: ${spotsText(tg.points.length)}</b><button type="button" class="tb-close" id="tbX" aria-label="إلغاء الهجوم">✕</button></div>
+      <button class="tb-fire" type="button" id="tbGo" ${!tg.points.length || short ? "disabled" : ""}><b>${short ? `ما يكفي ${WEAPONS[short[0]].name}` : tg.points.length ? `🚀 أطلق ${hitsText(total)}` : "اضغط على المدينة مكان الضربة"}</b></button></div>`;
+    $("tbFold").addEventListener("click", () => { sfx.tap(); tg.min = false; targetBar(); });
+    $("tbGo")?.addEventListener("click", () => fireStrike());
+    $("tbX").addEventListener("click", () => { sfx.tap(); stopTargeting(); });
+    return;
+  }
   bar.innerHTML = `<div class="tb-strike">
-    <div class="tb-head"><b>🎯 الهجوم على «${tg.town}»</b><button type="button" class="tb-close" id="tbX" aria-label="إلغاء الهجوم">✕</button></div>
+    <div class="tb-head"><button type="button" class="tb-fold" id="tbFold" aria-label="صغّر القائمة">▾</button><b>🎯 الهجوم على «${tg.town}»</b><button type="button" class="tb-close" id="tbX" aria-label="إلغاء الهجوم">✕</button></div>
     <div class="tb-step"><i>١</i><b>اختر السلاح</b></div>
     ${weapons.length ? `<div class="tb-cards">${weapons.map((w) => { const l = (ars[w] || 0) - used(w, sel); return `<button type="button" class="tb-card ${w === brush ? "on" : ""} ${l < 1 ? "out" : ""}" data-tw="${w}">${weaponIcon(w)}<b>${WEAPONS[w].name}</b><small>${W_POWER[w]} · عندك ${ar(Math.max(0, l))}</small></button>`; }).join("")}</div>`
       : `<div class="tb-empty">ما عندك ذخيرة جاهزة. اشترِ من «غرفة العمليات ← الدفاع والدرع».</div>`}
@@ -367,7 +379,7 @@ export function targetBar() {
       <small class="tb-hint">تضيف مكان بالضغط على المدينة · لتغيير سلاح مكان: اضغط صفّه ثم السلاح</small>` : `<small class="tb-hint">المكان ينضرب هو واللي حوله حسب مدى السلاح. المساجد محمية.</small>`}
     ${waits.length ? `<small class="tb-ready">⏳ يتجهز: ${waits.map((x) => `${x.name} ${secLeft(x.left)}`).join(" · ")}</small>` : ""}
     <button class="tb-fire" type="button" id="tbGo" ${!tg.points.length || short ? "disabled" : ""}>
-      <b>${short ? `ما يكفي ${WEAPONS[short[0]].name}` : tg.points.length ? `🚀 أطلق ${ar(total)} ${total === 1 ? "ضربة" : "ضربات"} على ${ar(tg.points.length)} ${tg.points.length === 1 ? "مكان" : "أماكن"}` : "🚀 أطلق"}</b>
+      <b>${short ? `ما يكفي ${WEAPONS[short[0]].name}` : tg.points.length ? `🚀 أطلق ${hitsText(total)} على ${spotsText(tg.points.length)}` : "🚀 أطلق"}</b>
       ${fee && !short ? `<small>التشغيل ${money(fee)} ريال · يوصل خلال ${secLeft(eta)} · ${ar(hit?.size || 0)} مبنى بالمدى</small>` : ""}</button></div>`;
   const left = (w, p) => (ars[w] || 0) - used(w, p);
   bar.querySelectorAll("[data-tw]").forEach((b) => b.addEventListener("click", () => {
@@ -381,6 +393,7 @@ export function targetBar() {
   bar.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { tg.points.splice(Number(b.dataset.del), 1); tg.sel = -1; sfx.tap(); targetBar(); }));
   $("tbGo")?.addEventListener("click", () => fireStrike());
   $("tbX").addEventListener("click", () => { sfx.tap(); stopTargeting(); });
+  $("tbFold").addEventListener("click", () => { sfx.tap(); tg.min = true; targetBar(); });
   // the launchers' countdown runs every second (only this line changes; a launcher that gets ready redraws the panel)
   clearInterval(WARX.tbTick);
   if (waits.length) WARX.tbTick = setInterval(() => {
