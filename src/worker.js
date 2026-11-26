@@ -67,7 +67,8 @@ const NAMEFIX_REASONS = {
   bad: "الاسم فيه كلام ما يصلح",
   fake: "الاسم يوهم إنه من الإدارة أو المطور"
 };
-const DEV_NAME = "🛠️ المطور"; // how the owner's messages show in the world's chat
+const DEV_NAME = "🛠️ المطور";
+const WAR_OPEN_AT = Date.UTC(2026, 10, 27, 23, 0, 0); // ساعة الصفر: Saturday 28 November 2026, 02:00 in Saudi Arabia // how the owner's messages show in the world's chat
 const CHAT_MUTE_MS = 10 * 60 * 1000;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
@@ -560,20 +561,12 @@ export class Board extends DurableObject {
   }
 
   /**
-   * ساعة الصفر: when the wars of al-Jouf open, the same moment for everyone. Set once, the first time this
-   * code runs: 100 days of al-Jouf ahead, at the start of a day. The owner can move it (admin: waropen).
+   * ساعة الصفر: when the wars of al-Jouf open, the same moment for everyone. The owner chose Saturday
+   * 28 November 2026 at 2 at night, Saudi time (UTC+3); it can be moved (admin: waropen).
    */
   warOpenAt() {
-    const get = (k) => Number(this.sql.exec("SELECT value FROM meta WHERE key = ?", k).toArray()[0]?.value || 0);
-    let at = get("war_open_at");
-    if (!at && !get("war_open_set")) {
-      const clock = { epoch: WORLD_EPOCH, slowAt: get("slow_at") || Date.now(), fastAt: get("fast_at") || Date.now() };
-      const today = dayOf(Math.floor(joufHours(Date.now(), clock)) + 1);
-      at = Math.ceil(joufDayStart(today + 100, clock));
-      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_at', ?)", String(at));
-      this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('war_open_set', '1')");
-    }
-    return at;
+    const at = Number(this.sql.exec("SELECT value FROM meta WHERE key = 'war_open_at'").toArray()[0]?.value || 0);
+    return at || WAR_OPEN_AT;
   }
 
   // ---------- the owner's control panel ----------
