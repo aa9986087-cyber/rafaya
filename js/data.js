@@ -26,7 +26,7 @@ export const ERAS = [
   { id: 2, name: "مدينة", pop: 1200 },
   { id: 3, name: "محافظة", pop: 4000 },
   { id: 4, name: "حاضرة", pop: 9000 },
-  { id: GREATER_CITY_STAGE, name: "الحاضرة الكبرى", pop: 15000, worldOnly: true }
+  { id: GREATER_CITY_STAGE, name: "الحاضرة الكبرى", pop: 23000, worldOnly: true }
 ];
 
 /**

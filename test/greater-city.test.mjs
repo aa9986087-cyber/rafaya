@@ -18,29 +18,31 @@ const tile = (town, x, y, id, lvl = 0) => {
   return b;
 };
 
-test("greater city opens at 15,000 in al-Jouf, and yearly finances stay valid", () => {
+test("greater city opens at 23,000 in al-Jouf (reachable with the towers of a حاضرة), and yearly finances stay valid", () => {
   const base = city();
-  base.pop = 14998;
-  for (let y = 24; y <= 36; y += 3) for (let x = 24; x < 49; x++) {
+  // 200 connected towers (the highest house before the greater city) hold 24,000: room enough for 23,000
+  for (let y = 24; y <= 45; y += 3) for (let x = 24; x < 49; x++) {
     tile(base, x, y, "road");
-    // 125 connected towers hold exactly 15,000 residents.
     tile(base, x, y - 1, "house", 5);
     tile(base, x, y + 1, "factory");
   }
+  assert.equal(analyze(base).cap, 24000);
+  base.pop = 22900;
   const solo = unpack(pack(base));
   delete solo.world;
-  step(base, () => 0.71);
-  assert.equal(base.pop, 14999);
   assert.equal(base.era, GREATER_CITY_STAGE - 1);
-  assert.match(cantBuild(base, 36, 40, "civic_offices"), /الحاضرة الكبرى/);
+  assert.match(cantBuild(base, 36, 50, "civic_offices"), /الحاضرة الكبرى/);
   step(base, () => 0.71);
   step(solo, () => 0.71);
-  step(solo, () => 0.71);
-  assert.equal(base.pop, 15000);
-  assert.equal(solo.pop, 15000);
+  assert.ok(base.pop >= 23000, `${base.pop}`);
   assert.equal(base.era, GREATER_CITY_STAGE);
-  assert.equal(cantBuild(base, 36, 40, "civic_offices"), "");
-  assert.equal(solo.era, GREATER_CITY_STAGE - 1);
+  assert.equal(cantBuild(base, 36, 50, "civic_offices"), "");
+  assert.equal(solo.era, GREATER_CITY_STAGE - 1); // a solo town never becomes one
+  // 22,999 is not enough
+  const almost = city(); almost.pop = 22999; for (let y = 24; y <= 45; y += 3) for (let x = 24; x < 49; x++) { tile(almost, x, y, "road"); tile(almost, x, y - 1, "house", 5); tile(almost, x, y + 1, "factory"); }
+  almost.happy = 20; // nobody moves in
+  step(almost, () => 0.71);
+  assert.ok(almost.pop < 23000); assert.equal(almost.era, GREATER_CITY_STAGE - 1);
 
   for (const era of [GREATER_CITY_STAGE - 1, GREATER_CITY_STAGE]) {
     const own = unpack(pack(base));
@@ -51,7 +53,7 @@ test("greater city opens at 15,000 in al-Jouf, and yearly finances stay valid", 
     own.money = 200000;
     own.happy = 99;
     own.trust = 100;
-    own.pop = era === GREATER_CITY_STAGE ? 15000 : 9400;
+    own.pop = era === GREATER_CITY_STAGE ? 23000 : 9400;
     assert.ok(Number.isFinite(provinceFee(own)));
     assert.equal(PROVINCE_FEES[era], PROVINCE_FEES[3]);
     const election = step(own, () => 0.71).msgs.find((m) => m.kind === "election");
