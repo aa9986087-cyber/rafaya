@@ -314,6 +314,18 @@ function logTab(st) {
     ${shown.length ? `<div class="rows">${shown.map((o) => { const r = o.result, out = o.side === "out"; return `<button class="row link" type="button" data-wrop="${o.id}"><span><b>${out ? "➡️ على" : "⬅️ من"} «${out ? o.toTown : o.fromTown}»</b><small>${o.bname} · ${weaponsText(o.load)}</small></span><b class="${r?.dmg ? (out ? "plus" : "minus") : out ? "minus" : "plus"}">${r?.blocked ? "ما أصابت" : r?.dmg ? `إصابة ${ar(r.dmg)}٪` : "انعترضت"} ▶️</b></button>`; }).join("")}</div>` : `<p class="hint">ما فيه عمليات للحين.</p>`}`;
 }
 
+/**
+ * The town's own chances against each weapon, on top of the room (the server's numbers), and the one thing
+ * that would raise them most.
+ */
+function guardHtml(st) {
+  const p = st.profile || {}, ok = (it) => it && it.wd < 85, ads = (p.airdefs || []).filter(ok), radar = (p.radars || []).some(ok);
+  const best = Math.max(-1, ...ads.map((a) => a.lvl || 0)), eraNow = (visiting ? visiting.home : S).era || 0;
+  const tip = !ads.length ? "🛡️ ما عندك دفاع جوي شغال: ابنِ بطارية عشان تتصدى" : !radar ? "📡 ما عندك رادار شغال: ابنِه ويرتفع تصديك تقريبًا للضعف"
+    : best < 1 && eraNow >= 2 ? "⬆️ طوّر البطارية لـ«متوسط المدى» يرتفع تصديك" : best < 2 && eraNow >= 3 ? "⬆️ طوّر البطارية لـ«متقدم» يرتفع تصديك"
+    : ads.length < 3 ? "➕ كل بطارية زيادة (لين ٣) ترفع تصديك شوي" : "✓ دفاعك بأعلى ما يقدر";
+  return `<div class="wr-guard"><b>🛡️ فرصة تصدّيك لكل ضربة</b><div>${WEAPON_IDS.map((w) => `<span>${weaponIcon(w)}<small>${WEAPONS[w].name}</small><b>${ar(Math.round((st.intercept?.[w] || 0) * 100))}٪</b></span>`).join("")}</div><small>${tip}</small></div>`;
+}
 /** Open the war room (or draw it again) on a tab. */
 export async function warRoom(tab = ROOM.tab) {
   if (!worldMode) return;
@@ -332,6 +344,7 @@ export async function warRoom(tab = ROOM.tab) {
   sheet(`<div class="wr-head"><span class="wr-radar"><i></i></span><span><h2>غرفة العمليات</h2><small>صراع الجوف · ${ERAS[home.era || 0].name}</small></span></div>
     <div class="wr-kpis"><div class="${wars ? "hot" : ""}"><b>${ar(wars)}</b><span>🔥 حروب</span></div><div class="${incoming ? "hot" : ""}"><b>${ar(incoming)}</b><span>🚨 ${attackers > 1 ? `هجوم من ${ar(attackers)} مدن` : "هجوم جاي"}</span></div>
       <div><b>${ar(st.arsenal.intc)}</b><span>🛡️ اعتراض</span></div><div><b>${home.money >= 1e6 ? `${ar((home.money / 1e6).toFixed(1))} م` : money(home.money)}</b><span>💰 الميزانية</span></div></div>
+    ${guardHtml(st)}
     <div class="wr-strip" id="wrStrip">${stripHtml(st)}</div>
     ${tab === "world" ? "" : frontMap(await worldMap(), st)}
     ${asks.filter((r) => !(tab === "world" && ROOM.sel === r.other)).map((r) => `<button type="button" class="wr-ask" data-wrask="${r.other}">${r.tribute && r.tribute.by !== mine ? `🪙 «${r.town}» تطالبك بجزية ${money(r.tribute.amount)} · باقي ${fmtLeft(r.tribute.until - warNow())}` : r.offer && r.offer.by !== mine ? `${r.offer.kind === "truce" ? "🏳️" : "🤝"} «${r.town}» تعرض ${r.offer.kind === "truce" ? "هدنة" : "صلح"}` : `💬 رسالة من «${r.town}»`}<b>افتح ←</b></button>`).join("")}

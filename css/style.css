@@ -1049,3 +1049,8 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .wg-slots { border-radius: 14px; padding: 10px; margin: 8px 0; background: rgba(224,189,114,.14); border: 1px solid rgba(224,189,114,.45); display: grid; gap: 6px; }
 .wg-slots > div { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center; }
 .wg-slots span { display: grid; border-radius: 10px; padding: 6px 2px; background: rgba(0,0,0,.18); } .wg-slots span b { font-size: 20px; } .wg-slots span small, .wg-slots > small { font-size: 11px; }
+.wr-guard { margin: 8px 0; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--wr-line, rgba(184,145,63,.35)); background: rgba(80,140,200,.08); display: grid; gap: 6px; }
+.wr-guard > b { font-size: 13px; } .wr-guard > small { font-size: 12px; opacity: .85; }
+.wr-guard > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
+.wr-guard span { display: grid; justify-items: center; gap: 1px; border-radius: 10px; padding: 4px 2px; background: rgba(0,0,0,.18); }
+.wr-guard span svg, .wr-guard span img { width: 22px; height: 22px; } .wr-guard span small { font-size: 10px; opacity: .8; } .wr-guard span b { font-size: 16px; }
