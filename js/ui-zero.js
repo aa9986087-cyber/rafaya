@@ -40,7 +40,9 @@ function zeroChip() {
   if (!el) {
     el = document.createElement("button"); el.id = "zeroChip"; el.type = "button"; el.className = "zero-chip";
     el.addEventListener("click", () => { sfx.tap(); zeroSheet(); });
-    document.body.append(el);
+    // in the town's top card, under the stage line: it never covers the build bar, its cards or the map
+    const goal = document.getElementById("goal");
+    if (goal) goal.after(el); else document.body.append(el);
   }
   const draw = () => {
     const ms = ZERO.at - nowS();
