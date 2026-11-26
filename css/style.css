@@ -913,7 +913,7 @@ body:has(#sheet:not([hidden])) .follow-pill { top: auto; bottom: calc(env(safe-a
 
 /* ساعة الصفر: the chip, the big countdown, the official announcement, the trailer */
 .zero-chip { position: fixed; z-index: 6; right: max(12px, var(--right, 0px)); bottom: calc(var(--bottom, 0px) + 92px); display: flex; align-items: center; gap: 8px; border: 1px solid #e0bd72; border-radius: 16px; padding: 6px 12px 6px 8px; font: inherit; color: #f1e7cc; background: linear-gradient(160deg, rgba(40, 18, 14, .95), rgba(14, 18, 19, .95)); box-shadow: 0 0 18px rgba(224, 87, 74, .35), inset 0 0 0 1px rgba(255,255,255,.05); }
-.zero-chip i { font-style: normal; font-size: 20px; animation: wrPulse 1.6s ease-in-out infinite; }
+.zero-chip i { font-style: normal; font-size: 20px; }
 .zero-chip span { display: grid; text-align: start; } .zero-chip small { font-size: 10px; color: #e0bd72 !important; font-weight: 800; letter-spacing: .5px; } .zero-chip b { font-size: 14px; font-variant-numeric: tabular-nums; }
 body.war-scene .zero-chip, body.targeting .zero-chip, body:has(#sheet:not([hidden])) .zero-chip { display: none; }
 .sheet:has(.zero) .sheet-box { background: radial-gradient(ellipse at 50% 0%, #3a1a14, #0e1213 70%); color: #f1e7cc; }
@@ -970,3 +970,10 @@ body:has(.zero-full) .zero-chip { display: none; }
 .medal { margin-inline-start: 3px; font-size: 13px; }
 .medals { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; } .medals span { display: grid; border-radius: 12px; padding: 6px 10px; background: linear-gradient(180deg, #f6e3b0, #e0bd72); color: #3a2c10; font-weight: 800; font-size: 13px; } .medals small { font-weight: 600; font-size: 11px; color: #5a4520 !important; }
 .war-spoils { text-align: center; margin: 8px 0; border-radius: 12px; padding: 8px; background: rgba(47, 143, 106, .12); border: 1px solid rgba(47, 143, 106, .4); font-size: 14px; } .war-spoils b { color: #2f8f6a; font-size: 18px; }
+/* heat: the war button pulses a few times when a war starts, then stays red (an animation that never stops keeps the phone working) */
+#warBtn.wr-hot { animation-iteration-count: 6; }
+
+.zero-ann.win .za-card { border-color: #f2d48a; box-shadow: 0 0 70px rgba(242, 212, 138, .5), inset 0 0 0 6px rgba(224,189,114,.1); }
+.zero-ann.win h2 { font-size: 36px; }
+.zero-ann .fw { position: absolute; left: var(--x); top: var(--y); width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); opacity: 0; animation: fw 2.4s ease-out var(--d) 3; }
+@keyframes fw { 0% { transform: scale(.2); opacity: 1; box-shadow: 0 0 0 0 var(--c); } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 0; box-shadow: 0 -40px 0 -2px var(--c), 28px -28px 0 -2px var(--c), 40px 0 0 -2px var(--c), 28px 28px 0 -2px var(--c), 0 40px 0 -2px var(--c), -28px 28px 0 -2px var(--c), -40px 0 0 -2px var(--c), -28px -28px 0 -2px var(--c); } }

@@ -14,7 +14,8 @@ const pvWorld = {
   town: (plot) => { const t = pvState.plots[plot]; return t ? { ...t } : null; },
   player: (name) => pvState.players[name] || null,
   news: (kind, text, plot) => pvNews(kind, text, plot),
-  openAt: () => pvState.warOpenAt || 0
+  shownOpenAt: () => pvZero(), // what the countdown shows
+  openAt: () => (pvState.zeroLock ? pvState.zeroAt || 0 : 0) // the trial shows the countdown but keeps the war open for its scenarios (only «ساعة الصفر» locks it)
 };
 /** The trial's world bulletin, like the live one (src/worker.js news()). */
 function pvNews(kind, text, plot = null, n = null) {
@@ -190,12 +191,19 @@ const PV_SCENARIOS = [
     return { plot: b.plot, room: "world", follow: true, msg: "تتابع «الخضراء»: بعد ثواني «هجرة الشعيب» تضربها بدفعة، وتشوفها لحظتها." };
   }],
   ["zero", "⏳ ساعة الصفر بعد دقيقة ونص (مع الإعلان)", "يشتغل مقطع الحرب، ثم العداد، ولا وصل صفر يطلع البيان الرسمي وتنفتح الحرب.", () => {
-    pvState.warOpenAt = Date.now() + 90000;
+    pvState.zeroAt = Date.now() + 90000; pvState.zeroLock = true;
     store.set("rafaya-war-intro-v1", ""); // the trailer plays again
-    setTimeout(() => { setWarOpen(pvState.warOpenAt); ZERO.shown = false; zeroEnter(); }, 300);
+    setTimeout(() => { setWarOpen(pvState.zeroAt); ZERO.shown = false; zeroEnter(); }, 300);
     return { plot: null, room: "none", msg: "ساعة الصفر بعد دقيقة ونص." };
   }],
-  ["open", "🔓 افتح الحرب الحين", "يلغي العداد وتنفتح الحرب.", () => { pvState.warOpenAt = 0; setTimeout(() => setWarOpen(0), 100); return { plot: null, msg: "الحرب مفتوحة." }; }],
+  ["open", "🔓 افتح الحرب الحين", "يلغي العداد وتنفتح الحرب.", () => { pvState.zeroAt = 0; pvState.zeroLock = false; setTimeout(() => setWarOpen(0), 100); return { plot: null, msg: "الحرب مفتوحة." }; }],
+  ["count100", "⏳ رجّع عداد ١٠٠ يوم", "العداد الأصلي من الحين: ١٠٠ يوم بالجوف (الحرب تبقى مفتوحة بالتجربة عشان السيناريوهات).", () => { pvState.zeroAt = Date.now() + 100 * JOUF_DAY; pvState.zeroLock = false; setTimeout(() => setWarOpen(pvState.zeroAt), 100); return { plot: null, room: "none", msg: "رجع عداد ساعة الصفر: ١٠٠ يوم." }; }],
+  ["win", "🏆 جرّب شاشة النصر", "كأنك انتصرت في حرب على «هجرة الشعيب»: شاشة النصر وخبر النشرة.", () => {
+    const me = pvMe(), bot = pvBot("enemy");
+    pvNews("victory", `🏆 نصرٌ مؤزّر لـ«${pvState.plots[me.plot]?.town || "مدينتك"}»! أخضعت «${pvState.plots[bot.plot]?.town || "هجرة الشعيب"}» ورفعت راية النصر فوق الجوف`, bot.plot);
+    setTimeout(() => victoryScreen(pvState.plots[bot.plot]?.town || "هجرة الشعيب"), 600);
+    return { plot: null, room: "none", msg: "🏆" };
+  }],
   ["tribute", "🪙 مدينة تطالبك بجزية", "«هجرة الشعيب» تطلب منك مبلغ: ادفع وتاخذ سلام شهر، أو ارفض وتصير حرب.", () => {
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(me, bot, "peace");
     const most = tributeMax(pvWar.townInfo(me.plot)?.snap.money || 0), amount = Math.max(1000, Math.round(most / 2 / 500) * 500);
@@ -256,6 +264,8 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
   }));
 };
 
+/** The trial's zero hour: 100 days of al-Jouf from the first time the trial opens (as the live site does at release). */
+function pvZero() { if (pvState.zeroAt === undefined) { pvState.zeroAt = Date.now() + 100 * JOUF_DAY; pvSave(); } return pvState.zeroAt; }
 /** The trial's chat: your messages, and now and then a word from the bots. */
 function pvChat(name, plot, text) {
   pvState.chat ||= [];
@@ -278,7 +288,7 @@ async function pvApi(path, body) {
 }
 function pvRoute(p, body) {
   const post = !!body;
-  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), warOpenAt: pvState.warOpenAt || 0 };
+  if (!post && p[0] === "clock") return { epoch: Date.UTC(2026, 10, 1), now: Date.now(), gen: 2, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), warOpenAt: pvZero() };
   if (!post && p[0].startsWith("chat")) {
     const after = Number((p[0].split("after=")[1]) || 0);
     pvState.chat ||= [];

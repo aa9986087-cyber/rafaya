@@ -64,10 +64,17 @@ export class WarServer {
     const [w, l, hw, hl] = ha > hb ? [r.a, r.b, ha, hb] : [r.b, r.a, hb, ha];
     const wn = this.townInfo(w)?.town || "مدينة", ln = this.townInfo(l)?.town || "مدينة";
     const wa = this.acct(w); this.stat(wa, "wins"); this.saveAcct(w, wa); this.medalCache = null;
-    out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: `انتصار (${nf(hw)} مقابل ${nf(hl)})` }].slice(-30);
-    this.note(w, "victory", `🏆 انتصرت على «${ln}»! ضرباتك وصلت ${nf(hw)} مقابل ${nf(hl)}. أهل مدينتك فخورين فيك.`, { from: l });
-    this.note(l, "defeat", `🏳️ خسرت الحرب أمام «${wn}» (${nf(hl)} مقابل ${nf(hw)}). خطط أحسن للحرب الجاية.`, { from: w });
-    this.news("victory", `🏆 «${wn}» انتصرت على «${ln}» في الحرب (${nf(hw)} مقابل ${nf(hl)})`, l);
+    out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: "انتصار" }].slice(-30);
+    void hw; void hl; // who won is told in words, never as a score
+    this.note(w, "victory", `🏆 النصر لك! كسرت شوكة «${ln}» وانتهت الحرب بانتصارك. رايتك ترفرف فوق الجوف، وأهل مدينتك يحتفلون فيك.`, { from: l, enemy: ln });
+    this.note(l, "defeat", `🏳️ انتهت الحرب بخسارتك أمام «${wn}». لملم صفوفك، وارجع أقوى.`, { from: w });
+    const lines = [
+      `🏆 نصرٌ مؤزّر لـ«${wn}»! أخضعت «${ln}» ورفعت راية النصر فوق الجوف`,
+      `⚔️ «${wn}» تكسر شوكة «${ln}» وتخرج من الحرب منتصرة مرفوعة الراس`,
+      `🦅 الجوف تشهد: «${wn}» تنتصر على «${ln}» بعد حرب طاحنة`,
+      `🏰 سقطت دفاعات «${ln}» وانتهت الحرب بنصر «${wn}»`
+    ];
+    this.news("victory", lines[(r.a * 7 + r.b * 13 + Math.floor(r.warStart / 1000)) % lines.length], l);
     return out;
   }
   /** A stored war whose time ran out since: judge it now (once). */
@@ -320,7 +327,7 @@ export class WarServer {
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
-      openAt: this.world?.openAt?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
+      openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }

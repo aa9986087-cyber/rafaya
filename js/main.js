@@ -26,7 +26,7 @@ import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, s
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
 import { advisorSheet, chainInfo, effectHtml, familySheet, followFamily, goals, kidsWord, matsNote, utilSheet } from "./ui-people.js";
 import { CHAT, chatCount, chatPoll, developerNoteSheet, warCardHtml } from "./ui-chat.js";
-import { setWarOpen, zeroEnter } from "./ui-zero.js";
+import { setWarOpen, victoryScreen, zeroEnter } from "./ui-zero.js";
 import { warGuide } from "./ui-warguide.js";
 import { MENU, budget, maybeWhatsNew, menuBackdrop, shareGameSheet, showWhatsNewDot, whatsNewSheet } from "./ui-whatsnew.js";
 import { noteNeighbours } from "./ui-region.js";
@@ -1357,7 +1357,8 @@ export function warApply(st) {
   if (fresh.length) {
     store.set(warKey("seen"), String(fresh[fresh.length - 1].at));
     for (const n of fresh) if (n.kind === "apology" || n.kind === "gift") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
-    if (fresh.some((n) => n.kind === "victory")) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } } // a war won: the town is proud
+    const won = fresh.find((n) => n.kind === "victory");
+    if (won) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } victoryScreen(won.enemy); } // a war won: the town is proud
     if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
@@ -1829,7 +1830,7 @@ if (perfHud) {
     perfHud.textContent = `${fps} fps · ${settings.quality} L${perf.level} · ${world.renderer.getPixelRatio().toFixed(2)}x · ${world.renderer.shadowMap.enabled ? "shadows" : "no shadows"} · ${world.drawnBuildings ?? 0} bld${world.lodFar ? " far" : ""}`; };
 }
 function frame(now) {
-  const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.parts3.length || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
+  const busy = pointers.size > 0 || drag || world.fx?.tasks.length || world.fx?.activeParts || world.floodAnim || world.anims?.size || Math.abs(world.view.yaw - world.view.yawTarget) > 1e-3 || arrange;
   // behind an open sheet, or on the main menu, the town barely needs to move
   const quiet = !busy && (!playing || (!$("sheet").hidden && !WARX.scene));
   const flying = !playing && MENU.town; // the menu's flight over your town: smooth, not the 15 frames of a still menu

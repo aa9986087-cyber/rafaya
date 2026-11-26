@@ -338,8 +338,9 @@ export class WarFX {
       sp, kind, life: 0, max: o.life ?? { smoke: 2.6, dust: 1.4, fire: 0.6, flash: 0.35, spark: 0.9, flame: 0.12, trail: 1.4 }[kind],
       v: o.v || new THREE.Vector3((Math.random() - 0.5) * 0.3, kind === "smoke" ? 0.5 : kind === "spark" ? 2 : 0.2, (Math.random() - 0.5) * 0.3),
       grow: o.grow ?? { smoke: 1.6, dust: 1.2, fire: 0.6, flash: 0.8, spark: 0, flame: -0.5, trail: 1.4 }[kind], size, alpha: o.alpha ?? (kind === "smoke" ? 0.85 : kind === "trail" ? 0.6 : 1), gravity: kind === "spark" ? -4 : 0,
-      spin: (Math.random() - 0.5) * (kind === "smoke" || kind === "trail" ? 0.8 : 2), hot: kind === "fire"
+      spin: (Math.random() - 0.5) * (kind === "smoke" || kind === "trail" ? 0.8 : 2), hot: kind === "fire", amb: !!o.amb
     });
+    if (!o.amb) this.activeParts = (this.activeParts || 0) + 1;
   }
   explode(p, big = 1, air = false) {
     const n = this.w.quality === "low" ? 0.5 : 1;
@@ -692,13 +693,18 @@ export class WarFX {
       if (p.drones) for (const d of p.drones) d.rotor.rotation.y += dt * (works ? 1.2 : 0);
       if (p.rotors && works) for (const w of p.rotors) w.r.rotation.z -= dt * w.speed * slow;
     }
-    // damage: smoke rising, fire flickering on the worst ones
+    // damage: smoke rising, fire flickering on the worst ones. This smoke is the town's weather, not an event:
+    // it never makes the game draw faster (amb), and it is thinned when many buildings burn (heat and battery)
+    let amb = 0; for (const q of this.parts3) if (q.amb) amb++;
+    const ambMax = this.w.quality === "low" ? 24 : this.w.quality === "high" ? 90 : 60;
     for (const b of this.burning) {
       b.t -= dt;
       if (b.t > 0) continue;
-      b.t = Math.max(0.12, 0.7 - b.wd * 0.005) * (this.w.quality === "low" ? 2 : 1);
-      this.emit("smoke", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (b.top ?? 0.45) + 0.05, (Math.random() - 0.5) * 0.4)), { size: 0.3 + b.wd * 0.004, life: 2.2 + b.wd * 0.01, color: b.wd >= 60 ? "#2f2b27" : "#6b665f", alpha: 0.35 + b.wd * 0.004, v: new THREE.Vector3(0.12, 0.35 + Math.random() * 0.2, 0.05) });
-      if (b.wd >= 45) this.emit("fire", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.35, (b.top ?? 0.35) + Math.random() * 0.08, (Math.random() - 0.5) * 0.35)), { size: 0.22 + Math.random() * 0.12, life: 0.45, v: new THREE.Vector3(0, 0.6, 0) });
+      b.t = Math.max(0.18, 0.7 - b.wd * 0.005) * (this.w.quality === "low" ? 2 : 1) * (this.burning.length > 8 ? this.burning.length / 8 : 1);
+      if (amb >= ambMax) continue;
+      amb += b.wd >= 45 ? 2 : 1;
+      this.emit("smoke", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (b.top ?? 0.45) + 0.05, (Math.random() - 0.5) * 0.4)), { amb: true, size: 0.3 + b.wd * 0.004, life: 2.2 + b.wd * 0.01, color: b.wd >= 60 ? "#2f2b27" : "#6b665f", alpha: 0.35 + b.wd * 0.004, v: new THREE.Vector3(0.12, 0.35 + Math.random() * 0.2, 0.05) });
+      if (b.wd >= 45) this.emit("fire", b.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.35, (b.top ?? 0.35) + Math.random() * 0.08, (Math.random() - 0.5) * 0.35)), { amb: true, size: 0.22 + Math.random() * 0.12, life: 0.45, v: new THREE.Vector3(0, 0.6, 0) });
     }
     // marks: target rings turn, signs bob
     for (const m of this.marks.children) {
@@ -726,10 +732,12 @@ export class WarFX {
     // particles
     if (this.parts3.length) {
       const keep = [];
+      let active = 0;
       for (const q of this.parts3) {
         q.life += dt;
         const k = q.life / q.max;
         if (k >= 1) { this.flyers.remove(q.sp); this.pool.push(q.sp); continue; }
+        if (!q.amb) active++;
         q.v.y += q.gravity * dt;
         q.sp.position.addScaledVector(q.v, dt);
         if (q.kind === "smoke" || q.kind === "trail") q.v.multiplyScalar(0.985);
@@ -741,7 +749,8 @@ export class WarFX {
         keep.push(q);
       }
       this.parts3 = keep;
-    }
+      this.activeParts = active;
+    } else this.activeParts = 0;
     // the camera shakes after a blast
     if (this.shakeT) {
       const s = this.shakeT; s.t += dt;
