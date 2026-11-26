@@ -67,11 +67,11 @@ const NAMEFIX_REASONS = {
   bad: "الاسم فيه كلام ما يصلح",
   fake: "الاسم يوهم إنه من الإدارة أو المطور"
 };
-const DEV_NAME = "🛠️ المطور";
-const WAR_OPEN_AT = Date.UTC(2026, 10, 27, 23, 0, 0);
+const DEV_NAME = "🛠️ المطور"; // how the owner's messages show in the world's chat
+const WAR_OPEN_AT = Date.UTC(2026, 10, 27, 23, 0, 0); // ساعة الصفر: Saturday 28 November 2026, 02:00 in Saudi Arabia
 // Before the war: every town gets one more move (owner, 2026-11-26). A town that moved before this moment may
 // move once more; one that moves after it has used it.
-const MOVE_ROUND_AT = Date.UTC(2026, 10, 26, 8, 5, 0); // ساعة الصفر: Saturday 28 November 2026, 02:00 in Saudi Arabia // how the owner's messages show in the world's chat
+const MOVE_ROUND_AT = Date.UTC(2026, 10, 26, 8, 5, 0);
 const CHAT_MUTE_MS = 10 * 60 * 1000;
 const NAME_RE = /^[\u0600-\u06FFA-Za-z0-9_ ]{3,16}$/;
 // The owner's control panel (/admin.html): the owner's code is checked against this hash (the code itself is
