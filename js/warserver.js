@@ -16,6 +16,7 @@ import {
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
   MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS
 } from "./war.js";
+import { TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
 const pairId = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
@@ -154,6 +155,7 @@ export class WarServer {
       this.db.put(r.tbl, id, row, { k1: r.k1 === F ? T : r.k1, k2: r.k2 === F ? T : r.k2, at: r.at });
     }
     for (const r of this.db.rowsNaming(from)) this.db.put(r.tbl, r.id, fix(r.row), { k1: r.k1, k2: r.k2, at: r.at }); // other towns' damage and hits that it made
+    const c = this.db.get("castle", "main"); if (c && c.holder === from) { c.holder = to; this.saveCastle(c); } // the castle's holder moved
   }
   /** Take back money a town should not have (the game pays it like a war bill, once), with a note saying why. */
   fine(plot, amount, why, text, kind = "fine", extra = {}) {
@@ -255,6 +257,118 @@ export class WarServer {
     this.note(plot, "shield", "🛡️ انكسر درعك لأنك هاجمت.", {}, false);
   }
 
+  // ---------- «قلعة مارد»: the castle in the middle, foot soldiers only (js/castle.js, docs/CASTLE_PLAN.md) ----------
+  castleRow() {
+    const c = this.db.get("castle", "main") || { holder: null, holderTown: "", since: 0, garrison: { ...CASTLE.guards }, guards: true, shieldUntil: 0, battles: [] };
+    if (c.holder != null && !this.world.town(c.holder)) Object.assign(c, { holder: null, holderTown: "", since: 0, garrison: { ...CASTLE.guards }, guards: true }); // its holder's town is gone
+    return c;
+  }
+  saveCastle(c) { this.db.put("castle", "main", c, { k1: "main", at: this.now() }); }
+  castleRec(plot) { return this.db.get("crec", String(plot)) || { plot: Number(plot), town: "", held: 0, longest: 0, caps: 0, defs: 0, honour: 0 }; }
+  saveRec(r) { this.db.put("crec", String(r.plot), r, { k1: String(r.plot), at: this.now() }); }
+  /** My soldiers in camp, in training and on the march (they all take room in the camp). */
+  troopsBusy(plot, a) { return troopCount(a.troops) + (a.training || []).reduce((n, t) => n + t.n, 0) + this.db.list("cmarch", { k1: String(plot) }).reduce((n, m) => n + troopCount(m.units), 0); }
+  /** The castle as everyone sees it: who holds it, its garrison, the armies on the way, the record, the last battles. */
+  castleView(me) {
+    const now = this.now(), c = this.castleRow();
+    const a = me ? this.acct(me.plot) : null; if (a && finishTraining(a, now)) this.saveAcct(me.plot, a);
+    const info = me ? this.townInfo(me.plot) : null, p = info ? this.profileOf(info) : null;
+    const marches = this.db.list("cmarch", {}).map((m) => ({ id: m.id, from: m.from, town: m.town, n: troopCount(m.units), mode: m.mode, sent: m.sent, at: m.at, mine: me && m.from === me.plot, units: me && m.from === me.plot ? m.units : undefined }));
+    const recs = this.db.list("crec", {}).map((r) => ({ ...r, held: r.held + (c.holder === r.plot ? now - c.since : 0), longest: Math.max(r.longest, c.holder === r.plot ? now - c.since : 0) }));
+    const top = (k) => [...recs].sort((x, y) => y[k] - x[k]).filter((r) => r[k] > 0).slice(0, 10).map((r) => ({ plot: r.plot, town: this.townInfo(r.plot)?.town || r.town, v: r[k] }));
+    return {
+      now, marchMs: this.cfg.marchMs ?? CASTLE.march, holder: c.holder, holderTown: c.holder != null ? this.townInfo(c.holder)?.town || c.holderTown : "", since: c.since, guards: !!c.guards,
+      garrison: troopCount(c.garrison), garrisonUnits: me && me.plot === c.holder ? c.garrison : undefined, shieldUntil: c.shieldUntil, battles: (c.battles || []).slice(-12).reverse(), marches,
+      records: { held: top("held"), longest: top("longest"), caps: top("caps"), defs: top("defs"), honour: top("honour") },
+      lord: top("held")[0] || null,
+      mine: me ? { troops: a.troops, training: a.training, cap: p ? barracksCap(p) : 0, busy: this.troopsBusy(me.plot, a), barracks: p?.barracks || null, hq: !!p?.hq, factor: p ? trainFactor(p) : 1 } : null
+    };
+  }
+  /** Train soldiers in the camp: paid now, ready after their time. */
+  train(body, me) {
+    const now = this.now(), info = this.townInfo(me.plot);
+    if (!info?.snap.list.length) return { error: "زامن مدينتك أول (افتحها شوي)" };
+    const p = this.profileOf(info), kind = String(body.kind || ""), n = Math.max(1, Math.min(50, Math.round(Number(body.n) || 1)));
+    if (!TROOPS[kind]) return { error: "نوع جنود غلط" };
+    if (!p.hq) return { error: "ابنِ مركز القيادة العسكرية أول" };
+    if (!p.barracks) return { error: "ابنِ معسكر الجنود أول" };
+    const cap = barracksCap(p); if (!cap) return { error: "المعسكر متعطل: أصلحه أول" };
+    const a = this.acct(me.plot); finishTraining(a, now);
+    const room = cap - this.troopsBusy(me.plot, a);
+    if (room < n) return { error: room > 0 ? `المعسكر يكفي ${nf(room)} بس` : "المعسكر مليان: طوّره يكبر" };
+    const cost = TROOPS[kind].cost * n;
+    if (this.available(info, a) < cost) return { error: "ما يكفي المال" };
+    const last = a.training.reduce((m, t) => Math.max(m, t.done), now);
+    a.training.push({ kind, n, done: last + Math.round(TROOPS[kind].sec * 1000 * n * trainFactor(p) * (this.cfg.troopTime ?? 1)) });
+    const ch = this.charge(me.plot, a, cost, `تدريب ${nf(n)} ${TROOPS[kind].name}`);
+    this.saveAcct(me.plot, a);
+    return { ok: true, charge: ch, castle: this.castleView(me) };
+  }
+  /** Send soldiers walking to the castle: to take it, or (its holder) to guard it. Five minutes from anywhere. */
+  march(body, me) {
+    const now = this.now(), why = this.notOpen(now); if (why) return { error: why };
+    const info = this.townInfo(me.plot);
+    if (!info?.snap.list.length) return { error: "زامن مدينتك أول (افتحها شوي)" };
+    const p = this.profileOf(info); if (!p.hq) return { error: "ابنِ مركز القيادة العسكرية أول" };
+    const a = this.acct(me.plot); finishTraining(a, now);
+    const units = troopClean(body.units), n = troopCount(units);
+    if (!n) return { error: "اختر جنود" };
+    if (n > CASTLE.sendMax) return { error: `أكثر شي ${nf(CASTLE.sendMax)} جندي بالزحفة` };
+    for (const k of TROOP_IDS) if ((a.troops[k] || 0) < units[k]) return { error: `ما عندك ${nf(units[k])} ${TROOPS[k].name}` };
+    const c = this.castleRow(), mode = c.holder === me.plot ? "guard" : "attack";
+    if (mode === "attack" && c.shieldUntil > now + CASTLE.march) return { error: `القلعة محمية بعد ما تغيّر أميرها: تقدر تزحف بعد ${minutesText(c.shieldUntil - now - CASTLE.march)}` };
+    for (const k of TROOP_IDS) a.troops[k] -= units[k];
+    const id = `m${now.toString(36)}${Math.floor(this.rand() * 1e6).toString(36)}`, at = now + (this.cfg.marchMs ?? CASTLE.march);
+    this.db.put("cmarch", id, { id, from: me.plot, town: info.town, units, mode, sent: now, at }, { k1: String(me.plot), at });
+    if (mode === "attack") this.breakShield(me.plot, a, now);
+    this.saveAcct(me.plot, a);
+    if (mode === "attack") {
+      this.news("castle", `⚔️ جيش «${info.town}» زاحف على ${CASTLE.name} (${nf(n)} جندي)، يوصل بعد ${minutesText(at - now)}`, me.plot);
+      if (c.holder != null) this.note(c.holder, "castle", `⚔️ جيش «${info.town}» زاحف على ${CASTLE.name}: ${nf(n)} جندي يوصلون بعد ${minutesText(at - now)}. أرسل جنود يحرسونها!`, { from: me.plot });
+    }
+    return { ok: true, castle: this.castleView(me) };
+  }
+  /** Armies that have arrived: guards join the garrison; attackers fight it, one army after the other. */
+  settleCastle(now) {
+    const due = this.db.list("cmarch", { upTo: now }).sort((x, y) => x.at - y.at);
+    if (!due.length) return;
+    let c = this.castleRow();
+    for (const m of due) {
+      this.db.del("cmarch", m.id);
+      if (m.mode === "guard" || m.from === c.holder) {
+        if (m.from === c.holder) { for (const k of TROOP_IDS) c.garrison[k] = (c.garrison[k] || 0) + (m.units[k] || 0); continue; }
+        // the castle changed hands on the way: the soldiers go home
+        const a = this.acct(m.from); for (const k of TROOP_IDS) a.troops[k] = (a.troops[k] || 0) + (m.units[k] || 0); this.saveAcct(m.from, a);
+        this.note(m.from, "castle", `🏰 جنودك وصلوا والقلعة صارت لغيرك: رجعوا لمعسكرك.`); continue;
+      }
+      const b = castleBattle(m.units, c.garrison, this.rand), lostA = troopCount(b.attLost), lostD = troopCount(b.defLost);
+      const att = this.castleRec(m.from); att.town = m.town; att.honour += lostD;
+      if (c.holder != null) { const h = this.castleRec(c.holder); h.honour += lostA; if (!b.win) h.defs += 1; this.saveRec(h); }
+      const battle = { at: m.at, from: m.from, town: m.town, holder: c.holder, holderTown: c.holder != null ? this.townInfo(c.holder)?.town || c.holderTown : "حراس القلعة", sent: troopCount(m.units), garrison: troopCount(c.garrison), lostA, lostD, win: b.win };
+      c.battles = [...(c.battles || []), battle].slice(-30);
+      if (b.win) {
+        // the castle falls: the old garrison's survivors go home, the attackers' survivors hold it
+        if (c.holder != null) {
+          const h = this.castleRec(c.holder), reign = m.at - c.since; h.held += reign; h.longest = Math.max(h.longest, reign); this.saveRec(h);
+          const ha = this.acct(c.holder); for (const k of TROOP_IDS) ha.troops[k] = (ha.troops[k] || 0) + (b.defLeft[k] || 0); this.saveAcct(c.holder, ha);
+          this.note(c.holder, "castle", `🏰 سقطت ${CASTLE.name}! «${m.town}» أخذها منك. رجع لمعسكرك ${nf(troopCount(b.defLeft))} جندي.`, { from: m.from });
+        }
+        att.caps += 1;
+        c = { ...c, holder: m.from, holderTown: m.town, since: m.at, garrison: b.attLeft, guards: false, shieldUntil: m.at + (this.cfg.castleShield ?? CASTLE.shield) };
+        this.note(m.from, "castle", `👑 أخذت ${CASTLE.name}! صرت أمير الجوف. خسرت ${nf(lostA)} جندي، و${nf(troopCount(b.attLeft))} صاروا حامية القلعة.`);
+        this.news("castle", `👑 سقطت ${CASTLE.name}! «${m.town}» صار أمير الجوف`, m.from);
+      } else {
+        c.garrison = b.defLeft;
+        const a = this.acct(m.from); for (const k of TROOP_IDS) a.troops[k] = (a.troops[k] || 0) + (b.attLeft[k] || 0); this.saveAcct(m.from, a);
+        this.note(m.from, "castle", `🛡️ ${CASTLE.name} صدّت هجومك. خسرت ${nf(lostA)} جندي، ورجع لمعسكرك ${nf(troopCount(b.attLeft))}.`);
+        if (c.holder != null) this.note(c.holder, "castle", `🛡️ حامية ${CASTLE.name} صدّت جيش «${m.town}». خسرت ${nf(lostD)} جندي.`, { from: m.from });
+        this.news("castle", `🛡️ ${CASTLE.name} صدّت جيش «${m.town}»`, m.from);
+      }
+      this.saveRec(att);
+    }
+    this.saveCastle(c);
+  }
+
   // ---------- the entry point ----------
   /** me: the signed-in player { name, plot, created }. Returns a plain object (sent as JSON). */
   handle(action, body, me) {
@@ -272,6 +386,9 @@ export class WarServer {
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
       case "watch": return this.watch(Math.round(Number(body.plot)), me);
+      case "castle": return { castle: this.castleView(me) };
+      case "train": return this.once(me.plot, body.req, () => this.train(body, me));
+      case "march": return this.once(me.plot, body.req, () => this.march(body, me));
       default: return { error: "not found" };
     }
   }
@@ -326,9 +443,10 @@ export class WarServer {
     const dmg = [...this.damage(me.plot).values()];
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
-      profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, era: p.era },
+      profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, barracks: p.barracks, era: p.era },
       openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       cityMilestoneSeq: a.cityMilestoneSeq || 0,
+      castle: (() => { const c = this.castleRow(); return { holder: c.holder, town: c.holder != null ? this.townInfo(c.holder)?.town || c.holderTown : "", since: c.since, marching: this.db.list("cmarch", {}).length, marches: this.db.list("cmarch", {}).map((m) => ({ from: m.from, n: troopCount(m.units), mode: m.mode, sent: m.sent, at: m.at })) }; })(),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
   }
@@ -663,11 +781,12 @@ export class WarServer {
   /** Decide every attack whose time has come (called on every request; each attack is decided once). */
   /** When the next operation in flight arrives (for the server's alarm), or 0. */
   nextArrival() {
-    const all = this.db.list("fly", {});
+    const all = [...this.db.list("fly", {}), ...this.db.list("cmarch", {})];
     return all.length ? Math.min(...all.map((f) => f.at)) : 0;
   }
   settle() {
     const now = this.now();
+    try { this.settleCastle(now); } catch { /* the castle never stops the war */ }
     for (const f of this.db.list("fly", { upTo: now })) {
       const op = this.db.get("op", f.id);
       this.db.del("fly", f.id);

@@ -177,6 +177,7 @@ export const B = {
   radar: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "محطة الرادار والإنذار المبكر", cost: 1000, upkeep: 8, era: 1, power: -6, text: "رادار يدور طول الوقت: يرصد الهجمات قبل وصولها ويرفع دقة الدفاع الجوي. بدونه الدفاع شبه أعمى." },
   airdef: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "بطارية الدفاع الجوي", cost: 1600, upkeep: 12, era: 1, power: -3, text: "تعترض الصواريخ والمسيّرات الجاية لمدينتك بذخيرة اعتراضية تشتريها. كل مستوى أدق وأقوى ضد الصواريخ." },
   missilepad: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "منصة الصواريخ", cost: 3000, upkeep: 20, era: 2, power: -5, text: "منصة إطلاق صواريخ بعيدة المدى، تنرفع قبل الإطلاق وتنجهز بعده. كل تطوير يزيد الصواريخ ويقصّر وقت التجهيز." },
+  barracks: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "معسكر الجنود", cost: 2000, upkeep: 12, era: 1, power: -2, text: "يدرّب جنود مشاة وقوات خاصة وقناصة، عشان تزحف فيهم على قلعة مارد بنص الجوف. كل تطوير يزيد عدد الجنود ويسرّع التدريب." },
   armory: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "مستودع الذخائر", cost: 1500, upkeep: 5, era: 1, text: "يزيد سعة تخزين المسيّرات والصواريخ والذخيرة الاعتراضية ٥٠٪، ويعرض المخزون كله." },
 
   road: { cat: "road", name: "طريق ترابي", cost: 8, upkeep: 0, era: 0, cap: 45, text: "يوصل البيوت والمحلات ببعض. يتزحم بسرعة." },
@@ -302,7 +303,8 @@ export const MIL = {
   missilepad: [{ name: "منصة صواريخ", era: 2, cap: 1, reload: 8 }, { name: "منصة صواريخ مزدوجة", era: 2, cap: 2, reload: 6 }, { name: "مجمع صواريخ", era: 3, cap: 3, reload: 4 }],
   radar: [{ name: "رادار إنذار", era: 1, detect: 0.85 }, { name: "رادار بعيد المدى", era: 2, detect: 1 }, { name: "منظومة رادار متقدمة", era: 3, detect: 1.12 }],
   airdef: [{ name: "دفاع جوي قصير المدى", era: 1, vsDrone: 0.4, vsMissile: 0.15, intc: 4 }, { name: "دفاع جوي متوسط المدى", era: 2, vsDrone: 0.52, vsMissile: 0.35, intc: 8 }, { name: "دفاع جوي متقدم", era: 3, vsDrone: 0.62, vsMissile: 0.5, intc: 12 }],
-  armory: [{ name: "مستودع الذخائر", era: 1, store: 1.5 }]
+  armory: [{ name: "مستودع الذخائر", era: 1, store: 1.5 }],
+  barracks: [{ name: "معسكر تدريب", era: 1, cap: 30, speed: 1 }, { name: "معسكر كتيبة", era: 2, cap: 60, speed: 0.8 }, { name: "قاعدة لواء", era: 3, cap: 100, speed: 0.6 }]
 };
 /** A military level's price (× the building's price) and running costs (× its upkeep); nothing else changes. */
 export const MIL_UP = [

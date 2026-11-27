@@ -4,7 +4,7 @@
 // shorter waits, and three rival towns played by simple bots. Nothing here is ever sent anywhere.
 const PV_KEY = "rafaya-visual-preview-v5"; // v5: the trial opens in الحاضرة الكبرى
 globalThis.RAFAYA_PREVIEW_STORAGE = "rafaya-visual-preview-v5:";
-const PV_CFG = fastWar(20);
+const PV_CFG = { ...fastWar(20), marchMs: 60000, troopTime: 0.1, castleShield: 4 * 60000 }; // the trial: a one-minute march to the castle, quick training
 Object.assign(WAR, PV_CFG); // the game shows the same short waits the trial server uses
 const pvLoad = () => { try { return JSON.parse(localStorage.getItem(PV_KEY) || "null"); } catch { return null; } };
 const pvState = pvLoad() || { players: {}, plots: {}, comments: [], war: {}, bots: false, made: Date.now() };
@@ -286,7 +286,7 @@ globalThis.RAFAYA_PREVIEW_SCENARIOS = () => {
 };
 
 /** The trial's zero hour: 100 days of al-Jouf from the first time the trial opens (as the live site does at release). */
-function pvZero() { if (pvState.zeroAt === undefined) { pvState.zeroAt = Date.now() + 100 * JOUF_DAY; pvSave(); } return pvState.zeroAt; }
+function pvZero() { if (pvState.zeroAt === undefined || pvState.zeroAt > Date.now()) { pvState.zeroAt = Date.now() - JOUF_DAY; pvSave(); } return pvState.zeroAt; } // the war is open in the live world: so in the trial too
 /** The trial's chat: your messages, and now and then a word from the bots. */
 function pvChat(name, plot, text) {
   pvState.chat ||= [];
@@ -302,10 +302,24 @@ async function pvApi(path, body) {
   await new Promise((r) => setTimeout(r, 60)); // a little like a network
   const p = path.split("/").filter(Boolean); // ["world", ...]
   if (p[0] !== "world") throw new Error("404");
-  pvMakeBots();
+  pvMakeBots(); pvCastleBots();
   const res = pvRoute(p.slice(1), body || null);
   pvSave();
   return res;
+}
+/** The trial's castle: now and then a bot town sends an army at «قلعة مارد» (they are seen on the way, and fight). */
+let pvCastleAt = 0;
+function pvCastleBots() {
+  const now = Date.now(); if (now < pvCastleAt) return;
+  pvCastleAt = now + 70000 + Math.random() * 50000;
+  const bots = Object.values(pvState.plots).filter((t) => pvState.players[t.owner]?.bot);
+  if (!bots.length || pvDb.list("cmarch", {}).length >= 2) return;
+  const t = bots[Math.floor(Math.random() * bots.length)], c = pvWar.castleRow();
+  if (c.holder === t.plot || c.shieldUntil > now + (PV_CFG.marchMs || 60000)) return;
+  const units = { inf: 20 + Math.floor(Math.random() * 40), sf: Math.floor(Math.random() * 14), sn: Math.floor(Math.random() * 8) };
+  const id = `pvm${now.toString(36)}`, at = now + (PV_CFG.marchMs || 60000);
+  pvDb.put("cmarch", id, { id, from: t.plot, town: t.town, units, mode: "attack", sent: now, at }, { k1: String(t.plot), at });
+  pvNews("castle", `⚔️ جيش «${t.town}» زاحف على قلعة مارد (${units.inf + units.sf + units.sn} جندي)`, t.plot, 0);
 }
 function pvRoute(p, body) {
   const post = !!body;
@@ -503,7 +517,7 @@ function pvReadyTown(s) {
     [34,47,"lantern"], [37,47,"themepark"], [40,47,"skyline"], [35,49,"mandi"], [37,49,"hotel",2],
     [38,49,"streetpalm"], [40,49,"fountain"],
     [48,44,"milhq",2], [50,44,"dronebase",2], [52,44,"radar",2],
-    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2]
+    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], [48,48,"barracks",1]
   ].forEach((args) => put(...args));
   s.tiles[idx(47,34)].t = "rock";
   s.tiles[idx(44,40)].t = "wadi";

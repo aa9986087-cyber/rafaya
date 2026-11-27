@@ -77,6 +77,7 @@ export const TARGETS = {
   radar: "يقل الإنذار ودقة الدفاع الجوي",
   airdef: "تقل جاهزية الحماية من الهجمات",
   armory: "تقل سعة التخزين",
+  barracks: "يقل عدد الجنود ويوقف التدريب",
   generator: "ينقص إنتاج الكهرباء", powerplant: "ينقص إنتاج الكهرباء", solar: "ينقص إنتاج الكهرباء", windfarm: "ينقص إنتاج الكهرباء",
   tank: "ينقص الماء", desal: "ينقص الماء",
   workshop: "ينقص الإنتاج والدخل", factory: "ينقص الإنتاج والدخل", datefactory: "ينقص الإنتاج والدخل", dairy: "ينقص الإنتاج والدخل",
@@ -136,7 +137,7 @@ export function snapBuildings(snap) {
  */
 export function milProfile(snapOrList, dmg = new Map()) {
   const town = Array.isArray(snapOrList) ? { list: snapOrList, era: 0 } : snapBuildings(snapOrList);
-  const p = { era: town.era, hq: null, bases: [], pads: [], radars: [], airdefs: [], armory: null };
+  const p = { era: town.era, hq: null, bases: [], pads: [], radars: [], airdefs: [], armory: null, barracks: null };
   for (const b of town.list) {
     if (!MIL[b.id] || b.build > 0) continue;
     const it = { x: b.x, y: b.y, lvl: b.lvl, wd: dmg.get(`${b.x}:${b.y}`) || 0 };
@@ -146,6 +147,7 @@ export function milProfile(snapOrList, dmg = new Map()) {
     else if (b.id === "radar") p.radars.push(it);
     else if (b.id === "airdef") p.airdefs.push(it);
     else if (b.id === "armory") p.armory = it;
+    else if (b.id === "barracks") p.barracks = it;
   }
   return p;
 }

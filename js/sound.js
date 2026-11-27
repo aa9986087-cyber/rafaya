@@ -78,6 +78,40 @@ export const ambience = {
   }
 };
 
+// ---------- «موسيقى الحرب»: the owner's theme, from the start of a war; its own volume (a slider) ----------
+// Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
+let warVol = 0.6; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
+const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
+const warTell = () => { for (const f of warTheme.listeners) try { f(warMusic.playing); } catch { /* a screen gone */ } };
+export const warMusic = {
+  get volume() { return warVol; },
+  get playing() { return !!warTheme.src && performance.now() < warTheme.until; },
+  onChange(f) { warTheme.listeners.add(f); return () => warTheme.listeners.delete(f); },
+  setVolume(v) {
+    warVol = Math.max(0, Math.min(1, Number(v) || 0));
+    try { localStorage.setItem("rafaya-war-vol", String(warVol)); } catch { /* fine */ }
+    if (warTheme.gain) { const a = ac(), g = warTheme.gain.gain; g.cancelScheduledValues(a.currentTime); g.setTargetAtTime(warVol * 0.9, a.currentTime, 0.08); }
+  },
+  async play() {
+    if (!on || warVol <= 0 || warMusic.playing) return;
+    const buf = await recording("sound/war-theme.mp3"); if (!buf) return;
+    try {
+      const a = ac(), src = a.createBufferSource(), g = a.createGain(), t = a.currentTime;
+      src.buffer = buf; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.001, warVol * 0.9), t + 2.5);
+      const end = t + buf.duration; g.gain.setTargetAtTime(0.0001, end - 4, 1.2);
+      src.connect(g).connect(a.destination); src.start(t);
+      warTheme.src = src; warTheme.gain = g; warTheme.until = performance.now() + buf.duration * 1000;
+      src.onended = () => { if (warTheme.src === src) { warTheme.src = null; warTheme.gain = null; warTheme.until = 0; warTell(); } };
+      warTell();
+    } catch { /* no audio */ }
+  },
+  stop() {
+    const s = warTheme.src, g = warTheme.gain; if (!s) return;
+    try { const a = ac(); g.gain.cancelScheduledValues(a.currentTime); g.gain.setTargetAtTime(0.0001, a.currentTime, 0.35); s.stop(a.currentTime + 1.6); } catch { /* gone */ }
+    warTheme.src = null; warTheme.gain = null; warTheme.until = 0; warTell();
+  }
+};
+
 export const sfx = {
   get on() { return on; },
   set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } },

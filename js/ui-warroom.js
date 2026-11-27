@@ -8,6 +8,8 @@ import { api, me } from "./ui-online.js";
 import { ZERO } from "./ui-zero.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
+import { castleCard, castleSheet } from "./ui-castle.js";
+import { CASTLE } from "./castle.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
 import { medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
@@ -110,7 +112,12 @@ function frontMap(map, st) {
     const pri = (t.plot === mine ? 5e6 : 0) + (on ? 3e6 : 0) + (1e5 - (rank.get(t.plot) || 0)), quiet = !on && (t.era || 0) < 1;
     return `<g class="wm-t ${state} ${on ? "on" : ""} ${quiet ? "quiet" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel(t.town) : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
   }).join("");
-  return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${towns}</svg>
+  // «قلعة مارد» at Dumat al-Jandal: its holder's crown, and the armies walking to it (seen by everyone)
+  const cs = st?.castle, kx = CASTLE.x * cell + cell / 2, ky = CASTLE.y * cell + cell / 2;
+  const marchLines = (cs?.marches || []).filter((m) => map.plots.some((t) => t.plot === m.from)).map((m) => { const [ax, ay] = xy(m.from), cx = (ax + kx) / 2, cy = (ay + ky) / 2;
+    return `<path d="M${ax},${ay} L${kx},${ky}" class="cs-path ${m.mode}"/><circle r="4.5" data-r="4.5" class="cs-army ${m.mode}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${kx},${ky}" data-t0="${m.sent}" data-t1="${m.at}" cx="${ax}" cy="${ay}"/>`; }).join("");
+  const castleG = cs ? `<g class="wm-castle"><circle cx="${kx}" cy="${ky}" r="9"/><text x="${kx}" y="${ky + 4}" class="cs-ic">🏰</text>${cs.holder != null ? `<text x="${kx}" y="${ky - 12}" class="cs-crown">👑 ${cs.town}</text>` : `<text x="${kx}" y="${ky - 12}" class="cs-crown free">${CASTLE.name}</text>`}</g>` : "";
+  return `<div class="wr-world-box"><svg class="wr-world wr-front" id="wrFront" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجبهة">${places}${lines}${marchLines}${towns}${castleG}</svg>
     <div class="wr-zoom" data-for="wrFront"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الجوف">⤢</button></div></div>`;
 }
 /** Every second while the room is open: the countdowns and the dots move (the tabs are left alone). */
@@ -125,7 +132,7 @@ function tick() {
     el.querySelector(".bar span").style.width = `${x.left ? Math.max(4, 100 - x.left / 6000) : 100}%`;
   });
   const now = warNow();
-  document.querySelectorAll(".wr-dot").forEach((d) => {
+  document.querySelectorAll(".wr-dot, .cs-army").forEach((d) => {
     const [ax, ay] = d.dataset.a.split(",").map(Number), [cx, cy] = d.dataset.c.split(",").map(Number), [bx, by] = d.dataset.b.split(",").map(Number), t0 = Number(d.dataset.t0), t1 = Number(d.dataset.t1);
     const k = Math.max(0, Math.min(1, (now - t0) / Math.max(1, t1 - t0))), q = 1 - k;
     d.setAttribute("cx", q * q * ax + 2 * q * k * cx + k * k * bx); d.setAttribute("cy", q * q * ay + 2 * q * k * cy + k * k * by);
@@ -364,6 +371,7 @@ export async function warRoom(tab = ROOM.tab) {
       <div><b>${ar(st.arsenal.intc)}</b><span>🛡️ اعتراض</span></div><div><b>${home.money >= 1e6 ? `${ar((home.money / 1e6).toFixed(1))} م` : money(home.money)}</b><span>💰 الميزانية</span></div></div>
     ${guardHtml(st)}
     <div class="wr-strip" id="wrStrip">${stripHtml(st)}</div>
+    ${castleCard()}
     ${tab === "world" ? "" : frontMap(await worldMap(), st)}
     ${asks.filter((r) => !(tab === "world" && ROOM.sel === r.other)).map((r) => `<button type="button" class="wr-ask" data-wrask="${r.other}">${r.tribute && r.tribute.by !== mine ? `🪙 «${r.town}» تطالبك بجزية ${money(r.tribute.amount)} · باقي ${fmtLeft(r.tribute.until - warNow())}` : r.offer && r.offer.by !== mine ? `${r.offer.kind === "truce" ? "🏳️" : "🤝"} «${r.town}» تعرض ${r.offer.kind === "truce" ? "هدنة" : "صلح"}` : `💬 رسالة من «${r.town}»`}<b>افتح ←</b></button>`).join("")}
     <div class="war-tabs wr-tabs">${TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wrtab="${k}">${n}${k === "world" && asks.length ? " 🔴" : ""}</button>`).join("")}</div>
@@ -379,6 +387,7 @@ export async function warRoom(tab = ROOM.tab) {
 function bind(st) {
   const q = (sel) => $("sheetBody").querySelectorAll(sel);
   bindStrip();
+  $("csOpen")?.addEventListener("click", () => { sfx.tap(); castleSheet("fight"); });
   q("[data-wrtab]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); warRoom(b.dataset.wrtab); }));
   q("[data-wrenemy]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.enemy = Number(b.dataset.wrenemy); warRoom("attack"); }));
   q("[data-wrattack]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.enemy = Number(b.dataset.wrattack); warRoom("attack"); }));

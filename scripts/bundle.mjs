@@ -12,11 +12,11 @@ const assets = {
   "hdri/sky.exr": `data:application/octet-stream;base64,${(await bin("hdri/sky.exr")).toString("base64")}`,
   "tex/concrete-normal.webp": `data:image/webp;base64,${(await bin("tex/concrete-normal.webp")).toString("base64")}`,
   "tex/grain-normal.webp": `data:image/webp;base64,${(await bin("tex/grain-normal.webp")).toString("base64")}`,
-  ...Object.fromEntries(await Promise.all(["rain", "thunder-near", "thunder-far", "thunder-far2"].map(async (n) => [`sound/${n}.mp3`, `data:audio/mpeg;base64,${(await bin(`sound/${n}.mp3`)).toString("base64")}`])))
+  ...Object.fromEntries(await Promise.all(["rain", "thunder-near", "thunder-far", "thunder-far2", "war-theme"].map(async (n) => [`sound/${n}.mp3`, `data:audio/mpeg;base64,${(await bin(`sound/${n}.mp3`)).toString("base64")}`])))
 };
 // --preview: the TRIAL copy with a practice world of al-Jouf inside the page (js/preview.js), written to dist/rafaya-trial.html
 const preview = process.argv.includes("--preview");
-const mods = ["version", "data", "sim", "people", "building-surfaces", "world-lighting", "traffic-path", "world-weather", "models", "world3d", "icons", "warfx", "war", "rain-sound", "sound", "news", "advisor", "save-version", "whats-new", "ui-build", "ui-arrange", "ui-tools", "ui-news", "ui-online", "ui-account", "ui-war", "ui-warguide", "ui-zero", "ui-chat", "ui-region", "ui-whatsnew", "ui-people", "ui-settings", "ui-idle", "ui-warroom", "ui-find", ...(preview ? ["warserver", "preview-jouf", "preview"] : []), "main"];
+const mods = ["version", "data", "sim", "people", "building-surfaces", "world-lighting", "traffic-path", "world-weather", "models", "world3d", "icons", "warfx", "war", "castle", "rain-sound", "sound", "news", "advisor", "save-version", "whats-new", "ui-build", "ui-arrange", "ui-tools", "ui-news", "ui-online", "ui-account", "ui-war", "ui-warguide", "ui-zero", "ui-chat", "ui-region", "ui-whatsnew", "ui-people", "ui-settings", "ui-idle", "ui-warroom", "ui-castle", "ui-find", ...(preview ? ["warserver", "preview-jouf", "preview"] : []), "main"];
 // One module: drop the local imports and exports; three.js is imported once from jsDelivr.
 const code = (await Promise.all(mods.map((m) => read(`js/${m}.js`))))
   .map((src) => src

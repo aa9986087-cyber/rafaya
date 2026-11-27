@@ -1086,3 +1086,67 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .find-bar button { border: 0; background: rgba(255,255,255,.1); color: #fff; font: inherit; border-radius: 999px; min-width: 40px; height: 40px; font-size: 15px; cursor: pointer; }
 .find-bar .fb-mid { display: grid; padding: 0 14px; line-height: 1.15; } .find-bar .fb-mid b { font-size: 14px; } .find-bar .fb-mid small { font-size: 11px; opacity: .8; }
 .find-bar .fb-x { background: none; min-width: 32px; }
+
+/* «قلعة مارد»: the castle in the middle of al-Jouf (js/ui-castle.js) */
+/**/.sheet.castle .sheet-box { max-height: 100%; height: 100%; border-radius: 0; padding-top: calc(var(--top, 0px) + 14px); --cs-gold: #f0c96a; --cs-ink: #fbf3df; --cs-dim: #c9b89a; --cs-card: rgba(255, 240, 210, .06); --cs-line: rgba(240, 201, 106, .28); background: linear-gradient(180deg, #2a1c10, #17100a 60%); color: var(--cs-ink); }
+.sheet.castle h2, .sheet.castle h3 { color: var(--cs-gold); }
+.cs-hero { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.cs-castle { font-size: 46px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+.cs-hero h2 { margin: 0; font-size: 22px; }
+.cs-lord { margin: 4px 0; font-size: 14px; } .cs-lord b { color: var(--cs-gold); } .cs-lord small { display: block; color: var(--cs-dim); font-size: 12px; }
+.cs-kpis { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.cs-kpis span { background: var(--cs-card); border: 1px solid var(--cs-line); border-radius: 999px; padding: 4px 10px; }
+.cs-kpis .cs-open { border-color: #e0574a; color: #ff9b8f; } .cs-kpis .cs-shield { border-color: #6fb6e8; color: #a8d8ff; }
+.cs-marches { margin: 8px 0; } .cs-marches h3 { font-size: 14px; margin: 6px 0; }
+.cs-march { display: grid; grid-template-columns: 1fr auto; gap: 4px; background: var(--cs-card); border: 1px solid var(--cs-line); border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; }
+.cs-march.mine { border-color: var(--cs-gold); } .cs-march.guard { border-color: #6fb6e8; }
+.cs-march i { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; display: block; }
+.cs-march i em { display: block; height: 100%; background: linear-gradient(90deg, #e0574a, var(--cs-gold)); transition: width 1s linear; }
+.cs-march.guard i em { background: linear-gradient(90deg, #3e8ccf, #a8d8ff); }
+.cs-tabs { margin: 8px 0; }
+.cs-camp h3 small { color: var(--cs-dim); font-size: 12px; font-weight: 600; margin-inline-start: 6px; }
+.cs-troops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.cs-troop { background: var(--cs-card); border: 1px solid var(--cs-line); border-radius: 12px; padding: 8px 6px; display: grid; gap: 3px; text-align: center; font-size: 12px; }
+.cs-troop .ic { font-size: 24px; } .cs-troop small { color: var(--cs-dim); font-size: 10.5px; line-height: 1.4; min-height: 30px; }
+.cs-have b { color: var(--cs-gold); font-size: 16px; }
+.cs-train { display: grid; gap: 4px; } .cs-train .btn { padding: 5px 4px; font-size: 12px; } .cs-train small { display: block; font-size: 10px; opacity: .8; }
+.cs-queue { margin-top: 6px; font-size: 12px; color: var(--cs-dim); } .cs-queue b { color: var(--cs-ink); }
+.cs-send { margin-top: 10px; background: rgba(224, 87, 74, .08); border: 1px solid rgba(224, 87, 74, .35); border-radius: 14px; padding: 10px; }
+.cs-send h3 { margin: 0 0 6px; font-size: 15px; }
+.cs-step { display: grid; grid-template-columns: 1fr 38px 44px 38px auto; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.cs-step b { text-align: center; font-size: 16px; color: var(--cs-gold); } .cs-step .btn { padding: 4px 0; }
+.cs-step .ghost { padding: 4px 8px; font-size: 12px; }
+.cs-battles, .cs-rec { display: grid; gap: 6px; }
+.cs-battle { background: var(--cs-card); border: 1px solid var(--cs-line); border-radius: 12px; padding: 8px 10px; display: grid; gap: 2px; font-size: 13px; }
+.cs-battle.won { border-color: var(--cs-gold); } .cs-battle small { color: var(--cs-dim); font-size: 11.5px; }
+.cs-rec { margin-bottom: 10px; } .cs-rec h3 { font-size: 14px; margin: 4px 0; }
+.cs-rec > div { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: center; background: var(--cs-card); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
+.cs-rec em { font-style: normal; color: var(--cs-gold); font-weight: 800; }
+.cs-sayed { text-align: center; background: linear-gradient(160deg, rgba(240, 201, 106, .25), rgba(0,0,0,.2)); border: 1px solid var(--cs-gold); border-radius: 14px; padding: 10px; margin-bottom: 10px; font-size: 15px; }
+.cs-sayed b { color: var(--cs-gold); } .cs-sayed small { display: block; color: var(--cs-dim); font-size: 12px; }
+.cs-card { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; margin-bottom: 8px; border: 1px solid #f0c96a; border-radius: 14px; padding: 10px 12px; font: inherit; color: #fbf3df; background: linear-gradient(160deg, rgba(240, 201, 106, .22), rgba(0,0,0,.3)); text-align: start; }
+.cs-card .ic { font-size: 28px; } .cs-card b { display: block; color: #f0c96a; font-size: 15px; } .cs-card small { color: #e6d6b4; font-size: 12px; } .cs-card em { font-style: normal; font-weight: 800; font-size: 12px; color: #fbf3df; }
+.castle-crown { display: inline-block; margin-inline-start: 4px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 800; color: #3a2a0a; background: linear-gradient(180deg, #ffe7a0, #e0b04a); box-shadow: 0 0 8px rgba(240, 201, 106, .7); vertical-align: middle; }
+/* the castle on the war map, and the armies walking to it */
+.wm-castle circle { fill: rgba(240, 201, 106, .25); stroke: #f0c96a; stroke-width: 1.2; }
+.wm-castle .cs-ic { font-size: 11px; text-anchor: middle; }
+.wm-castle .cs-crown { font-size: 7px; font-weight: 800; fill: #ffe39a; text-anchor: middle; paint-order: stroke; stroke: #000; stroke-width: 2px; }
+.wm-castle .cs-crown.free { fill: #f0c96a; }
+.cs-path { stroke: rgba(224, 87, 74, .55); stroke-width: 1.4; stroke-dasharray: 3 3; fill: none; }
+.cs-path.guard { stroke: rgba(111, 182, 232, .6); }
+.cs-army { fill: #e0574a; stroke: #fff; stroke-width: 1; } .cs-army.guard { fill: #3e8ccf; }
+.sheet.castle .btn { background: rgba(255, 240, 210, .1); color: #fbf3df; border: 1px solid rgba(240, 201, 106, .35); }
+.sheet.castle .btn:disabled { opacity: .4; }
+.sheet.castle .btn.go { background: linear-gradient(180deg, #d9573f, #a8321f); border-color: #ff9b8f; color: #fff; }
+.sheet.castle .tabs button, .sheet.castle .war-tabs button { color: #fbf3df; }
+/* «موسيقى الحرب»: a small bar while the theme plays; the slider turns it up or down on any phone */
+.war-music { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--bottom, 0px) + 84px); transform: translate(-50%, 20px); opacity: 0; transition: opacity .3s, transform .3s; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(20, 14, 8, .88); border: 1px solid rgba(240, 201, 106, .55); color: #fbf3df; box-shadow: 0 6px 24px rgba(0,0,0,.45); font-size: 13px; direction: rtl; }
+.war-music.on { opacity: 1; transform: translate(-50%, 0); }
+.war-music b { color: #f0c96a; white-space: nowrap; }
+.war-music .wm-note { animation: wmBeat 1s ease-in-out infinite; }
+@keyframes wmBeat { 50% { transform: scale(1.25); } }
+.war-music input[type=range] { width: 130px; accent-color: #f0c96a; touch-action: none; height: 28px; }
+.war-music button { border: 0; background: rgba(255,255,255,.12); color: #fbf3df; width: 28px; height: 28px; border-radius: 50%; font: inherit; }
+.vol-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.vol-row input[type=range] { width: 100%; accent-color: #c9a24a; touch-action: none; height: 28px; }
+.vol-row .btn { padding: 6px 12px; }

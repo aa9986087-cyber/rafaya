@@ -2375,6 +2375,26 @@ Object.assign(MAKERS, {
     flag(b, -0.36, 0.34, 0.55);
   },
 
+  barracks(b) {
+    pad(b);
+    // the barracks hall: long, low, sand-coloured, with a flat roof and a row of windows
+    b.rbox(0.62, 0.2, 0.3, 0.012, MC.concrete, { z: -0.16 }, "paint");
+    b.box(0.64, 0.02, 0.32, MC.steelDark, { y: 0.2, z: -0.16 }, "metal");
+    for (let k = 0; k < 6; k++) b.box(0.05, 0.05, 0.006, MC.glass, { x: -0.25 + k * 0.1, y: 0.11, z: -0.007 }, "glass");
+    b.box(0.09, 0.13, 0.008, MC.steel, { x: 0.27, y: 0.0, z: -0.004 }, "metal");
+    // the drill yard: a sand square with a running track and an obstacle wall
+    b.box(0.62, 0.006, 0.36, "#c9b083", { z: 0.2 }, "matte");
+    b.box(0.5, 0.008, 0.02, "#a8916a", { y: 0.004, z: 0.06 }, "matte"); b.box(0.5, 0.008, 0.02, "#a8916a", { y: 0.004, z: 0.34 }, "matte");
+    b.box(0.2, 0.08, 0.025, MC.concrete, { x: -0.12, y: 0.0, z: 0.22 }, "paint");
+    for (let k = 0; k < 3; k++) b.cyl(0.006, 0.006, 0.1, MC.steelDark, { x: 0.12 + k * 0.05, y: 0.0, z: 0.22 }, 6, "metal");
+    b.box(0.17, 0.006, 0.006, MC.steelDark, { x: 0.17, y: 0.1, z: 0.22 }, "metal");
+    // sandbags and a watch post
+    for (let k = 0; k < 4; k++) b.rbox(0.06, 0.035, 0.04, 0.01, MC.earth, { x: 0.3, y: k * 0.03, z: 0.36 - (k % 2) * 0.01 }, "matte");
+    b.cyl(0.012, 0.012, 0.32, MC.steelDark, { x: -0.36, y: 0.0, z: 0.36 }, 6, "metal");
+    b.rbox(0.09, 0.05, 0.09, 0.01, MC.olive, { x: -0.36, y: 0.32, z: 0.36 }, "paint");
+    flag(b, 0.36, -0.36, 0.55);
+  },
+
   // the moving parts and what flies (placed and moved by js/warfx.js)
   radarDish(b) { radarDishParts(b, 0.8); }, radarDish1(b) { radarDishParts(b, 0.92); }, radarDish2(b) { radarDishParts(b, 1.04); },
   airdefTurret(b) { airdefTurretParts(b, 0); }, airdefTurret1(b) { airdefTurretParts(b, 1); }, airdefTurret2(b) { airdefTurretParts(b, 2); },

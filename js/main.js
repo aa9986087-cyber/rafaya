@@ -10,10 +10,11 @@ import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS, medalSvg } from "./icons.js";
+import { castleCrown } from "./ui-castle.js";
 import { findSheet } from "./ui-find.js";
 import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
-import { sfx, ambience, warSfx } from "./sound.js";
+import { sfx, ambience, warSfx, warMusic } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
 import { API, LIVE, PUSH, VISIT_OK, VISIT_SHEETS, WORLD_GEN_KEY, WORLD_ID, WORLD_SAVE, activePushWorker, api, b64, checkPush, conflictCopyKey, freshWorldTown, gunzipText, gzipText, handoffSheet, iosPrepareMove, keepDeviceSave, liveClose, liveOpen, makeWorldTown, me, moveCodeSheet, onlineOk, onlinePoll, ownsActiveSave, pendingSummary, prepareWorldSave, pushDeniedHelp, pushKey, pushOff, pushOffer, pushOn, pushState, registerPushEndpoint, registerPushWorker, saveWriters, takeMove, unb64, versionCheck, visitComments, worldHourNow, worldHours, worldSnapshot, worldSync } from "./ui-online.js";
@@ -1409,7 +1410,7 @@ export function chatSheet(keep, draft = $("chatText")?.value || "") {
   const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
   sheet(`<h2>💬 شات الجوف</h2>
     <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
-        <div class="chat-head"><b>${m.name}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${medalSvg(medalId(x), 18)}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
+        <div class="chat-head"><b>${m.name}${castleCrown(m.plot)}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${medalSvg(medalId(x), 18)}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
         <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
     <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
     <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>
@@ -1634,6 +1635,7 @@ export function settingsSheet(fromMenu) {
     <div class="rows" style="margin-top:10px">
       ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
+      <label class="row vol-row"><span>🎵 موسيقى الحرب</span><input type="range" min="0" max="100" step="1" id="setWarVol" value="${Math.round(warMusic.volume * 100)}" aria-label="صوت موسيقى الحرب"><button type="button" class="btn" id="setWarTry">جرّب</button></label>
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
@@ -1720,6 +1722,8 @@ export function settingsSheet(fromMenu) {
     else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
+  $("setWarVol").addEventListener("input", (e) => warMusic.setVolume(Number(e.target.value) / 100));
+  $("setWarTry").addEventListener("click", () => { sfx.tap(); if (warMusic.playing) warMusic.stop(); else warMusic.play(); });
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
   // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
   const short = onlineOk() && !globalThis.RAFAYA_PREVIEW && typeof CompressionStream !== "undefined";
