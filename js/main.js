@@ -1299,6 +1299,7 @@ async function enterWorldTown() {
   S = town;
   if (!S.world.syncConflict) S.idle = null;
   if (globalThis.RAFAYA_PREVIEW_SAMPLE) S.day = worldHourNow();
+  if (S.day > worldHourNow() + 6) S.day = Math.floor(worldHourNow()); // a town that ran ahead of the world (the phone's clock pushed forward) comes back to the world's hour
   const gap = worldHourNow() - S.day;
   const report = S.world.syncConflict ? null : deputyCatchUp(S, gap);
   A = analyze(S);
@@ -1868,6 +1869,7 @@ function frame(now) {
   } else if (playing && !visiting && worldMode) {
     // the world's clock: one town hour every 50 seconds of real time, for everyone, always
     const wh = worldHourNow();
+    if (S.day > wh + 6) S.day = Math.floor(wh); // ahead of the world (an old clock trick): back to the world's hour, nothing paid
     if (!paused && wh - S.day > 3) {
       // the phone was asleep or the game in the background: the deputy ran the town (with the away cap)
       const r = deputyCatchUp(S, wh - S.day);
