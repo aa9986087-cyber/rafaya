@@ -54,6 +54,9 @@ transition scenes' narration; its key goes in through the secure credential form
 - **Trade between players**: buying and selling goods between towns (a market).
 - All names and art our own; nothing copied from any existing game.
 
+### Decided one by one (the owner, 27 Nov 2026)
+1. **One resource: gold** (like the modern world). The army's food is paid in gold (an upkeep), not a second resource.
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
