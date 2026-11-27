@@ -46,6 +46,8 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const makeCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
 // The world's clock started here; every town's hour is counted from it (50 seconds an hour).
 const WORLD_EPOCH = Date.UTC(2026, 10, 1);
+/** The players found pushing their phone's clock ahead for money (27 Nov 2026), banned once by clockBan. */
+const CLOCK_CHEATS = ["المندوب1", "هجرة الشيخ موسى", "مندوب", "ابو نخله", "المندوب", "محمد خالد الشمري", "هجره الشيخ زياد", "Waleed", "Waleed1"];
 const CITIZEN_AMOUNT = 100, CITIZEN_LIMIT = 1000, CITIZEN_DAYS = 3;
 const CITIZEN_TITLE = "حساب المواطن";
 const CITIZEN_NOTE = "تم صرف ١٠٠ ريال دعم حساب المواطن في ميزانية مدينتك داخل لعبة الرافعية.";
@@ -199,6 +201,26 @@ export class Board extends DurableObject {
     this.warMoveNotice();
     this.shieldNoticeFix();
     this.milTrim();
+    this.clockBan();
+  }
+  /**
+   * Once (the owner's order, 27 Nov 2026): the players who pushed their phone's clock ahead to be paid the away
+   * money again and again are banned (their accounts only, not their phones), and the bulletin names them, as a lesson to others.
+   * Found by their towns' hours being far ahead of the world's (from 12 hours to 11 years).
+   */
+  clockBan() {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'clock_ban_v1'").toArray().length) return;
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('clock_ban_v1', ?)", String(Date.now()));
+    const reason = "تلاعب بساعة الجوال للحصول على فلوس بغير حق", done = [];
+    for (const name of CLOCK_CHEATS) {
+      const p = this.sql.exec("SELECT name, banned FROM players WHERE name = ?", name).toArray()[0];
+      if (!p) continue;
+      const town = this.sql.exec("SELECT town FROM plots WHERE owner = ?", name).toArray()[0]?.town;
+      this.sql.exec("UPDATE players SET banned = 1, ban_reason = ? WHERE name = ?", reason, name);
+      try { for (const ws of this.ctx.getWebSockets?.() || []) if (ws.deserializeAttachment?.()?.name === name) { ws.send('{"t":"banned"}'); ws.close(1008, "Account banned"); } } catch { /* not connected */ }
+      done.push(town ? `${name} («${town}»)` : name);
+    }
+    if (done.length) this.news("admin", `📢 إعلان من الإدارة ⛔ تم حظر: ${done.join("، ")}. السبب: تقديم ساعة الجوال للحصول على فلوس بغير حق. الثغرة انسدت، وكل من يحاول التلاعب باللعبة يتحظر حسابه. اللعب النظيف هو اللي يرفع مدينتك 🤝`, null, null, false);
   }
   /**
    * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
