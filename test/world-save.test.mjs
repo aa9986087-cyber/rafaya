@@ -41,7 +41,7 @@ function worldFixture(t) {
       getAlarm: async () => null,
       setAlarm: async () => {}
     },
-    getWebSockets: () => [{ send: (data) => messages.push(JSON.parse(data)) }]
+    getWebSockets: () => [{ send: (data) => messages.push(JSON.parse(data)), deserializeAttachment: () => ({}) }]
   }, { WAR_TEST: "1" });
 
   async function request(path, body) {
@@ -193,4 +193,27 @@ test("the 80th eligible city credits all current towns once and announces it in 
   assert.equal(charges().length, goal);
   assert.equal((await request("chat")).messages.filter(hasAnnouncement).length, 1);
   assert.equal((await request("news")).items.filter(hasAnnouncement).length, 1);
+});
+
+test("a phone clock pushed ahead does not pay the hours the world has not reached", async (t) => {
+  const { request } = worldFixture(t);
+  const plot = 23, name = "clockMayor", town = "Clock town";
+  const me = await request("join", { name });
+  assert.ok((await request("claim", { ...me, plot, town })).ok);
+  const s = newGame(16, { name: town, site: "world" });
+  s.world = { plot, owner: name, restartAt: 0 };
+  const { joufHours } = await import("../js/sim.js");
+  const now = Date.now(); // a fresh world: its slow and fast hours both start now
+  const hourNow = Math.floor(joufHours(now, { epoch: Date.UTC(2026, 10, 1), slowAt: now, fastAt: now }));
+  let version = null;
+  const sync = async (money, day) => {
+    s.money = money; s.day = day;
+    const r = await request("sync", { name, secret: me.secret, pop: 9, happy: 55, era: 1, money, restartAt: 0, warSeq: 0,
+      ledger: { log: [], day, start: null, hour: null }, snapshot: pack(s), ...(version ? { saveVersion: version, saveWrite: crypto.randomUUID(), pendingWrites: [] } : {}) });
+    if (r.saveVersion) version = r.saveVersion;
+    return (await request(`town/${plot}`)).town.money;
+  };
+  assert.equal(await sync(5000, hourNow), 5000, "a normal sync keeps its money");
+  assert.equal(await sync(15000, hourNow + 500), 5000, "hours ahead of the world earn nothing");
+  assert.equal(await sync(5600, hourNow + 1), 5600, "back on the world's time, it earns again");
 });

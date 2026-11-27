@@ -1158,6 +1158,21 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
           this.live({ t: "war" }, me.plot);
         }
       }
+      // the phone's clock pushed ahead: the town claims hours the world has not reached yet (the old way to get
+      // the away money again and again). Whatever it gained since its last sync is taken back, until the world
+      // catches up with it; the money it had before is never touched.
+      if (was && body.ledger && Number.isFinite(Number(body.ledger.day))) {
+        const meta = (k) => Number(this.sql.exec("SELECT value FROM meta WHERE key = ?", k).toArray()[0]?.value || 0);
+        const now = Date.now(), slowAt = meta("slow_at") || now, fastAt = meta("fast_at") || now;
+        const worldHour = joufHours(now, { epoch: WORLD_EPOCH, slowAt, fastAt }), ahead = Number(body.ledger.day) - worldHour;
+        const taken = int(body.money) - base;
+        if (ahead > 6 && taken > 0) {
+          this.war.fine(me.plot, taken, "clock ahead", `🧾 تصحيح: ساعة جوالك كانت مقدّمة، فاللعبة حسبت وقت ما مرّ. رجّعنا الفلوس اللي جت منه (${taken.toLocaleString("en-US")} ريال)، وفلوسك اللي كانت قبل ما انلمست. خلّ ساعة الجوال على الوقت الصحيح.`);
+          this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", me.plot, was.owner, was.town, was.money || 0, int(body.money), -1, taken, now);
+          body.money = int(body.money) - taken;
+          this.live({ t: "war" }, me.plot);
+        }
+      }
       if (was) {
         const era = int(body.era), pop = int(body.pop);
         if (era > (was.era || 0) && ERAS[era]) this.news("era", `🏙️ «${was.town}» صارت ${ERAS[era].name}!`, me.plot, era);

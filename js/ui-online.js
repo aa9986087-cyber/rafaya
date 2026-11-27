@@ -1,7 +1,7 @@
 // Online: the API, visiting towns, the world account, phone notifications, the iPhone app, updates, live hints.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { menuBackdrop } from "./ui-whatsnew.js";
-import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, leaveArrange, leaveVisit, leaveWorld, playing, recoverWorldSave, refreshVisit, save, sendWorldSave, sheet, sheetFor, showMenu, standalone, store, storePrefix, visiting, worldClock, worldMapSheet, worldMode } from "./main.js";
+import { $, S, ar, arrange, canRegisterWorker, chatSheet, closeSheet, isIOS, lastSync, leaveArrange, leaveVisit, leaveWorld, playing, recoverWorldSave, refreshVisit, save, sendWorldSave, sheet, sheetFor, showMenu, standalone, store, storePrefix, visiting, worldClock, worldMapSheet, worldMode, worldNow } from "./main.js";
 import { FIX, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { joufHours, newGame, pack } from "./sim.js";
@@ -56,7 +56,7 @@ export function visitComments() {
   });
 }
 export const WORLD_ID = "rafaya-world-id", WORLD_SAVE = "rafaya-world-town", WORLD_GEN_KEY = "rafaya-world-gen";
-export const worldHours = () => joufHours(Date.now() + worldClock.offset, worldClock);
+export const worldHours = () => joufHours(worldNow(), worldClock);
 export const worldHourNow = () => Math.floor(worldHours()) + 3;
 export function me() {
   try { return JSON.parse(store.get(WORLD_ID) || "null"); }

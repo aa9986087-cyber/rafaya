@@ -909,10 +909,17 @@ $("visitBack").addEventListener("click", () => { sfx.tap(); leaveVisit(); });
 $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments(); });
 
 // ---------- the world of al-Jouf ----------
-export let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1) }, lastSync = 0, soloS = null;
+export let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), serverAt: 0, perfAt: 0 }, lastSync = 0, soloS = null;
+/**
+ * The world's time now: the server's clock when we last asked, plus the time that has really passed since,
+ * measured by the browser's steady timer. Changing the phone's clock moves nothing (it used to give away
+ * hours, and their money). Asked again whenever the game comes back to the screen (the steady timer may
+ * stop while the phone sleeps).
+ */
+export const worldNow = () => (worldClock.serverAt ? worldClock.serverAt + Math.max(0, performance.now() - worldClock.perfAt) : Date.now() + worldClock.offset);
 export async function loadClock() {
   try {
-    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch };
+    const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch, serverAt: c.now, perfAt: performance.now() };
     setWarOpen(c.warOpenAt); // ساعة الصفر: the same moment for everyone
     // the world was wiped (a new generation): forget the old name and world town on this phone
     if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
@@ -1925,7 +1932,8 @@ for (const event of ["gesturestart", "gesturechange"]) {
 }
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) save(true);
-  else if (playing) {
+  else if (worldMode) loadClock(); // the steady timer may have stopped while the phone slept: ask the server the time again
+  if (!document.hidden && playing) {
     refresh();
     if (worldMode && (visiting?.home ?? S).world?.syncConflict) worldSync(true);
     cityMilestonePopup(WARX.st);
