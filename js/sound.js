@@ -82,7 +82,7 @@ export const ambience = {
 
 // ---------- «موسيقى الحرب»: the owner's theme, always playing in the background (over and over); its own volume in the settings ----------
 // Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
-let warVol = 0.3; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
+let warVol = 0.5; try { const v = Number(localStorage.getItem("rafaya-war-vol-v2")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol-v2") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
 const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
 const warTell = () => { for (const f of warTheme.listeners) try { f(warMusic.playing); } catch { /* a screen gone */ } };
 export const warMusic = {
@@ -91,7 +91,7 @@ export const warMusic = {
   onChange(f) { warTheme.listeners.add(f); return () => warTheme.listeners.delete(f); },
   setVolume(v) {
     warVol = Math.max(0, Math.min(1, Number(v) || 0));
-    try { localStorage.setItem("rafaya-war-vol", String(warVol)); } catch { /* fine */ }
+    try { localStorage.setItem("rafaya-war-vol-v2", String(warVol)); } catch { /* fine */ }
     if (warVol <= 0) { warMusic.stop(); return; }
     if (!warTheme.src) { warMusic.play(); return; }
     if (warTheme.gain) { const a = ac(), g = warTheme.gain.gain; g.cancelScheduledValues(a.currentTime); g.setTargetAtTime(warVol * 0.9, a.currentTime, 0.08); }

@@ -4,7 +4,7 @@
 // plays first (once, with a skip button), then the countdown.
 import { $, ar, store, worldClock, worldMode } from "./main.js";
 import { JOUF_DAY } from "./war.js";
-import { sfx, warSfx } from "./sound.js";
+import { sfx, warSfx, warMusic } from "./sound.js";
 import { warGuide } from "./ui-warguide.js";
 import { WARX } from "./ui-war.js";
 
@@ -49,7 +49,7 @@ function warNotice(done) {
       <p>📖 كل القوانين في زر «الدليل» تحت «القيادة»</p>
       <p class="za-wish">بالتوفيق للجميع 🤝🏆</p>
       <div class="za-acts"><button class="btn go" type="button" id="ntMap">🗺️ افتح خريطة الجوف</button><button class="btn" type="button" id="ntOk">تمام</button></div></div>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   requestAnimationFrame(() => el.classList.add("on"));
   try { sfx.event(); } catch { /* sound off */ }
   const close = (then) => { el.classList.remove("on"); setTimeout(() => { el.remove(); then?.(); }, 350); };
@@ -73,7 +73,7 @@ function clockNotice(done) {
       <div class="nt-box"><b>🔒 الثغرة انسدت</b><p>وقت الجوف صار من السيرفر، وتغيير ساعة الجوال ما يجيب ولا ريال.<br>وكل من يحاول التلاعب باللعبة ينحذف حسابه.</p></div>
       <p class="za-wish">اللعب النظيف هو اللي يرفع مدينتك 🤝</p>
       <div class="za-acts"><button class="btn go" type="button" id="cnOk">تمام</button></div></div>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   requestAnimationFrame(() => el.classList.add("on"));
   try { sfx.event(); } catch { /* sound off */ }
   el.querySelector("#cnOk").addEventListener("click", () => { sfx.tap(); el.classList.remove("on"); setTimeout(() => { el.remove(); done?.(); }, 350); });
@@ -93,7 +93,7 @@ function milNotice(done) {
       <p>اللي كان عنده أكثر من عدده، شلنا الزايد ورجّعنا له قيمته <b>ومرة ونص</b> 💰</p>
       <p>💪 كبّر مدينتك يزيد عددك</p>
       <div class="za-acts"><button class="btn go" type="button" id="mnOk">تمام</button></div></div>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   requestAnimationFrame(() => el.classList.add("on"));
   try { sfx.event(); } catch { /* sound off */ }
   el.querySelector("#mnOk").addEventListener("click", () => { sfx.tap(); el.classList.remove("on"); setTimeout(() => { el.remove(); done?.(); }, 350); });
@@ -108,7 +108,7 @@ function zeroChip() {
     el.addEventListener("click", () => { sfx.tap(); zeroSheet(); });
     // in the town's top card, under the stage line: it never covers the build bar, its cards or the map
     const goal = document.getElementById("goal");
-    if (goal) goal.after(el); else document.body.append(el);
+    if (goal) goal.after(el); else document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   }
   const draw = () => {
     const ms = ZERO.at - nowS();
@@ -168,7 +168,7 @@ function maybeAnnounce(force) {
       <small class="za-sign">إدارة عالم الجوف</small>
       <div class="za-acts"><button class="btn go" type="button" id="zaGo">⚔️ إلى غرفة العمليات</button><button class="btn" type="button" id="zaRules">📖 القوانين</button><button class="btn" type="button" id="zaOk">تمام</button></div>
     </div>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   requestAnimationFrame(() => el.classList.add("on"));
   try { warSfx.boom(); setTimeout(() => sfx.era(), 700); } catch { /* sound off */ }
   const close = () => { el.classList.remove("on"); setTimeout(() => el.remove(), 400); };
@@ -186,7 +186,7 @@ export function playIntro(done) {
   el.className = "intro-vid"; el.id = "introVid";
   // no native controls, no play button: the video shows only once it really plays (a gold ring meanwhile)
   el.innerHTML = `<i class="iv-wait"></i><video playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" src="${src}"></video><button type="button" class="iv-sound" hidden>🔊 شغّل الصوت</button>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   const v = el.querySelector("video");
   let ended = false;
   const end = () => { if (ended) return; ended = true; v.pause(); el.classList.add("out"); setTimeout(() => { el.remove(); done?.(); }, 350); };
@@ -212,7 +212,7 @@ export function victoryScreen(enemy) {
       <p>رايتها ترفرف فوق الجوف، والنشرة تعلن نصرها للكل، وأهلها يحتفلون. 🎉</p>
       <p class="za-wish">الرضا +١٠ من الفخر · 🎖️ انتصار جديد بسجل مدينتك</p>
       <div class="za-acts"><button class="btn go" type="button" id="vOk">الحمدلله 🏆</button></div></div>`;
-  document.body.append(el);
+  document.body.append(el); warMusic.play(); // the war's message comes with the war theme (the owner)
   requestAnimationFrame(() => el.classList.add("on"));
   try { sfx.era(); setTimeout(() => sfx.goal(), 900); } catch { /* sound off */ }
   const close = () => { el.classList.remove("on"); setTimeout(() => el.remove(), 400); };
