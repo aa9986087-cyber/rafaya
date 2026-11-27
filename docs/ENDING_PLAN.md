@@ -60,6 +60,7 @@ transition scenes' narration; its key goes in through the secure credential form
 3. **Protection after being attacked, by the loss**: about half the town destroyed → 12 hours; all of it → 16 hours; a small loss → none. Attacking someone yourself ends your own protection.
 4. **The winner takes gold and honour**: loot up to about 20% of the defender's gold (the treasury keeps part safe), and honour points that raise the winner's rank and lower the loser's.
 5. **The market between players is for mercenaries**: a town trains soldiers and hires them out or sells them to another town, for gold, for one battle.
+6. **How mercenaries work**: the seller lists trained soldiers at a price; the buyer gets them for **one attack only**. A minimum price stops cheap sales to an ally or a second account.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
