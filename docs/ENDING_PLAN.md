@@ -47,6 +47,13 @@ modern world: أبو يعقوب reached الحاضرة الكبرى in days. Sta
 Cinematics: the owner subscribes to an Arabic voice service (name to confirm, likely ElevenLabs) for the
 transition scenes' narration; its key goes in through the secure credential form, never in chat or the repo.
 
+## Armies, food and trade (the owner, 27 Nov 2026)
+- Armies you raise and lead, in the style of the base-attack genre: each unit kind is trained and counted,
+  and the army needs **room** (camps whose capacity grows as they are upgraded), so a bigger army needs more upgrades.
+- **Food** is a real resource: farms, palms, wells and herds make it; soldiers and horses eat it.
+- **Trade between players**: buying and selling goods between towns (a market).
+- All names and art our own; nothing copied from any existing game.
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
