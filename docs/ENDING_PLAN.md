@@ -61,6 +61,7 @@ transition scenes' narration; its key goes in through the secure credential form
 4. **The winner takes gold and honour**: loot up to about 20% of the defender's gold (the treasury keeps part safe), and honour points that raise the winner's rank and lower the loser's.
 5. **The market between players is for mercenaries**: a town trains soldiers and hires them out or sells them to another town, for gold, for one battle.
 6. **How mercenaries work**: the seller lists trained soldiers at a price; the buyer gets them for **one attack only**. A minimum price stops cheap sales to an ally or a second account.
+7. **Who may attack whom**: only towns of the same stage, or one stage above or below. The big cannot crush the small; the small may challenge one step up.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
