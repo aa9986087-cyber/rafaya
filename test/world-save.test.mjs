@@ -231,3 +231,15 @@ test("the clock cheaters' accounts are deleted once, and the bulletin names them
   assert.equal(lines.length, 1);
   assert.ok(lines[0].text.includes("Waleed") && !lines[0].text.includes("honestMayor"));
 });
+
+test("money taken back after the server stopped is given back once", async (t) => {
+  const { db, board } = worldFixture(t);
+  db.prepare("INSERT INTO plots (plot, owner, town, money, updated) VALUES (7, 'nightMayor', 'Night town', 1000, ?)").run(Date.now());
+  const at = Date.UTC(2026, 10, 27, 21, 30);
+  db.prepare("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (7, 'nightMayor', 'Night town', 0, 0, -1, 88000, ?), (7, 'nightMayor', 'Night town', 0, 0, 80000, 236256, ?)").run(at, at);
+  db.prepare("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (7, 'nightMayor', 'Night town', 0, 0, 80000, 500, ?)").run(Date.UTC(2026, 10, 27, 12));
+  db.prepare("DELETE FROM meta WHERE key = 'refund_outage_v1'").run();
+  board.outageRefund();
+  board.outageRefund(); // once only
+  assert.equal(db.prepare("SELECT money FROM plots WHERE plot = 7").get().money, 1000 + 88000 + 236256, "both fines of the night come back, not the one before");
+});

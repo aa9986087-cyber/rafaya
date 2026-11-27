@@ -203,6 +203,11 @@ export class Board extends DurableObject {
     this.milTrim();
     this.clockBan();
     this.clockChat();
+    this.outageRefund();
+    // the server was down a while (nothing synced): the towns that were playing just before kept running
+    // on their phones, and must not be taken for away (or ahead) when they sync again
+    const last = Number(this.sql.exec("SELECT MAX(updated) m FROM plots").toArray()[0]?.m || 0);
+    this.gap = last && Date.now() - last > 15 * 60000 ? { from: last - 30 * 60000, until: Date.now() + 3 * 3600000 } : null;
     this.removeOnce("remove_v2", ["شيخ الخيمه"], "تلاعب باللعبة للحصول على فلوس بغير حق");
   }
   /** Once per key: the owner asked these accounts deleted (account and town; the phone is not banned). */
@@ -249,6 +254,22 @@ export class Board extends DurableObject {
       done.push(town ? `${name} («${town}»)` : name);
     }
     if (done.length) this.news("admin", `📢 إعلان من الإدارة ⛔ تم حذف حسابات: ${done.join("، ")}. السبب: تقديم ساعة الجوال للحصول على فلوس بغير حق. الثغرة انسدت، وكل من يحاول التلاعب باللعبة ينحذف حسابه. اللعب النظيف هو اللي يرفع مدينتك 🤝`, null, null, false);
+  }
+  /**
+   * Once: on 27 Nov 2026 the server stopped (its free daily limit ran out). The towns played on, and when it came back
+   * the game took them for away too long, or for a pushed clock, and took money back. Give all of it back.
+   */
+  outageRefund() {
+    const key = "refund_outage_v1";
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    const rows = this.sql.exec("SELECT plot, owner, town, before, after, cap, SUM(taken) taken FROM awayfix WHERE at >= ? AND taken > 0 GROUP BY plot", Date.UTC(2026, 10, 27, 21, 0)).toArray();
+    for (const r of rows) {
+      if (!r.plot || !this.sql.exec("SELECT 1 FROM plots WHERE plot = ? AND owner IS NOT NULL", r.plot).toArray().length) continue;
+      this.war.fine(r.plot, -r.taken, "refund", `🙏 نعتذر منك: السيرفر وقف شوي الليلة، ولما رجع حسب لعبك وقت التوقف غلط وخصم منك ${r.taken.toLocaleString("en-US")} ريال. رجّعنا لك حقك كامل. السموحة منك.`, "apology", { amount: r.taken });
+      this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", r.taken, r.plot);
+      this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", r.plot, r.owner, r.town, r.before, r.after, r.cap, -r.taken, Date.now());
+    }
   }
   /**
    * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
@@ -1198,7 +1219,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
       const awayMs = this.env?.WAR_TEST === "1" ? 10000 : 10 * 60000; // local tests: 10 s
       // (a town that left in debt is measured from zero: the away shield clears debts, and that is not income)
       const base = Math.max(0, was?.money || 0);
-      if (was && was.updated && Date.now() - was.updated > awayMs && int(body.money) > base) {
+      const inGap = !!(this.gap && Date.now() < this.gap.until && was?.updated >= this.gap.from); // playing when the server stopped: not away
+      if (was && was.updated && !inGap && Date.now() - was.updated > awayMs && int(body.money) > base) {
         const cap = AWAY_CAP[Math.min(AWAY_CAP.length - 1, Math.max(was.era || 0, int(body.era)))] ?? AWAY_CAP[0];
         const taken = int(body.money) - base - Math.round(cap * 1.1);
         if (taken > 0) {
@@ -1216,7 +1238,7 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
         const now = Date.now(), slowAt = meta("slow_at") || now, fastAt = meta("fast_at") || now;
         const worldHour = joufHours(now, { epoch: WORLD_EPOCH, slowAt, fastAt }), ahead = Number(body.ledger.day) - worldHour;
         const taken = int(body.money) - base;
-        if (ahead > 6 && taken > 0) {
+        if (ahead > 6 && taken > 0 && !inGap) {
           this.war.fine(me.plot, taken, "clock ahead", `🧾 تصحيح: ساعة جوالك كانت مقدّمة، فاللعبة حسبت وقت ما مرّ. رجّعنا الفلوس اللي جت منه (${taken.toLocaleString("en-US")} ريال)، وفلوسك اللي كانت قبل ما انلمست. خلّ ساعة الجوال على الوقت الصحيح.`);
           this.sql.exec("INSERT INTO awayfix (plot, owner, town, before, after, cap, taken, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", me.plot, was.owner, was.town, was.money || 0, int(body.money), -1, taken, now);
           body.money = int(body.money) - taken;

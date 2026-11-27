@@ -910,7 +910,10 @@ $("visitBack").addEventListener("click", () => { sfx.tap(); leaveVisit(); });
 $("visitComments").addEventListener("click", () => { sfx.tap(); visitComments(); });
 
 // ---------- the world of al-Jouf ----------
-export let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), serverAt: 0, perfAt: 0 }, lastSync = 0, soloS = null;
+const CLOCK_KEY = "rafaya-clock-v1";
+/** The world's clock as last read from the server (kept on the phone): with the server down, the game still counts hours at the world's real speed, never ahead of it. */
+const keptClock = (() => { try { const c = JSON.parse(store.get(CLOCK_KEY) || "null"); return c && Number.isFinite(c.epoch) && Number.isFinite(c.slowAt) && Number.isFinite(c.fastAt) ? c : null; } catch { return null; } })();
+export let worldClock = { epoch: Date.UTC(2026, 10, 1), offset: 0, slowAt: Date.UTC(2026, 10, 1), fastAt: Date.UTC(2026, 10, 1), ...(keptClock || {}), serverAt: 0, perfAt: 0 }, lastSync = 0, soloS = null;
 /**
  * The world's time now: the server's clock when we last asked, plus the time that has really passed since,
  * measured by the browser's steady timer. Changing the phone's clock moves nothing (it used to give away
@@ -921,6 +924,7 @@ export const worldNow = () => (worldClock.serverAt ? worldClock.serverAt + Math.
 export async function loadClock() {
   try {
     const c = await api("/world/clock"); worldClock = { epoch: c.epoch, offset: c.now - Date.now(), slowAt: c.slowAt ?? c.epoch, fastAt: c.fastAt ?? c.slowAt ?? c.epoch, serverAt: c.now, perfAt: performance.now() };
+    try { store.set(CLOCK_KEY, JSON.stringify({ epoch: worldClock.epoch, offset: worldClock.offset, slowAt: worldClock.slowAt, fastAt: worldClock.fastAt })); } catch { /* fine */ }
     setWarOpen(c.warOpenAt); // ساعة الصفر: the same moment for everyone
     // the world was wiped (a new generation): forget the old name and world town on this phone
     if (c.gen && String(c.gen) !== store.get(WORLD_GEN_KEY)) {
