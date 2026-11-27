@@ -1390,7 +1390,8 @@ export function warApply(st) {
   }
   if (supportPaid > 0) toast(`💰 مبروك نزلك حساب مواطن بقيمة ${money(supportPaid)} ريال، ويمكن نسترده بعدين 🏃🏻`, "goal");
   cityMilestonePopup(st);
-  $("warDot").hidden = !(st.rels || []).some((r) => r.offer && r.offer.by !== me()?.plot) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
+  // the red mark on «القيادة»: an offer waiting, an attack on the way, or a war going on (the owner: red while at war)
+  $("warDot").hidden = !(st.rels || []).some((r) => (r.offer && r.offer.by !== me()?.plot) || ["war", "warning"].includes(r.state)) && !(st.ops || []).some((o) => o.side === "in" && o.status === "flying");
   if (sheetFor === "war") warSheet(WARX.tab);
 }
 

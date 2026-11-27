@@ -985,7 +985,7 @@ body:has(.zero-full) .zero-chip { display: none; }
 .wg-medals b { color: #f1d98f; font-size: 13px; } .wg-medals small { color: #cdb98a; font-size: 11px; }
 .war-spoils { text-align: center; margin: 8px 0; border-radius: 12px; padding: 8px; background: rgba(47, 143, 106, .12); border: 1px solid rgba(47, 143, 106, .4); font-size: 14px; } .war-spoils b { color: #2f8f6a; font-size: 18px; }
 /* heat: the war button pulses a few times when a war starts, then stays red (an animation that never stops keeps the phone working) */
-#warBtn.wr-hot { animation-iteration-count: 6; }
+#warBtn.wr-hot { animation-iteration-count: infinite; } /* red and pulsing for as long as the war lasts (the owner) */
 
 .zero-ann.win .za-card { border-color: #f2d48a; box-shadow: 0 0 70px rgba(242, 212, 138, .5), inset 0 0 0 6px rgba(224,189,114,.1); }
 .zero-ann.win h2 { font-size: 36px; }
