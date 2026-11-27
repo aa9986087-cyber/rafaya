@@ -55,11 +55,11 @@ transition scenes' narration; its key goes in through the secure credential form
 - All names and art our own; nothing copied from any existing game.
 
 ### Decided one by one (the owner, 27 Nov 2026)
-1. **One resource: gold** (like the modern world). The army's food is paid in gold (an upkeep), not a second resource.
+1. **Gold, and food** (changed by the owner the same day): gold is the money; **food** is a real good made by farms, palms and herds, eaten by the army, and **sold between players** at the market.
 2. **Troops sent into a battle are spent**, whether they live or die; troops not sent go home (the base-attack way).
 3. **Protection after being attacked, by the loss**: about half the town destroyed → 12 hours; all of it → 16 hours; a small loss → none. Attacking someone yourself ends your own protection.
 4. **The winner takes gold and honour**: loot up to about 20% of the defender's gold (the treasury keeps part safe), and honour points that raise the winner's rank and lower the loser's.
-5. **The market between players is for mercenaries**: a town trains soldiers and hires them out or sells them to another town, for gold, for one battle.
+5. **The market between players: mercenaries and food**: a town trains soldiers and hires them out or sells them to another town, for gold, for one battle.
 6. **How mercenaries work**: the seller lists trained soldiers at a price; the buyer gets them for **one attack only**. A minimum price stops cheap sales to an ally or a second account.
 7. **Who may attack whom**: only towns of the same stage, or one stage above or below. The big cannot crush the small; the small may challenge one step up.
 8. **Qasr Marid is open to anyone from the start** (the stage rule above does not apply to it), but its defence is very strong.
