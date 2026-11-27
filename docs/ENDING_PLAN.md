@@ -57,6 +57,7 @@ transition scenes' narration; its key goes in through the secure credential form
 ### Decided one by one (the owner, 27 Nov 2026)
 1. **One resource: gold** (like the modern world). The army's food is paid in gold (an upkeep), not a second resource.
 2. **Troops sent into a battle are spent**, whether they live or die; troops not sent go home (the base-attack way).
+3. **Protection after being attacked, by the loss**: about half the town destroyed → 12 hours; all of it → 16 hours; a small loss → none. Attacking someone yourself ends your own protection.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
