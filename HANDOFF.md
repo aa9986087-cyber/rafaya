@@ -8,6 +8,8 @@
 
 ## 0. Where we stopped (read first)
 
+> **The owner's ending plan:** see `docs/ENDING_PLAN.md`. When the owner says «جاء وقت النهاية», remind them of it and start it.
+
 Last state, **2026-11-22**, latest commit on `main`: `b7ff565`.
 
 **The last three commits:**
