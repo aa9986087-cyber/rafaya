@@ -25,6 +25,9 @@ No date is set yet: the owner chooses it then. Nothing here is built yet.
    the last king starts with a golden banner and «سليل الملوك»; the gate's top givers «فاتح البوابة»;
    every old player «من أهل الجوف الأولين» beside their name.
 
+## The ancient world: the full plan
+The owner's full plan page (Arabic): `docs/ancient-world.html`, published at https://claude.ai/artifact/7M5BJNmgUc7D9Nqsus3kn1.
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
