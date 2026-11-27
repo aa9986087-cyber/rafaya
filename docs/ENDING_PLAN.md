@@ -72,6 +72,14 @@ transition scenes' narration; its key goes in through the secure credential form
 15. **The map**: an imaginary map (not real al-Jouf geography). Each player picks a spot and writes the name of their own home (ديرته) for it. Qasr Marid stands in the middle, with a ring around it where nobody may settle, so no town gets an advantage from being next to the castle.
 16. **Equal march to the castle**: an army reaches Qasr Marid in the same time from anywhere on the map; distance matters only between towns.
 
+## Art direction (the owner, 27 Nov 2026)
+- Semi-realistic. European-style soldiers are fine. No crusader crosses.
+- Soldiers chosen from Sketchfab (CC Attribution: credit each author in the game's thanks page):
+  1. «Medieval Knight | Sculpture | Game ready» by by__Rx (sketchfab uid 6cdd055b4afa41eb9360dbbfe75c7f10)
+  2. «Armored Guard Knight Rig» by SuperKapoo913 (b7bba7eddb13470b88eb8b24531cb6b3)
+  3. «Armored King» by Calviking073 (e3978fb660cf47278485d44eeba488ef)
+- Fitting armour onto the civilian Rocketbox men was tried and rejected (looks bolted on).
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
