@@ -60,3 +60,10 @@ transition scenes' narration; its key goes in through the secure credential form
   is never in the repo). Narrator: the account's voice «Abdullah - Dramatic Bass» (XdoLPWNt7ytn6BtU4FBf),
   model eleven_multilingual_v2, mp3_44100_128 (192 needs the Creator plan; the owner is on Starter).
   Effects via /v1/sound-generation. First voiced cut sent to the owner on 27 Nov 2026.
+- Trailer v2 (vertical 720×1280, 91.5 s, sent 27 Nov 2026): game footage drawn frame by frame
+  (`docs/cinematic/capture-game.cjs`: the page's animation frames are stopped and `world.frame(1/30)` is called per frame;
+  missile launch via `world.fx.playLaunch`), the realistic ancient scenes (`docs/cinematic/ancient-v2.html`: Poly Haven CC0
+  skies qwantani_night/sunrise/dusk_2, textures aerial_sand, castle_wall_varriation, castle_brick_07, clay_plaster, models
+  antique_estoc, horse_statue_01, boulder_01, namaqualand_cliff_01, stone_fire_pit, Lantern_01, brass_pot_01, ceramic_vase_02,
+  barrel_03; three r160 with GLTFLoader/RGBELoader), ElevenLabs music (prompted score, 103 s, used from 12 s) and narrator
+  (Abdullah, 13 lines in `docs/cinematic/lines.json`), subtitles as images (`subtitles.cjs`). Assets are not in the repo.

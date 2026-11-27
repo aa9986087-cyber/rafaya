@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>الجوف القديمة</title>
+<style>
+@font-face { font-family: Amiri; src: url(fonts/Amiri-Bold.ttf); font-weight: 700; }
+@font-face { font-family: Kufi; src: url(fonts/ReemKufi.ttf); }
+html, body { margin: 0; background: #000; overflow: hidden; }
+#stage { position: relative; width: 720px; height: 1280px; overflow: hidden; }
+canvas { display: block; }
+.bar { display: none; }
+.bar.t { top: 0; } .bar.b { bottom: 0; }
+#sub { position: absolute; left: 0; right: 0; bottom: 84px; z-index: 7; text-align: center; font: 700 34px/1.5 Amiri, serif; color: #f3e8cf; text-shadow: 0 2px 14px rgba(0,0,0,.95), 0 0 3px #000; opacity: 0; }
+#title { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; opacity: 0; background: radial-gradient(ellipse 60% 42% at center, rgba(8,5,2,.7), transparent 100%); }
+#title div { text-align: center; }
+#title b { display: block; padding: 0 40px 10px; font: 400 104px/1.1 Kufi, serif; background: linear-gradient(180deg, #fff6d4 0%, #eccb78 40%, #a36d1b 72%, #f6dc95 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 8px 26px rgba(0,0,0,.9)) drop-shadow(0 0 36px rgba(236,203,120,.35)); }
+#title small { display: block; font: 700 34px Amiri, serif; color: #f0e2c0; letter-spacing: 8px; text-shadow: 0 2px 12px #000; }
+#fade { position: absolute; inset: 0; z-index: 5; background: #000; opacity: 0; }
+#white { position: absolute; inset: 0; z-index: 5; background: #fff8ec; opacity: 0; }
+#grain { position: absolute; inset: 0; z-index: 4; pointer-events: none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.6) 100%); }
+</style>
+<script type="importmap">{ "imports": { "three": "./three/three.module.js", "three/addons/": "./three/jsm/" } }</script>
+</head><body>
+<div id="stage"><div id="grain"></div><div id="fade"></div><div id="white"></div><div class="bar t"></div><div class="bar b"></div><div id="sub"></div>
+<div id="title"><div><b>الجوف القديمة</b><small>قريبًا</small></div></div></div>
+<script type="module">
+import * as THREE from "three";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+
+const W = 720, H = 1280;
+// where cameras pass low: no house or palm there
+window.CAMSPOTS = [[-60, 160], [-55, 150], [-50, 140], [-45, 130], [-40, 120], [-30, 110], [86, 114], [80, 108], [74, 102], [68, 96], [64, 90], [58, 84]];
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById("stage").prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, W / H, 0.3, 4000);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bokeh = new BokehPass(scene, camera, { focus: 10, aperture: 0.0002, maxblur: 0.008 }); bokeh.enabled = false; composer.addPass(bokeh);
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.35, 0.6, 0.9); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const pmrem = new THREE.PMREMGenerator(renderer);
+
+// ---------- helpers ----------
+let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const lerp = (a, b, k) => a + (b - a) * k, clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ss = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const tl = new THREE.TextureLoader();
+const texSet = (name, rep = 1, color = 0xffffff) => {
+  const ld = (k, srgb) => { const t = tl.load(`assets/tex/${name}_${k}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  return new THREE.MeshStandardMaterial({ map: ld("Diffuse", true), normalMap: ld("nor_gl"), roughnessMap: ld("Rough"), aoMap: ld("AO"), color, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.2, 1.2) });
+};
+// a box whose texture keeps real-world scale on every face (size in metres / s)
+function uvBox(w, h, d, s = 4) {
+  const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv;
+  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / s, uv.getY(i) * dims[f][1] / s); }
+  g.setAttribute("uv2", uv.clone()); return g;
+}
+function uvCyl(rt, rb, h, n = 28, s = 4) { const g = new THREE.CylinderGeometry(rt, rb, h, n); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * rb / s, uv.getY(i) * h / s); return g; }
+
+// ---------- skies (rotatable sky domes; the sun direction comes from the image) ----------
+const rgbe = new RGBELoader();
+const loadHDR = (n) => new Promise((ok) => rgbe.load(`assets/hdri/${n}.hdr`, (t) => { t.mapping = THREE.EquirectangularReflectionMapping; ok(t); }));
+const [hNight, hDawn, hDusk] = await Promise.all(["qwantani_night_puresky", "qwantani_sunrise_puresky", "qwantani_dusk_2_puresky"].map(loadHDR));
+const envNight = pmrem.fromEquirectangular(hNight).texture, envDawn = pmrem.fromEquirectangular(hDawn).texture, envDusk = pmrem.fromEquirectangular(hDusk).texture;
+const skyMat = new THREE.MeshBasicMaterial({ map: hNight, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: true });
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(3000, 64, 32), skyMat); scene.add(skyDome);
+const SUN_U = 0.6001; // where the sun is in the sunrise image
+const sunLocal = new THREE.Vector3(-Math.cos(SUN_U * Math.PI * 2), 0.07, Math.sin(SUN_U * Math.PI * 2)).normalize();
+// turn the sky so the sun rises behind the castle, a little to the right, as the main camera looks
+const wantSun = new THREE.Vector3(0.42, 0.07, -0.9).normalize();
+const skyYaw = Math.atan2(sunLocal.x, sunLocal.z) - Math.atan2(wantSun.x, wantSun.z);
+
+// ---------- ground: dunes, the castle hill ----------
+const dune = (x, z) => 3.2 * Math.sin(x * .021 + z * .013) + 2.1 * Math.sin(x * .047 - z * .031) + .9 * Math.sin(x * .13 + z * .09) + 4.5 * Math.sin(z * .009 - x * .006);
+const hill = (x, z) => 34 * Math.exp(-((x * x) / 2600 + ((z + 20) * (z + 20)) / 2200));
+const flat = (x, z) => ss(60, 140, Math.hypot(x, z + 20));
+const groundY = (x, z) => dune(x, z) * (.25 + .75 * flat(x, z)) + hill(x, z);
+const gGeo = new THREE.PlaneGeometry(2400, 2400, 360, 360); gGeo.rotateX(-Math.PI / 2);
+{ const p = gGeo.attributes.position, uv = gGeo.attributes.uv; for (let i = 0; i < p.count; i++) { p.setY(i, groundY(p.getX(i), p.getZ(i))); uv.setXY(i, p.getX(i) / 4.5, p.getZ(i) / 4.5); } gGeo.computeVertexNormals(); gGeo.setAttribute("uv2", uv.clone()); }
+const sandMat = texSet("aerial_sand", 1, 0xffe2b8); sandMat.normalScale.set(.9, .9);
+const ground = new THREE.Mesh(gGeo, sandMat); ground.receiveShadow = true; scene.add(ground);
+
+// ---------- materials ----------
+const wallMat = texSet("castle_wall_varriation", 1, 0xd9c09a), brickMat = texSet("castle_wall_varriation", 1, 0xcdb28a), gateMat = texSet("castle_brick_07", 1, 0xd6b48a), mudMat = texSet("clay_plaster", 1, 0xc9a57a), mudDark = texSet("clay_plaster", 1, 0xae8a60);
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: .95 }), holeMat = new THREE.MeshStandardMaterial({ color: 0x140d07, roughness: 1 });
+
+// ---------- the great castle (Qasr Marid) ----------
+const castle = new THREE.Group(); scene.add(castle);
+const CY = groundY(0, -20) - 2; castle.position.set(0, CY, -20);
+const put = (g, m, x, y, z, ry = 0, grp = castle) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = o.receiveShadow = true; grp.add(o); return o; };
+const S = 22;
+put(uvBox(S * 2, 26, S * 2, 5), wallMat, 0, 1, 0);
+const merlons = (x0, z0, len, axis, y, grp = castle) => { for (let k = -len / 2; k <= len / 2; k += 2.4) put(uvBox(1.3, 1.8, 1.3, 2), wallMat, axis ? x0 : x0 + k, y, axis ? z0 + k : z0, 0, grp); };
+for (const s of [-1, 1]) { merlons(0, s * S, S * 2, 0, 14.9); merlons(s * S, 0, S * 2, 1, 14.9); }
+for (const [x, z] of [[-S, -S], [S, -S], [-S, S], [S, S]]) {
+  put(uvCyl(5.2, 6.4, 40, 32, 5), brickMat, x, 2, z);
+  put(uvCyl(6.0, 5.4, 2.2, 32, 3), wallMat, x, 22.6, z);
+  for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; put(uvBox(1.4, 1.9, 1.4, 2), wallMat, x + Math.cos(a) * 5.4, 24.6, z + Math.sin(a) * 5.4, -a); }
+}
+const keepH = 46; put(uvBox(16, keepH, 16, 5), brickMat, -5, keepH / 2 - 14, -5);
+for (const s of [-1, 1]) { merlons(-5, -5 + s * 8, 16, 0, keepH - 13); merlons(-5 + s * 8, -5, 16, 1, keepH - 13); }
+// gate house on the front wall with an arched dark doorway and slit windows
+put(uvBox(14, 22, 6, 5), wallMat, 0, 3, S + 2);
+const door = new THREE.Mesh(new THREE.PlaneGeometry(5, 8), new THREE.MeshStandardMaterial({ color: 0x120c07, roughness: 1 })); door.position.set(0, 2 + groundY(0, S + 5.1) - CY, S + 5.06); castle.add(door);
+const arch = new THREE.Mesh(new THREE.CircleGeometry(2.5, 24, 0, Math.PI), door.material); arch.position.set(0, door.position.y + 4, S + 5.06); castle.add(arch);
+const slitM = new THREE.MeshStandardMaterial({ color: 0x0e0904, roughness: 1, emissive: 0xff8a30, emissiveIntensity: 0 });
+const slits = []; for (let k = -3; k <= 3; k++) if (k) { const s2 = new THREE.Mesh(new THREE.PlaneGeometry(.6, 2.4), slitM); s2.position.set(k * 5.5, 9, S + .06); castle.add(s2); slits.push(s2); }
+// banners
+const banners = [];
+for (const [x, z, c, top] of [[-S, -S, 0x1d5a35, 25.5], [S, -S, 0x7d1f18, 25.5], [-S, S, 0x7d1f18, 25.5], [S, S, 0x1d5a35, 25.5], [-5, -5, 0xc89a34, keepH - 12]]) {
+  const pole = put(new THREE.CylinderGeometry(.14, .14, 9, 8), new THREE.MeshStandardMaterial({ color: 0x3b2a1a, roughness: .8 }), x, top + 4.5, z);
+  const g = new THREE.PlaneGeometry(5, 3, 16, 6), m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: c, side: THREE.DoubleSide, roughness: .9 }));
+  m.position.set(x + 2.55, top + 7.3, z); m.castShadow = true; castle.add(m); banners.push({ m, base: g.attributes.position.array.slice(), pole });
+}
+
+// ---------- the town of mud houses ----------
+const town = new THREE.Group(); scene.add(town);
+seed = 99;
+const houses = [];
+const CAMS = window.CAMSPOTS || [];
+const nearCam = (x, z, r) => CAMS.some(([cx, cz]) => Math.hypot(cx - x, cz - z) < r);
+function house(x, z, w, d, h, ry, m) {
+  const g = new THREE.Group(), y = groundY(x, z); g.position.set(x, y - 1.2, z); g.rotation.y = ry; town.add(g);
+  const add2 = (geo, mat, px, py, pz) => { const o = new THREE.Mesh(geo, mat); o.position.set(px, py, pz); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  add2(uvBox(w, h + 1.2, d, 4), m, 0, (h + 1.2) / 2, 0);
+  if (rnd() < .45) add2(uvBox(w * .55, h * .6, d * .6, 4), m, -w * .18, h + 1.2 + h * .3, -d * .15);   // an upper room
+  add2(new THREE.BoxGeometry(1.4, 2.3, .2), holeMat, w * (rnd() - .5) * .5, 2.3, d / 2 + .02);          // the door
+  for (let k = 0; k < 3; k++) add2(new THREE.BoxGeometry(.45, .55, .2), holeMat, (k - 1) * w * .28, h - .4, d / 2 + .02); // small windows
+  for (let k = 0; k < Math.floor(w / 1.4); k++) { const b = add2(new THREE.CylinderGeometry(.09, .09, .9, 5), woodMat, -w / 2 + .7 + k * 1.4, h + .5, d / 2 + .35); b.rotation.x = Math.PI / 2; } // rafters
+  for (let k = 0; k < Math.floor(w / 1.1); k++) add2(new THREE.BoxGeometry(.5, .55, .3), m, -w / 2 + .55 + k * 1.1, h + 1.45, d / 2 - .15); // stepped parapet
+  for (let k = 0; k < Math.floor(w / 1.1); k++) add2(new THREE.BoxGeometry(.5, .55, .3), m, -w / 2 + .55 + k * 1.1, h + 1.45, -d / 2 + .15);
+  return g;
+}
+for (let i = 0; i < 260; i++) {
+  const a = rnd() * Math.PI * 2, r = 64 + Math.pow(rnd(), .8) * 190, x = Math.cos(a) * r, z = -20 + Math.sin(a) * r * .85;
+  if (Math.abs(x) < 22 && z > 30 && z < 220) continue; // the road to the castle
+  if (nearCam(x, z, 28)) continue;
+  const w = 7 + rnd() * 8, d = 7 + rnd() * 8, h = 4 + rnd() * 3.5;
+  houses.push(house(x, z, w, d, h, Math.round(rnd() * 3) * Math.PI / 2 + (rnd() - .5) * .2, rnd() < .3 ? mudDark : mudMat));
+}
+// a low outer wall round the town with towers
+for (let k = 0; k < 64; k++) { const a = k / 64 * Math.PI * 2, R = 270, x = Math.cos(a) * R, z = -20 + Math.sin(a) * R * .85; if (Math.abs(a - Math.PI / 2) < .08) continue;
+  const y = groundY(x, z); put(uvBox(28, 9, 3.5, 5), wallMat, x, y + 3, z, -a + Math.PI / 2, town); if (k % 4 === 0) put(uvCyl(4, 4.6, 14, 20, 5), brickMat, x, y + 5, z, 0, town); }
+
+// ---------- palms (procedural; leaves drawn as fronds with leaflets) ----------
+const frondCanvas = document.createElement("canvas"); frondCanvas.width = 128; frondCanvas.height = 512;
+{ const g = frondCanvas.getContext("2d"); g.clearRect(0, 0, 128, 512); g.strokeStyle = "#556b2f"; g.lineWidth = 6; g.beginPath(); g.moveTo(64, 512); g.lineTo(64, 0); g.stroke();
+  for (let y = 500; y > 20; y -= 9) { const L = 58 * Math.sin((y / 512) * Math.PI) + 6; for (const s of [-1, 1]) { g.strokeStyle = `hsl(${78 + Math.random() * 14}, ${38 + Math.random() * 12}%, ${26 + Math.random() * 12}%)`; g.lineWidth = 3.2; g.beginPath(); g.moveTo(64, y); g.quadraticCurveTo(64 + s * L * .5, y - 8, 64 + s * L, y - 26); g.stroke(); } } }
+const frondTex = new THREE.CanvasTexture(frondCanvas); frondTex.colorSpace = THREE.SRGBColorSpace;
+const frondMat = new THREE.MeshStandardMaterial({ map: frondTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .8 });
+const frondGeo = new THREE.PlaneGeometry(2.6, 7.5, 1, 10); frondGeo.translate(0, 3.75, 0);
+{ const a = frondGeo.attributes.position; for (let i = 0; i < a.count; i++) { const y = a.getY(i); a.setZ(i, -y * y * .05); } frondGeo.computeVertexNormals(); }
+const barkCanvas = document.createElement("canvas"); barkCanvas.width = 64; barkCanvas.height = 256;
+{ const g = barkCanvas.getContext("2d"); g.fillStyle = "#6e5236"; g.fillRect(0, 0, 64, 256); for (let y = 0; y < 256; y += 6) { g.fillStyle = `rgba(60,42,26,${.35 + Math.random() * .3})`; g.fillRect(0, y, 64, 2); for (let x = 0; x < 64; x += 8) { g.fillStyle = `rgba(150,120,85,${Math.random() * .35})`; g.fillRect(x + Math.random() * 4, y + 2, 5, 3); } } }
+const barkTex = new THREE.CanvasTexture(barkCanvas); barkTex.colorSpace = THREE.SRGBColorSpace; barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping; barkTex.repeat.set(2, 5);
+const barkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 1 });
+const palms = [];
+const palm = (x, z, h, grp = town) => { const p = new THREE.Group(); p.position.set(x, groundY(x, z) - .2, z); grp.add(p);
+  const t = new THREE.Mesh(new THREE.CylinderGeometry(.35, .55, h, 9), barkMat); t.position.y = h / 2; t.rotation.z = (rnd() - .5) * .12; t.castShadow = true; p.add(t);
+  for (let k = 0; k < 16; k++) { const f = new THREE.Mesh(frondGeo, frondMat); f.position.y = h; f.rotation.set(0, k / 16 * Math.PI * 2 + rnd() * .3, 0); f.rotateX(-.9 - (k % 3) * .3 - rnd() * .2); f.castShadow = true; p.add(f); }
+  p.userData.ph = rnd() * 6; palms.push(p); return p; };
+seed = 5;
+for (let i = 0; i < 220; i++) { const a = rnd() * Math.PI * 2, r = 90 + rnd() * 320, x = Math.cos(a) * r, z = -20 + Math.sin(a) * r * .85; if (nearCam(x, z, 24) || (Math.abs(x) < 24 && z > 30 && z < 230)) continue; palm(x, z, 9 + rnd() * 7); }
+for (let i = 0; i < 30; i++) { const s = i % 2 ? 1 : -1; palm(s * (25 + rnd() * 4), 60 + i * 5, 10 + rnd() * 5); } // the palm avenue up to the gate
+
+// ---------- models (Poly Haven) ----------
+const gl = new GLTFLoader();
+const loadM = (n) => new Promise((ok) => gl.load(`assets/models/${n}/${n}.gltf`, (g) => { g.scene.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } }); ok(g.scene); }));
+const [sword, horse, shield, boulder, rocks, cliff, firepit, lantern, pot, vase, barrel] = await Promise.all(["antique_estoc", "horse_statue_01", "kite_shield", "boulder_01", "sand_rocks_small_01", "namaqualand_cliff_01", "stone_fire_pit", "Lantern_01", "brass_pot_01", "ceramic_vase_02", "barrel_03"].map(loadM));
+const sizeOf = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+const fit = (o, h) => { const s = sizeOf(o); o.scale.multiplyScalar(h / s.y); return o; };
+// rock outcrops round the castle hill
+seed = 21;
+for (let i = 0; i < 14; i++) { const r = (i % 2 ? boulder : cliff).clone(); const a = i / 14 * Math.PI * 2, R = 34 + rnd() * 10, x = Math.cos(a) * R, z = -20 + Math.sin(a) * R; fit(r, 6 + rnd() * 9); r.position.set(x, groundY(x, z) - 2, z); r.rotation.y = rnd() * 6; scene.add(r); }
+
+// the hero shot: a sword stuck in the sand on a dune ridge, a shield leaning, pots; far from town
+const HERO = new THREE.Vector3(140, 0, 260); HERO.y = groundY(HERO.x, HERO.z);
+const heroG = new THREE.Group(); heroG.position.copy(HERO); scene.add(heroG);
+const sw = fit(sword.clone(), 1.5); sw.rotation.set(0.25, 0.6, Math.PI - 0.15); sw.position.set(0, .45, 0); heroG.add(sw);
+const sh = fit(shield.clone(), 1.1); sh.rotation.set(-.35, -.4, .12); sh.position.set(-1.25, .5, -.55); /* no shield: not of this land */
+
+// the horse on the ridge (a statue: seen against the sun as a silhouette)
+const hz = fit(horse.clone(), 2.6); hz.position.set(HERO.x - 22, groundY(HERO.x - 22, HERO.z - 30), HERO.z - 30); hz.rotation.y = -1.9; scene.add(hz);
+// a camp in the town square: fire, lanterns, jars, barrels
+const CAMP = new THREE.Vector3(64, 0, 90); CAMP.y = groundY(CAMP.x, CAMP.z);
+const fp = fit(firepit.clone(), .7); fp.position.copy(CAMP); scene.add(fp);
+const fireL = new THREE.PointLight(0xff8a35, 0, 40, 1.6); fireL.position.set(CAMP.x, CAMP.y + 1.6, CAMP.z); fireL.castShadow = true; scene.add(fireL);
+const flame = new THREE.Mesh(new THREE.ConeGeometry(.5, 1.6, 12), new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false })); flame.position.set(CAMP.x, CAMP.y + 1.1, CAMP.z); scene.add(flame);
+for (let i = 0; i < 6; i++) { const o = (i % 3 === 0 ? barrel : i % 3 === 1 ? vase : pot).clone(); fit(o, i % 3 === 0 ? 1.1 : .7); const a = i * 1.1; o.position.set(CAMP.x + Math.cos(a) * 3.5, groundY(CAMP.x + Math.cos(a) * 3.5, CAMP.z + Math.sin(a) * 3.5), CAMP.z + Math.sin(a) * 3.5); scene.add(o); }
+
+// ---------- the gate under the castle (discovery, night) ----------
+const gate = new THREE.Group(); scene.add(gate);
+const GZ = S + 38, GY = groundY(0, GZ); gate.position.set(0, GY - .6, GZ);
+const gateStones = [];
+const gStone = (g, x, y, z, rz = 0) => { const o = new THREE.Mesh(g, gateMat); o.castShadow = o.receiveShadow = true; o.userData.home = new THREE.Vector3(x, y, z); o.rotation.z = rz; o.position.set(x, y, z); gate.add(o); gateStones.push(o); };
+for (const s of [-1, 1]) for (let k = 0; k < 6; k++) gStone(uvBox(2.6, 2.2, 2.6, 2.5), s * 5.6, 1.1 + k * 2.2, 0);
+for (let k = 0; k <= 11; k++) { const a = Math.PI * k / 11; gStone(uvBox(2.2, 2.2, 2.7, 2.5), Math.cos(a) * 5.6, 13.2 + Math.sin(a) * 5.6, 0, a); }
+const glyph = document.createElement("canvas"); glyph.width = glyph.height = 1024;
+const drawGlyph = () => { const g = glyph.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, 1024, 1024); g.strokeStyle = "#fff"; g.lineWidth = 9;
+  const star = (r) => { g.beginPath(); for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8 - Math.PI / 2, rr = i % 2 ? r * .62 : r; g.lineTo(512 + Math.cos(a) * rr, 512 + Math.sin(a) * rr); } g.closePath(); g.stroke(); };
+  star(300); star(190); for (const r of [380, 80]) { g.beginPath(); g.arc(512, 512, r, 0, 7); g.stroke(); }
+  for (let i = 0; i < 32; i++) { const a = i * Math.PI / 16; g.beginPath(); g.moveTo(512 + Math.cos(a) * 392, 512 + Math.sin(a) * 392); g.lineTo(512 + Math.cos(a) * (i % 2 ? 440 : 470), 512 + Math.sin(a) * (i % 2 ? 440 : 470)); g.stroke(); }
+  g.font = "bold 92px Amiri"; g.fillStyle = "#fff"; g.textAlign = "center"; g.fillText("ٱلْجَوْف", 512, 540); };
+drawGlyph();
+const glyphTex = new THREE.CanvasTexture(glyph); glyphTex.colorSpace = THREE.SRGBColorSpace;
+const portalU = { glow: { value: 0 }, open: { value: 0 }, tex: { value: glyphTex }, time: { value: 0 } };
+const portal = new THREE.Mesh(new THREE.PlaneGeometry(9.2, 18), new THREE.ShaderMaterial({ uniforms: portalU, toneMapped: false,
+  vertexShader: "varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }",
+  fragmentShader: `uniform float glow, open, time; uniform sampler2D tex; varying vec2 vU;
+    void main(){ vec2 p = vU; float g = texture2D(tex, vec2(p.x, p.y*1.95 - .62)).r; vec3 c = vec3(.025,.018,.012);
+      float pulse = .7 + .3*sin(time*2. + p.y*5.); c += vec3(1.,.66,.26) * g * glow * 3.2 * pulse;
+      float d = length((p - vec2(.5,.38)) * vec2(1., 1.9)); c += vec3(1.,.93,.8) * open * max(0., 1.4 - d*1.5) * 6.;
+      gl_FragColor = vec4(c, 1.); }` }));
+portal.position.set(0, 8.4, -.4); gate.add(portal);
+const gateL = new THREE.PointLight(0xffb060, 0, 90, 1.5); gateL.position.set(0, 9, 6); gate.add(gateL);
+// torches of the diggers
+const torches = [];
+for (const [x, z] of [[-11, GZ + 10], [10, GZ + 12], [-5, GZ + 18], [15, GZ + 4], [-16, GZ + 3]]) {
+  const y = groundY(x, z), L = fit(lantern.clone(), .6); L.position.set(x, y + 1.6, z); scene.add(L);
+  const st = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 1.6, 6), barkMat); st.position.set(x, y + .8, z); scene.add(st);
+  const pl = new THREE.PointLight(0xff9a45, 0, 26, 1.7); pl.position.set(x, y + 2.1, z); scene.add(pl);
+  const gl2 = new THREE.Mesh(new THREE.SphereGeometry(.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffc070 })); gl2.position.set(x, y + 1.85, z); scene.add(gl2);
+  torches.push({ pl, gl2, L, st });
+}
+
+// ---------- lights ----------
+const sun = new THREE.DirectionalLight(0xffffff, 1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = .4;
+Object.assign(sun.shadow.camera, { left: -180, right: 180, top: 180, bottom: -180, near: 1, far: 1600 }); scene.add(sun, sun.target);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a6a44, .2); scene.add(hemi);
+scene.fog = new THREE.FogExp2(0x000000, .002);
+
+// ---------- the storm: drifting sand clouds and grains ----------
+const puff = document.createElement("canvas"); puff.width = puff.height = 128;
+{ const g = puff.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, "rgba(255,255,255,.9)"); gr.addColorStop(.5, "rgba(255,255,255,.35)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+const puffTex = new THREE.CanvasTexture(puff);
+const clouds = []; seed = 7;
+for (let i = 0; i < 90; i++) { const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, color: 0xc79a62, transparent: true, opacity: 0, depthWrite: false, fog: false })); const s = 30 + rnd() * 60; m.scale.set(s, s * .6, 1); m.userData = { a: rnd(), b: rnd(), c: rnd(), s: .5 + rnd() }; scene.add(m); clouds.push(m); }
+const NG = 14000, grG = new THREE.BufferGeometry(), grP = new Float32Array(NG * 3), grS = []; for (let i = 0; i < NG; i++) grS.push([rnd(), rnd(), rnd(), .5 + rnd()]);
+grG.setAttribute("position", new THREE.BufferAttribute(grP, 3));
+const grains = new THREE.Points(grG, new THREE.PointsMaterial({ color: 0xe8c48e, size: .18, transparent: true, opacity: 0, depthWrite: false, map: puffTex })); grains.frustumCulled = false; scene.add(grains);
+
+// ---------- the words ----------
+const CUES = window.CUES || [];
+const subEl = document.getElementById("sub"), titleEl = document.getElementById("title"), whiteEl = document.getElementById("white"), fadeEl = document.getElementById("fade");
+
+// ---------- the shots (scene time t, 0 … LENGTH) ----------
+// each: [start, end, cameraFrom, cameraTo, lookFrom, lookTo, mood]; mood: night / storm / dawn
+const C = (x, z, dy = 0) => [x, groundY(x, z) + dy, z];
+const SHOTS = [
+  [0, 7, C(30, GZ + 60, 14), C(14, GZ + 34, 7), [0, GY + 18, -20], [0, GY + 9, GZ], "night"],        // the castle at night, the diggers' torches
+  [7, 14, C(-9, GZ + 20, 3.2), C(-4, GZ + 15, 4.2), [0, GY + 8, GZ], [0, GY + 9, GZ], "night"],       // the gate, its star waking
+  [14, 22, C(10, GZ + 26, 6), C(-12, GZ + 30, 9), [0, GY + 8, GZ], [0, GY + 10, GZ], "storm"],        // the storm swallows all, the gate opens
+  [22, 30, C(40, 300, 70), C(26, 190, 42), [0, 40, -20], [0, 30, -20], "dawn"],                        // dawn: the ancient Jouf from the air
+  [30, 36, C(-60, 160, 1.6), C(-40, 120, 2.2), [0, 26, -20], [0, 28, -20], "dawn"],                   // low over the dunes towards the castle
+  [36, 44, [HERO.x + 2.6, HERO.y + 1.2, HERO.z + 2.4], [HERO.x + 1.7, HERO.y + .9, HERO.z + 1.6], [HERO.x, HERO.y + .7, HERO.z], [HERO.x, HERO.y + .75, HERO.z], "dawn"], // the sword in the sand, the horse beyond
+  [44, 52, C(CAMP.x + 18, CAMP.z + 22, 9), C(CAMP.x + 5, CAMP.z + 12, 6), [CAMP.x, CAMP.y + 2, CAMP.z], [0, 22, -20], "dawn"],     // the town square, then up to the castle
+  [52, 62, C(0, 140, 4), C(0, 60, 9), [0, 22, -20], [0, 30, -20], "dawn"],                             // up the palm avenue to the gate of the great castle
+  [62, 70, C(120, 120, 60), C(70, 60, 80), [0, 30, -20], [0, 26, -20], "dawn"]                         // round and over the castle: the title
+];
+window.LENGTH = 70;
+const ease = (k) => k * k * (3 - 2 * k);
+window.render = (t) => {
+  const shot = SHOTS.find((s) => t >= s[0] && t < s[1]) || SHOTS[SHOTS.length - 1];
+  const k = ease(clamp((t - shot[0]) / (shot[1] - shot[0])));
+  const P = shot[2].map((v, i) => lerp(v, shot[3][i], k)), L = shot[4].map((v, i) => lerp(v, shot[5][i], k));
+  const storm = shot[6] === "storm" ? ss(14, 16.5, t) : 0, dawn = shot[6] === "dawn", night = !dawn;
+  const shake = storm * .25; camera.position.set(P[0] + Math.sin(t * 21) * shake, P[1] + Math.sin(t * 29) * shake, P[2]); camera.lookAt(L[0], L[1], L[2]);
+  camera.fov = shot === SHOTS[5] ? 42 : 55; camera.updateProjectionMatrix();
+  // sky, light, fog
+  skyMat.map = dawn ? hDawn : storm > .5 ? hDusk : hNight; skyDome.rotation.y = dawn ? skyYaw : 0; skyDome.position.copy(camera.position);
+  scene.environment = dawn ? envDawn : storm > .5 ? envDusk : envNight;
+  const sunDir = wantSun.clone();
+  if (dawn) { sun.color.set(0xffc58a); sun.intensity = 3.2; sun.position.copy(camera.position).add(sunDir.multiplyScalar(600)); sun.target.position.copy(camera.position).add(new THREE.Vector3(0, -20, -60)); hemi.intensity = .25; }
+  else { sun.color.set(0x8fa8ff); sun.intensity = .35 - storm * .2; sun.position.set(-300, 500, 200); sun.target.position.set(0, 0, GZ); hemi.intensity = .06; }
+  renderer.toneMappingExposure = dawn ? .95 : storm > .5 ? 1 : .9;
+  scene.fog.color.set(dawn ? 0xe0b07a : storm > .5 ? 0x8a5f34 : 0x05070c); scene.fog.density = dawn ? .0016 : .0011 + storm * .02;
+  skyMat.color.setScalar(dawn ? 1 : storm > .5 ? .55 : .14);
+  scene.traverse((o) => { if (o.material && o.material.isMeshStandardMaterial) o.material.envMapIntensity = dawn ? 1 : storm > .5 ? .5 : .12; });
+  // torches and the camp fire
+  for (const T of torches) { const on = night ? 1 : 0; T.pl.intensity = on * (28 + 8 * Math.sin(t * 13 + T.pl.position.x)); T.gl2.visible = T.L.visible = T.st.visible = !dawn; }
+  fireL.intensity = dawn ? 22 + 6 * Math.sin(t * 17) : 0; flame.visible = dawn; flame.scale.set(1, .85 + .25 * Math.sin(t * 19), 1);
+  slitM.emissiveIntensity = night ? 1.2 : .25;
+  // the gate: built stones, the waking star, then the opening light
+  gate.visible = !dawn;
+  gateStones.forEach((s, i) => s.position.copy(s.userData.home));
+  portalU.glow.value = night ? ss(7.5, 11, t) * .8 + storm * .6 : 0; portalU.open.value = ss(18.5, 21.6, t); portalU.time.value = t;
+  gateL.intensity = portalU.glow.value * 120 + portalU.open.value * 3000;
+  bloom.strength = dawn ? .3 : .45 + portalU.open.value * 2.2;
+  whiteEl.style.opacity = ss(20.6, 22, t) * (1 - ss(22, 23.6, t));
+  // the storm
+  const sOn = storm * (1 - ss(20.5, 22, t));
+  clouds.forEach((c) => { const u = c.userData; c.material.opacity = sOn * .55; c.visible = sOn > .01;
+    c.position.set(camera.position.x + ((u.a * 300 + t * 40 * u.s) % 300) - 150, camera.position.y - 6 + u.b * 26, camera.position.z - 20 - u.c * 120); });
+  grains.material.opacity = sOn * .9; grains.visible = sOn > .01;
+  if (grains.visible) for (let i = 0; i < NG; i++) { const [a, b, c, s] = grS[i]; grP[i * 3] = camera.position.x + ((a * 120 + t * 60 * s) % 120) - 60; grP[i * 3 + 1] = camera.position.y - 6 + b * 18; grP[i * 3 + 2] = camera.position.z - 2 - c * 60; }
+  grG.attributes.position.needsUpdate = true;
+  // the ancient world only at dawn; banners wave, palms sway
+  townBaked.visible = dawn; castle.visible = true; heroG.visible = hz.visible = dawn;
+  for (const b of banners) { b.m.visible = b.pole.visible = dawn; const a = b.m.geometry.attributes.position; for (let i = 0; i < a.count; i++) { const x0 = b.base[i * 3]; a.setZ(i, Math.sin(x0 * 1.6 - t * 4.5) * .35 * (x0 + 2.5) / 5); } a.needsUpdate = true; }
+  
+  // depth of field for the sword
+  bokeh.enabled = shot === SHOTS[5]; if (bokeh.enabled) { bokeh.uniforms.focus.value = camera.position.distanceTo(HERO) - .2; bokeh.uniforms.aperture.value = .0035; bokeh.uniforms.maxblur.value = .012; }
+  // words and title
+  const cue = CUES.find(([a, b]) => t >= a && t <= b);
+  if (cue) { subEl.textContent = cue[2]; subEl.style.opacity = Math.min(ss(cue[0], cue[0] + .45, t), 1 - ss(cue[1] - .45, cue[1], t)); } else subEl.style.opacity = 0;
+  titleEl.style.opacity = ss(64.2, 65.6, t) * (1 - ss(69.2, 70, t)); if (t > 64) subEl.style.opacity = 0;
+  fadeEl.style.opacity = Math.max(1 - ss(0, 1.2, t), ss(69.3, 70, t));
+  composer.render();
+};
+function bake(group) {
+  group.updateMatrixWorld(true);
+  const byMat = new Map(), drop = [];
+  group.traverse((o) => { if (!o.isMesh || o.userData.keep) return; let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const k of Object.keys(g.attributes)) if (!["position", "normal", "uv", "uv2"].includes(k)) g.deleteAttribute(k);
+    if (!g.attributes.uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    if (!g.attributes.uv2) g.setAttribute("uv2", g.attributes.uv.clone());
+    g.applyMatrix4(o.matrixWorld); const k = o.material.uuid; if (!byMat.has(k)) byMat.set(k, { m: o.material, list: [] }); byMat.get(k).list.push(g); drop.push(o); });
+  for (const o of drop) o.parent.remove(o);
+  const out = new THREE.Group(); group.parent.add(out);
+  for (const { m, list } of byMat.values()) { const g = mergeGeometries(list, false); if (!g) continue; const mesh = new THREE.Mesh(g, m); mesh.castShadow = mesh.receiveShadow = true; out.add(mesh); }
+  return out;
+}
+const townBaked = bake(town); town.visible = false;
+for (const b of banners) { b.m.userData.keep = true; b.pole.userData.keep = true; }
+for (const s2 of slits) s2.userData.keep = true; door.userData.keep = arch.userData.keep = true;
+const castleBaked = bake(castle);
+await document.fonts.load("bold 92px Amiri"); drawGlyph(); glyphTex.needsUpdate = true;
+// wait for every texture to arrive before the first frame
+let loaded = 0, total = 0; THREE.DefaultLoadingManager.onProgress = (u, a, b) => { loaded = a; total = b; };
+await new Promise((ok) => { const t0 = performance.now(); const check = () => ((loaded >= total && performance.now() - t0 > 3000) || performance.now() - t0 > 40000 ? ok() : setTimeout(check, 300)); check(); });
+window.loadInfo = [loaded, total];
+window.ready = true; render(0);
+</script></body></html>
