@@ -67,6 +67,7 @@ transition scenes' narration; its key goes in through the secure credential form
 10. **Units, all four groups**: footman (sword and shield), archer, spearman (strong against horse); horseman and camel rider (sturdier, carries more loot); siege weapons in later stages (ram for gates, ladders for walls, catapult); and one hero commander per player, upgraded and named, who strengthens the troops near him and rests a while when worn out.
 11. **Control in battle**: drop troops from any side around the enemy town and they fight by themselves; tap a building to send a group at it; the hero has a special strike you trigger yourself.
 12. **Live defence, three limited actions**: send out the garrison waiting in the camp, pour boiling oil from the wall once, and use the hero's strike. It helps but cannot turn a battle alone.
+13. **Damage after a battle, a light repair**: destroyed buildings stand again by themselves after an hour; a little gold makes it faster.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
