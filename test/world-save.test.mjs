@@ -218,15 +218,16 @@ test("a phone clock pushed ahead does not pay the hours the world has not reache
   assert.equal(await sync(5600, hourNow + 1), 5600, "back on the world's time, it earns again");
 });
 
-test("the clock cheaters are banned once, and the bulletin names them", async (t) => {
+test("the clock cheaters' accounts are deleted once, and the bulletin names them", async (t) => {
   const { db, board } = worldFixture(t);
   db.prepare("INSERT INTO players (name, secret, created, plot) VALUES (?, 's', 1, 5), (?, 's', 1, 6)").run("Waleed", "honestMayor");
   db.prepare("DELETE FROM meta WHERE key = 'clock_ban_v1'").run();
   board.clockBan();
   board.clockBan(); // once only
-  const banned = db.prepare("SELECT name FROM players WHERE banned = 1").all().map((r) => r.name);
-  assert.deepEqual(banned, ["Waleed"]);
-  const lines = db.prepare("SELECT text FROM wnews WHERE kind = 'admin' AND text LIKE '%تم حظر%'").all();
+  const gone = db.prepare("SELECT name FROM players WHERE purged = 1").all().map((r) => r.name);
+  assert.deepEqual(gone, ["Waleed"]);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM banned_devices").get().n, 0, "the phone is not banned");
+  const lines = db.prepare("SELECT text FROM wnews WHERE kind = 'admin' AND text LIKE '%تم حذف حسابات%'").all();
   assert.equal(lines.length, 1);
   assert.ok(lines[0].text.includes("Waleed") && !lines[0].text.includes("honestMayor"));
 });

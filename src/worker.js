@@ -205,7 +205,8 @@ export class Board extends DurableObject {
   }
   /**
    * Once (the owner's order, 27 Nov 2026): the players who pushed their phone's clock ahead to be paid the away
-   * money again and again are banned (their accounts only, not their phones), and the bulletin names them, as a lesson to others.
+   * money again and again have their accounts and towns deleted (their phones are not banned: they may start again),
+   * and the bulletin names them, as a lesson to others.
    * Found by their towns' hours being far ahead of the world's (from 12 hours to 11 years).
    */
   clockBan() {
@@ -216,11 +217,12 @@ export class Board extends DurableObject {
       const p = this.sql.exec("SELECT name, banned FROM players WHERE name = ?", name).toArray()[0];
       if (!p) continue;
       const town = this.sql.exec("SELECT town FROM plots WHERE owner = ?", name).toArray()[0]?.town;
-      this.sql.exec("UPDATE players SET banned = 1, ban_reason = ? WHERE name = ?", reason, name);
-      try { for (const ws of this.ctx.getWebSockets?.() || []) if (ws.deserializeAttachment?.()?.name === name) { ws.send('{"t":"banned"}'); ws.close(1008, "Account banned"); } } catch { /* not connected */ }
+      const removed = this.ctx.storage.transactionSync(() => this.purgePlayer(name, reason)); // the account and its town are deleted; the phone is not banned
+      try { for (const ws of this.ctx.getWebSockets?.() || []) if (ws.deserializeAttachment?.()?.name === name) { ws.send('{"t":"banned","purged":true}'); ws.close(1008, "Account removed"); } } catch { /* not connected */ }
+      try { if (removed.chatIds.length) this.live({ t: "chatdel", ids: removed.chatIds }); for (const plot of removed.plots) this.live({ t: "town", plot, removed: true }); } catch { /* nobody listening */ }
       done.push(town ? `${name} («${town}»)` : name);
     }
-    if (done.length) this.news("admin", `📢 إعلان من الإدارة ⛔ تم حظر: ${done.join("، ")}. السبب: تقديم ساعة الجوال للحصول على فلوس بغير حق. الثغرة انسدت، وكل من يحاول التلاعب باللعبة يتحظر حسابه. اللعب النظيف هو اللي يرفع مدينتك 🤝`, null, null, false);
+    if (done.length) this.news("admin", `📢 إعلان من الإدارة ⛔ تم حذف حسابات: ${done.join("، ")}. السبب: تقديم ساعة الجوال للحصول على فلوس بغير حق. الثغرة انسدت، وكل من يحاول التلاعب باللعبة ينحذف حسابه. اللعب النظيف هو اللي يرفع مدينتك 🤝`, null, null, false);
   }
   /**
    * Once: towns that left in debt were measured from their debt, so the shield clearing it counted as income
