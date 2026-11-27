@@ -36,6 +36,13 @@ Marid); its holder is «أمير الجوف»; the castle **never ends** (no era
 all-time leader carries «سيّد الجوف» until someone passes them.
 All names, art and units are our own (no copying any existing game).
 
+Also decided: the ancient world runs on **real time** (not the 20-minute jouf day); everything takes time to
+build; a slow, rewarding pace (2 builders at start, up to 5; build times grow with level; a stage needs people,
+a key building and a minimum time in the stage before; no paid speed-ups; capped treasury). Lessons from the
+modern world: أبو يعقوب reached الحاضرة الكبرى in days. Stage names approved: مضرب، قرية، بلدة، مدينة مسوّرة، إمارة، الإمارة الكبرى.
+Cinematics: the owner subscribes to an Arabic voice service (name to confirm, likely ElevenLabs) for the
+transition scenes' narration; its key goes in through the secure credential form, never in chat or the repo.
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
