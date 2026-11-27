@@ -68,6 +68,7 @@ transition scenes' narration; its key goes in through the secure credential form
 11. **Control in battle**: drop troops from any side around the enemy town and they fight by themselves; tap a building to send a group at it; the hero has a special strike you trigger yourself.
 12. **Live defence, three limited actions**: send out the garrison waiting in the camp, pour boiling oil from the wall once, and use the hero's strike. It helps but cannot turn a battle alone.
 13. **Damage after a battle, a light repair**: destroyed buildings stand again by themselves after an hour; a little gold makes it faster.
+14. **Where gold comes from (options 1 and 2 together)**: the people pay tax; palms, farms and the market make gold; producing buildings (mines, farms) fill up by the hour and the player collects from them; loot and mercenary sales add to it. A peaceful town grows by trade, a warlike one by loot.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
