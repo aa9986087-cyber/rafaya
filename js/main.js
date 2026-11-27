@@ -1083,7 +1083,7 @@ export async function sendWorldSave(mine, id, leaving) {
       if (!arrange && ownsActiveSave(mine)) store.set(WORLD_SAVE, pack(mine));
     }
   }
-  if (r?.ok && ownsActiveSave(mine)) { WARX.syncTown = mine; WARX.syncKey = key; lastSync = Date.now(); }
+  if (r?.ok && ownsActiveSave(mine)) { WARX.syncTown = mine; WARX.syncKey = key; WARX.syncMoney = data.money; lastSync = Date.now(); }
   await syncReply(r, mine);
 }
 addEventListener("online", () => worldSync(true));

@@ -443,7 +443,7 @@ export function worldSync(force, leaving = false) {
   if (leaving && Date.now() - (worldSync.backgroundAt || 0) < 1000) return;
   if (!force) {
     clearTimeout(worldSync.soon);
-    worldSync.soon = setTimeout(warSyncNow, 3000); // only sent if the layout changed
+    worldSync.soon = setTimeout(() => warSyncNow(false), 3000); // only sent if the layout changed
     if (Date.now() - lastSync < 2 * 60000) return;
   }
   const busy = saveRequests.get(mine);

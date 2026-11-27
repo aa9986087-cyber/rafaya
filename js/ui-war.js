@@ -34,13 +34,14 @@ export async function warApi(action, body = {}) {
   if (action !== "state" && worldMode && (visiting?.home ?? S).world?.syncConflict) return { error: "مدينتك قيد المزامنة، جرّب بعد شوي" };
   try { return await api(`/world/war/${action}`, { name: id.name, secret: id.secret, ...body }); } catch (e) { return { error: e.message === "maintenance" ? "عالم الجوف تحت الصيانة" : "ما قدرت أوصل للسيرفر: جرّب بعد شوي" }; }
 }
-/** The buildings as the server last saw them: when they changed, send the town before any war action (the server only trusts what it has). */
+/** The buildings as the server last saw them: when they (or the money) changed, send the town before any war action (the server only trusts what it has). */
 export const warTownKey = (s) => `${s.era}|${s.tiles.map(({ t, b }) => b
   ? [t, b.id, b.lvl, b.build > 0 ? "b" : "", b.rot || 0, b.n || 1, b.monument || ""].join(":") : t[0]).join(",")}`;
-export async function warSyncNow() {
+export async function warSyncNow(money = true) {
   const home = visiting ? visiting.home : S, id = me();
   if (!worldMode || arrange || id?.plot == null || home?.world?.plot !== id.plot) return;
-  if (WARX.syncTown === home && warTownKey(home) === WARX.syncKey) return;
+  // the server pays from the budget it last saw: send the town again when the buildings or the money changed
+  if (WARX.syncTown === home && warTownKey(home) === WARX.syncKey && (!money || Math.round(home.money) === WARX.syncMoney)) return;
   await worldSync(true);
 }
 /** An apology in the middle of the screen: what went wrong (our mistake) and what was given back. 30 seconds, or «تمام». */
@@ -89,7 +90,7 @@ export async function warPoll(force) {
   if (force && WARX.busy) { WARX.again = true; return WARX.st; } // a hint while a poll runs: ask again right after (a gift or a strike is never left waiting)
   if (!worldMode || WARX.busy || (!force && Date.now() - WARX.polled < (LIVE.ok ? 180000 : 25000))) return WARX.st; // live: pushed at once, this is only a safety net
   WARX.busy = true; WARX.polled = Date.now();
-  if (force) await warSyncNow();
+  if (force) await warSyncNow(false);
   const st = await warApi("state", { since: warSeen(), seq: (visiting ? visiting.home : S).war?.seq || 0 });
   WARX.busy = false;
   if (st.noTown && worldMode) { townRemoved(st.namefix); return WARX.st; }
