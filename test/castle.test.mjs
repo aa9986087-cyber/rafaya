@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { newGame, pack, idx } from "../js/sim.js";
 import { WarServer, memWarDb } from "../js/warserver.js";
+import { WAR } from "../js/war.js";
 import { TROOPS, CASTLE, castleBattle } from "../js/castle.js";
 
 const MIN = 60000, HOUR = 60 * MIN;
@@ -10,7 +11,7 @@ function makeWorld() {
   let now = Date.UTC(2026, 11, 1);
   const towns = new Map(), players = new Map();
   const world = { town: (p) => towns.get(p) || null, player: (n) => players.get(n) || null, news: () => {} };
-  const war = new WarServer(memWarDb(), world, { now: () => now, rand: () => 0.5 });
+  const war = new WarServer(memWarDb(), world, { now: () => now, rand: () => 0.5, cfg: { ...WAR, castleOn: true } }); // the castle is off on the live site for now
   const addTown = (plot, name, { era = 2, money = 500000, barracks = 2 } = {}) => {
     const s = newGame(plot + 1, { site: "world", name }); s.era = era; s.money = money; s.war = { seq: 0 };
     s.tiles[idx(20, 20)].b = { id: "milhq", lvl: 0, res: 0, cond: 100 };
@@ -84,4 +85,9 @@ test("the battle: more strength wins; the winner loses more when it was close", 
   assert.ok(big.win && close.win);
   assert.ok(big.attLost.sf < close.attLost.sf * 4);
   assert.equal(castleBattle({ inf: 10, sf: 0, sn: 0 }, { inf: 0, sf: 0, sn: 10 }, () => 0.5).win, false, "snipers on the walls hold");
+});
+
+test("while the castle is switched off, its actions answer «قريبًا»", () => {
+  const war = new WarServer(memWarDb(), { town: () => null, player: () => null }, { now: () => 1000 });
+  for (const a of ["castle", "train", "march"]) assert.match(war.handle(a, { req: "x" }, { name: "x", plot: 1 }).error, /قريبًا/);
 });

@@ -310,6 +310,7 @@ async function pvApi(path, body) {
 /** The trial's castle: now and then a bot town sends an army at «قلعة مارد» (they are seen on the way, and fight). */
 let pvCastleAt = 0;
 function pvCastleBots() {
+  if (!CASTLE_ON) return;
   const now = Date.now(); if (now < pvCastleAt) return;
   pvCastleAt = now + 70000 + Math.random() * 50000;
   const bots = Object.values(pvState.plots).filter((t) => pvState.players[t.owner]?.bot);
@@ -517,7 +518,7 @@ function pvReadyTown(s) {
     [34,47,"lantern"], [37,47,"themepark"], [40,47,"skyline"], [35,49,"mandi"], [37,49,"hotel",2],
     [38,49,"streetpalm"], [40,49,"fountain"],
     [48,44,"milhq",2], [50,44,"dronebase",2], [52,44,"radar",2],
-    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], [48,48,"barracks",1]
+    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], ...(CASTLE_ON ? [[48,48,"barracks",1]] : [])
   ].forEach((args) => put(...args));
   s.tiles[idx(47,34)].t = "rock";
   s.tiles[idx(44,40)].t = "wadi";

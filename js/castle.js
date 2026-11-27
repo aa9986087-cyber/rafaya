@@ -2,6 +2,8 @@
 // Pure rules and numbers, shared by the server (js/warserver.js) and the game. The owner's plan: docs/CASTLE_PLAN.md.
 import { MIL } from "./data.js";
 
+/** The castle is built but kept off until the owner says (27 Nov 2026): no camp to build, no card, no castle on the map, no crown. */
+export const CASTLE_ON = false;
 /** The three kinds of soldiers: price, training time (seconds), strength attacking and defending (on the walls). */
 export const TROOPS = {
   inf: { name: "مشاة", icon: "🪖", cost: 150, sec: 20, atk: 1, def: 1, text: "رخيصين وكثار: عمود أي جيش." },

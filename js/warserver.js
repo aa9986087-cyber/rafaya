@@ -16,7 +16,7 @@ import {
   hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
   MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS
 } from "./war.js";
-import { TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
+import { CASTLE_ON, TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
 const pairId = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
@@ -386,9 +386,9 @@ export class WarServer {
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
       case "watch": return this.watch(Math.round(Number(body.plot)), me);
-      case "castle": return { castle: this.castleView(me) };
-      case "train": return this.once(me.plot, body.req, () => this.train(body, me));
-      case "march": return this.once(me.plot, body.req, () => this.march(body, me));
+      case "castle": return CASTLE_ON || this.cfg.castleOn ? { castle: this.castleView(me) } : { error: "قلعة مارد قريبًا" };
+      case "train": if (!CASTLE_ON && !this.cfg.castleOn) return { error: "قلعة مارد قريبًا" }; return this.once(me.plot, body.req, () => this.train(body, me));
+      case "march": if (!CASTLE_ON && !this.cfg.castleOn) return { error: "قلعة مارد قريبًا" }; return this.once(me.plot, body.req, () => this.march(body, me));
       default: return { error: "not found" };
     }
   }

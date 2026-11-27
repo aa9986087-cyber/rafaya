@@ -5,13 +5,13 @@ import { WARX, warApi, warNow, warReq, warSyncNow, warPoll, fmtLeft, secLeft } f
 import { me } from "./ui-online.js";
 import { toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
-import { TROOPS, TROOP_IDS, CASTLE } from "./castle.js";
+import { TROOPS, TROOP_IDS, CASTLE, CASTLE_ON } from "./castle.js";
 
 export const CASTLE_UI = { view: null, send: { inf: 0, sf: 0, sn: 0 }, tab: "fight", tick: 0, poll: 0 };
 const csN = (n) => ar(Math.round(n || 0));
 const csSpan = (ms) => { const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000); return h ? `${ar(h)} س ${ar(m)} د` : `${ar(Math.max(1, m))} د`; };
 /** The crown beside the castle holder's name (the chat, the map): to tease everyone else. */
-export const castleCrown = (plot) => (plot != null && WARX.st?.castle?.holder === plot ? `<span class="castle-crown" title="ماسك قلعة مارد">👑 أمير الجوف</span>` : "");
+export const castleCrown = (plot) => (CASTLE_ON && plot != null && WARX.st?.castle?.holder === plot ? `<span class="castle-crown" title="ماسك قلعة مارد">👑 أمير الجوف</span>` : "");
 
 export async function castleSheet(tab = CASTLE_UI.tab) {
   if (!worldMode) return;
@@ -99,6 +99,6 @@ function csBind() {
 }
 /** A small card in the war room: who holds the castle, and the way in. */
 export function castleCard() {
-  const c = WARX.st?.castle; if (!c) return "";
+  const c = WARX.st?.castle; if (!c || !CASTLE_ON) return "";
   return `<button type="button" class="cs-card" id="csOpen"><span class="ic">🏰</span><span><b>${CASTLE.name}</b><small>${c.holder != null ? `👑 أمير الجوف: «${c.town}»` : "يحرسها حراس القلعة: محد مسكها"}${c.marching ? ` · ⚔️ ${ar(c.marching)} جيش بالطريق` : ""}</small></span><em>افتح ←</em></button>`;
 }

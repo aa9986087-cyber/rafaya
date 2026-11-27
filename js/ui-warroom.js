@@ -9,7 +9,7 @@ import { ZERO } from "./ui-zero.js";
 import { row, toast } from "./ui-build.js";
 import { sfx } from "./sound.js";
 import { castleCard, castleSheet } from "./ui-castle.js";
-import { CASTLE } from "./castle.js";
+import { CASTLE, CASTLE_ON } from "./castle.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
 import { medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
@@ -113,7 +113,7 @@ function frontMap(map, st) {
     return `<g class="wm-t ${state} ${on ? "on" : ""} ${quiet ? "quiet" : ""}"><circle cx="${x}" cy="${y}" r="${on ? 5 : 3.2}" data-r="${on ? 5 : 3.2}"/><text x="${x}" y="${y - 8}" data-y="${y}" data-pri="${pri}" class="wm-name ${quiet ? "quiet" : ""}">${t.plot === mine ? myLabel(t.town) : t.town}${inN ? ` 🔴${ar(inN)}` : ""}${outN ? ` 🟢${ar(outN)}` : ""}</text>${t.plot === mine ? "" : `<circle cx="${x}" cy="${y}" r="9" data-r="9" class="wm-hit" data-wrsel="${t.plot}"/>`}</g>`;
   }).join("");
   // «قلعة مارد» at Dumat al-Jandal: its holder's crown, and the armies walking to it (seen by everyone)
-  const cs = st?.castle, kx = CASTLE.x * cell + cell / 2, ky = CASTLE.y * cell + cell / 2;
+  const cs = CASTLE_ON ? st?.castle : null, kx = CASTLE.x * cell + cell / 2, ky = CASTLE.y * cell + cell / 2;
   const marchLines = (cs?.marches || []).filter((m) => map.plots.some((t) => t.plot === m.from)).map((m) => { const [ax, ay] = xy(m.from), cx = (ax + kx) / 2, cy = (ay + ky) / 2;
     return `<path d="M${ax},${ay} L${kx},${ky}" class="cs-path ${m.mode}"/><circle r="4.5" data-r="4.5" class="cs-army ${m.mode}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${kx},${ky}" data-t0="${m.sent}" data-t1="${m.at}" cx="${ax}" cy="${ay}"/>`; }).join("");
   const castleG = cs ? `<g class="wm-castle"><circle cx="${kx}" cy="${ky}" r="9"/><text x="${kx}" y="${ky + 4}" class="cs-ic">🏰</text>${cs.holder != null ? `<text x="${kx}" y="${ky - 12}" class="cs-crown">👑 ${cs.town}</text>` : `<text x="${kx}" y="${ky - 12}" class="cs-crown free">${CASTLE.name}</text>`}</g>` : "";
