@@ -8,6 +8,10 @@ No date is set yet: the owner chooses it then. Nothing here is built yet.
   The current world is not wiped.
 - The current world **must have an ending** (below).
 - **تاج الجوف الأخير** goes to the town with the **most war victories** during the last month.
+- **Everyone moves at once** (decided 27 Nov 2026): right after the ending cinematic every player goes to
+  «الجوف القديمة»; the modern world becomes «متحف الجوف» at the same moment (no period with both worlds open).
+- The trailer is approved (v5, 27 Nov 2026), with the title «الجوف القديمة» only (no «قريبًا»): it plays
+  before everyone moves.
 - Alliances (for the coming worlds): **anyone may ally with anyone, two towns per alliance only**.
 - Also discussed before (not yet decided): after الحاضرة الكبرى a «دولة» stage (suggested: 40,000 people,
   held 3 jouf days, at most 3 states), reputation, protection of small towns by a state, a council of states.
