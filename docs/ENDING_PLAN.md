@@ -28,6 +28,12 @@ No date is set yet: the owner chooses it then. Nothing here is built yet.
 ## The ancient world: the full plan
 The owner's full plan page (Arabic): `docs/ancient-world.html`, published at https://claude.ai/artifact/7M5BJNmgUc7D9Nqsus3kn1.
 
+Decided on 27 Nov 2026: battles in the style of the well-known base-attack games (the attacker drops troops
+around the defender's own town and they fight by themselves; defences fight automatically), and the defender may
+join live with a few limited actions. The goal of the game: the great castle in the middle of the map (Qasr
+Marid); its holder is «أمير الجوف»; whoever holds it longest in an era (30 days suggested) is crowned «ملك الجوف».
+All names, art and units are our own (no copying any existing game).
+
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
