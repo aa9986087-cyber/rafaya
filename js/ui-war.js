@@ -106,14 +106,14 @@ export async function warPoll(force) {
   return st;
 }
 /**
- * «موسيقى الحرب»: the owner's theme plays when a war of this town begins (it declares one, or one is declared on it),
- * once for each war; and a small bar lets the mayor turn it up or down, or stop it, on any phone.
+ * «موسيقى الحرب»: the owner's theme starts when a war of this town begins (it declares one, or one is declared on it)
+ * and plays over again until no war is left; a small bar lets the mayor turn it up or down, or stop it, on any phone.
  */
 function warThemeCheck(st) {
   const seen = (WARX.warsSeen ||= new Set()), first = !WARX.warsChecked, now = warNow();
+  const wars = (st.rels || []).filter((r) => ["warning", "war"].includes(r.state));
   let fresh = false;
-  for (const r of st.rels || []) {
-    if (!["warning", "war"].includes(r.state)) continue;
+  for (const r of wars) {
     const key = `${r.other}:${r.warStart || r.since || 0}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -121,7 +121,8 @@ function warThemeCheck(st) {
     if (!first || now - (r.warStart ? r.warStart - WAR.T.warning : r.since || 0) < 120000) fresh = true;
   }
   WARX.warsChecked = true;
-  if (fresh) warMusic.play();
+  if (fresh) warMusic.play();               // a new war: the theme starts (even after the mayor stopped it for an older one)
+  else if (!wars.length && warMusic.playing) warMusic.stop(); // no war left: it fades out
 }
 function warMusicBar(playing) {
   let el = $("warMusic");

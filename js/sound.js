@@ -68,8 +68,9 @@ export const ambience = {
       if (!amb) startAmbience();
       const t = ctx.currentTime;
       // wind: strong in a dust storm, cold and loud on winter nights
-      amb.wind.gain.setTargetAtTime(dusty ? 0.08 : season === "winter" ? (night ? 0.03 : 0.04) : night ? 0.012 : 0.03, t, 1.5);
-      amb.rain.gain.setTargetAtTime(raining ? 0.32 : 0, t, 1);
+      const duck = warTheme.src ? 0.3 : 1; // the war theme playing: the rain and the wind stay under it (the owner)
+      amb.wind.gain.setTargetAtTime((dusty ? 0.08 : season === "winter" ? (night ? 0.03 : 0.04) : night ? 0.012 : 0.03) * duck, t, 1.5);
+      amb.rain.gain.setTargetAtTime((raining ? 0.32 : 0) * duck, t, 1);
       if (night && !raining && season !== "winter" && t > amb.nextChirp) { // no crickets in the winter cold // crickets: three quick high chirps
         for (let i = 0; i < 3; i++) tone(4300 + Math.random() * 300, 0.035, { type: "sine", vol: 0.012, at: i * 0.06 });
         amb.nextChirp = t + 0.6 + Math.random() * 1.6;
@@ -78,14 +79,14 @@ export const ambience = {
   }
 };
 
-// ---------- «موسيقى الحرب»: the owner's theme, from the start of a war; its own volume (a slider) ----------
+// ---------- «موسيقى الحرب»: the owner's theme, from the start of a war and over again while it lasts; its own volume ----------
 // Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
 let warVol = 0.6; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
 const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
 const warTell = () => { for (const f of warTheme.listeners) try { f(warMusic.playing); } catch { /* a screen gone */ } };
 export const warMusic = {
   get volume() { return warVol; },
-  get playing() { return !!warTheme.src && performance.now() < warTheme.until; },
+  get playing() { return !!warTheme.src; },
   onChange(f) { warTheme.listeners.add(f); return () => warTheme.listeners.delete(f); },
   setVolume(v) {
     warVol = Math.max(0, Math.min(1, Number(v) || 0));
@@ -97,10 +98,10 @@ export const warMusic = {
     const buf = await recording("sound/war-theme.mp3"); if (!buf) return;
     try {
       const a = ac(), src = a.createBufferSource(), g = a.createGain(), t = a.currentTime;
-      src.buffer = buf; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.001, warVol * 0.9), t + 2.5);
-      const end = t + buf.duration; g.gain.setTargetAtTime(0.0001, end - 4, 1.2);
+      src.buffer = buf; src.loop = true; // it plays over and over while the war lasts (the owner)
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.001, warVol * 0.9), t + 2.5);
       src.connect(g).connect(a.destination); src.start(t);
-      warTheme.src = src; warTheme.gain = g; warTheme.until = performance.now() + buf.duration * 1000;
+      warTheme.src = src; warTheme.gain = g; warTheme.until = Infinity;
       src.onended = () => { if (warTheme.src === src) { warTheme.src = null; warTheme.gain = null; warTheme.until = 0; warTell(); } };
       warTell();
     } catch { /* no audio */ }
@@ -144,7 +145,7 @@ export const sfx = {
       try {
         const a = ac(); let buf = rec;
         if (!buf) { const th = thunder(a.sampleRate, near, Math.floor(Math.random() * 1e6)); buf = a.createBuffer(2, th.left.length, a.sampleRate); buf.getChannelData(0).set(th.left); buf.getChannelData(1).set(th.right); }
-        const src = a.createBufferSource(), g = a.createGain(); src.buffer = buf; g.gain.value = near > 0.6 ? 0.8 : 0.35 + near;
+        const src = a.createBufferSource(), g = a.createGain(); src.buffer = buf; g.gain.value = (near > 0.6 ? 0.8 : 0.35 + near) * (warTheme.src ? 0.35 : 1);
         src.connect(g).connect(a.destination); src.start(a.currentTime + delay);
       } catch { /* no audio */ }
     });
