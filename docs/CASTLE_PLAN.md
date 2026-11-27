@@ -16,3 +16,8 @@ Nothing is built yet. Decided with the owner, one question at a time.
   and the holder; the march takes the same time from anywhere; the server decides the fight (numbers, upgrades);
   the battle is shown in 3D (modern soldiers, Rocketbox Military avatars, MIT); one hour of protection after a capture;
   honour points for every attacker; titles «أمير الجوف» and «سيّد الجوف» (most time in total).
+
+## Release note (the owner, 27 Nov 2026)
+- The castle is built and in the trial, but **it is NOT to go live yet** ("خله بعدين"). On the next «ارفع», release
+  only the war theme (the song): hide the castle (its war-room card, the barracks in the build list, the castle on the
+  war map, the crown in the chat) behind a switch that stays off.
