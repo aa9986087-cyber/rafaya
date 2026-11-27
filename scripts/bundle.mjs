@@ -12,7 +12,7 @@ const assets = {
   "hdri/sky.exr": `data:application/octet-stream;base64,${(await bin("hdri/sky.exr")).toString("base64")}`,
   "tex/concrete-normal.webp": `data:image/webp;base64,${(await bin("tex/concrete-normal.webp")).toString("base64")}`,
   "tex/grain-normal.webp": `data:image/webp;base64,${(await bin("tex/grain-normal.webp")).toString("base64")}`,
-  ...Object.fromEntries(await Promise.all(["rain", "thunder-near", "thunder-far", "thunder-far2", "war-theme"].map(async (n) => [`sound/${n}.mp3`, `data:audio/mpeg;base64,${(await bin(`sound/${n}.mp3`)).toString("base64")}`])))
+  ...Object.fromEntries(await Promise.all(["rain", "thunder-near", "thunder-far", "thunder-far2"].map(async (n) => [`sound/${n}.mp3`, `data:audio/mpeg;base64,${(await bin(`sound/${n}.mp3`)).toString("base64")}`])))
 };
 // --preview: the TRIAL copy with a practice world of al-Jouf inside the page (js/preview.js), written to dist/rafaya-trial.html
 const preview = process.argv.includes("--preview");

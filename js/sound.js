@@ -83,6 +83,8 @@ export const ambience = {
 // ---------- «موسيقى الحرب»: the owner's theme, always playing in the background (over and over); its own volume in the settings ----------
 // Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
 let warVol = 0.5; try { const v = Number(localStorage.getItem("rafaya-war-vol-v2")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol-v2") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
+/** The theme is switched off for now (the owner, 27 Nov 2026): nothing plays and the settings show no slider. */
+export const WAR_MUSIC_ON = false;
 const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
 const warTell = () => { for (const f of warTheme.listeners) try { f(warMusic.playing); } catch { /* a screen gone */ } };
 export const warMusic = {
@@ -97,7 +99,7 @@ export const warMusic = {
     if (warTheme.gain) { const a = ac(), g = warTheme.gain.gain; g.cancelScheduledValues(a.currentTime); g.setTargetAtTime(warVol * 0.9, a.currentTime, 0.08); }
   },
   async play() {
-    if (!on || warVol <= 0 || warMusic.playing) return;
+    if (!WAR_MUSIC_ON || !on || warVol <= 0 || warMusic.playing) return;
     const buf = await recording("sound/war-theme.mp3"); if (!buf) return;
     try {
       const a = ac(), src = a.createBufferSource(), g = a.createGain(), t = a.currentTime;

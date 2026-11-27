@@ -14,7 +14,7 @@ import { castleCrown } from "./ui-castle.js";
 import { findSheet } from "./ui-find.js";
 import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
-import { sfx, ambience, warSfx, warMusic } from "./sound.js";
+import { sfx, ambience, warSfx, warMusic, WAR_MUSIC_ON } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
 import { familiesAt, jobOf, wishOf, familyDay } from "./people.js";
 import { API, LIVE, PUSH, VISIT_OK, VISIT_SHEETS, WORLD_GEN_KEY, WORLD_ID, WORLD_SAVE, activePushWorker, api, b64, checkPush, conflictCopyKey, freshWorldTown, gunzipText, gzipText, handoffSheet, iosPrepareMove, keepDeviceSave, liveClose, liveOpen, makeWorldTown, me, moveCodeSheet, onlineOk, onlinePoll, ownsActiveSave, pendingSummary, prepareWorldSave, pushDeniedHelp, pushKey, pushOff, pushOffer, pushOn, pushState, registerPushEndpoint, registerPushWorker, saveWriters, takeMove, unb64, versionCheck, visitComments, worldHourNow, worldHours, worldSnapshot, worldSync } from "./ui-online.js";
@@ -1635,7 +1635,8 @@ export function settingsSheet(fromMenu) {
     <div class="rows" style="margin-top:10px">
       ${isAndroid && document.documentElement.requestFullscreen ? `<label class="row toggle"><span>📱 شاشة كاملة <small>(بدون أشرطة المتصفح)</small></span><input type="checkbox" id="setFull" ${store.get("rafaya-fullscreen") !== "0" ? "checked" : ""}></label>` : ""}
       <label class="row toggle"><span>الأصوات</span><input type="checkbox" id="setSound" ${sfx.on ? "checked" : ""}></label>
-      <label class="row vol-row"><span>🎵 موسيقى الحرب</span><input type="range" min="0" max="100" step="1" id="setWarVol" value="${Math.round(warMusic.volume * 100)}" aria-label="صوت موسيقى الحرب"><small>${warMusic.volume > 0 ? "" : "مطفية"}</small></label>
+${WAR_MUSIC_ON ? `
+      <label class="row vol-row"><span>🎵 موسيقى الحرب</span><input type="range" min="0" max="100" step="1" id="setWarVol" value="${Math.round(warMusic.volume * 100)}" aria-label="صوت موسيقى الحرب"><small>${warMusic.volume > 0 ? "" : "مطفية"}</small></label>` : ""}
       <label class="row toggle"><span>أصوات الحرب (إنذار وانفجارات)</span><input type="checkbox" id="setWarSound" ${warSfx.on ? "checked" : ""}></label>
       ${pushStatus !== "no" ? `<label class="row toggle"><span>🔔 التنبيهات على الجوال <small>(عالم الجوف)</small></span><input type="checkbox" id="setPush" ${pushStatus === "on" ? "checked" : pushStatus === "checking" ? "disabled" : ""}></label>` : ""}
     </div>
@@ -1722,7 +1723,7 @@ export function settingsSheet(fromMenu) {
     else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   });
   $("setSound").addEventListener("change", (e) => { sfx.set(e.target.checked); sfx.tap(); });
-  $("setWarVol").addEventListener("input", (e) => warMusic.setVolume(Number(e.target.value) / 100));
+  $("setWarVol")?.addEventListener("input", (e) => warMusic.setVolume(Number(e.target.value) / 100));
   $("setWarSound").addEventListener("change", (e) => { warSfx.set(e.target.checked); sfx.tap(); });
   // the backup: a short code (the town waits on the server, 60 days), or the long code when the server can't be reached
   const short = onlineOk() && !globalThis.RAFAYA_PREVIEW && typeof CompressionStream !== "undefined";
