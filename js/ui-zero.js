@@ -29,7 +29,7 @@ export function setWarOpen(at) {
 /** Right after entering one's town: the trailer (first time only), then the countdown or the announcement. */
 export function zeroEnter() {
   if (!worldMode) return;
-  const next = () => warNotice(() => milNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); }));
+  const next = () => clockNotice(() => warNotice(() => milNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); })));
   if (!store.get(INTRO)) { store.set(INTRO, "1"); playIntro(next); } else next();
 }
 
@@ -55,6 +55,28 @@ function warNotice(done) {
   const close = (then) => { el.classList.remove("on"); setTimeout(() => { el.remove(); then?.(); }, 350); };
   el.querySelector("#ntOk").addEventListener("click", () => { sfx.tap(); close(done); });
   el.querySelector("#ntMap").addEventListener("click", () => { sfx.tap(); close(() => document.getElementById("worldBtn")?.click()); });
+}
+
+// ---------- the owner's notice: the clock cheaters' accounts deleted (27 Nov 2026), once for every player ----------
+const CLOCK_NOTICE = "rafaya-notice-clock-ban-v1";
+const CLOCK_NAMES = [["المندوب1", "دوله الشقيق العظمى 2"], ["هجرة الشيخ موسى", "الرافعيه"], ["مندوب", "هجرة الشيخ يزيد طايس"], ["ابو نخله", "هجرة ابو نخله"], ["المندوب", "دوله الشقيق العظمى"],
+  ["محمد خالد الشمري", "الشيخ محمد خالد الشم"], ["هجره الشيخ زياد", "هجره الشيخ زياد مقبل"], ["Waleed", "الرافعيه١"], ["Waleed1", "الرافعيه٠"]];
+function clockNotice(done) {
+  if (store.get(CLOCK_NOTICE) || !worldMode) { done?.(); return; }
+  store.set(CLOCK_NOTICE, "1");
+  const el = document.createElement("div");
+  el.className = "zero-ann notice"; el.id = "clockNotice";
+  el.innerHTML = `<div class="za-card"><div class="za-seal"><b>⛔</b></div><small class="za-kicker">إعلان من الإدارة</small>
+      <h2>حذف حسابات المتلاعبين</h2>
+      <p>تم حذف حسابات ومدن هؤلاء، لأنهم قدّموا ساعة الجوال عشان ياخذون فلوس بغير حق:</p>
+      <div class="nt-box"><p>${CLOCK_NAMES.map(([n, t]) => `• <b>${n}</b> («${t}»)`).join("<br>")}</p></div>
+      <div class="nt-box"><b>🔒 الثغرة انسدت</b><p>وقت الجوف صار من السيرفر، وتغيير ساعة الجوال ما يجيب ولا ريال.<br>وكل من يحاول التلاعب باللعبة ينحذف حسابه.</p></div>
+      <p class="za-wish">اللعب النظيف هو اللي يرفع مدينتك 🤝</p>
+      <div class="za-acts"><button class="btn go" type="button" id="cnOk">تمام</button></div></div>`;
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add("on"));
+  try { sfx.event(); } catch { /* sound off */ }
+  el.querySelector("#cnOk").addEventListener("click", () => { sfx.tap(); el.classList.remove("on"); setTimeout(() => { el.remove(); done?.(); }, 350); });
 }
 
 // ---------- the owner's notice of the military count by stage: once for every player ----------

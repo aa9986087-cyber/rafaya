@@ -202,6 +202,19 @@ export class Board extends DurableObject {
     this.shieldNoticeFix();
     this.milTrim();
     this.clockBan();
+    this.clockChat();
+  }
+  /** Once: the same announcement in the world's chat, from «المطور» (the owner asked, 27 Nov 2026). */
+  clockChat() {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = 'clock_chat_v1'").toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests): nothing to announce
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('clock_chat_v1', ?)", String(Date.now()));
+    const now = Date.now();
+    for (const [i, text] of [`⛔ حذفنا حسابات: ${CLOCK_CHEATS.join("، ")}`, "السبب: تقديم ساعة الجوال لأخذ فلوس بغير حق. الثغرة انسدت، وكل من يتلاعب باللعبة ينحذف حسابه. اللعب النظيف هو اللي يرفع مدينتك 🤝"].entries()) {
+      this.sql.exec("INSERT INTO chat (name, plot, town, text, at) VALUES (?, ?, ?, ?, ?)", DEV_NAME, null, "", text.slice(0, 200), now + i);
+    }
+    this.sql.exec("DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT 500)");
+    try { for (const message of this.sql.exec("SELECT id, name, plot, town, text, at FROM chat ORDER BY id DESC LIMIT 2").toArray().reverse()) this.live({ t: "chat", message }); } catch { /* nobody listening */ }
   }
   /**
    * Once (the owner's order, 27 Nov 2026): the players who pushed their phone's clock ahead to be paid the away
