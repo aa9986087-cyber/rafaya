@@ -81,7 +81,7 @@ export const ambience = {
 
 // ---------- «موسيقى الحرب»: the owner's theme, always playing in the background (over and over); its own volume in the settings ----------
 // Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
-let warVol = 0.6; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
+let warVol = 0.3; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
 const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
 const warTell = () => { for (const f of warTheme.listeners) try { f(warMusic.playing); } catch { /* a screen gone */ } };
 export const warMusic = {
