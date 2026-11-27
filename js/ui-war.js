@@ -4,7 +4,7 @@ import { ROOM, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
 import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker } from "./war.js";
-import { sfx, warSfx, warMusic } from "./sound.js";
+import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
 import { addPosts } from "./ui-news.js";
@@ -100,45 +100,10 @@ export async function warPoll(force) {
   WARX.offset = st.now - Date.now();
   world.fx && (world.fx.clockOffset = WARX.offset);
   WARX.st = st;
-  warThemeCheck(st);
   if (!(visiting?.home ?? S).world?.syncConflict) warApply(st);
   if (WARX.again) { WARX.again = false; setTimeout(() => warPoll(true), 50); }
   return st;
 }
-/**
- * «موسيقى الحرب»: the owner's theme starts when a war of this town begins (it declares one, or one is declared on it)
- * and plays over again until no war is left; a small bar lets the mayor turn it up or down, or stop it, on any phone.
- */
-function warThemeCheck(st) {
-  const seen = (WARX.warsSeen ||= new Set()), first = !WARX.warsChecked, now = warNow();
-  const wars = (st.rels || []).filter((r) => ["warning", "war"].includes(r.state));
-  let fresh = false;
-  for (const r of wars) {
-    const key = `${r.other}:${r.warStart || r.since || 0}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    // the first look at the town: only a war that began in the last two minutes
-    if (!first || now - (r.warStart ? r.warStart - WAR.T.warning : r.since || 0) < 120000) fresh = true;
-  }
-  WARX.warsChecked = true;
-  if (fresh) warMusic.play();               // a new war: the theme starts (even after the mayor stopped it for an older one)
-  else if (!wars.length && warMusic.playing) warMusic.stop(); // no war left: it fades out
-}
-function warMusicBar(playing) {
-  let el = $("warMusic");
-  if (!playing) { el?.classList.remove("on"); setTimeout(() => { if (!warMusic.playing) el?.remove(); }, 400); return; }
-  if (!el) {
-    el = document.createElement("div"); el.id = "warMusic"; el.className = "war-music";
-    el.innerHTML = `<span class="wm-note">🎵</span><b>موسيقى الحرب</b><input type="range" min="0" max="100" step="1" aria-label="صوت موسيقى الحرب" id="warMusicVol"><button type="button" aria-label="أوقف الموسيقى" id="warMusicStop">✕</button>`;
-    document.body.append(el);
-    const vol = el.querySelector("#warMusicVol");
-    vol.value = String(Math.round(warMusic.volume * 100));
-    vol.addEventListener("input", () => warMusic.setVolume(Number(vol.value) / 100));
-    el.querySelector("#warMusicStop").addEventListener("click", () => { sfx.tap(); warMusic.stop(); });
-  }
-  requestAnimationFrame(() => el.classList.add("on"));
-}
-warMusic.onChange(warMusicBar);
 /** Results to show: an attack on us that just landed (played here if the mayor is home), our own that just landed. */
 export function warWatch(st) {
   const played = warPlayed();

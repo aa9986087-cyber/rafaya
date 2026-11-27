@@ -79,7 +79,7 @@ export const ambience = {
   }
 };
 
-// ---------- «موسيقى الحرب»: the owner's theme, from the start of a war and over again while it lasts; its own volume ----------
+// ---------- «موسيقى الحرب»: the owner's theme, always playing in the background (over and over); its own volume in the settings ----------
 // Played through the Web Audio gain (an <audio> element's volume cannot be set on an iPhone), faded in and out.
 let warVol = 0.6; try { const v = Number(localStorage.getItem("rafaya-war-vol")); if (Number.isFinite(v) && localStorage.getItem("rafaya-war-vol") !== null) warVol = Math.max(0, Math.min(1, v)); } catch { /* default */ }
 const warTheme = { src: null, gain: null, until: 0, listeners: new Set() };
@@ -91,6 +91,8 @@ export const warMusic = {
   setVolume(v) {
     warVol = Math.max(0, Math.min(1, Number(v) || 0));
     try { localStorage.setItem("rafaya-war-vol", String(warVol)); } catch { /* fine */ }
+    if (warVol <= 0) { warMusic.stop(); return; }
+    if (!warTheme.src) { warMusic.play(); return; }
     if (warTheme.gain) { const a = ac(), g = warTheme.gain.gain; g.cancelScheduledValues(a.currentTime); g.setTargetAtTime(warVol * 0.9, a.currentTime, 0.08); }
   },
   async play() {
@@ -115,7 +117,7 @@ export const warMusic = {
 
 export const sfx = {
   get on() { return on; },
-  set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } },
+  set(v) { on = v; try { localStorage.setItem("rafaya-sound", v ? "1" : "0"); } catch { /* fine */ } if (!v) warMusic.stop(); else warMusic.play(); },
   tap() { tone(620, 0.05, { type: "triangle", vol: 0.05 }); },
   build() { tone(180, 0.12, { type: "square", vol: 0.05, slide: -60 }); tone(330, 0.1, { type: "triangle", vol: 0.06, at: 0.06 }); },
   road() { tone(260, 0.04, { type: "triangle", vol: 0.03 }); },
@@ -185,3 +187,6 @@ export const warSfx = {
   boom() { noiseHit(1.8, { from: 900, to: 50, vol: 0.42 }); wtone(48, 1.1, { type: "sine", vol: 0.18, slide: -20 }); noiseHit(0.5, { from: 4000, to: 800, vol: 0.06, type: "highpass", at: 0.08 }); },
   ok() { [784, 1047].forEach((f, i) => wtone(f, 0.14, { type: "triangle", vol: 0.05, at: i * 0.1 })); }
 };
+
+// the theme starts with the first touch (phones only let sound start after one) and keeps playing
+addEventListener("pointerdown", () => { if (!warTheme.src && !warTheme.starting) { warTheme.starting = true; warMusic.play().finally(() => { warTheme.starting = false; }); } }, { passive: true });
