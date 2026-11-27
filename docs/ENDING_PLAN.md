@@ -70,6 +70,7 @@ transition scenes' narration; its key goes in through the secure credential form
 13. **Damage after a battle, a light repair**: destroyed buildings stand again by themselves after an hour; a little gold makes it faster.
 14. **Where gold comes from (options 1 and 2 together)**: the people pay tax; palms, farms and the market make gold; producing buildings (mines, farms) fill up by the hour and the player collects from them; loot and mercenary sales add to it. A peaceful town grows by trade, a warlike one by loot.
 15. **The map**: an imaginary map (not real al-Jouf geography). Each player picks a spot and writes the name of their own home (ديرته) for it. Qasr Marid stands in the middle, with a ring around it where nobody may settle, so no town gets an advantage from being next to the castle.
+16. **Equal march to the castle**: an army reaches Qasr Marid in the same time from anywhere on the map; distance matters only between towns.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
