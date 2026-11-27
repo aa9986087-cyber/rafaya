@@ -63,6 +63,7 @@ transition scenes' narration; its key goes in through the secure credential form
 6. **How mercenaries work**: the seller lists trained soldiers at a price; the buyer gets them for **one attack only**. A minimum price stops cheap sales to an ally or a second account.
 7. **Who may attack whom**: only towns of the same stage, or one stage above or below. The big cannot crush the small; the small may challenge one step up.
 8. **Qasr Marid is open to anyone from the start** (the stage rule above does not apply to it), but its defence is very strong.
+9. **Who defends the castle**: its walls and towers come with the game; its garrison is the emir's soldiers and his ally's, and both may defend live while it is attacked.
 
 ## The ancient world, in order (as proposed)
 1. A small trial world with simple buildings (tent, mud house, well, market, wall) to see the look and feel.
