@@ -48,3 +48,11 @@ transition scenes' narration; its key goes in through the secure credential form
 2. The old war: raise an army (foot, archers, horse), march across the map, besiege the enemy's walls.
 3. Castles and walls: defence by walls, towers and archers on them. Built on al-Jouf's real history
    (Qasr Marid, Dumat al-Jandal). Original art only (no copied games).
+
+## Owner's wishes for the ancient world (27 Nov 2026)
+- No fixed pace or timeline: it should simply be logical; luxury in everything (graphics better than now, sound a focus).
+- Be creative beyond what the owner asks. Alliance: two towns, with their own private chat.
+- The transition cinematic, first draft: `docs/cinematic/gate.html` (three.js, every frame from time t),
+  rendered with `docs/cinematic/shoot.cjs` (needs the fonts Amiri and Reem Kufi from google/fonts, OFL, in
+  `fonts/`, and `vendor` linked next to it). Narration script: `docs/cinematic-gate-script.md`.
+  The owner declined the in-session ElevenLabs key form: they record the lines themselves from the script.
