@@ -203,6 +203,19 @@ export class Board extends DurableObject {
     this.milTrim();
     this.clockBan();
     this.clockChat();
+    this.removeOnce("remove_v2", ["شيخ الخيمه"], "تلاعب باللعبة للحصول على فلوس بغير حق");
+  }
+  /** Once per key: the owner asked these accounts deleted (account and town; the phone is not banned). */
+  removeOnce(key, names, reason) {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const name of names) {
+      if (!this.sql.exec("SELECT 1 FROM players WHERE name = ?", name).toArray().length) continue;
+      const removed = this.ctx.storage.transactionSync(() => this.purgePlayer(name, reason));
+      try { for (const ws of this.ctx.getWebSockets?.() || []) if (ws.deserializeAttachment?.()?.name === name) { ws.send('{"t":"banned","purged":true}'); ws.close(1008, "Account removed"); } } catch { /* not connected */ }
+      try { if (removed.chatIds.length) this.live({ t: "chatdel", ids: removed.chatIds }); for (const plot of removed.plots) this.live({ t: "town", plot, removed: true }); } catch { /* nobody listening */ }
+    }
   }
   /** Once: the same announcement in the world's chat, from «المطور» (the owner asked, 27 Nov 2026). */
   clockChat() {
