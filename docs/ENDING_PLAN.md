@@ -31,7 +31,9 @@ The owner's full plan page (Arabic): `docs/ancient-world.html`, published at htt
 Decided on 27 Nov 2026: battles in the style of the well-known base-attack games (the attacker drops troops
 around the defender's own town and they fight by themselves; defences fight automatically), and the defender may
 join live with a few limited actions. The goal of the game: the great castle in the middle of the map (Qasr
-Marid); its holder is «أمير الجوف»; whoever holds it longest in an era (30 days suggested) is crowned «ملك الجوف».
+Marid); its holder is «أمير الجوف»; the castle **never ends** (no eras, no reset): an all-time record ranks everyone by total time holding it
+(the main contest), with the longest single reign, most captures, most defences and the castle's history; the
+all-time leader carries «سيّد الجوف» until someone passes them.
 All names, art and units are our own (no copying any existing game).
 
 ## The ancient world, in order (as proposed)
