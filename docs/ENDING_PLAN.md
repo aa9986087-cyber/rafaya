@@ -56,3 +56,7 @@ transition scenes' narration; its key goes in through the secure credential form
   rendered with `docs/cinematic/shoot.cjs` (needs the fonts Amiri and Reem Kufi from google/fonts, OFL, in
   `fonts/`, and `vendor` linked next to it). Narration script: `docs/cinematic-gate-script.md`.
   The owner declined the in-session ElevenLabs key form: they record the lines themselves from the script.
+- ElevenLabs is connected through the environment's network secret (api.elevenlabs.io, header xi-api-key; the key
+  is never in the repo). Narrator: the account's voice «Abdullah - Dramatic Bass» (XdoLPWNt7ytn6BtU4FBf),
+  model eleven_multilingual_v2, mp3_44100_128 (192 needs the Creator plan; the owner is on Starter).
+  Effects via /v1/sound-generation. First voiced cut sent to the owner on 27 Nov 2026.
