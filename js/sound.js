@@ -25,6 +25,7 @@ addEventListener("pointerdown", () => { if (ctx && ctx.state !== "running") ctx.
 
 function tone(f, dur, { type = "sine", vol = 0.1, at = 0, slide = 0 } = {}) {
   if (!on) return;
+  if (warTheme.src) vol *= 0.4; // the war theme playing: the game's small sounds stay under it (war sounds keep their own: wtone)
   try {
     const a = ac(), t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t);
