@@ -206,6 +206,7 @@ export class Board extends DurableObject {
     this.milTrim();
     this.heavyReset();
     if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'old_wars_v1'").toArray().length) { this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('old_wars_v1', ?)", String(Date.now())); try { this.war.extendOldWars(); } catch { /* the war never stops the world */ } }
+    if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'old_wars_v2'").toArray().length) { this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('old_wars_v2', ?)", String(Date.now())); try { this.war.reopenOldWars(); } catch { /* the war never stops the world */ } }
     this.stockTrim();
     this.stockTrimHalf();
     this.rubbleRestore("rubble_restore_v1", ["الرافعية", "حي القدس"]);

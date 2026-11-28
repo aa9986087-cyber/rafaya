@@ -117,6 +117,30 @@ export class WarServer {
     }
     return n;
   }
+  /**
+   * Once more (the owner, 28 Nov 2026): the old wars that had already run out (about two hours) and were judged just
+   * before extendOldWars came were left out of it, and sat in a day of waiting. Every war of the old rules that
+   * started within the last day and ended by its time (not a truce, a peace, a tribute or a shield) is a war again
+   * until a full day from its start; its early victory is taken back (one win less), and it is judged then. Returns how many.
+   */
+  reopenOldWars() {
+    const now = this.now(), ENDED_BY_HAND = new Set(["truce", "peace", "paid", "shield"]); let n = 0;
+    for (const r of this.db.list("rel", {})) {
+      if (!r.warStart || (r.rules || 0) >= WAR_RULES || r.judged !== r.warStart || relNow(r, now, this.cfg).state !== "hostile") continue;
+      const end = r.warStart + this.cfg.T.war;
+      if (end <= now) continue;
+      const after = (r.hist || []).filter((h) => h.at >= r.warStart);
+      if (after.some((h) => ENDED_BY_HAND.has(h.kind))) continue;
+      const won = [...after].reverse().find((h) => h.kind === "victory");
+      if (won) { const wa = this.acct(won.by); if ((wa.stats?.wins || 0) > 0) { wa.stats.wins -= 1; this.saveAcct(won.by, wa); } this.medalCache = null; }
+      const out = { ...r, state: "war", warEnd: end, rules: WAR_RULES, hist: (r.hist || []).filter((h) => h !== won) };
+      delete out.judged; delete out.warCool; delete out.result;
+      this.saveRel(r.a, r.b, out); n++;
+      const an = this.townInfo(r.a)?.town || "مدينة", bn = this.townInfo(r.b)?.town || "مدينة";
+      for (const [p, o] of [[r.a, bn], [r.b, an]]) this.note(p, "war", `⚔️ الحرب مع «${o}» رجعت: الحروب صارت يوم كامل، وتخلص بعد ${minutesText(end - now)}.`, { from: p === r.a ? r.b : r.a });
+    }
+    return n;
+  }
   judge(r, now, how = "time") {
     if (!r?.warStart || r.judged === r.warStart) return r;
     const out = { ...r, judged: r.warStart };

@@ -773,3 +773,17 @@ test("wars declared before the new rules last a day from their start too (once)"
   assert.equal(W.war.extendOldWars(), 0, "already on the new rules");
   void a; void b;
 });
+
+test("an old war that ran out just before the day-long rule is a war again until a day from its start", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE }), b = W.addTown(30, "الريحان", { mil: BASE });
+  atWar(W, a, b);
+  const r0 = W.db.get("rel", "10:30"); const start = r0.warStart;
+  delete r0.rules; r0.warEnd = start + 2 * HOUR + 20 * MIN; W.war.saveRel(10, 30, r0); // as the old rules stored it
+  W.tick(3 * HOUR); W.war.handle("state", {}, a); // ran out and judged under the old rules
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "hostile");
+  assert.equal(W.war.reopenOldWars(), 1);
+  const st = W.war.handle("state", {}, a).rels[0];
+  assert.equal(st.state, "war"); assert.equal(st.warEnd, start + WAR.T.war);
+  assert.equal(W.war.reopenOldWars(), 0, "once");
+});
