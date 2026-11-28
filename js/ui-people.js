@@ -7,6 +7,7 @@ import { sfx } from "./sound.js";
 import { row, toast } from "./ui-build.js";
 import { B, CHAINS, GOALS, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, GROUND, MAP_SIZE as N, MAT, ROAD_IDS, bizLevel } from "./data.js";
 import { ADVISOR_FEE, ADVISOR_HOURS, advise } from "./advisor.js";
+import { reloadText } from "./war.js";
 
 export const kidsWord = (n) => (n === 1 ? "عيل واحد" : n === 2 ? "عيالين" : `${ar(n)} عيال`);
 export function familySheet(i, k) {
@@ -48,7 +49,7 @@ export function effectHtml(b) {
     return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch(label, e.output, e.outputNext)}${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}</div></div>`;
   }
   if (e.mil) {
-    const n = e.next, stat = n.ops ? `عمليات بالجو: ${ar(n.ops)}` : n.salvo ? `سعة ${ar(n.cap)} · ${ar(n.salvo)} بالعملية · تجهيز ${ar(n.reload)} د` : n.cap ? `صواريخ ${ar(n.cap)} · تجهيز ${ar(n.reload)} د` : n.detect ? `دقة الدفاع ×${ar(n.detect)}` : n.vsDrone ? `ضد المسيّرات ${ar(Math.round(n.vsDrone * 100))}٪ · ضد الصواريخ ${ar(Math.round(n.vsMissile * 100))}٪ · ${ar(n.intc)} اعتراضية` : "";
+    const n = e.next, stat = n.ops ? `عمليات بالجو: ${ar(n.ops)}` : n.salvo ? `سعة ${ar(n.cap)} · ${ar(n.salvo)} بالعملية · تجهيز ${reloadText(n.reload)}` : n.cap ? `صواريخ ${ar(n.cap)} · تجهيز ${reloadText(n.reload)}` : n.detect ? `دقة الدفاع ×${ar(n.detect)}` : n.vsDrone ? `ضد المسيّرات ${ar(Math.round(n.vsDrone * 100))}٪ · ضد الصواريخ ${ar(Math.round(n.vsMissile * 100))}٪ · ${ar(n.intc)} اعتراضية` : "";
     return `<div class="effect"><b>بعد التطوير:</b><div class="rows">${ch("المصروف بالساعة", e.upkeepNow, e.upkeepNext, false)}<div class="row eff"><span>القدرة العسكرية</span><b class="plus">${stat}</b></div></div></div>`;
   }
   const rows = e.house

@@ -18,18 +18,18 @@ export const WAR = {
   bully: 2,                  // a town two stages above another cannot declare war on it
   T: {
     hostileToWar: 10 * WAR_MIN,  // hostility must stand this long before war can be declared
-    warning: 15 * WAR_MIN,       // after a declaration of war, no strike until this has passed
-    war: 7 * JOUF_DAY,           // how long a war lasts (a week of al-Jouf), then it goes back to hostility
+    warning: 0,                  // a declared war starts at once: the first strike may go straight away (the owner, 28 Nov 2026)
+    war: 24 * WAR_HOUR,          // how long a war lasts (a real day, the owner 28 Nov 2026), then it is judged and goes back to hostility
     truce: 2 * JOUF_DAY,         // a truce (both agree, any time) stops strikes this long, and ends the war
     peaceCool: 14 * JOUF_DAY,    // after peace, no new hostility or war between the two for two weeks of al-Jouf
-    warCool: 14 * JOUF_DAY,      // after a war ends, no new war between the two for two weeks of al-Jouf
+    warCool: 24 * WAR_HOUR,      // after a war ends, no new war between the two for a real day (a shield ends it sooner: when the shield ends)
     tributeAnswer: JOUF_DAY,     // a demand of tribute waits a day of al-Jouf for its answer, then it is war
     tributePeace: 30 * JOUF_DAY, // tribute paid: no war and no new demand between the two for a month of al-Jouf
     shieldLast: 3 * 24 * WAR_HOUR, // a bought shield lasts three real days (owner, 2026-11-26)
     shieldEvery: 7 * 24 * WAR_HOUR, // and the next one four real days after it ends (seven after it was raised)
     say: 3000,                   // one line in a threat talk this often
     offer: JOUF_DAY,             // an offer of truce or peace waits a day of al-Jouf for an answer
-    heat: 60 * WAR_MIN,          // a launcher that fired lately needs longer to get ready again (each launch in this window adds half)
+    heat: 60 * WAR_MIN,          // a launcher that fired lately needs longer to get ready again (half as long again, never more)
     threat: 30 * WAR_MIN         // one threat per pair this often (the old ready-made threats)
   },
   flight: { missile: { base: 12000, perCell: 800 }, drone: { base: 25000, perCell: 2200 } },
@@ -37,8 +37,7 @@ export const WAR = {
     perOp: 60,               // most damage one operation can do to its building
     building: 100,           // a building's war damage never passes this (it is out of action, never removed)
     rehitWindow: 6 * WAR_HOUR, rehitMax: 2,   // the same building is hit at most twice in 6 hours
-    awayWindow: 12 * WAR_HOUR, awayMax: 3,    // an owner away (no game open for 2 hours) takes at most 3 hits in 12 hours,
-                                              // unless the town itself attacked in that time
+    awayWindow: 12 * WAR_HOUR, awayMax: 3,    // (the old protection of an owner away: off since 28 Nov 2026, see awayOn)
     inFlightTo: 3                          // operations flying at one town at once (from everyone)
   },
   interceptor: { price: 600, name: "صاروخ اعتراضي" },
@@ -53,8 +52,16 @@ export const WAR = {
   heavyIntc: 2,               // interceptors one try at a destructive weapon takes
   heavyDay: 24 * WAR_HOUR,    // the window of the counts below (the owner, 28 Nov 2026):
   heavyOut: 6,                // a town launches at most 6 destructive weapons in it
-  heavyIn: 4                  // and at most 4 are fired at one town in it
+  heavyIn: 4,                 // and at most 4 are fired at one town in it
+  // the war of 28 Nov 2026 (the owner, one question at a time):
+  awayOn: false,              // no protection for an owner away: the defences and the deputy fight for the town
+  heatMax: 1,                 // launches in the heat window add half the wait at most once (not once per launch)
+  prize: 0.2,                 // the war's end: the town hurt more pays the other this share of its budget
+  ruin: 0.5,                  // the war's end: a town with this share of its worth out of action (disabled or rubble) drops a stage
+  flatAt: 85                  // a building already out of action (this damage or more) that is hit again falls to rubble
 };
+/** The destructive weapons (quake, storm) and «منظومة الحصن»: ready, but the owner releases them later (28 Nov 2026). */
+export const HEAVY_ON = true; // released on 28 Nov 2026
 
 /** The live rules as written (the trial copy shortens WAR's waits in place; the war guide always tells these). */
 export const WAR_LIVE = JSON.parse(JSON.stringify(WAR));
@@ -71,10 +78,13 @@ export const WEAPONS = {
   missile: { name: "صاروخ طويق", kind: "missile", price: 4500, fee: 500, power: 38, evade: 0.75, blast: 1.5, needs: ["missilepad", 0], icon: "🚀", text: "سريع وضرره متوسط. الدفاع المتوسط والمتقدم يقدرون عليه." },
   missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, blast: 2.1, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." },
   // the destructive weapons (the owner, 28 Nov 2026): every building they reach (never a mosque) falls to rubble,
-  // to be cleared before anything is built there again. Only «منظومة الحصن» can stop them.
+  // to be cleared before anything is built there again. Only «منظومة الحصن» can stop them. Off until HEAVY_ON.
+  ...(HEAVY_ON ? HEAVY_WEAPONS() : {})
+};
+function HEAVY_WEAPONS() { return {
   quake: { name: "صاروخ الزلزال", kind: "missile", heavy: true, price: 150000, fee: 10000, power: 100, evade: 1, blast: 1.6, needs: ["missilepad", 2], minEra: 4, icon: "🌋", text: "مدمّر: يسوّي كل المباني اللي حوله بالأرض ويخليها ركام. الدفاع الجوي العادي ما يقدر عليه، بس «منظومة الحصن»." },
   storm: { name: "صاروخ الإعصار", kind: "missile", heavy: true, price: 400000, fee: 25000, power: 100, evade: 0.8, blast: 2.6, needs: ["missilepad", 2], minEra: 4, icon: "🌪️", text: "أقوى سلاح بالجوف: يمسح حارة كاملة ويخليها ركام، وأصعب بالاعتراض حتى على «منظومة الحصن»." }
-};
+}; }
 /** A destructive weapon: what it reaches falls to rubble. */
 export const isHeavy = (wid) => !!WEAPONS[wid]?.heavy;
 /** How many of one kind (drone or missile) in an arsenal or a load. */
@@ -226,6 +236,38 @@ export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint)
 export const rubbleCostOf = (id, lvl = 0, cfg = WAR) => Math.max(cfg.rubble.min, Math.round((B[id]?.cost || 1000) * (1 + (lvl || 0)) * cfg.rubble.price));
 export const rubbleMsOf = (cfg = WAR) => cfg.rubble.ms;
 
+// ---------- the war's end (the owner, 28 Nov 2026): who was hurt more pays, and a ruined town drops a stage ----------
+
+/** Not part of a town's worth for the war: roads and the pieces of a big decoration. */
+const NO_WORTH = new Set(["road", "part"]);
+/** What a building is worth (its price and the upgrades on it): a house by its levels, the rest by level. */
+export function worthOf(id, lvl = 0) {
+  const d = B[id];
+  if (!d || NO_WORTH.has(d.cat) || id === "decopart") return 0;
+  if (id === "house") { let v = d.cost || 0; for (let k = 1; k <= (lvl || 0); k++) v += d.levels?.[k]?.cost || 0; return v; }
+  return Math.round((d.cost || 0) * (1 + 1.5 * (lvl || 0)));
+}
+/**
+ * How much of a town is out of action now: buildings at flatAt or more (disabled) and rubble, by worth.
+ * list: snapBuildings().list; dmg: Map "x:y" → { bid, wd, flat }. Returns { total, out, share 0 … 1 }.
+ */
+export function ruinOf(list, dmg = new Map(), cfg = WAR) {
+  let total = 0, out = 0;
+  for (const b of list) {
+    if (b.build > 0) continue;
+    const v = worthOf(b.id, b.lvl);
+    if (!v) continue;
+    total += v;
+    const r = dmg.get(`${b.x}:${b.y}`);
+    if (r && r.bid === b.id && (r.flat || (r.wd || 0) >= cfg.flatAt)) out += v;
+  }
+  return { total, out, share: total ? out / total : 0 };
+}
+/** The war's prize: this share of the losing town's budget (rounded down to a hundred, never below zero). */
+export const warPrize = (money, cfg = WAR) => Math.max(0, Math.floor(Math.max(0, money || 0) * cfg.prize / 100) * 100);
+/** The stage a ruined town drops to (one stage, never below the village). */
+export const demotedEra = (era) => Math.max(0, (era || 0) - 1);
+
 // ---------- relations between two towns ----------
 
 export const REL_NAMES = { peace: "سلام", tension: "توتر", hostile: "عداوة معلنة", warning: "إنذار حرب", war: "حرب", truce: "هدنة" };
@@ -240,7 +282,7 @@ export function casualties(b, dmg, warned, cfg = WAR) {
   return { dead: reached * cfg.casualty.dead * k, hurt: reached * cfg.casualty.hurt * k };
 }
 /** Spoils of war: an economic building hit (it makes money, power or water) pays the attacker this share of its repair. */
-export const SPOILS = 0.1;
+export const SPOILS = 0; // (no spoils per strike since 28 Nov 2026: the money is the war's prize at its end)
 export const economic = (id) => !!B[id] && B[id].cat !== "mil" && id !== "house" && !MOSQUES.has(id) && ((B[id].income || 0) > 0 || (B[id].power || 0) > 0 || (B[id].water || 0) > 0);
 /** Medals of al-Jouf: each goes to the town that leads its count (at least `min`). */
 export const MEDALS = [
@@ -309,6 +351,11 @@ export function relActions(rel, me, now, ok, cfg = WAR) {
   return out;
 }
 
+/** A launcher's wait in words (it can be a minute and a half). */
+export function reloadText(m) {
+  const ar = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+  return m === 1 ? "دقيقة" : m === 1.5 ? "دقيقة ونص" : m === 2 ? "دقيقتين" : Number.isInteger(m) ? `${ar(m)} دقايق` : `${ar(Math.floor(m))} دقايق ونص`;
+}
 export function minutesText(ms) {
   const m = Math.max(1, Math.ceil(ms / WAR_MIN));
   const ar = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);

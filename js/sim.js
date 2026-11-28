@@ -1474,8 +1474,7 @@ export function step(s, r = Math.random) {
   });
   // Contractors sometimes run late.
   for (const t of s.tiles) if (t.b?.build > 0 && r() < 0.003) { t.b.build += 24; msgs.push({ kind: "event", title: "تأخير", text: `المقاول تعثّر في «${B[t.b.id].name}»، والمشروع تأخر يوم.` }); }
-  // Stage of the town never goes back.
-  for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era && (!e.worldOnly || s.world)) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
+  riseStage(s, msgs);
   // Bankruptcy: deep in debt the council stops paying its services; back above zero they reopen.
   const limit = 1500 + a.upkeep * 12;
   if (!s.broke && s.money < -limit) { s.broke = true; msgs.push({ kind: "event", title: "البلدية أفلست", text: "الديون فاقت الحد، والمساجد والمدارس والمستوصفات قفلت لأن الرواتب ما انصرفت. ارفع الدخل أو خذ قرض." }); }
@@ -1711,6 +1710,15 @@ export function deputyCatchUp(s, hours, r = Math.random) {
 }
 
 // ---------- saving ----------
+
+/**
+ * The town's stage goes up with its people. In al-Jouf a war can take one back: s.war.eraCap (the server's word)
+ * holds it there until the town's ruins are repaired.
+ */
+export function riseStage(s, msgs = []) {
+  for (const e of ERAS) if (s.pop >= e.pop && e.id > s.era && (!e.worldOnly || s.world) && e.id <= (s.war?.eraCap ?? Infinity)) { s.era = e.id; msgs.push({ kind: "era", text: `الرافعية صارت ${e.name}! مباني جديدة انفتحت.` }); }
+  return msgs;
+}
 
 export function pack(s) {
   const tiles = s.tiles.map(({ t, b }) => {

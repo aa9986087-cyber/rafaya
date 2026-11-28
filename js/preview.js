@@ -119,7 +119,7 @@ function pvSetEra(bot, era) {
 function pvSetRel(by, other, state) {
   const now = Date.now(), a = Math.min(by.plot, other.plot), b = Math.max(by.plot, other.plot);
   const r = { a, b, state, since: now, hist: [{ at: now, by: by.plot, kind: state === "war" ? "war" : state, text: state === "war" ? "إعلان حرب" : state === "hostile" ? "إعلان عداوة" : "صلح" }], lastThreat: {}, offer: null };
-  if (state === "war") { r.warStart = now - 1000; r.warEnd = now + PV_CFG.T.war; }
+  if (state === "war") { r.warStart = now - 1000; r.warEnd = now + PV_CFG.T.war; r.rules = 2; }
   if (state === "peace") { r.hist = []; r.cool = 0; }
   pvWar.saveRel(by.plot, other.plot, r);
 }
@@ -253,7 +253,7 @@ const PV_SCENARIOS = [
     const r = pvSalvo(bot, 4, "missile");
     return { plot: null, room: "attack", msg: r.ok ? "دفعة على ٤ أماكن جاية عليك. تابعها من الشريط، ولا وصلت اضغطها وشوف المشهد." : `ما انطلقت: ${r.error}` };
   }],
-  ["quake", "🌋 صاروخ الزلزال على مدينتك", "«هجرة الشعيب» تطلق صاروخ الزلزال على أزحم حارة بمدينتك، و«منظومة الحصن» عندك بلا ذخيرة (والنائب موقف التعبئة): المباني تصير ركام. افتح الركام وشيله، وابنِ فوقه من جديد.", () => {
+  ...(!HEAVY_ON ? [] : [["quake", "🌋 صاروخ الزلزال على مدينتك", "«هجرة الشعيب» تطلق صاروخ الزلزال على أزحم حارة بمدينتك، و«منظومة الحصن» عندك بلا ذخيرة (والنائب موقف التعبئة): المباني تصير ركام. افتح الركام وشيله، وابنِ فوقه من جديد.", () => {
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
     const r = pvHeavy(bot, "quake"); pvArm(me.plot, { intc: 0 }); // after the last strikes landed (the deputy refills on them)
     { const a = pvWar.acct(me.plot); a.settings = { ...a.settings, refill: false }; pvWar.saveAcct(me.plot, a); } // and it does not refill this time
@@ -263,6 +263,35 @@ const PV_SCENARIOS = [
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
     const r = pvHeavy(bot, "storm");
     return { plot: null, room: "attack", msg: r.ok ? "صاروخ الإعصار جاي، ومنظومة الحصن بتحاول تصده. إذا وصل، الحارة تصير ركام." : `ما انطلق: ${r.error}` };
+  }]]),
+  ["ruin", "📉 حرب تخلص ومدينتك نصها خراب", "«هجرة الشعيب» بحرب معك، ونص مدينتك صار معطّل من ضرباتها. الحرب تخلص بعد دقيقة: تخسر، وتدفع ٢٠٪ من فلوسك، وتنزل درجة. بعدها صلّح المعطّل كله وشوف درجتك ترجع.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvLandAll();
+    const now = Date.now(), r = pvDb.get("rel", `${Math.min(me.plot, bot.plot)}:${Math.max(me.plot, bot.plot)}`);
+    pvWar.saveRel(r.a, r.b, { ...r, warStart: now - 5 * 60000, warEnd: now + 60000 }); // the war ends in a minute
+    { const a = pvWar.acct(me.plot); a.settings = { ...a.settings, repair: false, refill: false }; delete a.demote; pvWar.saveAcct(me.plot, a); } // the deputy waits: you repair
+    // the most valuable buildings out of action, till more than half the town's worth
+    const list = snapBuildings(pvState.plots[me.plot].snapshot).list.filter((b) => canTarget(b.id) && !(b.build > 0) && worthOf(b.id, b.lvl) > 0);
+    const total = list.reduce((n, b) => n + worthOf(b.id, b.lvl), 0), area = [];
+    let out = 0;
+    for (const b of [...list].sort((p, q) => worthOf(q.id, q.lvl) - worthOf(p.id, p.lvl))) {
+      if (out >= total * 0.56) break;
+      out += worthOf(b.id, b.lvl);
+      pvDb.put("dmg", `${me.plot}:${b.x}:${b.y}`, { x: b.x, y: b.y, bid: b.id, wd: 90, by: bot.plot, at: now }, { k1: String(me.plot), at: now });
+      area.push({ x: b.x, y: b.y, id: b.id, lvl: b.lvl, dmg: 90, before: 0, after: 90 });
+    }
+    const id = `ruin${now}`;
+    pvDb.put("op", id, { id, from: bot.plot, to: me.plot, fromTown: pvState.plots[bot.plot]?.town || "هجرة الشعيب", toTown: pvState.plots[me.plot]?.town || "الرافعية", x: area[0].x, y: area[0].y, bname: "مدينتك", load: { missile2: 1 }, launchAt: now - 60000, arriveAt: now - 30000, doneAt: now - 30000, status: "done", detected: true, result: { hits: [{ w: "missile2", dmg: 90 }], dmg: 90, area, before: 0, after: 90, blocked: "", dead: 0, hurt: 0, displaced: 0 } }, { k1: String(bot.plot), k2: String(me.plot), at: now - 60000 });
+    return { plot: bot.plot, room: "world", msg: `${Math.round(out / total * 100)}٪ من مدينتك معطّل. الحرب تخلص بعد دقيقة: شوف «مدينتك تضررت» بالبطاقة، وبعدها صلّح المباني وترجع درجتك.` };
+  }],
+  ["flat", "🧱 مبنى معطّل ينضرب مرة ثانية فينهدم", "مبنى عندك معطّل (٩٠٪)، و«هجرة الشعيب» تضربه مرة ثانية ودفاعك بلا ذخيرة: ينهدم ويصير ركام. اضغطه واختر «🧹 شيل الركام».", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvLandAll();
+    const now = Date.now(), t = snapBuildings(pvState.plots[me.plot].snapshot).list.filter((b) => canTarget(b.id) && !(b.build > 0) && B[b.id]?.cat !== "road" && b.id !== "house" && B[b.id]?.cat !== "mil").sort((p, q) => worthOf(q.id, q.lvl) - worthOf(p.id, p.lvl))[0];
+    if (!t) return { plot: null, msg: "ما لقيت مبنى" };
+    pvDb.put("dmg", `${me.plot}:${t.x}:${t.y}`, { x: t.x, y: t.y, bid: t.id, wd: 90, by: bot.plot, at: now }, { k1: String(me.plot), at: now });
+    pvArm(me.plot, { intc: 0 }); { const a = pvWar.acct(me.plot); a.settings = { ...a.settings, repair: false, refill: false }; pvWar.saveAcct(me.plot, a); }
+    pvArm(bot.plot, { missile: 2 });
+    const r = pvWar.handle("launch", { op: `fl${now}`, to: me.plot, x: t.x, y: t.y, load: { missile: 1 } }, bot);
+    return { plot: null, room: "attack", msg: r.ok ? `«${B[t.id].name}» معطّل، وصاروخ جاي عليه. لما يوصل ينهدم: اضغطه بعدها.` : `ما انطلق: ${r.error}` };
   }],
   ["dry", "🔋 دفاعك بدون ذخيرة وجاك هجوم", "تنتهي صواريخ الاعتراض عندك، و«الخضراء» تضربك. تشوف الضرر وتجرب الإصلاح.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
@@ -543,7 +572,7 @@ function pvReadyTown(s) {
     [34,47,"lantern"], [37,47,"themepark"], [40,47,"skyline"], [35,49,"mandi"], [37,49,"hotel",2],
     [38,49,"streetpalm"], [40,49,"fountain"],
     [48,44,"milhq",2], [50,44,"dronebase",2], [52,44,"radar",2],
-    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], [52,48,"fortdef",1], ...(CASTLE_ON ? [[48,48,"barracks",1]] : [])
+    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], ...(HEAVY_ON ? [[52,48,"fortdef",1]] : []), ...(CASTLE_ON ? [[48,48,"barracks",1]] : [])
   ].forEach((args) => put(...args));
   s.tiles[idx(47,34)].t = "rock";
   s.tiles[idx(44,40)].t = "wadi";

@@ -1,5 +1,5 @@
 // الرافعية: the game loop, the controls, the main menu and every screen around the 3D town.
-import { rankSheet, ROOM, warRoom } from "./ui-warroom.js";
+import { feedSheet, rankSheet, ROOM, warRoom } from "./ui-warroom.js";
 import { VERSION, REQUIRED } from "./version.js";
 import { WHATS_NEW } from "./whats-new.js";
 import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
@@ -1232,13 +1232,15 @@ export async function worldMapSheet(pick) {
       <div class="wm-zoom"><button type="button" id="wmIn" aria-label="قرّب">＋</button><button type="button" id="wmOut" aria-label="بعّد">－</button></div></div>
     ${detail}
     ${id?.plot != null && sel !== id.plot ? `<button class="btn block" id="wmMine" type="button">📍 وريني مدينتي</button>` : ""}
-    <button class="btn block" id="wmRank" type="button">🏆 الترتيب ومين يحارب مين</button>`, "world");
+    <button class="btn block" id="wmRank" type="button">🏆 الترتيب ومين يحارب مين</button>
+    <button class="btn block" id="wmFeed" type="button">📡 سجل حروب الجوف: مين ضرب مين</button>`, "world");
   // first time open: close in on your own town (or the middle), the whole of al-Jouf is a pinch away
   if (!wmView && !wmSeen) { const [mx, my] = id?.plot != null ? worldXY(id.plot) : [WORLD.cols / 2, WORLD.rows / 2]; const w = cols * cell / 2, h = rows * cell / 2; wmView = { x: mx * cell - w / 2, y: my * cell - h / 2, w, h }; }
   wmSeen = true;
   mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmRank")?.addEventListener("click", () => { sfx.tap(); rankSheet(); });
+  $("wmFeed")?.addEventListener("click", () => { sfx.tap(); feedSheet(); });
   $("wmFollow")?.addEventListener("click", () => { sfx.tap(); followTown(sel, t.town); worldMapSheet(sel); });
   $("wmEnter")?.addEventListener("click", () => enterWorldTown());
   $("wmRename")?.addEventListener("click", () => { sfx.tap(); renameSheet(t, plots); });
@@ -1373,6 +1375,15 @@ export function warApply(st) {
     lost += dead; changed = true;
   }
   home.war.toll = home.war.toll.slice(-200);
+  // a stage lost in a war (the server's word, 28 Nov 2026): the town drops to it and does not rise past it until
+  // nothing is left out of action (every building repaired, the rubble cleared); then the server lifts it
+  if ("demote" in st) {
+    const cap = st.demote ? st.demote.era : null;
+    if (cap != null) {
+      if (home.war.eraCap !== cap) { home.war.eraCap = cap; changed = true; }
+      if ((home.era || 0) > cap) { home.era = cap; changed = true; if (!WARX.scene) toast(`📉 مدينتك نزلت إلى «${ERAS[cap].name}» بسبب خراب الحرب. صلّح المعطّل وشيل الركام وترجع`, "bad"); }
+    } else if (home.war.eraCap != null) { delete home.war.eraCap; changed = true; toast("📈 صلّحت خراب الحرب كله: مدينتك ترجع لدرجتها", "goal"); }
+  }
   // the count by stage: the military buildings over it go, once (the server paid their worth back ×1.5)
   for (const n of st.notes || []) {
     if (n.kind !== "miltrim" || !Array.isArray(n.trim) || (home.war.trimmed || 0) >= n.at) continue;
@@ -1401,7 +1412,7 @@ export function warApply(st) {
     for (const n of fresh) if (n.kind === "apology" || n.kind === "gift" || n.kind === "miltrim") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
     const won = fresh.find((n) => n.kind === "victory");
     if (won) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } victoryScreen(won.enemy); } // a war won: the town is proud
-    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "miltrim" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce"].includes(n.kind) ? "goal" : "");
+    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "miltrim" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming", "defeat", "demote"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce", "restore", "draw", "ready"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
   }

@@ -76,12 +76,22 @@ built most of it with me; you continue from where it stopped.
 - «🏰 منظومة الحصن» (40,000, from «محافظة», 3 levels, 40/55/70% vs the quake, less vs the storm) is the
   **only** defence that can intercept them; each try uses 2 interceptors.
 - Trial scenarios «🌋 صاروخ الزلزال على مدينتك» and «🌪️ صاروخ الإعصار ومنظومة الحصن تتصدى».
-- The WHATS_NEW item is already written at the top of `js/whats-new.js` (world v `2026-11-28-heavy`).
+- The WHATS_NEW item for these weapons is in this branch's history (commit aeded31); put it back when releasing them.
 - To release: merge this branch into `main` (after «ارفع»), run the tests, push, and check the note is live.
 
+**The war of 28 Nov 2026 (decided by me one question at a time; on this branch, not live until «ارفع»):**
+- The destructive weapons and «منظومة الحصن» are **off** (`HEAVY_ON = false` in `war.js`): I release them later.
+- A war starts at once and lasts a real day. Before declaring, a screen shows what you'd win and lose.
+- At its end the town hurt more (share of its own worth) loses and pays 20% of its budget; no strike = draw.
+  No spoils per strike. A truce, peace or a shield ends it with no winner (the shield: the other may declare
+  again once it is down). The same two wait a day before another war. No protection for an owner away.
+- A building at 85% hit again falls to rubble (cleared, then rebuilt from level 1).
+- Half a town's worth out of action (disabled or rubble) at the war's end: down one stage, even the greater
+  city; back at once when nothing is out of action. Wars declared before the update end as they began.
+- Launchers reload in half the time; the heat adds half once; a push when weapons are ready.
+- Simple rules for players: «📖 دليل الحرب ← 📜 القواعد باختصار». Trial scenarios «📉» and «🧱».
+
 **Open questions / waiting on me:**
-- Should a town's stage go **down** when war drops its population (e.g. greater city back to حاضرة)?
-  Today stages only go up (`sim.js`, the `ERAS` loop in `step`). I was asked; no answer yet.
 - A cheater «محمد خالد»: I must say which account (no exact name match was found).
 - A sarcastic "the developer is going to sleep" chat message: I haven't chosen one.
 
