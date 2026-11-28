@@ -351,8 +351,10 @@ export const milValue = (id, lvl = 0) => Math.round((B[id]?.cost || 0) * [1, 2.5
  * their worth is paid back one and a half times. What goes: from the kind the town has most of, its lowest
  * level first, so the town keeps a mix and its best. list: snapBuildings().list → { remove, refund }.
  */
+/** The counts the one-time trim used (26 Nov 2026); the counts are higher since (MIL_SLOTS), the trim is done. */
+const TRIM_SLOTS = [0, 3, 5, 7, 9, 11];
 export function milTrimPlan(list, era) {
-  const max = MIL_SLOTS[Math.min(era || 0, MIL_SLOTS.length - 1)], mine = list.filter((b) => B[b.id]?.slot).map((b) => ({ x: b.x, y: b.y, id: b.id, lvl: b.lvl || 0 }));
+  const max = TRIM_SLOTS[Math.min(era || 0, TRIM_SLOTS.length - 1)], mine = list.filter((b) => B[b.id]?.slot).map((b) => ({ x: b.x, y: b.y, id: b.id, lvl: b.lvl || 0 }));
   const remove = [];
   while (mine.length > max) {
     const count = (id) => mine.filter((b) => b.id === id).length;

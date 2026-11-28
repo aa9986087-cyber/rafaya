@@ -34,7 +34,7 @@ export const ERAS = [
  * radars and air-defence batteries. The command centre and the armory are not counted (one each).
  * Buildings over the limit from before stay; only new ones are refused.
  */
-export const MIL_SLOTS = [0, 3, 5, 7, 9, 11];
+export const MIL_SLOTS = [0, 4, 6, 9, 12, 15]; // raised by the owner, 28 Nov 2026 (was 3, 5, 7, 9, 11), room for «منظومة الحصن»
 export const milSlotsUsed = (s) => s.tiles.filter((t) => t.b && B[t.b.id]?.slot).length;
 export const milSlotsMax = (s) => MIL_SLOTS[Math.min(s.era || 0, MIL_SLOTS.length - 1)];
 
