@@ -456,7 +456,11 @@ body.world .world-time { display: block; }
 .wm-zoom { position: absolute; bottom: 8px; left: 8px; display: flex; flex-direction: column; gap: 6px; }
 .wm-zoom button { width: 34px; height: 34px; border-radius: 10px; border: 0; background: rgba(255,250,240,.92); color: #5a3d1f; font-size: 20px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
 .wm-map { width: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
-.wm-wrap .wm-map { height: min(56vh, 560px); } /* a bigger map (the owner, 28 Nov 2026) */
+/* al-Jouf's map full screen (the owner, 28 Nov 2026): the sheet fills the screen, the map takes all but the title and buttons */
+.sheet.wm-full { padding-top: 0; }
+.sheet.wm-full .sheet-box { width: 100%; height: 100%; max-height: 100%; border-radius: 0; padding-top: calc(var(--top, 0px) + 12px); }
+.sheet.wm-full .sheet-box::before { display: none; }
+.sheet.wm-full .wm-wrap .wm-map { height: max(320px, calc(var(--view-height) - 300px)); }
 .wm-cell { stroke: rgba(122, 85, 48, .18); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer; }
 .wm-cell.on { stroke: #2a221d; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .wm-town { fill: #2c8a7a; stroke: #fbf3e2; stroke-width: .35; cursor: pointer; }

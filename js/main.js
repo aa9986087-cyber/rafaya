@@ -659,6 +659,7 @@ export function sheet(html, kind) {
   $("sheetBody").querySelectorAll("input[type=text], textarea").forEach((i) => { i.autocomplete = "off"; }); // no list of old entries over the keyboard
   $("sheet").hidden = false;
   $("sheet").classList.remove("closing");
+  $("sheet").classList.toggle("wm-full", kind === "world"); // the map of al-Jouf fills the screen (the owner, 28 Nov 2026)
 }
 export function closeSheet() {
   if ($("sheet").hidden || sheetFor === "update") return; // the update can't be put off
