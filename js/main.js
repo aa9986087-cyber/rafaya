@@ -1274,6 +1274,24 @@ export async function worldMapSheet(pick) {
   });
 }
 /** «انقل مدينتك»: the whole town (buildings, money, people, war, comments) goes to empty land, once a day. */
+/**
+ * In the settings (the owner, 28 Nov 2026): the town's name and its place on al-Jouf's map, each changed once,
+ * from here as well as from the map (the same screens, the same once-only rules on the server).
+ */
+async function townSection() {
+  const box = $("townBox"), id = me();
+  if (!box || id?.plot == null) return;
+  let plots;
+  try { plots = (await api("/world/map")).plots || []; } catch { box.innerHTML = `<p class="hint">ما قدرنا نوصل للسيرفر، جرّب بعد شوي.</p>`; return; }
+  const t = plots.find((x) => x.plot === id.plot);
+  if (!t || !$("townBox")) return;
+  box.innerHTML = `<div class="rows">
+      ${t.renamed ? row("✏️ اسم مدينتك", `«${t.town}» · غيّرته قبل`) : `<button class="btn block" id="setTownName" type="button">✏️ غيّر اسم «${t.town}» (مرة وحدة)</button>`}
+      ${t.moved ? row("🚚 مكان مدينتك", "نقلتها قبل") : `<button class="btn block" id="setTownMove" type="button">🚚 انقل مدينتك لأرض ثانية (مرة وحدة)</button>`}</div>
+    <p class="hint">كل واحد منهم مرة وحدة بس، وبعدها يثبت.</p>`;
+  $("setTownName")?.addEventListener("click", () => { sfx.tap(); renameSheet(t, plots); });
+  $("setTownMove")?.addEventListener("click", () => { sfx.tap(); worldMapSheet(id.plot); toast("🚚 اضغط أرض فاضية بالخريطة، وبعدها «انقل مدينتك هنا»", "goal"); });
+}
 function moveSheet(t, to) {
   const id = me();
   if (!t || !id) return;
@@ -1714,6 +1732,7 @@ ${WAR_MUSIC_ON ? `
     ${isIOS && !standalone() && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>📲 التطبيق</h3><p>حاط اللعبة تطبيق بشاشتك؟ انقل لها لعبتك من هنا.</p><button class="btn block" id="moveCode" type="button">📲 انقل لعبتك للتطبيق</button>` : ""}
     ${me()?.plot != null ? `<h3>🔄 مدينتك بالجوف</h3><p>تبي تبدأ من الصفر؟ نفس الأرض ونفس الاسم، بس كل شي يرجع من أول.</p><button class="btn danger block" id="worldRestart" type="button">🔄 ابدأ مدينتي من جديد</button>` : ""}
     ${id && onlineOk() ? `<h3>✏️ اسمك</h3><div id="nameBox"><p class="hint">نشيّك…</p></div>` : ""}
+    ${id && onlineOk() && me()?.plot != null ? `<h3>🏙️ اسم مدينتك ومكانها</h3><div id="townBox"><p class="hint">نشيّك…</p></div>` : ""}
     ${id && onlineOk() && !globalThis.RAFAYA_PREVIEW ? `<h3>🔐 حسابك وقوقل</h3><div id="googleBox"><p class="hint">نشيّك…</p></div>` : ""}
     <h3>نسخة احتياطية</h3>
     <p>المدينة تنحفظ لحالها في جوالك. تبي تنقلها لجهاز ثاني؟ اطلع لها كود قصير، واكتبه بالجهاز الثاني. الكود يبقى ٦٠ يوم.</p>
@@ -1727,7 +1746,7 @@ ${WAR_MUSIC_ON ? `
     toast("نطبّق الإعداد…"); setTimeout(() => location.reload(), 300);
   }));
   $("moveCode")?.addEventListener("click", () => moveCodeSheet());
-  googleSection(); nameSection();
+  googleSection(); nameSection(); townSection();
   $("worldRestart")?.addEventListener("click", () => restartSheet());
   $("copyDeviceSave")?.addEventListener("click", () => {
     const box = $("backupBox");
