@@ -263,3 +263,22 @@ test("the fortress and destructive weapons bought at the first prices are taken 
   assert.deepEqual(notes[0].trim, [{ x: 30, y: 30, id: "fortdef", lvl: 1 }]);
   assert.equal(notes[0].amount, refund);
 });
+
+test("rubble given back once: the rows go, cleared spots come back to the phone, clearing fees refunded quietly", async (t) => {
+  const { db, board } = worldFixture(t);
+  db.prepare("INSERT INTO players (name, secret, created, plot) VALUES ('hurtMayor', 's', 1, 41)").run();
+  db.prepare("INSERT INTO plots (plot, owner, town, money, updated, snapshot) VALUES (41, 'hurtMayor', 'الرافعية', 500, 1, '')").run();
+  const w = board.war.db, now = Date.now();
+  w.put("dmg", "41:5:5", { x: 5, y: 5, bid: "house", wd: 100, flat: true, lvl: 2 }, { k1: "41", at: now });
+  w.put("dmg", "41:6:5", { x: 6, y: 5, bid: "factory", wd: 100, flat: true, lvl: 0, clr: { start: now - 2000, end: now - 1000 } }, { k1: "41", at: now });
+  w.put("dmg", "41:7:5", { x: 7, y: 5, bid: "mall", wd: 40 }, { k1: "41", at: now });
+  const a = board.war.acct(41); board.war.charge(41, a, 900, "شيل ركام مصنع"); board.war.saveAcct(41, a);
+  db.prepare("DELETE FROM meta WHERE key = 'rubble_restore_v1'").run();
+  board.rubbleRestore("rubble_restore_v1", ["الرافعية"]); board.rubbleRestore("rubble_restore_v1", ["الرافعية"]);
+  const left = w.list("dmg", { k1: "41" });
+  assert.deepEqual(left.map((r) => r.bid), ["mall"], "only the ordinary damage stays");
+  assert.equal(db.prepare("SELECT money FROM plots WHERE plot = 41").get().money, 1400);
+  const note = w.list("note", { k1: "41" }).find((n) => n.kind === "rubbleback");
+  assert.deepEqual(note.put, [{ x: 6, y: 5, id: "factory", lvl: 0 }]);
+  assert.equal(w.list("note", { k1: "41" }).filter((n) => n.kind === "apology").length, 0, "no apology");
+});

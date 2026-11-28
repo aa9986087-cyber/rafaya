@@ -1384,6 +1384,12 @@ export function warApply(st) {
       if ((home.era || 0) > cap) { home.era = cap; changed = true; if (!WARX.scene) toast(`📉 مدينتك نزلت إلى «${ERAS[cap].name}» بسبب خراب الحرب. صلّح المعطّل وشيل الركام وترجع`, "bad"); }
     } else if (home.war.eraCap != null) { delete home.war.eraCap; changed = true; toast("📈 صلّحت خراب الحرب كله: مدينتك ترجع لدرجتها", "goal"); }
   }
+  // buildings given back (the owner's order): each on its empty land, once per notice
+  for (const n of st.notes || []) {
+    if (n.kind !== "rubbleback" || !Array.isArray(n.put) || (home.war.restored || 0) >= n.at) continue;
+    home.war.restored = n.at;
+    for (const b of n.put) { const t = home.tiles[idx(b.x, b.y)]; if (t && !t.b && B[b.id]) { t.b = { id: b.id, lvl: b.lvl || 0, res: 0, cond: 100 }; changed = true; } }
+  }
   // the count by stage: the military buildings over it go, once (the server paid their worth back ×1.5)
   for (const n of st.notes || []) {
     if (n.kind !== "miltrim" || !Array.isArray(n.trim) || (home.war.trimmed || 0) >= n.at) continue;
@@ -1412,7 +1418,7 @@ export function warApply(st) {
     for (const n of fresh) if (n.kind === "apology" || n.kind === "gift" || n.kind === "miltrim") apologyBox(n); // our own mistake: said plainly, in the middle of the screen
     const won = fresh.find((n) => n.kind === "victory");
     if (won) { home.happy = Math.min(100, (home.happy || 0) + 10); if (!visiting) { A = analyze(S); refresh(); save(); } victoryScreen(won.enemy); } // a war won: the town is proud
-    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "miltrim" && x.kind !== "citizenSupport").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming", "defeat", "demote"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce", "restore", "draw", "ready"].includes(n.kind) ? "goal" : "");
+    if (!WARX.quietNotes && !WARX.scene) for (const n of fresh.filter((x) => x.kind !== "apology" && x.kind !== "miltrim" && x.kind !== "citizenSupport" && x.kind !== "rubbleback").slice(-3)) toast(n.text, ["hit", "war", "hostile", "incoming", "defeat", "demote"].includes(n.kind) ? "bad" : ["intercept", "peace", "truce", "restore", "draw", "ready"].includes(n.kind) ? "goal" : "");
     if (fresh.some((n) => n.kind === "incoming" || n.kind === "war")) warSfx.alarm();
     warNews(fresh);
   }

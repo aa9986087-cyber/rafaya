@@ -205,6 +205,7 @@ export class Board extends DurableObject {
     this.shieldNoticeFix();
     this.milTrim();
     this.heavyReset();
+    this.rubbleRestore("rubble_restore_v1", ["الرافعية", "حي القدس"]);
     this.clockBan();
     this.clockChat();
     this.outageRefund();
@@ -731,6 +732,30 @@ export class Board extends DurableObject {
       if (heavy.length) this.war.saveAcct(r.plot, a);
       this.war.fine(r.plot, -refund, "refund", `🏰 الأسعار الجديدة: «منظومة الحصن» والأسلحة المدمّرة صار سعرها حسب مرحلة المدينة. شلنا اللي عندك (${what.join("، ")}) ورجّعنا لك كل ريال دفعته: ${refund.toLocaleString("en-US")} ريال. تقدر تشتريها من جديد بالأسعار الجديدة إذا تبي.`, "miltrim", { amount: refund, reset: true, trim: forts.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", refund, r.plot);
+    }
+  }
+  /**
+   * Once (the owner, 28 Nov 2026): these towns were flattened while the destructive weapons were cheap. Every building
+   * that fell to rubble stands again (rubble still there: its row goes; rubble already cleared: the town's game puts the
+   * building back on its empty land), and what they paid to clear rubble comes back. Quietly: no apology on screen.
+   */
+  rubbleRestore(key, towns) {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const { plot } of this.sql.exec(`SELECT plot FROM plots WHERE town IN (${towns.map(() => "?").join(",")})`, ...towns).toArray()) {
+      const back = [];
+      for (const r of this.war.db.list("dmg", { k1: String(plot) })) {
+        if (!r.flat) continue;
+        if (r.clr && Date.now() >= r.clr.end) back.push({ x: r.x, y: r.y, id: r.bid, lvl: r.lvl || 0 }); // cleared: the land is empty now
+        this.war.db.del("dmg", `${plot}:${r.x}:${r.y}`);
+      }
+      const paid = this.war.db.list("charge", { k1: String(plot) }).filter((c) => c.amount > 0 && String(c.why || "").startsWith("شيل ركام")).reduce((n, c) => n + c.amount, 0);
+      const a = this.war.acct(plot);
+      if (paid > 0) { this.war.charge(plot, a, -paid, "refund"); this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", paid, plot); }
+      this.war.saveAcct(plot, a);
+      if (back.length) this.war.note(plot, "rubbleback", "🏗️ رجعت مبانيك اللي انهدمت.", { put: back }, false);
+      try { this.live({ t: "war" }, plot); } catch { /* not connected */ }
     }
   }
   /** Once: the shield became three real days (then four to rest): the notice already in the bulletin says so too. */
