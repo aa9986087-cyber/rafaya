@@ -51,6 +51,7 @@ export const WAR = {
   autoBudgets: [5000, 5000, 15000, 40000, 80000, 150000], // the deputy's default budget a day by stage (village … greater city)
   rubble: { price: 0.1, min: 500, ms: 15 * WAR_MIN }, // clearing the rubble of a building: × its price × (1 + level) (at least min), and this long
   heavyIntc: 2,               // interceptors one try at a destructive weapon takes
+  heavyFrom: Date.UTC(2026, 10, 28, 9, 50), // the counts start here: what was fired before the new prices does not count (the owner)
   heavyDay: 24 * WAR_HOUR,    // the window of the counts below (the owner, 28 Nov 2026):
   heavyOut: 6,                // a town launches at most 6 destructive weapons in it
   heavyIn: 4,                 // and at most 4 are fired at one town in it

@@ -872,9 +872,9 @@ export class WarServer {
     const heavyN = Object.entries(load).reduce((n, [w, k]) => n + (isHeavy(w) ? k : 0), 0);
     if (heavyN) {
       if (heavyN > 1) return { error: "سلاح مدمّر واحد بس بالعملية" };
-      const D = this.cfg.heavyDay, mine0 = (a.heavyLog || []).filter((t) => now - t < D).sort((p, q) => p - q);
+      const D = this.cfg.heavyDay, from = this.cfg.heavyFrom || 0, mine0 = (a.heavyLog || []).filter((t) => now - t < D && t >= from).sort((p, q) => p - q);
       if (mine0.length >= this.cfg.heavyOut) return { error: `أطلقت ${nf(this.cfg.heavyOut)} أسلحة مدمّرة باليوم: تقدر بعد ${minutesText(D - (now - mine0[0]))}` };
-      const onThem = this.db.list("op", { k2: String(to), since: now - D, limit: 500 }).filter((o) => Object.keys(o.load || {}).some(isHeavy)).map((o) => o.launchAt).sort((p, q) => p - q);
+      const onThem = this.db.list("op", { k2: String(to), since: now - D, limit: 500 }).filter((o) => Object.keys(o.load || {}).some(isHeavy) && o.launchAt >= from).map((o) => o.launchAt).sort((p, q) => p - q);
       if (onThem.length >= this.cfg.heavyIn) return { error: `المدينة انضربت بـ${nf(this.cfg.heavyIn)} أسلحة مدمّرة باليوم: تنضرب مرة ثانية بعد ${minutesText(D - (now - onThem[0]))}` };
     }
     const drones = kindSum(load, "drone"), missiles = kindSum(load, "missile");
