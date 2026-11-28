@@ -243,3 +243,23 @@ test("money taken back after the server stopped is given back once", async (t) =
   board.outageRefund(); // once only
   assert.equal(db.prepare("SELECT money FROM plots WHERE plot = 7").get().money, 1000 + 88000 + 236256, "both fines of the night come back, not the one before");
 });
+
+test("the fortress and destructive weapons bought at the first prices are taken off once, every riyal back, with a notice", async (t) => {
+  const { db, board } = worldFixture(t);
+  const { idx } = await import("../js/sim.js");
+  const s = newGame(31, { site: "world", name: "Fort town" }); s.era = 5;
+  s.tiles[idx(30, 30)].b = { id: "fortdef", lvl: 1, res: 0, cond: 100 };
+  db.prepare("INSERT INTO players (name, secret, created, plot) VALUES ('fortMayor', 's', 1, 31)").run();
+  db.prepare("INSERT INTO plots (plot, owner, town, money, updated, snapshot) VALUES (31, 'fortMayor', 'Fort town', 1000, 1, ?)").run(pack(s));
+  const a = board.war.acct(31); a.arsenal.quake = 2; board.war.saveAcct(31, a);
+  db.prepare("DELETE FROM meta WHERE key = 'heavy_reset_v1'").run();
+  board.heavyReset(); board.heavyReset(); // once only
+  const { B } = await import("../js/data.js");
+  const refund = B.fortdef.cost * 2.5 + 2 * 150000; // what was paid: its price (after the game's price factor) and one upgrade
+  assert.equal(board.war.acct(31).arsenal.quake, 0);
+  assert.equal(db.prepare("SELECT money FROM plots WHERE plot = 31").get().money, 1000 + refund);
+  const notes = board.war.db.list("note", { k1: "31" }).filter((n) => n.kind === "miltrim" && n.reset);
+  assert.equal(notes.length, 1);
+  assert.deepEqual(notes[0].trim, [{ x: 30, y: 30, id: "fortdef", lvl: 1 }]);
+  assert.equal(notes[0].amount, refund);
+});

@@ -1,6 +1,6 @@
 // The town simulation: pure functions on a plain state object, so it saves as JSON and can be tested.
 import { B, TECH, EVENTS, DECISIONS, ACHIEVEMENTS, GOALS, ERAS, MAP_SIZE, START_MONEY, SEASONS, SEASON_DAYS, HOURS, OWN_START, RINGS, PLOTS, PLOT_PRICES, UPKEEP_RULES, PROVINCE_FEES, YEAR_HOURS, LOANS, BIZ_LEVELS, BIZ_UP, bizLevel, MIL, MIL_UP, VAULT, VAULT_MORE, BASE_VAULT, PRAYERS, DISTRICT_NAMES, ELECTION_GRANT, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TRAFFIC, TERRAINS, RAIN_NAMES, LIGHTNING } from "./data.js";
-import { milSlotsMax, milSlotsUsed, CENTRAL_VAULT_LEVEL, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
+import { milSlotsMax, milSlotsUsed, fortPrice, CENTRAL_VAULT_LEVEL, GREATER_CITY_PROJECTS, GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
 
 const N = MAP_SIZE;
 export const idx = (x, y) => y * N + x;
@@ -330,6 +330,7 @@ export function cantBuild(s, x, y, id) {
 /** What building this costs now: its price, except a vault, which costs half as much again for each one already built. */
 export function priceOf(s, id) {
   const d = B[id];
+  if (id === "fortdef") return fortPrice(s.era, 0); // by the town's stage
   if (id !== "vault") return d.cost;
   const n = s.tiles.reduce((k, t) => k + (t.b?.id === "vault" ? 1 : 0), 0);
   return Math.round(d.cost * (1 + VAULT_MORE * n));
@@ -1131,8 +1132,8 @@ export function upgradeMats(b) {
 }
 /** Everything the next level costs now: money, plus whatever materials are short, bought from outside. */
 export function upgradePrice(s, b) {
-  const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0));
-  return { money: upgradeCost(b), mats: need, short, total: upgradeCost(b) + short * MAT.price };
+  const need = upgradeMats(b), short = Math.max(0, need - (s.materials || 0)), cost = b?.id === "fortdef" ? (MIL.fortdef[b.lvl + 1] ? fortPrice(s.era, b.lvl + 1) : 0) : upgradeCost(b);
+  return { money: cost, mats: need, short, total: cost + short * MAT.price };
 }
 function payUpgrade(s, b) {
   const p = upgradePrice(s, b);

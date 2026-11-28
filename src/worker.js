@@ -27,7 +27,7 @@
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
-import { fastWar, milTrimPlan, snapBuildings } from "../js/war.js";
+import { fastWar, milTrimPlan, milValue, snapBuildings, WEAPONS } from "../js/war.js";
 import { B, CITY_MILESTONE, ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
@@ -204,6 +204,7 @@ export class Board extends DurableObject {
     this.warMoveNotice();
     this.shieldNoticeFix();
     this.milTrim();
+    this.heavyReset();
     this.clockBan();
     this.clockChat();
     this.outageRefund();
@@ -708,6 +709,28 @@ export class Board extends DurableObject {
       if (!plan.remove.length) continue;
       const names = plan.remove.map((b) => B[b.id].name).join("، ");
       this.war.fine(r.plot, -plan.refund, "refund", `🎖️ النظام الجديد: ${ERAS[t.era]?.name || ""} تبني ${plan.max} مباني عسكرية. شلنا الزايد (${names}) ورجّعنا لك قيمته ومرة ونص: ${plan.refund.toLocaleString("en-US")} ريال.`, "miltrim", { amount: plan.refund, max: plan.max, era: t.era, trim: plan.remove.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
+    }
+  }
+  /**
+   * Once (the owner, 28 Nov 2026): the fortress and the destructive weapons now cost more for bigger towns. Everyone
+   * who bought them at the first prices gets them taken off and every riyal back, with a notice, to buy again or not.
+   */
+  heavyReset() {
+    const key = "heavy_reset_v1";
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now())); // first: never paid twice
+    for (const r of this.sql.exec("SELECT plot, snapshot FROM plots WHERE snapshot != ''").toArray()) {
+      const t = snapBuildings(r.snapshot), forts = t.list.filter((b) => b.id === "fortdef");
+      const a = this.war.acct(r.plot), heavy = ["quake", "storm"].filter((w) => (a.arsenal[w] || 0) > 0);
+      if (!forts.length && !heavy.length) continue;
+      let refund = forts.reduce((n, b) => n + milValue(b.id, b.lvl), 0);
+      const what = [];
+      if (forts.length) what.push(`${forts.length > 1 ? `${forts.length} ` : ""}منظومة الحصن`);
+      for (const w of heavy) { refund += a.arsenal[w] * WEAPONS[w].price; what.push(`${a.arsenal[w]} ${WEAPONS[w].name}`); a.arsenal[w] = 0; }
+      if (heavy.length) this.war.saveAcct(r.plot, a);
+      this.war.fine(r.plot, -refund, "refund", `🏰 الأسعار الجديدة: «منظومة الحصن» والأسلحة المدمّرة صار سعرها حسب مرحلة المدينة. شلنا اللي عندك (${what.join("، ")}) ورجّعنا لك كل ريال دفعته: ${refund.toLocaleString("en-US")} ريال. تقدر تشتريها من جديد بالأسعار الجديدة إذا تبي.`, "miltrim", { amount: refund, reset: true, trim: forts.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
+      this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", refund, r.plot);
     }
   }
   /** Once: the shield became three real days (then four to rest): the notice already in the bulletin says so too. */

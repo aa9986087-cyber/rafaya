@@ -13,7 +13,7 @@
 import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
-  hitDamage, repairCostOf, repairMsOf, isHeavy, kindSum, rubbleCostOf, rubbleMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
+  hitDamage, repairCostOf, repairMsOf, isHeavy, kindSum, weaponPrice, weaponFee, rubbleCostOf, rubbleMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
   MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS, worthOf, ruinOf, warPrize, demotedEra
 } from "./war.js";
 import { CASTLE_ON, TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
@@ -694,7 +694,7 @@ export class WarServer {
     } else {
       const why = weaponBlocker(p, kind);
       if (why) return { error: why };
-      price = WEAPONS[kind].price;
+      price = weaponPrice(kind, p.era);
       const drones = kindSum(a.arsenal, "drone"), missiles = kindSum(a.arsenal, "missile");
       room = WEAPONS[kind].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
     }
@@ -881,7 +881,7 @@ export class WarServer {
     const readyBases = p.bases.filter((b) => b.wd < 85 && (a.reload[`b${b.x}:${b.y}`] || 0) <= now);
     const readyPads = p.pads.filter((b) => b.wd < 85 && (a.reload[`p${b.x}:${b.y}`] || 0) <= now);
     const slowest = Object.keys(load).reduce((n, w) => Math.max(n, flightMs(me.plot, to, w, this.cfg)), 0);
-    if (opt.batch) return { now, to, x, y, target, load, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, fee: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].fee * k, 0), value: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].price * k, 0) };
+    if (opt.batch) return { now, to, x, y, target, load, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, fee: Object.entries(load).reduce((n, [w, k]) => n + weaponFee(w, p.era) * k, 0), value: Object.entries(load).reduce((n, [w, k]) => n + weaponPrice(w, p.era) * k, 0) };
     if (drones) {
       if (!readyBases.length) return { error: `قواعد المسيّرات تتجهز: باقي ${minutesText(Math.min(...p.bases.map((b) => a.reload[`b${b.x}:${b.y}`] || now)) - now)}` };
       const salvo = Math.max(...readyBases.map((b) => milStat("dronebase", b.lvl).salvo));
@@ -895,9 +895,9 @@ export class WarServer {
     const ops = milStat("milhq", p.hq.lvl).ops;
     if (this.flying({ k1: String(me.plot) }) >= ops) return { error: `القيادة تدير ${nf(ops)} عملية بالجو بس` };
     if (this.flying({ k2: String(to) }) >= this.cfg.caps.inFlightTo) return { error: "الجو فوق المدينة زحمة عمليات: جرّب بعد شوي" };
-    const fee = Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].fee * k, 0);
+    const fee = Object.entries(load).reduce((n, [w, k]) => n + weaponFee(w, p.era) * k, 0);
     if (this.available(mine, a) < fee) return { error: "ما يكفي المال لتشغيل العملية" };
-    return { now, to, x, y, target, load, fee, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, value: Object.entries(load).reduce((n, [w, k]) => n + WEAPONS[w].price * k, 0) };
+    return { now, to, x, y, target, load, fee, a, p, mine, them, readyBases, readyPads, drones, missiles, flight: slowest, value: Object.entries(load).reduce((n, [w, k]) => n + weaponPrice(w, p.era) * k, 0) };
   }
 
   /** Operations in the air (a salvo counts once: it was launched as one). */
@@ -1161,7 +1161,7 @@ export class WarServer {
     const info = this.townInfo(me.plot), key = `${me.plot}:${x}:${y}`, r = this.db.get("dmg", key);
     if (!r?.flat) return { error: "ما فيه ركام هنا" };
     if (r.clr) return { error: now >= r.clr.end ? "انشال الركام" : "يتشال الحين" };
-    const a = this.acct(me.plot), cost = rubbleCostOf(r.bid, r.lvl, this.cfg), name = r.bid === "house" ? "مبنى سكني" : B[r.bid]?.name || "مبنى";
+    const a = this.acct(me.plot), cost = rubbleCostOf(r.bid, r.lvl, this.cfg, info?.snap.era || info?.era || 0), name = r.bid === "house" ? "مبنى سكني" : B[r.bid]?.name || "مبنى";
     if (!info || this.available(info, a) < cost) return { error: "ما يكفي المال" };
     const ms = rubbleMsOf(this.cfg);
     this.db.put("dmg", key, { ...r, clr: { start: now, end: now + ms } }, { k1: String(me.plot), at: now });

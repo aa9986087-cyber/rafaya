@@ -12,7 +12,7 @@ import { castleCard, castleSheet } from "./ui-castle.js";
 import { CASTLE, CASTLE_ON } from "./castle.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
-import { HEAVY_ON, medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap, kindSum } from "./war.js";
+import { HEAVY_ON, medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap, kindSum, weaponPrice } from "./war.js";
 import { medalSvg } from "./icons.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
@@ -347,7 +347,7 @@ function defTab(st) {
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
     <div class="rows">${p.airdefs.length || (p.forts || []).length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
-      ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), WEAPONS[w].price, weaponBlocker(p, w))).join("")}</div>
+      ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), weaponPrice(w, home.era), weaponBlocker(p, w))).join("")}</div>
     <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
       ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}${HEAVY_ON ? row("منظومة الحصن (ضد المدمّرة)", (p.forts || []).length ? `${ar(p.forts.length)} · صدّ الزلزال ${ar(Math.round((st.intercept.quake || 0) * 100))}٪` : "✕ ما فيه: الزلزال والإعصار يوصلون", (p.forts || []).length ? "" : "minus") : ""}
       ${row("النائب يعبّي ويصلّح", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>

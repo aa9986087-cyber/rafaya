@@ -311,6 +311,12 @@ export const MIL = {
   barracks: [{ name: "معسكر تدريب", era: 1, cap: 30, speed: 1 }, { name: "معسكر كتيبة", era: 2, cap: 60, speed: 0.8 }, { name: "قاعدة لواء", era: 3, cap: 100, speed: 0.6 }]
 };
 /** A military level's price (× the building's price) and running costs (× its upkeep); nothing else changes. */
+/**
+ * «منظومة الحصن» costs more the bigger the town (the owner, 28 Nov 2026: the old price was nothing to a big city):
+ * by the town's stage, the price to build it, then of its two upgrades.
+ */
+export const FORT_PRICE = { 3: [120000, 180000, 360000], 4: [300000, 450000, 900000], 5: [750000, 1200000, 2400000] };
+export const fortPrice = (era, lvl = 0) => (FORT_PRICE[Math.max(3, Math.min(5, era || 0))] || FORT_PRICE[3])[lvl] || 0;
 export const MIL_UP = [
   { cost: 0, income: 1, jobs: 1, upkeep: 1, happy: 1, radius: 0 },
   { cost: 1.5, income: 1, jobs: 1, upkeep: 1.6, happy: 1, radius: 0 },

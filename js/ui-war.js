@@ -3,7 +3,7 @@
 import { ROOM, feedSheet, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
-import { HEAVY_ON, reloadText, REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy } from "./war.js";
+import { HEAVY_ON, reloadText, REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy, weaponPrice, weaponFee } from "./war.js";
 import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
@@ -55,7 +55,9 @@ export function apologyBox(n, onClose) {
     el.setAttribute("aria-modal", "true");
     el.setAttribute("aria-label", CITY_MILESTONE.title);
   }
-  el.innerHTML = n.kind === "miltrim" ? `<div class="apology-card"><div class="apology-ic">🎖️</div><h2>النظام العسكري الجديد</h2>
+  el.innerHTML = n.kind === "miltrim" && n.reset ? `<div class="apology-card"><div class="apology-ic">🏰</div><h2>الأسعار الجديدة للأسلحة المدمّرة والحصن</h2>
+    <p>${n.text}</p>
+    <div class="apology-back">رجّعنا لك كل اللي دفعته<b>+${money(n.amount || 0)} ريال</b></div>` : n.kind === "miltrim" ? `<div class="apology-card"><div class="apology-ic">🎖️</div><h2>النظام العسكري الجديد</h2>
     <p>صار لكل مرحلة عدد مباني عسكرية: البلدة ٣، المدينة ٥، المحافظة ٧، الحاضرة ٩، والحاضرة الكبرى ١١.</p>
     <p>مدينتك ${ERAS[n.era]?.name || ""} وكان عندها أكثر من ${ar(n.max || 0)}، فشلنا الزايد: <b>${(n.trim || []).map((b) => B[b.id]?.name).join("، ")}</b></p>
     <div class="apology-back">رجّعنا لك قيمته ومرة ونص<b>+${money(n.amount || 0)} ريال</b></div>
@@ -197,8 +199,8 @@ export async function warSheet(tab = "home") {
   } else if (tab === "arms") {
     body = `<p class="hint">الأسعار من ميزانية مدينتك. المسيّرات تنحفظ بالقاعدة، والصواريخ على المنصات.</p><div class="rows">` + WEAPON_IDS.map((w) => {
       const W = WEAPONS[w], why = weaponBlocker(p, w), kind = W.kind === "drone" ? "drones" : "missiles", room = caps[kind] - (W.kind === "drone" ? drones : missiles);
-      return `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${weaponIcon(w)}</b><span><b>${W.name}</b><small>${W.text}</small><small>القوة ${ar(W.power)} · السعر ${money(W.price)} ريال · تشغيل ${money(W.fee)} · عندك <b>${ar(ars[w])}</b></small>${why ? `<small class="minus">${why}</small>` : ""}</span>
-        ${why ? "" : `<button class="btn go" type="button" data-buy="${w}" ${room <= 0 || home.money < W.price ? "disabled" : ""}>+١</button>`}</div>`;
+      return `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${weaponIcon(w)}</b><span><b>${W.name}</b><small>${W.text}</small><small>القوة ${ar(W.power)} · السعر ${money(weaponPrice(w, home.era))} ريال · تشغيل ${money(weaponFee(w, home.era))} · عندك <b>${ar(ars[w])}</b></small>${why ? `<small class="minus">${why}</small>` : ""}</span>
+        ${why ? "" : `<button class="btn go" type="button" data-buy="${w}" ${room <= 0 || home.money < weaponPrice(w, home.era) ? "disabled" : ""}>+١</button>`}</div>`;
     }).join("") + `</div><p class="hint">${caps.open ? "⚔️ الحرب مفتوحة: خزّن اللي تبي من المسيّرات والصواريخ. المنصة والقاعدة تحددان كم ينطلق بكل تجهيز." : `مكان للمسيّرات: ${ar(Math.max(0, caps.drones - drones))} · للصواريخ: ${ar(Math.max(0, caps.missiles - missiles))}`}</p>`;
   } else if (tab === "def") {
     body = `<div class="rows">${list(p.airdefs, "airdef") || row("بطاريات الدفاع الجوي", "✕ ما فيه")}${list(p.radars, "radar") || row("الرادار", "✕ ما فيه")}
@@ -364,7 +366,7 @@ export function targetBar() {
   if (!tg.w || !weapons.includes(tg.w)) tg.w = sel?.w || weapons[0];
   const brush = sel ? sel.w : tg.w;
   const need = {}; let fee = 0, eta = 0, total = 0;
-  for (const p of tg.points) { need[p.w] = (need[p.w] || 0) + p.n; fee += WEAPONS[p.w].fee * p.n; total += p.n; eta = Math.max(eta, flightMs(me().plot, tg.plot, p.w)); }
+  for (const p of tg.points) { need[p.w] = (need[p.w] || 0) + p.n; fee += weaponFee(p.w, (visiting ? visiting.home : S).era) * p.n; total += p.n; eta = Math.max(eta, flightMs(me().plot, tg.plot, p.w)); }
   const short = Object.entries(need).find(([w, n]) => (ars[w] || 0) < n);
   const waits = (st?.profile ? launcherTimes(st) : []).filter((x) => x.left > 0);
   const spotName = (p) => { const near = blastArea(tg.list, p.x, p.y, WEAPONS[p.w].blast); return { name: near[0] && near[0].d < 0.5 ? B[near[0].id].name : "أرض", n: near.length }; };
@@ -874,7 +876,7 @@ export function warDamageHtml(b) {
 }
 /** A building a destructive weapon flattened: only rubble is left, to clear (paid on the server) before building again. */
 export function warRubbleHtml(b) {
-  const clr = world.fx?.clearing?.get(WARX.inspectAt), cost = rubbleCostOf(b.id, b.lvl), ms = rubbleMsOf();
+  const clr = world.fx?.clearing?.get(WARX.inspectAt), cost = rubbleCostOf(b.id, b.lvl, WAR, S.era), ms = rubbleMsOf();
   let html = `<div class="ins-head rubble-head"><b class="rubble-ic">🧱</b><div><h2>ركام ${levelName(b)}</h2><p>هذا المبنى انهدم بالحرب: ما يشتغل ولا يتصلح. شيل الركام، وبعدها الأرض تفضى وتبنيه من جديد من أول مستوى.</p></div></div>`;
   if (visiting) return html;
   if (clr) html += `<div class="need ok">🧹 يتشال الركام الحين: يخلص بعد ${fmtLeft(clr.end - warNow())}</div><i class="prog"><i style="width:${Math.round(Math.min(1, Math.max(0, (warNow() - clr.start) / Math.max(1, clr.end - clr.start))) * 100)}%"></i></i>`;

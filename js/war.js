@@ -85,6 +85,10 @@ function HEAVY_WEAPONS() { return {
   quake: { name: "صاروخ الزلزال", kind: "missile", heavy: true, price: 150000, fee: 10000, power: 100, evade: 1, blast: 1.6, needs: ["missilepad", 2], minEra: 4, icon: "🌋", text: "مدمّر: يسوّي كل المباني اللي حوله بالأرض ويخليها ركام. الدفاع الجوي العادي ما يقدر عليه، بس «منظومة الحصن»." },
   storm: { name: "صاروخ الإعصار", kind: "missile", heavy: true, price: 400000, fee: 25000, power: 100, evade: 0.8, blast: 2.6, needs: ["missilepad", 2], minEra: 4, icon: "🌪️", text: "أقوى سلاح بالجوف: يمسح حارة كاملة ويخليها ركام، وأصعب بالاعتراض حتى على «منظومة الحصن»." }
 }; }
+/** What a weapon costs a town of this stage (the destructive ones ×3 for a greater city: the owner, 28 Nov 2026). */
+export const stageMult = (wid, era) => (WEAPONS[wid]?.heavy && (era || 0) >= GREATER_CITY_STAGE ? 3 : 1);
+export const weaponPrice = (wid, era) => WEAPONS[wid].price * stageMult(wid, era);
+export const weaponFee = (wid, era) => WEAPONS[wid].fee * stageMult(wid, era);
 /** A destructive weapon: what it reaches falls to rubble. */
 export const isHeavy = (wid) => !!WEAPONS[wid]?.heavy;
 /** How many of one kind (drone or missile) in an arsenal or a load. */
@@ -233,7 +237,7 @@ export const hitDamage = (wid, roll) => Math.round(WEAPONS[wid].power * (0.85 + 
 export const repairCostOf = (id, wd, cfg = WAR) => Math.round((B[id]?.cost || 1000) * cfg.repairPrice * wd);
 export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint);
 /** Clearing the rubble a destructive weapon left (then the land is empty, to build on again). */
-export const rubbleCostOf = (id, lvl = 0, cfg = WAR) => Math.max(cfg.rubble.min, Math.round((B[id]?.cost || 1000) * (1 + (lvl || 0)) * cfg.rubble.price));
+export const rubbleCostOf = (id, lvl = 0, cfg = WAR, era = 0) => Math.max(cfg.rubble.min, Math.round((B[id]?.cost || 1000) * (1 + (lvl || 0)) * cfg.rubble.price * [1, 1, 1, 1, 2.5, 6.25][Math.min(5, era || 0)])); // more for a bigger town
 export const rubbleMsOf = (cfg = WAR) => cfg.rubble.ms;
 
 // ---------- the war's end (the owner, 28 Nov 2026): who was hurt more pays, and a ruined town drops a stage ----------

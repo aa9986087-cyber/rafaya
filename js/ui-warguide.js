@@ -3,7 +3,7 @@
 // number is read from the rules themselves (js/war.js, js/data.js), so the guide never says something else.
 import { ar, money, sheet } from "./main.js";
 import { HEAVY_ON, WAR_LIVE, WEAPONS, WEAPON_IDS, JOUF_DAY, minutesText, shieldPrice, MEDALS } from "./war.js";
-import { B, ERAS, MIL, MIL_SLOTS } from "./data.js";
+import { B, ERAS, MIL, MIL_SLOTS, FORT_PRICE } from "./data.js";
 import { weaponIcon } from "./ui-war.js";
 import { medalSvg } from "./icons.js";
 import { sfx } from "./sound.js";
@@ -68,10 +68,10 @@ export function warGuide(go = "") {
 
     ${section("ready", "🏗️", "التجهيز: المباني الحربية", `<p>من «البناء ← الدفاع والعسكرية». القرية ما تدخل حروب: تبدأ من <b>${era(WAR_LIVE.minEra)}</b>.</p>
       <div class="wg-slots"><b>🎖️ كم مبنى عسكري تقدر تبني؟</b><div>${ERAS.slice(1).map((e) => `<span><small>${e.name}</small><b>${ar(MIL_SLOTS[e.id])}</b></span>`).join("")}</div><small>وأنت تختار وش تبني: منصات، قواعد مسيّرات، رادارات، بطاريات دفاع… أي خلطة تبيها. مركز القيادة والمستودع ما ينحسبون (واحد من كل واحد).</small></div>
-      <div class="wg-table">${milRows.map(([id, i, t]) => `<div class="wg-row"><span class="wg-ic">${i}</span><span><b>${B[id].name}</b><small>${t}</small><small class="wg-num2">بناء ${money(B[id].cost)} · ترقية ${MIL[id][1] ? `${money(Math.round(B[id].cost * 1.5))} ثم ${money(B[id].cost * 3)}` : "ما فيه"} · ${B[id].slot ? "ينحسب من عددك" : "واحد"} · من ${era(MIL[id][0].era)}</small></span></div>`).join("")}</div>
+      <div class="wg-table">${milRows.map(([id, i, t]) => `<div class="wg-row"><span class="wg-ic">${i}</span><span><b>${B[id].name}</b><small>${t}</small><small class="wg-num2">${id === "fortdef" ? `بناء ${money(FORT_PRICE[3][0])} للمحافظة، ${money(FORT_PRICE[4][0])} للحاضرة، ${money(FORT_PRICE[5][0])} للحاضرة الكبرى · الترقيات بنفس النسبة` : `بناء ${money(B[id].cost)} · ترقية ${MIL[id][1] ? `${money(Math.round(B[id].cost * 1.5))} ثم ${money(B[id].cost * 3)}` : "ما فيه"}`} · ${B[id].slot ? "ينحسب من عددك" : "واحد"} · من ${era(MIL[id][0].era)}</small></span></div>`).join("")}</div>
       <p class="wg-note">المستوى الثاني لكل المباني يحتاج «${era(2)}»، والثالث يحتاج «${era(3)}». الحاضرة والحاضرة الكبرى ما عندها سلاح زيادة: القوة بالتخطيط مو بالحجم.</p>`)}
 
-    ${section("arms", "🚀", "الأسلحة", `<div class="wg-table">${WEAPON_IDS.map((w) => { const W = WEAPONS[w], need = MIL[W.needs[0]][W.needs[1]]; return `<div class="wg-row"><span class="wg-ic wg-w">${weaponIcon(w)}</span><span><b>${W.name}</b><small>${W.text}</small><small class="wg-num2">السعر ${money(W.price)} · تشغيل كل ضربة ${money(W.fee)} · القوة ${ar(W.power)} · من ${era(need.era)}</small></span></div>`; }).join("")}
+    ${section("arms", "🚀", "الأسلحة", `<div class="wg-table">${WEAPON_IDS.map((w) => { const W = WEAPONS[w], need = MIL[W.needs[0]][W.needs[1]]; return `<div class="wg-row"><span class="wg-ic wg-w">${weaponIcon(w)}</span><span><b>${W.name}</b><small>${W.text}</small><small class="wg-num2">السعر ${money(W.price)}${W.heavy ? ` (للحاضرة الكبرى ${money(W.price * 3)})` : ""} · تشغيل كل ضربة ${money(W.fee)}${W.heavy ? ` (للحاضرة الكبرى ${money(W.fee * 3)})` : ""} · القوة ${ar(W.power)} · من ${era(need.era)}</small></span></div>`; }).join("")}
       <div class="wg-row"><span class="wg-ic wg-w">${weaponIcon("intc")}</span><span><b>${WAR_LIVE.interceptor.name}</b><small>ذخيرة الدفاع الجوي: كل واحد يحاول يسقط ضربة جاية.</small><small class="wg-num2">السعر ${money(WAR_LIVE.interceptor.price)} · المخزون حسب بطارياتك</small></span></div></div>
       <p class="wg-note">المسيّرات والصواريخ تخزّن منها اللي تبي. المنصة والقاعدة تحدد كم ينطلق بكل مرة.</p>
       ${HEAVY_ON ? `<div class="wg-row"><span class="wg-ic">🧱</span><span><b>الأسلحة المدمّرة والركام</b><small>صاروخ الزلزال وصاروخ الإعصار يسوّون كل مبنى بمداهم بالأرض (إلا المساجد). المبنى يصير <b>ركام</b>: ما يشتغل ولا يتصلح. صاحبه لازم يضغطه ويختار «🧹 شيل الركام» (يدفع ويستنى ${real(WAR_LIVE.rubble.ms)})، وبعدها الأرض تفضى ويبني فوقها من جديد. الدفاع الجوي العادي ما يقدر عليها: بس «منظومة الحصن». للحاضرة وفوق بس، كل مدينة تطلق لين ${ar(WAR_LIVE.heavyOut)} باليوم، وأي مدينة ما تستقبل أكثر من ${ar(WAR_LIVE.heavyIn)} باليوم.</small></span></div>` : ""}`)}
