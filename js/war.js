@@ -46,8 +46,9 @@ export const WAR = {
   maxWars: 3,                 // a town is at war with three towns at most at once
   casualty: { dead: 0.06, hurt: 0.3, warned: 0.6 }, // of the people reached (occupants × damage): killed, injured; × warned when the sirens sounded
   repairPerPoint: 45 * 1000,  // repair time: 45 s per point of damage (a building at 60% → 45 min)
-  repairPrice: 0.012,         // repair: × the building's price, per point of damage
-  autoBudget: 5000,           // the deputy's default repair and refill budget, per day
+  repairPrice: 0.006,         // repair: × the building's price, per point of damage (halved 28 Nov 2026: out of action ≈ half its price)
+  autoBudget: 5000,           // the deputy's old default budget a day (a town still on it gets autoBudgets by its stage)
+  autoBudgets: [5000, 5000, 15000, 40000, 80000, 150000], // the deputy's default budget a day by stage (village … greater city)
   rubble: { price: 0.1, min: 500, ms: 15 * WAR_MIN }, // clearing the rubble of a building: × its price × (1 + level) (at least min), and this long
   heavyIntc: 2,               // interceptors one try at a destructive weapon takes
   heavyDay: 24 * WAR_HOUR,    // the window of the counts below (the owner, 28 Nov 2026):
@@ -235,6 +236,8 @@ export const hitDamage = (wid, roll) => Math.round(WEAPONS[wid].power * (0.85 + 
 
 /** What repairing this much war damage costs and takes. */
 export const repairCostOf = (id, wd, cfg = WAR) => Math.round((B[id]?.cost || 1000) * cfg.repairPrice * wd);
+/** The deputy's budget a day: the mayor's own if set, else the default for the town's stage. */
+export const deputyBudget = (settings, era, cfg = WAR) => (settings?.set || (settings?.budget != null && settings.budget !== cfg.autoBudget) ? settings.budget || 0 : cfg.autoBudgets[Math.max(0, Math.min(cfg.autoBudgets.length - 1, era || 0))]);
 export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint);
 /** Clearing the rubble a destructive weapon left (then the land is empty, to build on again). */
 export const rubbleCostOf = (id, lvl = 0, cfg = WAR, era = 0) => Math.max(cfg.rubble.min, Math.round((B[id]?.cost || 1000) * (1 + (lvl || 0)) * cfg.rubble.price * [1, 1, 1, 1, 2.5, 6.25][Math.min(5, era || 0)])); // more for a bigger town

@@ -14,7 +14,7 @@ import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
   hitDamage, repairCostOf, repairMsOf, isHeavy, kindSum, weaponPrice, weaponFee, rubbleCostOf, rubbleMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
-  MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS, worthOf, ruinOf, warPrize, demotedEra
+  MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS, worthOf, ruinOf, warPrize, demotedEra, deputyBudget
 } from "./war.js";
 import { CASTLE_ON, TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
 
@@ -644,7 +644,7 @@ export class WarServer {
     const charges = this.db.list("charge", { k1: String(me.plot) }).filter((c) => c.seq > (Number(body.seq) || 0)).sort((x, y) => x.seq - y.seq);
     const dmg = [...this.damage(me.plot).values()], cleared = this.cleared(me.plot, info?.snap.list || null);
     return {
-      now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
+      now, arsenal: a.arsenal, caps: capacity(p), settings: { ...a.settings, budget: deputyBudget(a.settings, info?.snap.era || info?.era || 0, this.cfg) }, reload: a.reload, seq: a.seq,
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, forts: p.forts, armory: p.armory, barracks: p.barracks, era: p.era },
       openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, cleared, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       cityMilestoneSeq: a.cityMilestoneSeq || 0,
@@ -709,7 +709,7 @@ export class WarServer {
 
   settings(body, me) {
     const a = this.acct(me.plot);
-    a.settings = { repair: !!body.repair, refill: !!body.refill, budget: Math.max(0, Math.min(200000, Math.round(Number(body.budget) || 0))) };
+    a.settings = { repair: !!body.repair, refill: !!body.refill, budget: Math.max(0, Math.min(200000, Math.round(Number(body.budget) || 0))), set: true };
     this.saveAcct(me.plot, a);
     return { ok: true, settings: a.settings };
   }
@@ -1113,7 +1113,7 @@ export class WarServer {
   deputy(info, a, now, refillOnly = false) {
     const day = Math.floor(now / (24 * 3600000));
     if (a.spent.day !== day) a.spent = { day, amt: 0 };
-    const left = () => a.settings.budget - a.spent.amt;
+    const budget = deputyBudget(a.settings, info.snap?.era || info.era || 0, this.cfg), left = () => budget - a.spent.amt;
     if (a.settings.refill) {
       const p = this.profileOf(info), room = capacity(p).intc - a.arsenal.intc;
       const n = Math.min(room, Math.floor(left() / this.cfg.interceptor.price), Math.floor(this.available(info, a) / this.cfg.interceptor.price));
