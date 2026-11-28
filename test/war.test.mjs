@@ -730,4 +730,10 @@ test("«سجل حروب الجوف»: anyone sees the strikes and wars between a
   assert.equal(op.fee, undefined); assert.equal(op.value, undefined); assert.equal(op.pads, undefined);
   assert.ok(feed.items.some((it) => it.kind === "war" && it.byTown === "الرافعية" && it.otherTown === "صفان"));
   assert.ok(feed.items[0].at >= feed.items.at(-1).at, "newest first");
+  // «🎬 شوف الضربة»: anyone gets the strike's scene fields, never its fee or launchers
+  const w = W.war.handle("opwatch", { op: "fd1" }, c);
+  assert.equal(w.op.toTown, "صفان"); assert.ok(w.op.result.hits.length && w.op.result.area.length);
+  assert.equal(w.op.fee, undefined); assert.equal(w.op.pads, undefined); assert.equal(w.op.side, "watch");
+  assert.equal(w.ops.length, 1);
+  assert.match(W.war.handle("opwatch", { op: "nope" }, c).error, /ما عادت/);
 });

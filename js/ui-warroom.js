@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
+import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, replayFeed, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { ZERO } from "./ui-zero.js";
 import { row, toast } from "./ui-build.js";
@@ -417,7 +417,7 @@ function bind(st) {
   q("[data-wrtalk]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalk); warRoom("talk"); }));
   q("[data-wrtalkto]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.talk = Number(b.dataset.wrtalkto); warRoom("talk"); }));
   q("[data-wrlog]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.logFilter = b.dataset.wrlog; warRoom("log"); }));
-  feedBind(() => warRoom("feed"));
+  feedBind(() => warRoom("feed"), "room");
   rankGo();
   q("[data-wrall]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.allFronts = !ROOM.allFronts; warRoom("world"); }));
   q("[data-rkonly]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); ROOM.rankOnly = b.dataset.rkonly === "1"; warRoom("rank"); }));
@@ -623,7 +623,8 @@ function feedItem(it, now, mine) {
       else if (r.dmg > 0) { icon = r.flat ? "🧱" : "💥"; what = `${r.flat ? `هدمت ${r.flat === 1 ? "مبنى" : `${ar(r.flat)} مباني`} (ركام)` : `إصابة ${ar(r.dmg)}٪`} على ${it.bname}${r.n > 1 ? ` و${ar(r.n - 1)} حوله` : ""}${r.stopped ? ` · انعترض ${ar(r.stopped)} من ${ar(r.shots)}` : ""}${r.dead ? ` · ⚰️ ${ar(r.dead)}` : ""}`; cls = "hit"; }
       else { icon = "🛡️"; what = `دفاع «${it.toTown}» اعترضها كلها (${ar(r.shots)})`; cls = "miss"; }
     }
-    return `<button type="button" class="wf-item ${cls}${me(it.from)}${me(it.to)}" data-wffollow="${it.to}" data-wftown="${it.toTown}"><i>${icon}</i><span><b>${who}</b><small>${feedLoad(it.load)} ${Object.keys(it.load || {}).map(feedName).join(" + ")}</small><small>${what}</small></span><em>${ago}</em></button>`;
+    const act = r ? `data-wfplay="${it.id}"` : `data-wffollow="${it.to}" data-wftown="${it.toTown}"`;
+    return `<button type="button" class="wf-item ${cls}${me(it.from)}${me(it.to)}" ${act}><i>${icon}</i><span><b>${who}</b><small>${feedLoad(it.load)} ${Object.keys(it.load || {}).map(feedName).join(" + ")}</small><small>${what}</small></span><em>${ago}<br>${r ? "🎬 شوفها" : "👁️ تابع"}</em></button>`;
   }
   const a = `«${it.byTown}»`, b = `«${it.otherTown}»`;
   const text = {
@@ -639,13 +640,14 @@ export function feedHtml(feed) {
   if (!feed) return `<div class="need">ما قدرت أجيب السجل. جرّب بعد شوي.</div>`;
   const mine = me()?.plot, f = ROOM.feedFilter || "all";
   const items = feed.items.filter((it) => f === "all" || (f === "op" ? it.kind === "op" : f === "wars" ? it.kind !== "op" : [it.from, it.to, it.by, it.other].includes(mine)));
-  return `<div class="wf"><p class="hint">كل اللي صاير بين مدن الجوف: الضربات والحروب، أول بأول. اضغط أي ضربة وتتابع المدينة اللي انضربت.</p>
+  return `<div class="wf"><p class="hint">كل اللي صاير بين مدن الجوف: الضربات والحروب، أول بأول. اضغط أي ضربة وصلت وتشوف مشهدها من جديد، واللي بالجو تتابعها لين توصل.</p>
     <div class="wr-enemies">${FEED_FILTERS.map(([k, n]) => `<button type="button" class="${f === k ? "on" : ""}" data-wffilter="${k}">${n}</button>`).join("")}</div>
     ${items.length ? `<div class="wf-list">${items.map((it) => feedItem(it, feed.now, mine)).join("")}</div>` : `<p class="hint">ما فيه شي للحين.</p>`}</div>`;
 }
 /** The log's buttons: a filter draws it again; a strike follows the town it fell on. */
-function feedBind(redraw) {
+function feedBind(redraw, back = "sheet") {
   const b = $("sheetBody");
+  b.querySelectorAll("[data-wfplay]").forEach((x) => x.addEventListener("click", () => { sfx.tap(); clearInterval(ROOM.feedT); clearTimeout(ROOM.feedRT); replayFeed(x.dataset.wfplay, back); }));
   b.querySelectorAll("[data-wffilter]").forEach((x) => x.addEventListener("click", () => { sfx.tap(); ROOM.feedFilter = x.dataset.wffilter; redraw(); }));
   b.querySelectorAll("[data-wffollow]").forEach((x) => x.addEventListener("click", () => {
     sfx.tap(); const plot = Number(x.dataset.wffollow);

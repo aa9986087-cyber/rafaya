@@ -1,6 +1,6 @@
 // «صراع الجوف» on the game's side: the command, relations, targeting, scenes, war damage.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
-import { ROOM, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
+import { ROOM, feedSheet, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
 import { HEAVY_ON, reloadText, REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy } from "./war.js";
@@ -791,9 +791,9 @@ export function salvoReport(ops, fresh) {
   $("srOk")?.addEventListener("click", closeSheet);
 }
 /** Watch an operation again from its saved data: nothing is charged or damaged again. */
-export async function replayOp(op) {
+export async function replayOp(op, list = null) {
   if (WARX.scene || !op.result) return;
-  const ops = salvoOf(op).filter((o) => o.result);
+  const ops = (list || salvoOf(op)).filter((o) => o.result);
   WARX.scene = { op, replay: true };
   sceneUi(true); closeSheet();
   const homeWas = !visiting;
@@ -811,8 +811,32 @@ export async function replayOp(op) {
   } finally {
     world.fx.clear(); sceneUi(false); WARX.scene = null;
     if (homeWas && visiting) leaveVisit();
-    if (ops.length > 1) salvoReport(ops); else opReport(op);
+    if (op.side === "watch") watchReport(ops); else if (ops.length > 1) salvoReport(ops); else opReport(op);
   }
+}
+/**
+ * «🎬 شوف الضربة» from «سجل حروب الجوف»: any strike between any two towns, played again in the town it fell on
+ * (the server sends its public fields), then a short report and back to the log.
+ */
+export async function replayFeed(id, back = "sheet") {
+  const r = await warApi("opwatch", { op: id });
+  if (r.error || !r.op) { toast(r.error || "ما قدرت أجيب الضربة", "bad"); sfx.deny(); return; }
+  WARX.feedBack = back;
+  await replayOp(r.op, r.ops?.length ? r.ops : [r.op]);
+}
+/** What a watched strike did (anyone's): who, where, what landed, the dead; then back to the war log. */
+function watchReport(ops) {
+  const o = ops[0], dead = ops.reduce((n, x) => n + (x.result?.dead || 0), 0), hurt = ops.reduce((n, x) => n + (x.result?.hurt || 0), 0);
+  const stopped = ops.reduce((n, x) => n + (x.result?.hits || []).filter((h) => h.intercepted).length, 0), sent = ops.reduce((n, x) => n + (x.result?.hits || []).length, 0);
+  const flat = ops.reduce((n, x) => n + (x.result?.flat || 0), 0), area = ops.reduce((n, x) => n + (x.result?.area?.length || 0), 0);
+  const when = new Date(o.launchAt - (WARX.offset || 0)).toLocaleString("ar-SA", { weekday: "long", hour: "numeric", minute: "2-digit" });
+  sheet(`<h2>🎬 «${o.fromTown}» ← «${o.toTown}»</h2>
+    <div class="war-grid"><div><b>${ar(ops.length)}</b><span>📍 أماكن</span></div><div><b>${ar(area)}</b><span>🏚️ مباني تضررت</span></div><div><b>${ar(stopped)}<small>/${ar(sent)}</small></b><span>🛡️ انعترض</span></div><div><b>${ar(flat)}</b><span>🧱 ركام</span></div></div>
+    ${dead || hurt ? `<div class="war-toll"><span>⚰️ <b>${ar(dead)}</b> وفاة</span><span>🤕 <b>${ar(hurt)}</b> إصابة</span></div>` : ""}
+    <div class="rows">${ops.map((x, i) => { const r = x.result; return row(`${ops.length > 1 ? `${ar(i + 1)}. ` : ""}${x.bname} · ${weaponsText(x.load)}`, r.blocked ? "ما أصابت" : r.flat ? `🧱 ${ar(r.flat)} ركام` : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت"); }).join("")}${row("وقت الضربة", when)}</div>
+    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrAgain">🎬 شوفها مرة ثانية</button><button class="btn block" type="button" id="wrFeedBack">رجوع للسجل</button></div>`, "war-report");
+  $("wrAgain").addEventListener("click", () => replayOp(o, ops));
+  $("wrFeedBack").addEventListener("click", () => (WARX.feedBack === "room" ? warRoom("feed") : feedSheet()));
 }
 export function opReport(op, fresh) {
   WARX.lastReport = op;

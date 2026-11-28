@@ -518,6 +518,7 @@ export class WarServer {
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "stakes": return this.stakes(Math.round(Number(body.other)), me);
       case "feed": return this.feed();
+      case "opwatch": return this.opWatch(String(body.op || ""));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
       case "watch": return this.watch(Math.round(Number(body.plot)), me);
       case "castle": return CASTLE_ON || this.cfg.castleOn ? { castle: this.castleView(me) } : { error: "قلعة مارد قريبًا" };
@@ -569,6 +570,23 @@ export class WarServer {
     const res = { now, items };
     this.feedCache = { at: now, res };
     return res;
+  }
+
+  /**
+   * «🎬 شوف الضربة» from the war log: one strike that has landed (and the rest of its salvo), for anyone, with what
+   * the scene needs (the same public fields as «تابع»: never fees, launchers or budgets).
+   */
+  opWatch(id) {
+    const o = this.db.get("op", id);
+    if (!o || o.status !== "done" || !o.result) return { error: "الضربة ما عادت موجودة بالسجل" };
+    const pub = (x) => ({
+      id: x.id, salvo: x.salvo || null, from: x.from, to: x.to, fromTown: x.fromTown, toTown: x.toTown, x: x.x, y: x.y, bname: x.bname, load: x.load,
+      launchAt: x.launchAt, arriveAt: x.arriveAt, doneAt: x.doneAt || 0, status: x.status, detected: x.detected, side: "watch",
+      result: { hits: x.result.hits, area: x.result.area, dmg: x.result.dmg, blocked: x.result.blocked, before: x.result.before, after: x.result.after, state: x.result.state, flat: x.result.flat || 0,
+        displaced: x.result.displaced || 0, dead: x.result.dead || 0, hurt: x.result.hurt || 0, airdef: x.result.airdef || 0 }
+    });
+    const ops = o.salvo ? this.db.list("op", { k1: String(o.from), k2: String(o.to), limit: 80 }).filter((x) => x.salvo === o.salvo && x.status === "done" && x.result) : [o];
+    return { op: pub(o), ops: ops.sort((p, q) => (p.id < q.id ? -1 : 1)).map(pub), now: this.now() };
   }
 
   /**
