@@ -61,7 +61,7 @@ export const WAR = {
   flatAt: 85                  // a building already out of action (this damage or more) that is hit again falls to rubble
 };
 /** The destructive weapons (quake, storm) and «منظومة الحصن»: ready, but the owner releases them later (28 Nov 2026). */
-export const HEAVY_ON = false;
+export const HEAVY_ON = true; // released on 28 Nov 2026
 
 /** The live rules as written (the trial copy shortens WAR's waits in place; the war guide always tells these). */
 export const WAR_LIVE = JSON.parse(JSON.stringify(WAR));

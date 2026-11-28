@@ -3,7 +3,7 @@
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
 import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
-import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, replayFeed, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag } from "./ui-war.js";
+import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, replayFeed, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag, warTownKey } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { ZERO } from "./ui-zero.js";
 import { row, toast } from "./ui-build.js";
@@ -196,8 +196,8 @@ async function attackTab(st) {
 }
 /** al-Jouf's towns and fronts (the public map), kept a short while. */
 async function worldMap(force) {
-  if (!force && ROOM.map && Date.now() - ROOM.map.at < 20000) return ROOM.map;
-  try { const d = await api("/world/map"); ROOM.map = { at: Date.now(), plots: d.plots || [], fronts: d.fronts || [] }; } catch { /* the last one, or none */ }
+  if (!force && ROOM.map && Date.now() - ROOM.map.at < (ROOM.map.flights?.length ? 8000 : 20000)) return ROOM.map;
+  try { const d = await api("/world/map"); ROOM.map = { at: Date.now(), plots: d.plots || [], fronts: d.fronts || [], flights: d.flights || [] }; } catch { /* the last one, or none */ }
   return ROOM.map;
 }
 /** Why a relation action is closed for this town (the same rules the server checks). */
@@ -219,6 +219,14 @@ function worldSvg(map, st) {
   const fronts = [...(ROOM.allFronts ? map.fronts.filter((f) => !ours(f)) : []), ...map.fronts.filter(ours)].map((f) => { const [ax, ay] = xy(f.a), [bx, by] = xy(f.b);
     return frontPath(ax, ay, bx, by, f, ours(f) ? "ours" : "theirs"); }).join("");
   const places = WORLD.places.map((p) => `<text x="${p.x * cell + cell / 2}" y="${p.y * cell + cell / 2}" class="wm-pl">${p.name}</text>`).join("");
+  // what is in the air now: mine (from the war state, at once) and everyone's (from the map), each on its curved path
+  const now = warNow(), mineOps = (st.ops || []).filter((o) => o.status === "flying").map((o) => ({ ...o, kind: Object.keys(o.load || {}).some((w) => WEAPONS[w]?.kind === "missile") ? "missile" : "drone", heavy: Object.keys(o.load || {}).some((w) => WEAPONS[w]?.heavy) }));
+  const air = [...mineOps, ...(map.flights || []).filter((f) => !mineOps.some((o) => o.id === f.id))].filter((o) => o.arriveAt > now - 1000 && plots.some((t) => t.plot === o.from) && plots.some((t) => t.plot === o.to));
+  const flights = air.map((o, i) => {
+    const [ax, ay] = xy(o.from), [bx, by] = xy(o.to), d = Math.hypot(bx - ax, by - ay) || 1, side = o.to === mine ? "in" : o.from === mine ? "out" : "other";
+    const lift = (side === "in" ? 1 : -1) * (0.22 * d + (i % 3) * 3), cx = (ax + bx) / 2 + (by - ay) / d * lift, cy = (ay + by) / 2 - (bx - ax) / d * lift;
+    return `<path d="M${ax},${ay} Q${cx},${cy} ${bx},${by}" class="wr-line ${side}"/><circle r="${o.heavy ? 4.5 : 3.2}" data-r="${o.heavy ? 4.5 : 3.2}" class="wr-dot ${side} ${o.kind} ${o.heavy ? "heavy" : ""}" data-a="${ax},${ay}" data-c="${cx},${cy}" data-b="${bx},${by}" data-t0="${o.launchAt}" data-t1="${o.arriveAt}" cx="${ax}" cy="${ay}"/>`;
+  }).join("");
   // every town has its name; which names show is decided on the screen (zoom in for more): the most
   // important first (mine, the chosen one, enemies, towns at war, the biggest), never one over another
   const byPop = [...plots].sort((a, b) => (b.pop || 0) - (a.pop || 0)), rank = new Map(byPop.map((t, i) => [t.plot, i]));
@@ -231,7 +239,7 @@ function worldSvg(map, st) {
   const Z = (ROOM.wz ||= {}); Z.full = [x0, y0, x1 - x0, y1 - y0];
   const v = Z.mv && Z.mvFull === Z.full.join() ? Z.mv : Z.full;
   Z.mvFull = Z.full.join();
-  return `<div class="wr-world-box"><svg class="wr-world" id="wrWorld" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}</svg>
+  return `<div class="wr-world-box"><svg class="wr-world" id="wrWorld" viewBox="${v.join(" ")}" role="img" aria-label="خريطة الجوف">${places}${fronts}${towns}${flights}</svg>
     <div class="wr-zoom" data-for="wrWorld"><button type="button" data-wrzoom="1.6" aria-label="قرّب">＋</button><button type="button" data-wrzoom="0.625" aria-label="بعّد">－</button><button type="button" data-wrzoom="0" aria-label="كل الخريطة">⤢</button></div>
     <button type="button" class="wr-allfronts ${ROOM.allFronts ? "on" : ""}" data-wrall>${ROOM.allFronts ? "🔥 أخفِ حروب غيرك" : `🔥 شوف كل حروب الجوف (${ar(map.fronts.filter((f) => !ours(f)).length)})`}</button>
     <small class="wr-zoom-hint">قرّب بإصبعين أو بـ＋ عشان تشوف أسماء أكثر</small></div>`;
@@ -382,6 +390,7 @@ export async function warRoom(tab = ROOM.tab) {
   const home = visiting ? visiting.home : S;
   if (!home.tiles.some((t) => t.b?.id === "milhq")) { warSheet(); return; } // no command centre yet: the old page explains how to start
   if (!WARX.st) { sheet(`<h2>⚔️ غرفة العمليات</h2><p class="hint">نحمّل…</p>`, "warroom"); await warPoll(true); }
+  else if ((WARX.syncTown !== home || WARX.syncKey !== warTownKey(home)) && ROOM.synced !== warTownKey(home)) { ROOM.synced = warTownKey(home); await warSyncNow(false); await warPoll(true); } // a military building just built: the server sees it now (no reopening; tried once per change)
   const st = WARX.st;
   if (!st) { sheet(`<h2>⚔️ غرفة العمليات</h2><div class="need">ما قدرت أوصل للسيرفر.</div>`, "warroom"); return; }
   const body = tab === "attack" ? await attackTab(st) : tab === "def" ? defTab(st) : tab === "world" ? await worldTab(st) : tab === "rank" ? rankHtml(await worldMap(), "room") : tab === "feed" ? feedHtml(await warFeed()) : logTab(st);

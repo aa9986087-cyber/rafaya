@@ -1026,8 +1026,8 @@ ${list.length ? `<table>${rows}</table>` : "<p>ما فيه أحد للحين.</p
     }
     if (!post && p[0] === "map") {
       const plots = this.sql.exec("SELECT plot, owner, town, terrain, pop, happy, money, era, updated, renamed, moved >= ? AS moved FROM plots ORDER BY plot LIMIT 3000", MOVE_ROUND_AT).toArray();
-      let fronts = []; try { fronts = this.war.fronts(); } catch { /* the map never fails for the war */ }
-      return json({ plots, fronts });
+      let fronts = [], flights = []; try { fronts = this.war.fronts(); flights = this.war.flights(); } catch { /* the map never fails for the war */ }
+      return json({ plots, fronts, flights });
     }
     if (!post && p[0] === "town" && p[1]) {
       const plot = int(p[1]);

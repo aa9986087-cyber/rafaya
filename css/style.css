@@ -1174,3 +1174,6 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 .vol-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
 .vol-row input[type=range] { width: 100%; accent-color: #c9a24a; touch-action: none; height: 28px; }
 .vol-row .btn { padding: 6px 12px; }
+/* every attack in the air over al-Jouf on the negotiation map: others' in amber, the destructive ones bigger and red-hot */
+.wr-world .wr-line { vector-effect: non-scaling-stroke; stroke-width: 1.6px; } .wr-line.other { stroke: #f2b632; opacity: .75; }
+.wr-dot.other { fill: #f2b632; color: #f2b632; } .wr-dot.heavy { fill: #ff3b1a; color: #ff3b1a; stroke: #fff3d6; stroke-width: 1; }

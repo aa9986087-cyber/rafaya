@@ -545,6 +545,17 @@ export class WarServer {
     return out;
   }
 
+  /** Every attack in the air over al-Jouf, for the map (public, like the fronts): who at whom, when it left and lands, what kind. */
+  flights() {
+    const now = this.now(), out = [];
+    for (const f of this.db.list("fly", { since: now, limit: 200 })) {
+      const o = this.db.get("op", f.id);
+      if (!o || o.status !== "flying") continue;
+      const ws = Object.keys(o.load || {});
+      out.push({ id: o.id, from: o.from, to: o.to, launchAt: o.launchAt, arriveAt: o.arriveAt, kind: ws.some((w) => WEAPONS[w]?.kind === "missile") ? "missile" : "drone", heavy: ws.some(isHeavy) });
+    }
+    return out;
+  }
   /**
    * «سجل حروب الجوف» (the owner, 28 Nov 2026): every town sees the strikes between all towns, newest first, and the
    * wars declared and ended. Only what the bulletin and «تابع» already show anyone: towns, weapons, the target, the
