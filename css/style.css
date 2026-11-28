@@ -705,6 +705,17 @@ body.world .speeds { display: none !important; }
 .wr-kpis > div { background: var(--wr-card); border: 1px solid var(--wr-line); border-radius: 12px; padding: 8px 4px; display: grid; justify-items: center; gap: 2px; text-align: center; }
 .wr-kpis b { font-size: 17px; color: var(--wr-ink); } .wr-kpis span { font-size: 11px; color: var(--wr-dim); }
 .wr-kpis > .hot { border-color: #e0574a; background: rgba(224, 87, 74, .14); } .wr-kpis > .hot b { color: #ff8a7d; }
+/* the room, tidied (the owner, 28 Nov 2026): one rich head, three numbers, four tabs, a switch inside a tab */
+.wr-head2 { padding: 12px; border-radius: 16px; border: 1px solid var(--wr-line); background: radial-gradient(120% 140% at 100% 0%, rgba(217, 180, 106, .16), transparent 60%), linear-gradient(160deg, rgba(255,255,255,.05), rgba(0,0,0,.25)); }
+.wr-head2 h2 { font-size: 22px; background: linear-gradient(180deg, #f6dfa4, #c99a48); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.wr-kpis3 { grid-template-columns: repeat(3, 1fr); } .wr-kpis3 b { font-size: 19px; }
+.sheet.warroom .wr-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sheet.warroom .wr-tabs button { padding: 9px 4px; font-size: 13px; font-weight: 800; border-radius: 12px; }
+.sheet.warroom .wr-tabs button.on { color: #1a1206; background: linear-gradient(180deg, #ecd08e, #c99a48); border-color: transparent; box-shadow: 0 4px 14px rgba(217, 180, 106, .28); }
+.wr-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 4px 0 10px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px solid var(--wr-line); }
+.wr-sub button { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 4px; border: 0; border-radius: 9px; color: var(--wr-dim, #9aa6a3); background: transparent; }
+.wr-sub button.on { color: var(--wr-ink, #eef0ea); background: rgba(217, 180, 106, .2); box-shadow: inset 0 0 0 1px rgba(217, 180, 106, .45); }
+.wr-strip[hidden] { display: none; }
 .wr-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; min-height: 40px; }
 .wr-quiet { margin: 6px 0; color: #5fd39a !important; font-size: 13px; }
 .wr-group { flex: none; border-radius: 14px; padding: 8px; border: 1px solid; display: grid; gap: 6px; }
