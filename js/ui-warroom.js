@@ -706,5 +706,5 @@ export function warRoomBadge(st) {
   const sig = JSON.stringify([st.rels?.map((r) => [r.other, r.state, r.offer?.at, r.tribute?.at, r.chat?.length, r.chatOpen, r.hurt?.me, r.hurt?.them]), st.ruin, st.demote?.era, st.shieldBuy?.until, st.ops?.map((o) => [o.id, o.status]), st.arsenal, (visiting ? visiting.home : S)?.tiles.reduce((n, t) => n + (t.b?.wd ? 1 : 0), 0)]);
   if (sig === ROOM.sig) return;
   ROOM.sig = sig;
-  if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }
+  if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (document.activeElement?.id === "wrSay") { ROOM.sig = null; return; } /* typing a message: drawn on the next change, not under the keyboard */ if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }
 }
