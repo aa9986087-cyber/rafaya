@@ -366,12 +366,17 @@ function fixRowHtml({ x, y, b }, home) {
     : `<button class="btn go" type="button" data-wrfix="${k}" data-flat="${b.flat ? 1 : ""}" ${home.money < cost ? "disabled" : ""}>${b.flat ? "🧹 شيل" : "صلّح"}<small>${money(cost)}</small></button>`;
   return `<div class="row" data-wrrow="${k}"><span><b>${b.flat ? `🧱 ركام ${B[b.id].name}` : B[b.id].name}</b><small>${b.flat ? "انهدم: شيله وابنِ من جديد" : stateTag(b.wd)}</small></span>${btn}</div>`;
 }
-/** «صلّح الكل»: every damaged building not yet being repaired, and all the rubble, for one total. */
+/** What «صلّح الكل» / «شيل كل الركام» would do now: the damaged (or the rubble) not yet being worked on, the worst first. */
+function fixTodo(hurt, flat) {
+  return hurt.filter(({ x, y, b }) => !!b.flat === flat && !(flat ? world.fx?.clearing?.get(`${x}:${y}`) : world.fx?.repairs?.get(`${x}:${y}`)));
+}
+const fixCost = (b, home) => (b.flat ? rubbleCostOf(b.id, b.lvl, WAR, home.era) : repairCostOf(b.id, b.wd));
+/** «🔧 صلّح الكل» and «🧹 شيل كل الركام»: each for one total; when the money is short, the worst go first. */
 function fixAllHtml(hurt, home) {
-  const todo = hurt.filter(({ x, y, b }) => !(b.flat ? world.fx?.clearing?.get(`${x}:${y}`) : world.fx?.repairs?.get(`${x}:${y}`)));
-  if (todo.length < 2) return "";
-  const total = todo.reduce((n, { b }) => n + (b.flat ? rubbleCostOf(b.id, b.lvl, WAR, home.era) : repairCostOf(b.id, b.wd)), 0);
-  return `<div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFixAll">🔧 صلّح الكل (${ar(todo.length)}) · ${money(total)} ريال</button></div>${home.money < total ? `<p class="hint">فلوسك ما تكفي الكل: يتصلّح الأهم أول (الأكثر ضرر) لين تخلص الفلوس.</p>` : ""}`;
+  const btn = (flat, label) => { const todo = fixTodo(hurt, flat); if (!todo.length) return ""; const total = todo.reduce((n, { b }) => n + fixCost(b, home), 0);
+    return `<button class="btn ${flat ? "" : "go"} block" type="button" data-wrfixall="${flat ? "flat" : "fix"}">${label} (${ar(todo.length)}) · ${money(total)} ريال</button>${home.money < total ? `<p class="hint">فلوسك ما تكفي الكل: يبدأ بالأهم لين تخلص الفلوس.</p>` : ""}`; };
+  const html = btn(false, "🔧 صلّح الكل") + btn(true, "🧹 شيل كل الركام");
+  return html ? `<div class="sheet-actions keep">${html}</div>` : "";
 }
 function logTab(st) {
   const home = visiting ? visiting.home : S, N = Math.round(Math.sqrt(home.tiles.length));
@@ -526,13 +531,22 @@ function bind(st) {
     return true;
   };
   q("[data-wrfix]").forEach((b) => b.addEventListener("click", () => fixOne(b)));
-  $("wrFixAll")?.addEventListener("click", async () => {
-    const all = $("wrFixAll"); all.disabled = true; all.textContent = "🔧 نصلّح…";
-    let n = 0;
-    for (const b of [...q("[data-wrfix]")]) { if (!b.isConnected || b.disabled) continue; if (await fixOne(b)) n++; else break; } // the most damaged first; stops when the money runs out
-    toast(n ? `🔧 بدأ إصلاح ${ar(n)} مباني` : "ما بدأ إصلاح شي", n ? "goal" : "bad");
+  // all at once: straight to the server one by one (no redraw in between, which used to lose the rest), then one redraw
+  q("[data-wrfixall]").forEach((btn) => btn.addEventListener("click", async () => {
+    // what the server holds (never what is on screen, which a scene may be redrawing): not yet being worked on, the worst first
+    const flat = btn.dataset.wrfixall === "flat";
+    const todo = (WARX.st?.damage || []).filter((r) => !!r.flat === flat && !(flat ? r.clr : r.rep)).sort((p, q2) => q2.wd - p.wd);
+    q("[data-wrfixall]").forEach((x) => { x.disabled = true; }); btn.textContent = flat ? "🧹 نشيل…" : "🔧 نصلّح…";
+    let n = 0, spent = 0, why = "";
+    for (const { x, y } of todo) {
+      const r = await warApi(flat ? "clear" : "repair", { req: warReq(), x, y });
+      if (r.error) { why = r.error; break; }
+      n++; spent += r.charge?.amount || 0;
+    }
+    if (n) { sfx.build(); toast(`${flat ? "🧹 بدأ شيل" : "🔧 بدأ إصلاح"} ${ar(n)} ${flat ? "ركام" : "مباني"} (${money(spent)} ريال)${why ? ` · وقف: ${why}` : ""}`, "goal"); }
+    else { sfx.deny(); toast(why || "ما فيه شي", "bad"); }
     await warPoll(true); if (sheetFor === "warroom") warRoom(ROOM.tab);
-  });
+  }));
 }
 
 /**
