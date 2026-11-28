@@ -683,9 +683,10 @@ export class WarServer {
     const heavyN = Object.entries(load).reduce((n, [w, k]) => n + (isHeavy(w) ? k : 0), 0);
     if (heavyN) {
       if (heavyN > 1) return { error: "سلاح مدمّر واحد بس بالعملية" };
-      if (a.heavyAt && now - a.heavyAt < this.cfg.heavyEvery) return { error: `أطلقت سلاح مدمّر قبل شوي: تقدر بعد ${minutesText(this.cfg.heavyEvery - (now - a.heavyAt))}` };
-      const last = this.db.list("op", { k2: String(to), since: now - this.cfg.heavyTargetEvery, limit: 200 }).filter((o) => Object.keys(o.load || {}).some(isHeavy)).sort((p, q) => q.launchAt - p.launchAt)[0];
-      if (last) return { error: `المدينة انضربت بسلاح مدمّر قبل شوي: تنضرب مرة ثانية بعد ${minutesText(this.cfg.heavyTargetEvery - (now - last.launchAt))}` };
+      const D = this.cfg.heavyDay, mine0 = (a.heavyLog || []).filter((t) => now - t < D).sort((p, q) => p - q);
+      if (mine0.length >= this.cfg.heavyOut) return { error: `أطلقت ${nf(this.cfg.heavyOut)} أسلحة مدمّرة باليوم: تقدر بعد ${minutesText(D - (now - mine0[0]))}` };
+      const onThem = this.db.list("op", { k2: String(to), since: now - D, limit: 500 }).filter((o) => Object.keys(o.load || {}).some(isHeavy)).map((o) => o.launchAt).sort((p, q) => p - q);
+      if (onThem.length >= this.cfg.heavyIn) return { error: `المدينة انضربت بـ${nf(this.cfg.heavyIn)} أسلحة مدمّرة باليوم: تنضرب مرة ثانية بعد ${minutesText(D - (now - onThem[0]))}` };
     }
     const drones = kindSum(load, "drone"), missiles = kindSum(load, "missile");
     const readyBases = p.bases.filter((b) => b.wd < 85 && (a.reload[`b${b.x}:${b.y}`] || 0) <= now);
@@ -753,7 +754,7 @@ export class WarServer {
     if (this.available(mine, a) < fee) return { error: "ما يكفي المال لتشغيل الدفعة" };
     // spend: the ammunition, and the launchers that fired (only as many as the batch needed)
     for (const [w, n] of Object.entries(need)) a.arsenal[w] -= n;
-    if (Object.keys(need).some(isHeavy)) a.heavyAt = now;
+    if (Object.keys(need).some(isHeavy)) a.heavyLog = [...(a.heavyLog || []).filter((t) => now - t < this.cfg.heavyDay), now];
     let left = drones;
     for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     left = missiles;
@@ -787,7 +788,7 @@ export class WarServer {
     if (pl.error) return pl;
     const { now, to, x, y, target, load, fee, a, mine, them, readyBases, readyPads, drones, missiles, flight } = pl;
     for (const [w, n] of Object.entries(load)) a.arsenal[w] -= n;
-    if (Object.keys(load).some(isHeavy)) a.heavyAt = now;
+    if (Object.keys(load).some(isHeavy)) a.heavyLog = [...(a.heavyLog || []).filter((t) => now - t < this.cfg.heavyDay), now];
     if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); } }
     this.breakShield(me.plot, a, now);

@@ -555,16 +555,20 @@ test("destructive weapons: everything in reach falls to rubble (never a mosque),
   const p2 = milProfile(W.towns.get(2).snapshot);
   assert.ok(interceptChance(p2, "quake") > 0.5);
   assert.ok(interceptChance(p2, "storm") < interceptChance(p2, "quake"));
-  // fair play: the attacker waits (6 hours live) for the next one, the town (12 hours live) before another lands on it
-  assert.equal(WAR.heavyEvery, 6 * HOUR); assert.equal(WAR.heavyTargetEvery, 12 * HOUR);
-  W.war.cfg = { ...W.war.cfg, heavyEvery: 10 * MIN, heavyTargetEvery: 20 * MIN }; // shorter here: the war lasts a week of al-Jouf
-  const ac = W.war.acct(a.plot); ac.arsenal.quake = 4; ac.reload = {}; W.war.saveAcct(a.plot, ac);
-  assert.equal(W.war.handle("launch", { op: "hv1", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).ok, true);
-  assert.match(W.war.handle("launch", { op: "hv2", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).error, /قبل شوي/);
-  W.tick(10 * MIN); { const r = W.war.acct(a.plot); r.reload = {}; W.war.saveAcct(a.plot, r); }
-  assert.match(W.war.handle("launch", { op: "hv3", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).error, /المدينة انضربت/);
-  W.tick(10 * MIN); { const r = W.war.acct(a.plot); r.reload = {}; W.war.saveAcct(a.plot, r); }
-  assert.equal(W.war.handle("launch", { op: "hv4", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).ok, true);
+  // fair play: a town fires 6 a day at most, and 4 a day at most are fired at one town
+  assert.equal(WAR.heavyOut, 6); assert.equal(WAR.heavyIn, 4); assert.equal(WAR.heavyDay, 24 * HOUR);
+  W.war.cfg = { ...W.war.cfg, heavyDay: 60 * MIN, caps: { ...W.war.cfg.caps, inFlightTo: 99, rehitMax: 99 } }; // a shorter "day" here: the war lasts a week of al-Jouf
+  const ac = W.war.acct(a.plot); ac.arsenal.quake = 20; W.war.saveAcct(a.plot, ac);
+  const fire = (k) => { const r0 = W.war.acct(a.plot); r0.reload = {}; W.war.saveAcct(a.plot, r0); W.tick(MIN); return W.war.handle("launch", { op: `hvx${k}`, to: 2, x: 45 + (k % 3), y: 45, load: { quake: 1 } }, a); };
+  W.tick(60 * MIN); W.war.settle();
+  for (let k = 0; k < 4; k++) assert.equal(fire(k).ok, true, `strike ${k}`);
+  assert.match(fire(9).error, /المدينة انضربت/, "four a day on one town");
+  W.addTown(3, "ثالثة", { era: 4, mil: [[20, 20, "milhq"], [21, 20, "house", 2], [22, 20, "house", 2]] });
+  W.war.handle("rel", { req: "w3", other: 3, act: "war" }, a); W.tick(WAR.T.warning + MIN); W.war.settle();
+  const fire3 = (k) => { const r0 = W.war.acct(a.plot); r0.reload = {}; W.war.saveAcct(a.plot, r0); W.tick(MIN); return W.war.handle("launch", { op: `hvy${k}`, to: 3, x: 20 + k, y: 20, load: { quake: 1 } }, a); };
+  W.war.cfg = { ...W.war.cfg, heavyDay: 120 * MIN }; // the six fired at both towns are all within it
+  assert.equal(fire3(0).ok, true); assert.equal(fire3(1).ok, true);
+  assert.match(fire3(2).error, /أطلقت/, "six a day from one town");
 });
 
 test("destructive weapons are for a حاضرة and above", () => {
