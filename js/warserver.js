@@ -338,7 +338,7 @@ export class WarServer {
     for (const d of this.db.list("due", { upTo: now })) {
       this.db.del("due", d.id);
       if (d.kind === "end") { const r = this.db.get("rel", pairId(d.a, d.b)); if (r) this.judgeEnded(this.lapse(r, now), now); }
-      else if (d.kind === "ready" && this.warsOf(d.plot, now)) this.note(d.plot, "ready", "🚀 أسلحتك جاهزة: منصاتك وقواعدك تقدر تطلق الحين.", {});
+      else if (d.kind === "ready" && this.warsOf(d.plot, now)) this.readyNote(d.plot, now);
     }
   }
   /** A request already answered (the same request id sent again) gives back the same answer. */
@@ -412,6 +412,17 @@ export class WarServer {
     const recent = (a.fired[key] || []).filter((t) => now - t < this.cfg.T.heat);
     recent.push(now); a.fired[key] = recent;
     return now + minutes * 60000 * (1 + 0.5 * Math.min(this.cfg.heatMax ?? Infinity, recent.length - 1));
+  }
+  /**
+   * Weapons ready again: a note in the log always; on the phone only when the mayor is out of the game (no sync for
+   * a few minutes) and at most once an hour, with the time left of the war that ends first (the owner, 28 Nov 2026).
+   */
+  readyNote(plot, now) {
+    const info = this.townInfo(plot), a = this.acct(plot), away = info && now - (info.updated || 0) > 3 * 60000, push = away && now - (a.readyPush || 0) >= 3600000;
+    const ends = this.db.list("rel", { either: String(plot) }).map((r) => relNow(r, now, this.cfg)).filter((v) => v.state === "war" && v.warEnd > now).map((v) => v.warEnd);
+    const left = ends.length ? ` وحربك باقي لها ${minutesText(Math.min(...ends) - now)}.` : "";
+    if (push) { a.readyPush = now; this.saveAcct(plot, a); }
+    this.note(plot, "ready", `🚀 أسلحتك جاهزة: منصاتك وقواعدك تقدر تطلق الحين.${left}`, {}, push);
   }
   /** Once every launcher that fired is ready again, the mayor is told (one reminder per town, the latest). */
   remindReady(plot, a, now) {

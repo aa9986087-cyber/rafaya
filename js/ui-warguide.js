@@ -24,8 +24,10 @@ const ART = {
   scale: `<svg viewBox="0 0 320 80" class="wg-art" aria-hidden="true"><path d="M160 10v60M110 70h100M60 30h200" class="wg-beam"/><path d="M60 30l-24 26h48zM260 30l-24 26h48z" class="wg-pan"/><circle cx="160" cy="10" r="6" class="wg-core"/></svg>`
 };
 
+/** «القواعد باختصار» stays open; every other part folds under its title (the owner, 28 Nov 2026: short, details on a tap). */
 function section(id, icon, title, body, art = "") {
-  return `<section class="wg-sec" id="wg-${id}"><h3><i>${icon}</i>${title}</h3>${art}${body}</section>`;
+  if (id === "rules") return `<section class="wg-sec" id="wg-${id}"><h3><i>${icon}</i>${title}</h3>${art}${body}</section>`;
+  return `<details class="wg-sec wg-fold" id="wg-${id}"><summary><h3><i>${icon}</i>${title}</h3></summary>${art}${body}</details>`;
 }
 const li = (items) => `<ul class="wg-list">${items.map((t) => `<li>${t}</li>`).join("")}</ul>`;
 
@@ -58,11 +60,10 @@ export function warGuide(go = "") {
     ["🚀", "التجهيز", `المنصات والقواعد تتجهز بسرعة (دقيقة لين ٤ دقايق)، ويجيك تنبيه لما يجهز سلاحك.`]
   ];
   sheet(`<div class="wg">
-    <div class="wg-hero"><b>📖 دليل صراع الجوف</b><small>كل شي عن الحرب: كيف تتجهز، كيف تهاجم وتدافع، وكل القوانين. اقرأه مرة وتصير قائد.</small>${ART.steps}</div>
-    <nav class="wg-toc">${toc.map(([id, i, t]) => `<button type="button" data-wg="${id}">${i} ${t}</button>`).join("")}</nav>
+    <div class="wg-hero"><b>📖 دليل صراع الجوف</b><small>القواعد كلها باختصار، والتفاصيل تحتها لو تبيها.</small></div>
 
     ${section("rules", "📜", "قواعد الحرب باختصار", `<div class="wg-rules">${rules.map(([i, t, x]) => `<div class="wg-rule"><span class="wg-ic">${i}</span><span><b>${t}</b><small>${x}</small></span></div>`).join("")}</div>
-      <p class="wg-note">وتحت كل التفاصيل لو تبيها.</p>`)}
+      <p class="wg-note">والتفاصيل تحت: اضغط أي عنوان ينفتح.</p>`)}
 
     ${section("zero", "⏳", "ساعة الصفر", `<p>الحرب تفتح <b>للكل بنفس اللحظة</b>. قبلها تشوف عداد ساعة الصفر: تبني وتجهّز وتشتري سلاحك، لكن ما فيه إعلان حرب ولا جزية ولا ضربات لين يخلص العداد. أول ما يوصل صفر يطلع البيان الرسمي وتبدأ الحرب.</p>`)}
 
@@ -153,5 +154,5 @@ export function warGuide(go = "") {
   </div>`, "war-guide");
   const body = document.getElementById("sheetBody");
   body.querySelectorAll("[data-wg]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); body.querySelector(`#wg-${b.dataset.wg}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }));
-  if (go) setTimeout(() => body.querySelector(`#wg-${go}`)?.scrollIntoView({ block: "start" }), 50);
+  if (go) setTimeout(() => { const el = body.querySelector(`#wg-${go}`); if (el?.tagName === "DETAILS") el.open = true; el?.scrollIntoView({ block: "start" }); }, 50);
 }
