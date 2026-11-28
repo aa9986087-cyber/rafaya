@@ -301,8 +301,9 @@ export const VAULT_MORE = 0.5;
  */
 export const MIL = {
   milhq: [{ name: "مركز قيادة صغير", era: 1, ops: 1, guard: 0.02 }, { name: "مقر قيادة متطور", era: 2, ops: 2, guard: 0.04 }, { name: "قيادة عسكرية إقليمية", era: 3, ops: 3, guard: 0.06 }],
-  dronebase: [{ name: "هنقر مسيّرات", era: 1, cap: 2, salvo: 2, reload: 4 }, { name: "قاعدة مسيّرات", era: 2, cap: 4, salvo: 3, reload: 3 }, { name: "قاعدة مسيّرات كبرى", era: 3, cap: 6, salvo: 4, reload: 2 }],
-  missilepad: [{ name: "منصة صواريخ", era: 2, cap: 1, reload: 8 }, { name: "منصة صواريخ مزدوجة", era: 2, cap: 2, reload: 6 }, { name: "مجمع صواريخ", era: 3, cap: 3, reload: 4 }],
+  // reload: minutes to get ready again, halved on 28 Nov 2026 (the owner: the players found the wait too long)
+  dronebase: [{ name: "هنقر مسيّرات", era: 1, cap: 2, salvo: 2, reload: 2 }, { name: "قاعدة مسيّرات", era: 2, cap: 4, salvo: 3, reload: 1.5 }, { name: "قاعدة مسيّرات كبرى", era: 3, cap: 6, salvo: 4, reload: 1 }],
+  missilepad: [{ name: "منصة صواريخ", era: 2, cap: 1, reload: 4 }, { name: "منصة صواريخ مزدوجة", era: 2, cap: 2, reload: 3 }, { name: "مجمع صواريخ", era: 3, cap: 3, reload: 2 }],
   radar: [{ name: "رادار إنذار", era: 1, detect: 0.85 }, { name: "رادار بعيد المدى", era: 2, detect: 1 }, { name: "منظومة رادار متقدمة", era: 3, detect: 1.12 }],
   airdef: [{ name: "دفاع جوي قصير المدى", era: 1, vsDrone: 0.4, vsMissile: 0.15, intc: 4 }, { name: "دفاع جوي متوسط المدى", era: 2, vsDrone: 0.52, vsMissile: 0.35, intc: 8 }, { name: "دفاع جوي متقدم", era: 3, vsDrone: 0.62, vsMissile: 0.5, intc: 12 }],
   fortdef: [{ name: "منظومة الحصن", era: 3, vsHeavy: 0.4, intc: 4 }, { name: "منظومة الحصن المتطورة", era: 4, vsHeavy: 0.55, intc: 6 }, { name: "منظومة الحصن الكبرى", era: 4, vsHeavy: 0.7, intc: 8 }],

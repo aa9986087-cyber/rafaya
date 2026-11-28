@@ -14,11 +14,13 @@ import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
   hitDamage, repairCostOf, repairMsOf, isHeavy, kindSum, rubbleCostOf, rubbleMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
-  MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS
+  MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS, worthOf, ruinOf, warPrize, demotedEra
 } from "./war.js";
 import { CASTLE_ON, TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
 
 const SALVO_MAX = 6; // targets in one «دفعة»
+/** The rules a war was declared under: 2 = the war of 28 Nov 2026 (a prize, a stage lost). Wars from before end as they began. */
+const WAR_RULES = 2;
 const pairId = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 let noteN = 0; // keeps two notes of the same millisecond apart (never uses the dice: results must not depend on it)
 const cleanReq = (v) => String(v ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
@@ -53,30 +55,112 @@ export class WarServer {
     return map;
   }
   /**
-   * A war is over (its time ran out, a truce, or peace): the side whose strikes landed more wins it, officially.
-   * Once per war. Returns the relation as it should be stored.
+   * How much each side of a war was hurt by the other in it, as a share of its own worth (the owner, 28 Nov 2026):
+   * the worth of the damage the other's strikes did (a building's worth × the damage added), over the town's worth.
+   * Repairs do not take it back. Returns { [plot]: share 0 … 1 }.
    */
-  judge(r, now) {
-    if (!r?.warStart || r.judged === r.warStart) return r;
-    const from = r.warStart - this.cfg.T.warning;
-    const landed = (a, b) => this.db.list("op", { k1: String(a), k2: String(b), limit: 300 }).filter((o) => o.status === "done" && o.launchAt >= from && o.result?.dmg > 0).length;
-    const ha = landed(r.a, r.b), hb = landed(r.b, r.a), out = { ...r, judged: r.warStart };
-    if (ha === hb) return out; // a draw: no winner
-    const [w, l, hw, hl] = ha > hb ? [r.a, r.b, ha, hb] : [r.b, r.a, hb, ha];
-    const wn = this.townInfo(w)?.town || "مدينة", ln = this.townInfo(l)?.town || "مدينة";
-    const wa = this.acct(w); this.stat(wa, "wins"); this.saveAcct(w, wa); this.medalCache = null;
-    out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: "انتصار" }].slice(-30);
-    void hw; void hl; // who won is told in words, never as a score
-    this.note(w, "victory", `🏆 النصر لمدينتك! كسرت شوكة «${ln}» وانتهت الحرب بانتصارها. رايتها ترفرف فوق الجوف، وأهلها يحتفلون.`, { from: l, enemy: ln });
-    this.note(l, "defeat", `🏳️ انتهت الحرب بخسارة مدينتك أمام «${wn}». الجولة الجاية لكم بإذن الله.`, { from: w });
-    const lines = [
-      `🏆 نصرٌ مؤزّر لمدينة «${wn}»! أخضعت مدينة «${ln}» ورفعت راية النصر فوق الجوف`,
-      `⚔️ مدينة «${wn}» تكسر شوكة مدينة «${ln}» وتخرج من الحرب منتصرة مرفوعة الراس`,
-      `🦅 الجوف تشهد: مدينة «${wn}» تنتصر على مدينة «${ln}» بعد حرب طاحنة`,
-      `🏰 سقطت دفاعات مدينة «${ln}» وانتهت الحرب بنصر مدينة «${wn}»`
-    ];
-    this.news("victory", lines[(r.a * 7 + r.b * 13 + Math.floor(r.warStart / 1000)) % lines.length], l);
+  warHurt(r) {
+    const from = (r.warStart || 0) - this.cfg.T.warning, out = {};
+    for (const [me, other] of [[r.a, r.b], [r.b, r.a]]) {
+      const info = this.townInfo(me), list = info?.snap.list || [];
+      const lvlAt = new Map(list.map((b) => [`${b.x}:${b.y}`, b]));
+      let total = list.filter((b) => !(b.build > 0)).reduce((n, b) => n + worthOf(b.id, b.lvl), 0), hurt = 0;
+      const gone = new Set();
+      for (const o of this.db.list("op", { k1: String(other), k2: String(me), limit: 500 })) {
+        if (o.status !== "done" || o.launchAt < from || !(o.result?.dmg > 0)) continue;
+        for (const a of o.result.area || []) {
+          const b = lvlAt.get(`${a.x}:${a.y}`), lvl = a.lvl ?? (b && b.id === a.id ? b.lvl : 0), v = worthOf(a.id, lvl);
+          hurt += v * Math.min(100, a.dmg || 0) / 100;
+          const k = `${a.x}:${a.y}:${a.id}`;
+          if ((!b || b.id !== a.id) && a.flat && !gone.has(k)) { gone.add(k); total += v; } // gone since (its rubble cleared): still part of what the town was
+        }
+      }
+      out[me] = total ? Math.min(1, hurt / total) : 0;
+    }
     return out;
+  }
+  /** How hurt each side of a running war is so far (kept a minute: both sides' panels poll it). */
+  hurtNow(r, now) {
+    this.hurtCache ||= new Map();
+    const k = `${pairId(r.a, r.b)}:${r.warStart}`, c = this.hurtCache.get(k);
+    if (c && now - c.at < 60000) return c.v;
+    const v = this.warHurt(r);
+    this.hurtCache.set(k, { at: now, v });
+    if (this.hurtCache.size > 200) this.hurtCache.clear();
+    return v;
+  }
+  /** What is out of action in a town now (disabled or rubble), by worth: { total, out, share }. */
+  ruinNow(plot) {
+    const info = this.townInfo(plot);
+    return info ? ruinOf(info.snap.list, this.damage(plot), this.cfg) : { total: 0, out: 0, share: 0 };
+  }
+  /**
+   * A war is over. how: "time" (its day ran out: judged), or "agreed" / "shield" (a truce, peace or a shield: no
+   * winner, nobody pays, no stage lost). Judged: the town hurt more (by the share of its own worth) loses and pays the
+   * other cfg.prize of its budget; with no strike landed either way, or the same, a draw. Then any side with half its
+   * worth or more out of action drops a stage (one at a time). Once per war. Returns the relation as it should be stored.
+   */
+  judge(r, now, how = "time") {
+    if (!r?.warStart || r.judged === r.warStart) return r;
+    const out = { ...r, judged: r.warStart };
+    if (how !== "time") return out;
+    const hurt = this.warHurt(r), ha = hurt[r.a] || 0, hb = hurt[r.b] || 0;
+    const an = this.townInfo(r.a)?.town || "مدينة", bn = this.townInfo(r.b)?.town || "مدينة";
+    const pct = (v) => `${nf(Math.round(v * 100))}٪`;
+    if (Math.abs(ha - hb) < 0.0005) {
+      out.hist = [...(r.hist || []), { at: now, by: r.a, kind: "draw", text: "تعادل" }].slice(-30);
+      for (const [p, o] of [[r.a, bn], [r.b, an]]) this.note(p, "draw", `🤝 انتهت الحرب مع «${o}» بالتعادل: ${ha + hb ? "تضررتوا نفس الشي" : "ما أحد ضرب الثاني"}. ما أحد دفع شي.`, { from: p === r.a ? r.b : r.a });
+      this.news("draw", `🤝 انتهت الحرب بين «${an}» و«${bn}» بالتعادل`, r.b);
+    } else {
+      const [w, l, hw, hl] = ha < hb ? [r.a, r.b, ha, hb] : [r.b, r.a, hb, ha];
+      const wn = w === r.a ? an : bn, ln = l === r.a ? an : bn, li = this.townInfo(l), la = this.acct(l);
+      const prize = li && r.rules >= WAR_RULES ? warPrize(this.available(li, la), this.cfg) : 0; // a war from before the new rules: no prize
+      if (prize > 0) {
+        this.charge(l, la, prize, `خسارة الحرب مع «${wn}»`); this.saveAcct(l, la);
+        const wa0 = this.acct(w); this.charge(w, wa0, -prize, `جائزة النصر على «${ln}»`); this.saveAcct(w, wa0);
+      }
+      const wa = this.acct(w); this.stat(wa, "wins"); this.saveAcct(w, wa); this.medalCache = null;
+      out.hist = [...(r.hist || []), { at: now, by: w, kind: "victory", text: "انتصار" }].slice(-30);
+      out.result = { winner: w, prize, hurt: { [w]: Math.round(hw * 1000) / 1000, [l]: Math.round(hl * 1000) / 1000 } };
+      this.note(w, "victory", `🏆 النصر لمدينتك! «${ln}» تضررت ${pct(hl)} ومدينتك ${pct(hw)}.${prize ? ` 💰 جائزة النصر: ${nf(prize)} ريال وصلت ميزانيتك.` : ""}`, { from: l, enemy: ln, amount: prize });
+      this.note(l, "defeat", `🏳️ خسرت الحرب أمام «${wn}»: مدينتك تضررت ${pct(hl)} و«${wn}» ${pct(hw)}.${prize ? ` 💸 دفعت ${nf(prize)} ريال (${nf(this.cfg.prize * 100)}٪ من ميزانيتك).` : ""}`, { from: w, amount: prize });
+      const lines = [
+        `🏆 نصرٌ مؤزّر لمدينة «${wn}»! أخضعت مدينة «${ln}» ورفعت راية النصر فوق الجوف`,
+        `⚔️ مدينة «${wn}» تكسر شوكة مدينة «${ln}» وتخرج من الحرب منتصرة مرفوعة الراس`,
+        `🦅 الجوف تشهد: مدينة «${wn}» تنتصر على مدينة «${ln}» بعد حرب طاحنة`,
+        `🏰 سقطت دفاعات مدينة «${ln}» وانتهت الحرب بنصر مدينة «${wn}»`
+      ];
+      this.news("victory", lines[(r.a * 7 + r.b * 13 + Math.floor(r.warStart / 1000)) % lines.length], l);
+    }
+    // half a town or more out of action at the war's end: it drops a stage (wars declared under the new rules)
+    if (r.rules >= WAR_RULES) for (const p of [r.a, r.b]) this.demoteIfRuined(p, now, p === r.a ? bn : an);
+    return out;
+  }
+  /** A town at its war's end with cfg.ruin or more of its worth out of action drops one stage (not twice while down). */
+  demoteIfRuined(plot, now, enemy) {
+    const info = this.townInfo(plot);
+    if (!info) return;
+    const a = this.acct(plot), era = info.snap.era || info.era || 0;
+    if (a.demote || era <= 0) return;
+    const ruin = this.ruinNow(plot);
+    if (ruin.share < this.cfg.ruin) return;
+    const to = demotedEra(era);
+    a.demote = { era: to, from: era, at: now, by: enemy };
+    this.saveAcct(plot, a);
+    this.note(plot, "demote", `📉 مدينتك نزلت إلى «${ERAS[to].name}»: انتهت الحرب و${nf(Math.round(ruin.share * 100))}٪ منها خراب (معطّل أو ركام). صلّح المعطّل وشيل الركام كله وترجع «${ERAS[era].name}» على طول.`, { era: to, from: era });
+    this.news("demote", `📉 «${info.town}» تراجعت من ${ERAS[era].name} إلى ${ERAS[to].name} بعد الحرب`, plot);
+  }
+  /** A town that dropped a stage and has nothing left out of action (all repaired, the rubble cleared) gets it back. */
+  restoreIfRepaired(plot, a, now) {
+    if (!a.demote) return false;
+    const ruin = this.ruinNow(plot), info = this.townInfo(plot);
+    if (ruin.out > 0 || !info) return false;
+    const d = a.demote;
+    delete a.demote;
+    this.note(plot, "restore", `📈 رجعت مدينتك «${ERAS[d.from].name}»! صلّحت الخراب كله.`, { era: d.from });
+    this.news("restore", `📈 «${info.town}» صلّحت خراب الحرب ورجعت ${ERAS[d.from].name}`, plot);
+    void now;
+    return true;
   }
   /** A stored war whose time ran out since: judge it now (once). */
   judgeEnded(r, now) {
@@ -193,7 +277,7 @@ export class WarServer {
   lapse(r, now) {
     if (!(r?.tribute && now >= r.tribute.until)) return r;
     const t = r.tribute, v = relNow(r, now, this.cfg), by = t.by, other = r.a === by ? r.b : r.a;
-    const out = { ...r, state: "warning", since: t.until, warStart: v.warStart, warEnd: v.warEnd, tribute: null, offer: null };
+    const out = { ...r, state: "warning", since: t.until, warStart: v.warStart, warEnd: v.warEnd, tribute: null, offer: null, rules: WAR_RULES };
     out.hist = [...(r.hist || []), { at: t.until, by: other, kind: "lapse", text: "ما رد على الجزية" }].slice(-30);
     const bn = this.townInfo(by)?.town || "مدينة", on = this.townInfo(other)?.town || "مدينة";
     this.note(by, "war", `⏳ «${on}» ما ردت على الجزية: الحرب بينكم ${now >= v.warStart ? "بدأت" : `تبدأ بعد ${minutesText(v.warStart - now)}`}.`, { from: other });
@@ -202,7 +286,20 @@ export class WarServer {
     this.saveRel(r.a, r.b, out);
     return out;
   }
-  saveRel(a, b, r) { this.db.put("rel", pairId(a, b), r, { k1: String(Math.min(a, b)), k2: String(Math.max(a, b)), at: this.now() }); }
+  saveRel(a, b, r) {
+    this.db.put("rel", pairId(a, b), r, { k1: String(Math.min(a, b)), k2: String(Math.max(a, b)), at: this.now() });
+    // a war running: the server wakes at its end to judge it then (who won, the prize, a ruined town's stage)
+    if (["warning", "war"].includes(r.state) && r.warEnd && r.judged !== r.warStart) this.db.put("due", `end:${pairId(a, b)}`, { id: `end:${pairId(a, b)}`, kind: "end", a: Math.min(a, b), b: Math.max(a, b), at: r.warEnd }, { at: r.warEnd });
+    else this.db.del("due", `end:${pairId(a, b)}`);
+  }
+  /** Timers that came due: wars that ran out (judged now) and launchers ready again (the mayor is told). */
+  settleDue(now) {
+    for (const d of this.db.list("due", { upTo: now })) {
+      this.db.del("due", d.id);
+      if (d.kind === "end") { const r = this.db.get("rel", pairId(d.a, d.b)); if (r) this.judgeEnded(this.lapse(r, now), now); }
+      else if (d.kind === "ready" && this.warsOf(d.plot, now)) this.note(d.plot, "ready", "🚀 أسلحتك جاهزة: منصاتك وقواعدك تقدر تطلق الحين.", {});
+    }
+  }
   /** A request already answered (the same request id sent again) gives back the same answer. */
   once(plot, req, fn) {
     const id = cleanReq(req);
@@ -235,9 +332,17 @@ export class WarServer {
     const c = this.charge(me.plot, a, price, "درع الحماية");
     this.saveAcct(me.plot, a);
     this.note(me.plot, "shield", `🛡️ رفعت درع الحماية: ما ينضرب فيك شي لمدة ${minutesText(this.cfg.T.shieldLast)} (٣ أيام). إذا هاجمت أحد ينكسر.`, {}, false);
-    for (const r of this.db.list("rel", { either: String(me.plot) })) {
-      const v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
-      if (["warning", "war"].includes(v.state)) this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: ضرباتك ما توصلها لمدة ${minutesText(this.cfg.T.shieldLast)}.`, { from: me.plot });
+    // a shield ends every war of the town at once (the owner, 28 Nov 2026): no winner and no loser, nobody pays.
+    // The other side may declare a new war once the shield is down (not before), and only by declaring it again.
+    for (const r0 of this.db.list("rel", { either: String(me.plot) })) {
+      const r = this.lapse(r0, now), v = relNow(r, now, this.cfg), other = r.a === me.plot ? r.b : r.a;
+      if (!["warning", "war"].includes(v.state)) continue;
+      const out = { ...this.judge({ ...r, ...v }, now, "shield"), state: "hostile", since: now, warEnd: now, warCool: a.shield.until, offer: null };
+      out.hist = [...(r.hist || []), { at: now, by: me.plot, kind: "shield", text: "رفع الدرع: انتهت الحرب بدون فوز ولا خسارة" }].slice(-30);
+      this.saveRel(r.a, r.b, out);
+      const on = this.townInfo(other)?.town || "مدينة";
+      this.note(other, "shield", `🛡️ «${info.town}» رفعت درع الحماية: انتهت الحرب بينكم بدون فوز ولا خسارة. تقدر تعلن عليها حرب جديدة بعد ما يخلص الدرع (باقي ${minutesText(a.shield.until - now)}).`, { from: me.plot });
+      this.note(me.plot, "shield", `🛡️ انتهت حربك مع «${on}» بدون فوز ولا خسارة، لأنك رفعت الدرع.`, { from: other }, false);
     }
     this.news("shield", `🛡️ «${info.town}» رفعت درع الحماية`, me.plot);
     return { ok: true, shield: this.shieldView(info, a, now), charge: c };
@@ -254,6 +359,7 @@ export class WarServer {
    * attacked someone itself in that time. Returns why a strike stops here, or "".
    */
   awayBlock(info, now) {
+    if (!this.cfg.awayOn) return ""; // off since 28 Nov 2026 (the owner): the defences and the deputy fight for the owner away
     if (now - (info.updated || 0) <= this.cfg.away) return "";
     if (now - (this.acct(info.plot).lastAttack || 0) < this.cfg.caps.awayWindow) return "";
     const hits = this.db.list("hit", { k1: String(info.plot) }).filter((h) => now - h.at < this.cfg.caps.awayWindow);
@@ -264,14 +370,22 @@ export class WarServer {
     a.fired ||= {};
     const recent = (a.fired[key] || []).filter((t) => now - t < this.cfg.T.heat);
     recent.push(now); a.fired[key] = recent;
-    return now + minutes * 60000 * (1 + 0.5 * (recent.length - 1));
+    return now + minutes * 60000 * (1 + 0.5 * Math.min(this.cfg.heatMax ?? Infinity, recent.length - 1));
+  }
+  /** Once every launcher that fired is ready again, the mayor is told (one reminder per town, the latest). */
+  remindReady(plot, a, now) {
+    const at = Math.max(0, ...Object.values(a.reload || {}).filter((t) => t > now));
+    if (at > now) this.db.put("due", `ready:${plot}`, { id: `ready:${plot}`, kind: "ready", plot: Number(plot), at }, { at });
   }
   /** Attacking breaks the attacker's own shield (a shield is for staying out of the fight). */
   breakShield(plot, a, now) {
     a.lastAttack = now; // and ends the town's protection while away
     if (!(a.shield && a.shield.until > now)) return;
+    const until = a.shield.until;
     a.shield.until = now;
     this.note(plot, "shield", "🛡️ انكسر درعك لأنك هاجمت.", {}, false);
+    // the wars the shield ended may be declared again now (they waited for the shield's end)
+    for (const r of this.db.list("rel", { either: String(plot) })) if (r.warCool === until) this.saveRel(r.a, r.b, { ...r, warCool: now });
   }
 
   // ---------- «قلعة مارد»: the castle in the middle, foot soldiers only (js/castle.js, docs/CASTLE_PLAN.md) ----------
@@ -402,6 +516,8 @@ export class WarServer {
       case "clear": return this.once(me.plot, body.req, () => this.clearRubble(body, me));
       case "settings": return this.settings(body, me);
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
+      case "stakes": return this.stakes(Math.round(Number(body.other)), me);
+      case "feed": return this.feed();
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
       case "watch": return this.watch(Math.round(Number(body.plot)), me);
       case "castle": return CASTLE_ON || this.cfg.castleOn ? { castle: this.castleView(me) } : { error: "قلعة مارد قريبًا" };
@@ -429,6 +545,33 @@ export class WarServer {
   }
 
   /**
+   * «سجل حروب الجوف» (the owner, 28 Nov 2026): every town sees the strikes between all towns, newest first, and the
+   * wars declared and ended. Only what the bulletin and «تابع» already show anyone: towns, weapons, the target, the
+   * result and the dead; never budgets, fees or launchers. Kept 15 seconds (everyone's open log asks for it).
+   */
+  feed() {
+    const now = this.now();
+    if (this.feedCache && now - this.feedCache.at < 15000) return this.feedCache.res;
+    const ops = this.db.list("op", { limit: 120 }).filter((o) => o.from != null && o.to != null).slice(0, 80).map((o) => ({
+      kind: "op", at: o.status === "done" ? o.doneAt || o.arriveAt : o.launchAt, id: o.id, salvo: o.salvo || null, from: o.from, to: o.to, fromTown: o.fromTown, toTown: o.toTown,
+      bname: o.bname, load: o.load, status: o.status, launchAt: o.launchAt, arriveAt: o.arriveAt,
+      result: o.status === "done" && o.result ? { dmg: o.result.dmg || 0, blocked: o.result.blocked || "", flat: o.result.flat || 0, n: (o.result.area || []).length, dead: o.result.dead || 0, hurt: o.result.hurt || 0, stopped: (o.result.hits || []).filter((h) => h.intercepted).length, shots: (o.result.hits || []).length } : null
+    }));
+    const KINDS = new Set(["war", "victory", "draw", "shield", "truce", "peace", "refuse", "lapse", "paid"]), events = [];
+    for (const r of this.db.list("rel", {})) {
+      const name = (p) => this.townInfo(p)?.town || "مدينة";
+      for (const h of (r.hist || []).slice(-10)) if (KINDS.has(h.kind) && now - h.at < 7 * 24 * 3600000) {
+        const by = h.by, other = by === r.a ? r.b : r.a;
+        events.push({ kind: h.kind, at: h.at, by, other, byTown: name(by), otherTown: name(other), prize: h.kind === "victory" ? r.result?.prize || 0 : 0 });
+      }
+    }
+    const items = [...ops, ...events].sort((x, y) => y.at - x.at).slice(0, 100);
+    const res = { now, items };
+    this.feedCache = { at: now, res };
+    return res;
+  }
+
+  /**
    * «تابع»: the strikes landing on a town at war, for anyone watching from outside (what the scene needs, the
    * same as any visitor could see of the damage): the last half hour, and those still in the air.
    */
@@ -446,14 +589,26 @@ export class WarServer {
   }
 
   // ---------- reading ----------
+  /**
+   * Before declaring war: what the war is worth to each side as things stand (the owner, 28 Nov 2026): what this town
+   * takes if the other is hurt more, and what it pays if it is. Only these two amounts, never the other's budget.
+   */
+  stakes(other, me) {
+    const mine = this.townInfo(me.plot), them = this.townInfo(other);
+    if (!mine || !them || other === me.plot) return { error: "ما لقيت المدينة" };
+    return { win: warPrize(this.available(them, this.acct(other)), this.cfg), lose: warPrize(this.available(mine, this.acct(me.plot)), this.cfg), share: this.cfg.prize, hours: Math.round(this.cfg.T.war / 3600000), ruin: this.cfg.ruin };
+  }
   state(body, me) {
     // what this town's game has applied (the bills and gifts up to this number): the owner's panel shows a gift as arrived
     { const a0 = this.acct(me.plot), seen = Math.round(Number(body.seq) || 0); if (seen > (a0.seenSeq || 0)) { a0.seenSeq = seen; this.saveAcct(me.plot, a0); } }
     const now = this.now(), info = this.townInfo(me.plot), a = this.acct(me.plot);
+    if (a.demote && this.restoreIfRepaired(me.plot, a, now)) this.saveAcct(me.plot, a);
     const p = info ? this.profileOf(info) : milProfile([]);
     const rels = this.db.list("rel", { either: String(me.plot) }).map((r0) => {
       const r = this.judgeEnded(this.lapse(r0, now), now), other = r.a === me.plot ? r.b : r.a, o = this.townInfo(other), v = relNow(r, now, this.cfg);
-      return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, money: undefined, ...v, hist: (r.hist || []).slice(-20), chat: (r.chat?.lines || []).slice(-40), chatOpen: !!r.chat?.open, lastSay: undefined, lastThreat: undefined };
+      const live = ["warning", "war"].includes(v.state) ? this.hurtNow(r, now) : null;
+      return { other, town: o?.town || "مدينة", owner: o?.owner || "", era: o?.era || 0, money: undefined, ...v, hist: (r.hist || []).slice(-20), chat: (r.chat?.lines || []).slice(-40), chatOpen: !!r.chat?.open, lastSay: undefined, lastThreat: undefined,
+        hurt: live ? { me: live[me.plot] || 0, them: live[other] || 0 } : null, result: r.result || null };
     }).filter((r) => r.state !== "peace" || r.hist.length || r.chat.length);
     const ops = this.db.list("op", { either: String(me.plot), limit: 40 }).map((o) => this.opPublic(o, me));
     const notes = this.db.list("note", { k1: String(me.plot), limit: 60 }); // the newest 60 (the game knows which it has seen)
@@ -464,6 +619,7 @@ export class WarServer {
       profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, forts: p.forts, armory: p.armory, barracks: p.barracks, era: p.era },
       openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, cleared, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       cityMilestoneSeq: a.cityMilestoneSeq || 0,
+      demote: a.demote || null, ruin: info ? Math.round(this.ruinNow(me.plot).share * 1000) / 1000 : 0, ruinAt: this.cfg.ruin, prizeShare: this.cfg.prize,
       castle: (() => { const c = this.castleRow(); return { holder: c.holder, town: c.holder != null ? this.townInfo(c.holder)?.town || c.holderTown : "", since: c.since, marching: this.db.list("cmarch", {}).length, marches: this.db.list("cmarch", {}).map((m) => ({ from: m.from, n: troopCount(m.units), mode: m.mode, sent: m.sent, at: m.at })) }; })(),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
     };
@@ -544,15 +700,18 @@ export class WarServer {
     if (!(act in allowed)) return { error: "طلب غير معروف" };
     // before zero hour nothing that leads to a war: no declaration, no tribute, no threats or talk, no hostility
     if (["war", "tribute", "say", "endchat", "threat", "hostile"].includes(act) && this.notOpen(now)) return { error: this.notOpen(now) };
+    // a town under its shield: no war and no tribute on it until the shield is down (it ended its wars, 28 Nov 2026)
+    if (["war", "tribute"].includes(act)) { const sh = this.shieldUntil(them, now); if (sh) return { error: `«${them.town}» عليها درع حماية: تقدر بعد ${minutesText(sh - now)}` }; }
     if (allowed[act]) return { error: allowed[act] };
     const myName = mine.town, theirName = them.town;
     const log = (kind, text) => { r.hist.push({ at: now, by: me.plot, kind, text }); r.hist = r.hist.slice(-30); };
     const declare = (why) => {
-      r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null; r.tribute = null;
+      r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null; r.tribute = null; r.rules = WAR_RULES;
       if (r.chat) r.chat.open = false;
       log("war", why);
-      this.note(other, "war", `⚔️ مدينة «${myName}» أعلنت عليك الحرب! أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: me.plot });
-      this.note(me.plot, "war", `⚔️ أعلنت الحرب على «${theirName}». أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}.`, { from: other });
+      const soon = this.cfg.T.warning > 0 ? `أول ضربة ممكنة بعد ${minutesText(this.cfg.T.warning)}` : "الضربات ممكنة من الحين";
+      this.note(other, "war", `⚔️ مدينة «${myName}» أعلنت عليك الحرب! ${soon}، والحرب تطول ${minutesText(this.cfg.T.war)}. جهّز دفاعاتك.`, { from: me.plot });
+      this.note(me.plot, "war", `⚔️ أعلنت الحرب على «${theirName}». ${soon}، والحرب تطول ${minutesText(this.cfg.T.war)}.`, { from: other });
       this.news("war", `⚔️ «${myName}» أعلنت الحرب على «${theirName}»`, other);
     };
     if (act === "threat") {
@@ -595,9 +754,10 @@ export class WarServer {
       r.tribute = null;
       log("refuse", "رفض الجزية");
       // the refusal is the war the demand promised: declared in the name of the one who asked
-      r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null;
-      this.note(other, "war", `✋ «${myName}» رفضت الجزية: الحرب بينكم تبدأ بعد ${minutesText(this.cfg.T.warning)}.`, { from: me.plot });
-      this.note(me.plot, "war", `✋ رفضت الجزية: الحرب مع «${theirName}» تبدأ بعد ${minutesText(this.cfg.T.warning)}. جهّز دفاعاتك.`, { from: other }, false);
+      r.state = "warning"; r.since = now; r.warStart = now + this.cfg.T.warning; r.warEnd = r.warStart + this.cfg.T.war; r.offer = null; r.rules = WAR_RULES;
+      const when = this.cfg.T.warning > 0 ? `تبدأ بعد ${minutesText(this.cfg.T.warning)}` : "بدأت";
+      this.note(other, "war", `✋ «${myName}» رفضت الجزية: الحرب بينكم ${when}.`, { from: me.plot });
+      this.note(me.plot, "war", `✋ رفضت الجزية: الحرب مع «${theirName}» ${when}. جهّز دفاعاتك.`, { from: other }, false);
       this.news("war", `⚔️ «${myName}» رفضت جزية «${theirName}»: حرب`, other);
     } else if (act === "say") {
       // a talk between the two mayors (the threat, in their own words): both may answer, either may end it with war
@@ -619,7 +779,7 @@ export class WarServer {
       this.note(other, act + "Offer", act === "truce" ? `🏳️ «${myName}» تعرض عليك هدنة ${minutesText(this.cfg.T.truce)}.` : `🤝 «${myName}» تعرض عليك الصلح.`, { from: me.plot });
     } else if (act === "accept") {
       const kind = r.offer.kind; r.offer = null;
-      if (["war", "warning"].includes(r.state)) Object.assign(r, this.judge(r, now)); // the war ends here: who won it
+      if (["war", "warning"].includes(r.state)) Object.assign(r, this.judge(r, now, "agreed")); // agreed by both: no winner, nobody pays
       if (kind === "truce") {
         r.state = "truce"; r.since = now; r.truceEnd = now + this.cfg.T.truce;
         log("truce", "هدنة");
@@ -759,7 +919,7 @@ export class WarServer {
     for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     left = missiles;
     for (const b of readyPads.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); }
-    this.breakShield(me.plot, a, now);
+    this.breakShield(me.plot, a, now); this.remindReady(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `دفعة على «${them.town}» (${nf(plans.length)} أهداف)`);
     this.saveAcct(me.plot, a);
     const detected = detects(this.profileOf(them));
@@ -791,7 +951,7 @@ export class WarServer {
     if (Object.keys(load).some(isHeavy)) a.heavyLog = [...(a.heavyLog || []).filter((t) => now - t < this.cfg.heavyDay), now];
     if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); } }
-    this.breakShield(me.plot, a, now);
+    this.breakShield(me.plot, a, now); this.remindReady(me.plot, a, now);
     const ch = this.charge(me.plot, a, fee, `تشغيل عملية على «${them.town}»`);
     this.saveAcct(me.plot, a);
     const theirP = this.profileOf(them);
@@ -812,12 +972,13 @@ export class WarServer {
   /** Decide every attack whose time has come (called on every request; each attack is decided once). */
   /** When the next operation in flight arrives (for the server's alarm), or 0. */
   nextArrival() {
-    const all = [...this.db.list("fly", {}), ...this.db.list("cmarch", {})];
+    const all = [...this.db.list("fly", {}), ...this.db.list("cmarch", {}), ...this.db.list("due", {})];
     return all.length ? Math.min(...all.map((f) => f.at)) : 0;
   }
   settle() {
     const now = this.now();
     try { this.settleCastle(now); } catch { /* the castle never stops the war */ }
+    try { this.settleDue(now); } catch { /* the next request settles it */ }
     for (const f of this.db.list("fly", { upTo: now })) {
       const op = this.db.get("op", f.id);
       this.db.del("fly", f.id);
@@ -855,7 +1016,11 @@ export class WarServer {
         } else if (!h.intercepted) {
           const base = hitDamage(w, this.rand());
           for (const b of blastArea(list, op.x, op.y, WEAPONS[w].blast || 0.7)) {
-            const a = wdOf(b), room = Math.min(this.cfg.caps.perOp - a.dmg, this.cfg.caps.building - a.before - a.dmg);
+            const a = wdOf(b);
+            // a building already out of action when the strike came falls to rubble (the owner, 28 Nov 2026), never a road
+            if (!a.wasFlat && a.before >= (this.cfg.flatAt ?? 101) && B[b.id]?.cat !== "road") { if (!a.flat) { a.flat = true; a.dmg = Math.max(a.dmg, 100 - a.before, 1); h.reach++; } continue; }
+            if (a.flat || a.wasFlat) continue;
+            const room = Math.min(this.cfg.caps.perOp - a.dmg, this.cfg.caps.building - a.before - a.dmg);
             const add = Math.max(0, Math.min(room, Math.round(base * b.f)));
             a.dmg += add; if (add) h.reach++;
           }
@@ -867,7 +1032,7 @@ export class WarServer {
     const hurt = [...area.values()].filter((a) => a.dmg > 0 && !a.wasFlat).map((a) => ({ ...a, after: a.flat ? 100 : Math.min(this.cfg.caps.building, a.before + a.dmg) })).sort((p, q) => q.dmg - p.dmg);
     const centre = hurt.find((a) => a.x === op.x && a.y === op.y) || hurt[0];
     const dmg = hurt.length ? hurt[0].dmg : 0;
-    res.area = hurt.map(({ x, y, id, dmg: d, before: b0, after, flat }) => ({ x, y, id, dmg: d, before: b0, after, ...(flat ? { flat: true } : {}) }));
+    res.area = hurt.map(({ x, y, id, lvl, dmg: d, before: b0, after, flat }) => ({ x, y, id, lvl, dmg: d, before: b0, after, ...(flat ? { flat: true } : {}) }));
     res.flat = hurt.filter((a) => a.flat).length; // buildings left as rubble
     res.dmg = dmg; res.before = centre ? centre.before : before; res.after = centre ? centre.after : before;
     // the people of the houses hit leave them until they are repaired (in the game's numbers)
@@ -878,7 +1043,7 @@ export class WarServer {
       for (const a of hurt) { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y) || { id: a.id }; const c = casualties(t, a.dmg, op.detected, this.cfg); dead += c.dead; hurtN += c.hurt; }
       res.dead = Math.round(dead); res.hurt = Math.round(hurtN);
     }
-    // spoils of war: every economic building hit pays the attacker a share of its repair
+    // spoils of war per strike: none since 28 Nov 2026 (SPOILS = 0): the money is the war's prize at its end
     res.spoils = Math.round(hurt.filter((a) => economic(a.id)).reduce((n, a) => n + repairCostOf(a.id, a.dmg, this.cfg), 0) * SPOILS);
     if (res.spoils > 0) { const fa = this.acct(op.from); this.charge(op.from, fa, -res.spoils, `غنيمة حرب من «${op.toTown}»`); this.saveAcct(op.from, fa); }
     // the counts for the medals

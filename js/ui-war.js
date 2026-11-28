@@ -3,7 +3,7 @@
 import { ROOM, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
-import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy } from "./war.js";
+import { HEAVY_ON, reloadText, REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy } from "./war.js";
 import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
@@ -205,8 +205,8 @@ export async function warSheet(tab = "home") {
         ${row("صواريخ اعتراضية", `${ar(ars.intc)} من ${ar(caps.intc)}`)}
         ${row("ضد المسيّرة الأساسية", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("ضد المسيّرة المتطورة", `${ar(Math.round(st.intercept.drone2 * 100))}٪`)}
         ${row("ضد الصاروخ العادي", `${ar(Math.round(st.intercept.missile * 100))}٪`)}${row("ضد الصاروخ المتقدم", `${ar(Math.round(st.intercept.missile2 * 100))}٪`)}
-        ${list(p.forts || [], "fortdef") || row("منظومة الحصن", "✕ ما فيه")}${row("ضد صاروخ الزلزال", `${ar(Math.round((st.intercept.quake || 0) * 100))}٪`, st.intercept.quake ? "" : "minus")}${row("ضد صاروخ الإعصار", `${ar(Math.round((st.intercept.storm || 0) * 100))}٪`, st.intercept.storm ? "" : "minus")}</div>
-      ${!(p.forts || []).length ? `<div class="need">💡 الأسلحة المدمّرة (الزلزال والإعصار) تخلي المباني ركام، والدفاع الجوي العادي ما يقدر عليها. بس «منظومة الحصن» تعترضها.</div>` : ""}
+        ${HEAVY_ON ? `${list(p.forts || [], "fortdef") || row("منظومة الحصن", "✕ ما فيه")}${row("ضد صاروخ الزلزال", `${ar(Math.round((st.intercept.quake || 0) * 100))}٪`, st.intercept.quake ? "" : "minus")}${row("ضد صاروخ الإعصار", `${ar(Math.round((st.intercept.storm || 0) * 100))}٪`, st.intercept.storm ? "" : "minus")}` : ""}</div>
+      ${HEAVY_ON && !(p.forts || []).length ? `<div class="need">💡 الأسلحة المدمّرة (الزلزال والإعصار) تخلي المباني ركام، والدفاع الجوي العادي ما يقدر عليها. بس «منظومة الحصن» تعترضها.</div>` : ""}
       ${p.airdefs.length || (p.forts || []).length ? `<div class="sheet-actions keep"><button class="btn go block" type="button" data-buy="intc" ${ars.intc >= caps.intc || home.money < WAR.interceptor.price ? "disabled" : ""}>اشترِ صاروخ اعتراضي (${money(WAR.interceptor.price)} ريال)</button>
         <button class="btn block" type="button" data-buy="intcfill" ${ars.intc >= caps.intc ? "disabled" : ""}>عبّها كلها (${money((caps.intc - ars.intc) * WAR.interceptor.price)} ريال)</button></div>` : ""}
       <p class="hint">كل محاولة اعتراض تستهلك صاروخ اعتراضي. الرادار يرفع الدقة ويعطيك إنذار قبل الوصول، وبدونه الدفاع شبه أعمى. والضرر على الرادار أو البطارية يضعف الحماية.</p>`;
@@ -277,7 +277,7 @@ export async function relSheet(plot) {
     </div>
     <h3>تاريخ النزاع</h3>
     ${r.hist?.length ? `<div class="rows">${r.hist.slice().reverse().map((h) => `<div class="row"><span>${h.by === mine ? "أنت" : `«${info.town}»`}: ${h.text}</span><b><small>${new Date(h.at - (WARX.offset || 0)).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</small></b></div>`).join("")}</div>` : `<p class="hint">ما بينكم شي للحين.</p>`}
-    <p class="hint">بعد إعلان الحرب فيه إنذار ${minutesText(WAR.T.warning)}، والحرب تدوم ${minutesText(WAR.T.war)}. للجزية والمحادثة ابنِ مركز القيادة العسكرية.</p>`, "war-rel");
+    <p class="hint">${WAR.T.warning > 0 ? `بعد إعلان الحرب فيه إنذار ${minutesText(WAR.T.warning)}، و` : "بعد إعلان الحرب الضربات تبدأ على طول، و"}الحرب تدوم ${minutesText(WAR.T.war)}. للجزية والمحادثة ابنِ مركز القيادة العسكرية.</p>`, "war-rel");
   $("relTarget")?.addEventListener("click", () => startTargeting(plot));
   $("sheetBody").querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
     if (b.dataset.why) { toast(b.dataset.why, "bad"); sfx.deny(); return; }
@@ -841,6 +841,7 @@ export function warDamageHtml(b) {
   const cost = repairCostOf(b.id, b.wd), ms = repairMsOf(b.wd);
   let html = `<h3>💥 ضرر عسكري</h3><div class="rows">${row("الحالة", `${d.name} · ${ar(Math.round(b.wd))}٪`, "minus")}<i class="prog cond"><i style="width:${100 - b.wd}%" class="low"></i></i>
     ${row("كفاءة المبنى الحين", `${ar(Math.round(warFactor(b.wd) * 100))}٪`, "minus")}${targetText(b.id) ? row("الأثر", targetText(b.id)) : ""}</div>`;
+  if (b.wd >= (WAR.flatAt ?? 101) && !rep) html += `<div class="need">⚠️ المبنى معطّل: لو انضرب مرة ثانية <b>ينهدم ويصير ركام</b>، ويحسب من خراب مدينتك. صلّحه بسرعة.</div>`;
   if (visiting) return html;
   if (rep) html += `<div class="need ok">🔧 يتصلح الحين: يخلص بعد ${fmtLeft(rep.end - warNow())}</div>`;
   else html += `<div class="sheet-actions"><button class="btn go block" id="warRepair" type="button" ${S.money < cost ? "disabled" : ""}>🔧 إصلاح الأضرار العسكرية (${money(cost)} ريال)</button></div>
@@ -850,7 +851,7 @@ export function warDamageHtml(b) {
 /** A building a destructive weapon flattened: only rubble is left, to clear (paid on the server) before building again. */
 export function warRubbleHtml(b) {
   const clr = world.fx?.clearing?.get(WARX.inspectAt), cost = rubbleCostOf(b.id, b.lvl), ms = rubbleMsOf();
-  let html = `<div class="ins-head rubble-head"><b class="rubble-ic">🧱</b><div><h2>ركام ${levelName(b)}</h2><p>هذا المبنى انهدم كامل بسلاح مدمّر: ما يشتغل ولا يتصلح. شيل الركام، وبعدها الأرض تفضى وتقدر تبني فوقها من جديد.</p></div></div>`;
+  let html = `<div class="ins-head rubble-head"><b class="rubble-ic">🧱</b><div><h2>ركام ${levelName(b)}</h2><p>هذا المبنى انهدم بالحرب: ما يشتغل ولا يتصلح. شيل الركام، وبعدها الأرض تفضى وتبنيه من جديد من أول مستوى.</p></div></div>`;
   if (visiting) return html;
   if (clr) html += `<div class="need ok">🧹 يتشال الركام الحين: يخلص بعد ${fmtLeft(clr.end - warNow())}</div><i class="prog"><i style="width:${Math.round(Math.min(1, Math.max(0, (warNow() - clr.start) / Math.max(1, clr.end - clr.start))) * 100)}%"></i></i>`;
   else html += `<div class="sheet-actions"><button class="btn go block" id="warClear" type="button" ${S.money < cost ? "disabled" : ""}>🧹 شيل الركام (${money(cost)} ريال)</button></div>
@@ -878,8 +879,8 @@ export function milHtml(b) {
   if (!MIL[b.id]) return "";
   const st = milStat(b.id, b.lvl), lines = [];
   if (st.ops) lines.push(row("عمليات بالجو بنفس الوقت", ar(st.ops)));
-  if (st.cap && b.id === "dronebase") lines.push(row("سعة المسيّرات", ar(st.cap)), row("مسيّرات بالعملية", ar(st.salvo)), row("وقت التجهيز", `${ar(st.reload)} دقايق`));
-  if (st.cap && b.id === "missilepad") lines.push(row("صواريخ عليها", ar(st.cap)), row("وقت التجهيز", `${ar(st.reload)} دقايق`));
+  if (st.cap && b.id === "dronebase") lines.push(row("سعة المسيّرات", ar(st.cap)), row("مسيّرات بالعملية", ar(st.salvo)), row("وقت التجهيز", reloadText(st.reload)));
+  if (st.cap && b.id === "missilepad") lines.push(row("صواريخ عليها", ar(st.cap)), row("وقت التجهيز", reloadText(st.reload)));
   if (st.detect) lines.push(row("يرفع دقة الدفاع", `×${ar(st.detect)}`));
   if (st.vsHeavy) lines.push(row("ضد صاروخ الزلزال والإعصار", `${ar(Math.round(st.vsHeavy * 100))}٪`), row("صواريخ اعتراضية", ar(st.intc)), row("كل محاولة اعتراض", `${ar(WAR.heavyIntc)} صواريخ اعتراضية`));
   if (st.vsDrone) lines.push(row("ضد المسيّرات", `${ar(Math.round(st.vsDrone * 100))}٪`), row("ضد الصواريخ", `${ar(Math.round(st.vsMissile * 100))}٪`), row("صواريخ اعتراضية", ar(st.intc)));

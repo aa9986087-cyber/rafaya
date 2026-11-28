@@ -1,6 +1,7 @@
 // The build dock, the HUD, toasts and sheets (screens): the parts of main.js that draw them.
 // Moved out of js/main.js as it was (nothing changed in it); main.js and the modules import each other's names.
 import { CASTLE_ON } from "./castle.js";
+import { HEAVY_ON } from "./war.js";
 import { ACHIEVEMENTS, B, CATS, ERAS, EVENTS, FILL_COST, GOALS, GREATER_CITY_STAGE, MAP_SIZE as N, milSlotsMax, milSlotsUsed, SUBSIDY, TECH, VAULT } from "./data.js";
 import { $, S, ar, money, openCat, scheduleLayout, setTool, sheet, sheetFor, speed, tool, world, worldMode } from "./main.js";
 import { greaterCityProjectBlocker, housePrice, houseTop, priceOf, techUnlocked, upgradeCost } from "./sim.js";
@@ -29,7 +30,7 @@ export function renderCards() {
   scheduleLayout();
   const box = $("cards");
   if (!openCat) { box.hidden = true; return; }
-  const ids = Object.keys(B).filter((k) => B[k].cat === openCat && (k !== "barracks" || CASTLE_ON) && (B[k].era !== GREATER_CITY_STAGE || (worldMode && S.era >= GREATER_CITY_STAGE - 1)));
+  const ids = Object.keys(B).filter((k) => B[k].cat === openCat && (k !== "barracks" || CASTLE_ON) && (k !== "fortdef" || HEAVY_ON) && (B[k].era !== GREATER_CITY_STAGE || (worldMode && S.era >= GREATER_CITY_STAGE - 1)));
   box.hidden = false;
   const UP_CARDS = {
     home: { key: modelKey("house", 2), name: "تطوير البيوت", from: B.house.levels[1].cost, path: "خيمة ← طين ← شعبي ← فيلا ← عمارة" },

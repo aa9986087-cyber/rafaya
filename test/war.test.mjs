@@ -1,11 +1,13 @@
 // «صراع الجوف»: the server decides everything. These tests drive js/warserver.js with two towns.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newGame, pack, unpack, idx, analyze, cantBuild, build, condFactor } from "../js/sim.js";
-import { WAR, WEAPONS, interceptChance, milProfile, warFactor, relNow, weaponBlocker } from "../js/war.js";
+import { newGame, pack, unpack, idx, analyze, cantBuild, build, condFactor, step, riseStage } from "../js/sim.js";
+import { WAR, WEAPONS, HEAVY_ON, interceptChance, milProfile, warFactor, relNow, weaponBlocker, worthOf, ruinOf, warPrize } from "../js/war.js";
 import { WarServer, memWarDb, sqlWarDb } from "../js/warserver.js";
 
 const HOUR = 3600000, MIN = 60000;
+/** A war just declared: "war" at once since 28 Nov 2026 (no warning), "warning" if a wait comes back. */
+const START = WAR.T.warning ? "warning" : "war";
 
 /** A world of towns with fake clock and dice. */
 function makeWorld({ db = memWarDb(), rolls } = {}) {
@@ -86,7 +88,7 @@ test("relations: war straight away (open war), a warning, then war; truce and pe
   assert.equal(W.war.handle("rel", { req: "t", other: 30, act: "threat", text: 1 }, a).ok, true);
   assert.equal(W.war.handle("rel", { req: "w", other: 30, act: "war" }, a).ok, true);
   assert.match(W.war.handle("rel", { req: "w2", other: 30, act: "war" }, a).error, /حرب أصلاً/);
-  assert.equal(W.war.handle("state", {}, b).rels[0].state, "warning");
+  assert.equal(W.war.handle("state", {}, b).rels[0].state, START);
   assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "war"));
   W.tick(WAR.T.warning + MIN);
   assert.equal(W.war.handle("state", {}, b).rels[0].state, "war");
@@ -122,7 +124,7 @@ test("tribute: up to 15% of their budget; paid = a month of peace; refused or un
   // refused: war
   assert.equal(W.war.handle("rel", { req: "c1", other: 40, act: "tribute", amount: 5000 }, a).ok, true);
   assert.equal(W.war.handle("rel", { req: "no", other: 10, act: "refuse" }, c).ok, true);
-  assert.equal(W.war.handle("state", {}, a).rels.find((r) => r.other === 40).state, "warning");
+  assert.equal(W.war.handle("state", {}, a).rels.find((r) => r.other === 40).state, START);
   // unanswered for a day of al-Jouf: war
   W.tick(WAR.T.tributePeace + MIN);
   assert.equal(W.war.handle("rel", { req: "t5", other: 30, act: "tribute", amount: 2000 }, a).ok, true);
@@ -143,7 +145,7 @@ test("threat talk: both write, a bad word is refused, ending it starts the war",
   const rel = W.war.handle("state", {}, a).rels[0];
   assert.equal(rel.chat.length, 2); assert.equal(rel.chatOpen, true);
   assert.equal(W.war.handle("rel", { req: "end", other: 10, act: "endchat" }, b).ok, true);
-  assert.equal(W.war.handle("state", {}, a).rels[0].state, "warning");
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, START);
 });
 
 test("protections: villages, new players, sleeping towns and bullies are out of reach", () => {
@@ -224,16 +226,23 @@ test("caps: one building twice in 6 hours; the bought shield stops strikes, once
   assert.equal(fire(2, 30).ok, true);
   assert.match(fire(3, 30).error, /محمي/);
   for (let k = 0; k < 2; k++) assert.equal(fire(10 + k, 31 + k).ok, true); // no shield from hits any more
-  // b buys the shield (price by stage: a محافظة pays 35,000)
+  // b buys the shield (price by stage: a محافظة pays 35,000): the war ends there, no winner and no loser
   const sh = W.war.handle("shield", { req: "sh" }, b);
   assert.equal(sh.ok, true); assert.equal(sh.charge.amount, 35000);
-  assert.match(fire(20, 36).error, /درع/);
+  assert.equal(W.war.handle("state", {}, a).rels[0].state, "hostile");
+  assert.ok(W.war.handle("state", {}, a).notes.some((n) => n.kind === "shield" && /بدون فوز ولا خسارة/.test(n.text)));
+  assert.equal(W.war.handle("state", {}, a).notes.some((n) => n.kind === "victory" || n.kind === "defeat"), false);
+  assert.match(fire(20, 36).error, /ما فيه حرب/);
+  assert.match(W.war.handle("rel", { req: "re1", other: 30, act: "war" }, a).error, /درع/); // not while the shield is up
   assert.match(W.war.handle("shield", { req: "sh2" }, b).error, /شغال/);
-  // b attacks: its shield breaks
+  // b attacks someone else: its shield breaks, and a may declare again at once
+  const c = W.addTown(40, "طبرجل", { era: 3, mil: [[20, 20, "milhq"]] });
   W.tick(30 * MIN);
-  const back = W.war.handle("launch", { op: "b1", to: 10, x: 20, y: 20, load: { missile: 1 } }, b);
-  assert.equal(back.ok, true);
+  assert.equal(W.war.handle("rel", { req: "bc", other: 40, act: "war" }, b).ok, true);
+  const back = W.war.handle("launch", { op: "b1", to: 40, x: 20, y: 20, load: { missile: 1 } }, b);
+  assert.equal(back.ok, true); void c;
   assert.equal(W.war.handle("state", {}, b).shield, 0);
+  assert.equal(W.war.handle("rel", { req: "re2", other: 30, act: "war" }, a).ok, true);
   assert.equal(fire(21, 36).ok, true);
   assert.match(W.war.handle("shield", { req: "sh3" }, b).error, /٤ أيام/);
 });
@@ -418,7 +427,7 @@ test("watch: anyone can follow the strikes landing on a town at war (public fiel
   assert.equal(W.war.handle("watch", { plot: 40 }, c).war, false);
 });
 
-test("fair play: three wars at most, launchers slow down when fired often, an absent owner takes 3 hits in 12 hours, casualties by the numbers", () => {
+test("fair play: three wars at most, launchers slow down once when fired often, no shield for an absent owner, casualties by the numbers", () => {
   const W = makeWorld();
   const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [22, 20, "dronebase"]] });
   const others = [30, 31, 32, 33].map((p, i) => W.addTown(p, `مدينة${i}`, { mil: [[20, 20, "milhq"], ...Array.from({ length: 6 }, (_, k) => [30 + k, 30, "factory"])] }));
@@ -435,18 +444,22 @@ test("fair play: three wars at most, launchers slow down when fired often, an ab
   assert.equal(fire(2, 31).ok, true);
   const gap2 = W.war.state({}, a).reload["p24:20"] - W.now();
   assert.ok(gap2 > gap1 * 1.4, `${gap2} vs ${gap1}`);
+  W.tick(gap2 + 1000);
+  assert.equal(fire(3, 32).ok, true);
+  const gap3 = W.war.state({}, a).reload["p24:20"] - W.now();
+  assert.ok(Math.abs(gap3 - gap2) < 2000, `half again once only: ${gap3} vs ${gap2}`);
   // casualties come from the people there and the damage done
   W.tick(Math.max(0, r1.op.arriveAt - W.now()) + 60000); W.war.settle();
   const done = W.war.handle("op", { op: "h1" }, a).op;
   assert.equal(done.status, "done");
   assert.ok(done.result.dead >= 0 && done.result.hurt >= done.result.dead);
   assert.ok(done.result.hurt > 0, "a factory hit: its workers are reached");
-  // the owner of 31 is away: after three hits in 12 hours, no more (until he plays or attacks)
+  // the owner of 31 is away: no protection since 28 Nov 2026, the fourth hit lands too
   W.towns.get(31).updated = W.now() - 3 * HOUR;
   const war31 = (k, x) => { const ac0 = W.war.acct(10); ac0.reload = {}; W.war.saveAcct(10, ac0); const r = W.war.handle("launch", { op: `z${k}`, to: 31, x, y: 30, load: { missile: 1 } }, a); if (r.ok) { W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); } return r; };
   W.war.handle("buy", { req: "m2", kind: "missile", n: 6 }, a);
   for (let k = 0; k < 3; k++) { const r = war31(k, 30 + k); assert.equal(r.ok, true, r.error); }
-  assert.match(war31(9, 34).error, /غايب/);
+  assert.equal(war31(9, 34).ok, true);
 });
 
 test("zero hour: before it no war, tribute, threats, talk or strike; building is fine; after it, war opens", () => {
@@ -477,13 +490,19 @@ test("rewards: spoils from economic buildings, medals for the leaders, an offici
     W.tick(r.op.arriveAt - W.now() + 1); W.war.settle();
   }
   const done = W.war.handle("op", { op: "rw0" }, a).op;
-  assert.ok(done.result.spoils > 0, "a factory hit pays spoils");
-  assert.ok(W.war.handle("state", { seq: 0 }, a).charges.some((c) => c.amount < 0 && /غنيمة/.test(c.why)));
-  // the war runs out: the side whose strikes landed more wins
-  W.tick(WAR.T.war + MIN);
-  const st = W.war.handle("state", {}, a);
+  assert.equal(done.result.spoils, 0, "no spoils per strike since 28 Nov 2026");
+  assert.equal(W.war.handle("state", { seq: 0 }, a).charges.some((c) => /غنيمة/.test(c.why)), false);
+  // during the war both see how hurt each is
+  const live = W.war.handle("state", {}, a).rels[0].hurt;
+  assert.ok(live.them > 0 && live.me === 0, JSON.stringify(live));
+  // the war runs out: the town hurt more (for its size) loses and pays 20% of its budget to the winner
+  W.tick(WAR.T.war + MIN); W.war.settle();
+  const st = W.war.handle("state", { seq: 0 }, a);
   assert.ok(st.notes.some((n) => n.kind === "victory"));
   assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "defeat"));
+  const prize = -st.charges.find((c) => /جائزة النصر/.test(c.why)).amount;
+  assert.ok(prize >= 38000 && prize <= 40000, `20% of صفان's budget (200,000 less its deputy's repairs): ${prize}`);
+  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.find((c) => /خسارة الحرب/.test(c.why)).amount, prize);
   assert.ok(st.medals[10].some((m) => m.name === "القائد الذكي"));
   assert.ok(st.medals[10].some((m) => m.name === "بطل الجوف"));
   // judged once only
@@ -513,7 +532,7 @@ test("military count: the extra buildings go once, from the kind most owned, low
   assert.equal(milTrimPlan(list, 5).remove.length, 0);
 });
 
-test("destructive weapons: everything in reach falls to rubble (never a mosque), only the fortress stops them, rubble is cleared for money and time", () => {
+test("destructive weapons: everything in reach falls to rubble (never a mosque), only the fortress stops them, rubble is cleared for money and time", { skip: !HEAVY_ON && "the destructive weapons are off (HEAVY_ON) until the owner releases them" }, () => {
   const W = makeWorld({ rolls: Array(80).fill(0.99) }); // the dice never intercept
   const a = W.addTown(1, "المهاجمة", { era: 4, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [26, 20, "radar"]] });
   const b = W.addTown(2, "الهدف", { era: 4, mil: [[20, 20, "milhq"], [28, 20, "airdef", 2], [30, 30, "radar", 2], [40, 40, "house", 3], [41, 40, "house", 3], [40, 41, "mosque"], [45, 45, "factory"]] });
@@ -571,11 +590,144 @@ test("destructive weapons: everything in reach falls to rubble (never a mosque),
   assert.match(fire3(2).error, /أطلقت/, "six a day from one town");
 });
 
-test("destructive weapons are for a حاضرة and above", () => {
+test("destructive weapons are for a حاضرة and above", { skip: !HEAVY_ON && "the destructive weapons are off (HEAVY_ON) until the owner releases them" }, () => {
   const W = makeWorld();
   const a = W.addTown(1, "محافظة", { era: 3, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] });
   const p = milProfile(W.towns.get(1).snapshot); p.era = 3;
   assert.match(weaponBlocker(p, "quake"), /حاضرة/);
   p.era = 4; assert.equal(weaponBlocker(p, "quake"), "");
   void a;
+});
+
+// ---------- the war of 28 Nov 2026 (the owner): a day long, who was hurt more pays, rubble, a stage lost and won back ----------
+
+test("the new war: starts at once, a day long; before it the stakes; no strike on either side is a draw", () => {
+  const W = makeWorld();
+  const a = W.addTown(10, "الرافعية", { mil: BASE, money: 300000 }), b = W.addTown(30, "صفان", { mil: BASE, money: 100000 });
+  const k = W.war.handle("stakes", { other: 30 }, a);
+  assert.equal(k.win, 20000); assert.equal(k.lose, 60000); // 20% of theirs, 20% of mine
+  assert.equal(k.money, undefined);
+  assert.equal(W.war.handle("rel", { req: "w", other: 30, act: "war" }, a).ok, true);
+  assert.equal(W.war.handle("state", {}, b).rels[0].state, "war"); // no wait
+  assert.equal(WAR.T.war, 24 * HOUR);
+  W.tick(WAR.T.war + MIN); W.war.settle();
+  const na = W.war.handle("state", { seq: 0 }, a);
+  assert.ok(na.notes.some((n) => n.kind === "draw"));
+  assert.equal(na.charges.length, 0, "nobody pays a draw");
+  // a day before the same two may fight again
+  assert.match(W.war.handle("rel", { req: "w2", other: 30, act: "war" }, a).error, /طالعين من حرب/);
+  W.tick(WAR.T.warCool + MIN);
+  assert.equal(W.war.handle("rel", { req: "w3", other: 30, act: "war" }, a).ok, true);
+});
+
+test("a truce or peace agreed by both ends the war with no winner and nobody pays", () => {
+  const W = makeWorld({ rolls: Array(40).fill(0.99) });
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "factory"]] });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 2 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "t1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  W.tick(r.op.arriveAt - W.now() + 1); W.war.settle();
+  assert.equal(W.war.handle("rel", { req: "o", other: 10, act: "truce" }, b).ok, true);
+  assert.equal(W.war.handle("rel", { req: "acc", other: 30, act: "accept" }, a).ok, true);
+  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.some((c) => /خسارة الحرب/.test(c.why)), false);
+  assert.equal(W.war.handle("state", {}, a).notes.some((n) => n.kind === "victory"), false);
+});
+
+test("a building out of action that is hit again falls to rubble; rubble is cleared, then the land is empty", () => {
+  const W = makeWorld({ rolls: Array(80).fill(0.99) }); // the dice never intercept, damage at its top
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2]] });
+  const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [40, 40, "factory"]] });
+  W.war.handle("buy", { req: "m", kind: "missile2", n: 9 }, a);
+  atWar(W, a, b);
+  const hit = (k, x, y) => { const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); const r = W.war.handle("launch", { op: `fl${k}`, to: 30, x, y, load: { missile2: 1 } }, a); assert.equal(r.ok, true, r.error); W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); return W.db.get("op", `fl${k}`).result; };
+  const r1 = hit(1, 40, 40); assert.ok(r1.after < 85 && r1.after > 0, `one strike: ${r1.after}`);
+  const r2 = hit(2, 40, 40); assert.ok(r2.after >= 85, `two strikes: out of action ${r2.after}`);
+  assert.equal(r2.flat, 0);
+  W.tick(6 * HOUR + MIN); // the same spot: twice in 6 hours at most
+  const r3 = hit(3, 40, 40); assert.equal(r3.flat, 1, "a third strike while out of action: rubble");
+  const dmg = W.war.handle("state", {}, b).damage.find((d) => d.x === 40 && d.y === 40);
+  assert.equal(dmg.flat, true);
+  assert.match(W.war.handle("repair", { req: "rp", x: 40, y: 40 }, b).error, /ركام/);
+  assert.equal(W.war.handle("clear", { req: "cl", x: 40, y: 40 }, b).ok, true);
+  W.tick(WAR.rubble.ms + MIN);
+  assert.ok(W.war.handle("state", {}, b).cleared.some((c) => c.x === 40 && c.y === 40), "cleared: the game takes the building off");
+});
+
+test("worth and ruin: houses by their levels, roads not counted; half out of action is a ruined town", () => {
+  assert.equal(worthOf("road"), 0);
+  assert.ok(worthOf("house", 3) > worthOf("house", 0));
+  assert.ok(worthOf("factory", 1) > worthOf("factory", 0));
+  const list = [{ x: 1, y: 1, id: "factory", lvl: 0 }, { x: 2, y: 1, id: "factory", lvl: 0 }, { x: 3, y: 1, id: "road", lvl: 0 }];
+  assert.equal(ruinOf(list, new Map([["1:1", { bid: "factory", wd: 90 }]])).share, 0.5);
+  assert.equal(ruinOf(list, new Map([["1:1", { bid: "factory", wd: 60 }]])).share, 0);
+  assert.equal(ruinOf(list, new Map([["2:1", { bid: "factory", wd: 100, flat: true }]])).share, 0.5);
+  assert.equal(warPrize(123456), 24600);
+  assert.equal(warPrize(-500), 0);
+});
+
+test("a town half in ruins at its war's end drops a stage (even the greater city), and gets it back once all is repaired", () => {
+  const W = makeWorld({ rolls: Array(200).fill(0.99) });
+  const a = W.addTown(10, "الرافعية", { era: 5, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2], [26, 20, "missilepad", 2]] });
+  const b = W.addTown(30, "صفان", { era: 5, mil: [[20, 20, "milhq"], [40, 40, "factory"], [44, 44, "factory"]] });
+  W.war.handle("buy", { req: "m", kind: "missile2", n: 12 }, a);
+  atWar(W, a, b);
+  const hit = (k, x, y) => { const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); const r = W.war.handle("launch", { op: `dm${k}`, to: 30, x, y, load: { missile2: 1 } }, a); assert.equal(r.ok, true, r.error); W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); };
+  for (let k = 0; k < 2; k++) { hit(`a${k}`, 40, 40); hit(`b${k}`, 44, 44); }
+  const st0 = W.war.handle("state", {}, b);
+  assert.ok(st0.ruin >= 0.5, `ruin ${st0.ruin}`);
+  assert.equal(st0.demote, null);
+  W.tick(WAR.T.war + MIN); W.war.settle();
+  const st = W.war.handle("state", {}, b);
+  assert.equal(st.demote?.era, 4, "الحاضرة الكبرى → حاضرة");
+  assert.ok(st.notes.some((n) => n.kind === "demote"));
+  assert.equal(W.war.handle("state", {}, a).demote, null, "the winner keeps its stage");
+  // the game drops the town to it and does not let it rise past it
+  // (js/main.js warApply sets s.war.eraCap; js/sim.js step stops there)
+  // repairs: once nothing is out of action the stage comes back
+  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
+  for (const d of st.damage) assert.equal(W.war.handle("repair", { req: `r${d.x}${d.y}`, x: d.x, y: d.y }, b).ok, true);
+  W.tick(2 * HOUR);
+  const back = W.war.handle("state", {}, b);
+  assert.equal(back.demote, null);
+  assert.ok(back.notes.some((n) => n.kind === "restore"));
+});
+
+test("the stage cap: a town held down by a war does not rise past it", () => {
+  const s = newGame(7, { site: "world", name: "صفان" }); s.world = { plot: 7 }; s.era = 3; s.pop = 30000; s.war = { seq: 0, eraCap: 4 };
+  riseStage(s);
+  assert.equal(s.era, 4, "up to the cap");
+  assert.equal(unpack(pack(s)).war.eraCap, 4, "the cap is kept in the save");
+  delete s.war.eraCap; riseStage(s);
+  assert.equal(s.era, 5, "the cap lifted: up again");
+  step(s); // and a normal hour still runs
+});
+
+test("a war declared before the new rules ends as it began: a winner, but no prize and no stage lost", () => {
+  const W = makeWorld({ rolls: Array(40).fill(0.99) });
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "factory"]] });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 2 }, a);
+  atWar(W, a, b);
+  const r0 = W.db.get("rel", "10:30"); delete r0.rules; W.war.saveRel(10, 30, r0); // as stored before the update
+  const r = W.war.handle("launch", { op: "old1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  W.tick(r.op.arriveAt - W.now() + 1); W.war.settle();
+  W.tick(WAR.T.war + MIN); W.war.settle();
+  assert.ok(W.war.handle("state", {}, a).notes.some((n) => n.kind === "victory"));
+  assert.equal(W.war.handle("state", { seq: 0 }, b).charges.some((c) => /خسارة الحرب/.test(c.why)), false);
+});
+
+test("«سجل حروب الجوف»: anyone sees the strikes and wars between all towns, never budgets or launchers", () => {
+  const W = makeWorld({ rolls: Array(40).fill(0.99) });
+  const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] }), b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [30, 30, "factory"]] });
+  const c = W.addTown(40, "طبرجل", { mil: BASE });
+  W.war.handle("buy", { req: "m", kind: "missile", n: 2 }, a);
+  atWar(W, a, b);
+  const r = W.war.handle("launch", { op: "fd1", to: 30, x: 30, y: 30, load: { missile: 1 } }, a);
+  W.tick(r.op.arriveAt - W.now() + 1); W.war.settle();
+  W.tick(20000);
+  const feed = W.war.handle("feed", {}, c); // a town that is in no war
+  const op = feed.items.find((it) => it.kind === "op");
+  assert.equal(op.fromTown, "الرافعية"); assert.equal(op.toTown, "صفان"); assert.ok(op.result.dmg > 0);
+  assert.equal(op.fee, undefined); assert.equal(op.value, undefined); assert.equal(op.pads, undefined);
+  assert.ok(feed.items.some((it) => it.kind === "war" && it.byTown === "الرافعية" && it.otherTown === "صفان"));
+  assert.ok(feed.items[0].at >= feed.items.at(-1).at, "newest first");
 });
