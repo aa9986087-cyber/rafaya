@@ -428,6 +428,17 @@ export class WarServer {
     return out;
   }
 
+  /** Every attack in the air over al-Jouf, for the map (public, like the fronts): who at whom, when it left and lands, what kind. */
+  flights() {
+    const now = this.now(), out = [];
+    for (const f of this.db.list("fly", { since: now, limit: 200 })) {
+      const o = this.db.get("op", f.id);
+      if (!o || o.status !== "flying") continue;
+      const ws = Object.keys(o.load || {});
+      out.push({ id: o.id, from: o.from, to: o.to, launchAt: o.launchAt, arriveAt: o.arriveAt, kind: ws.some((w) => WEAPONS[w]?.kind === "missile") ? "missile" : "drone", heavy: ws.some(isHeavy) });
+    }
+    return out;
+  }
   /**
    * «تابع»: the strikes landing on a town at war, for anyone watching from outside (what the scene needs, the
    * same as any visitor could see of the damage): the last half hour, and those still in the air.

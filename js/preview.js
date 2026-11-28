@@ -361,7 +361,7 @@ function pvRoute(p, body) {
     return { items: pvState.news.slice(-60).reverse(), now: Date.now() };
   }
   if (post && p[0] === "me") { const pl = pvState.players[body?.name]; return { name: body?.name, started: pl?.created || Date.now() - 3 * 86400000, played: pl?.played ?? 4 * 3600 + 25 * 60, renamed: !!pl?.renamed }; } // the trial: the player's own time
-  if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t), fronts: pvWar.fronts() };
+  if (!post && p[0] === "map") return { plots: Object.values(pvState.plots).map(({ snapshot, ...t }) => t), fronts: pvWar.fronts(), flights: pvWar.flights() };
   if (!post && p[0] === "town") {
     const t = pvState.plots[Number(p[1])];
     if (!t) throw new Error("404");
