@@ -93,6 +93,24 @@ export const weaponPrice = (wid, era) => WEAPONS[wid].price * stageMult(wid, era
 export const weaponFee = (wid, era) => WEAPONS[wid].fee * stageMult(wid, era);
 /** A destructive weapon: what it reaches falls to rubble. */
 export const isHeavy = (wid) => !!WEAPONS[wid]?.heavy;
+/**
+ * Over the limit of 150 (once, when it came): what goes back for money. The destructive weapons always stay (they
+ * count in the 150); of the rest the cheapest go first. arsenal → { take: { weapon: n }, refund }.
+ */
+export function stockTrimPlan(arsenal, max = 150) {
+  const take = {}; let refund = 0;
+  for (const kind of ["drone", "missile"]) {
+    let over = kindSum(arsenal, kind) - max;
+    for (const w of WEAPON_IDS.filter((x) => WEAPONS[x].kind === kind && !WEAPONS[x].heavy).sort((a, b) => WEAPONS[a].price - WEAPONS[b].price)) {
+      if (over <= 0) break;
+      const n = Math.min(over, arsenal[w] || 0); if (!n) continue;
+      take[w] = n; refund += n * WEAPONS[w].price; over -= n;
+    }
+  }
+  const intc = (arsenal.intc || 0) - max;
+  if (intc > 0) { take.intc = intc; refund += intc * WAR.interceptor.price; }
+  return { take, refund };
+}
 /** How many of one kind (drone or missile) in an arsenal or a load. */
 export const kindSum = (o, kind) => WEAPON_IDS.reduce((n, w) => n + (WEAPONS[w].kind === kind ? o?.[w] || 0 : 0), 0);
 export const WEAPON_IDS = Object.keys(WEAPONS);
@@ -184,8 +202,8 @@ export function milProfile(snapOrList, dmg = new Map()) {
 }
 const milWorks = (it) => it && it.wd < 85;
 
-/** Open war: no store limit for drones and missiles (a working base or pad is enough); the launchers set how many go at once. */
-export const OPEN_STOCK = 9999;
+/** Open war: a working base or pad is enough to store; at most 150 drones, 150 missiles (the destructive ones among them) and 150 interceptors (the owner, 28 Nov 2026). */
+export const OPEN_STOCK = 150;
 /** How much the town can store of each thing: { drones, missiles, intc, open }. */
 export function capacity(p) {
   const store = milWorks(p.armory) ? milStat("armory").store * warFactor(p.armory.wd) + (1 - warFactor(p.armory.wd)) : 1;
@@ -194,7 +212,7 @@ export function capacity(p) {
     drones: p.bases.some(milWorks) ? OPEN_STOCK : 0,
     missiles: p.pads.some(milWorks) ? OPEN_STOCK : 0,
     open: true,
-    intc: Math.floor((sum(p.airdefs, "intc", "airdef") + sum(p.forts || [], "intc", "fortdef")) * store)
+    intc: Math.min(OPEN_STOCK, Math.floor((sum(p.airdefs, "intc", "airdef") + sum(p.forts || [], "intc", "fortdef")) * store))
   };
 }
 

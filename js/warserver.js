@@ -698,7 +698,7 @@ export class WarServer {
       const drones = kindSum(a.arsenal, "drone"), missiles = kindSum(a.arsenal, "missile");
       room = WEAPONS[kind].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
     }
-    if (room < n) return { error: room > 0 ? `المكان يكفي ${nf(room)} بس` : "المخزن مليان: طوّر أو ابنِ مستودع ذخائر" };
+    if (room < n) return { error: room > 0 ? `المكان يكفي ${nf(room)} بس` : kind !== "intc" && caps.open ? `وصلت الحد: ${nf(WEAPONS[kind].kind === "drone" ? caps.drones : caps.missiles)} ${WEAPONS[kind].kind === "drone" ? "مسيّرة" : "صاروخ"}` : "المخزن مليان: طوّر أو ابنِ مستودع ذخائر" };
     const cost = price * n;
     if (this.available(info, a) < cost) return { error: "ما يكفي المال" };
     a.arsenal[kind] += n;
