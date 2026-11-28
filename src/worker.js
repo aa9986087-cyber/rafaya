@@ -206,6 +206,7 @@ export class Board extends DurableObject {
     this.milTrim();
     this.heavyReset();
     this.stockTrim();
+    this.stockTrimHalf();
     this.rubbleRestore("rubble_restore_v1", ["الرافعية", "حي القدس"]);
     this.pushAllOnce("reopen_push_v1", "🎮 رجعت الرافعية!", "اللعبة رجعت تشتغل، ومعها تحديثات جديدة: أسلحة مدمّرة، ومنظومة الحصن، ومباني عسكرية أكثر. ادخل وشوف وش الجديد 🔥");
     this.clockBan();
@@ -755,6 +756,26 @@ export class Board extends DurableObject {
       const what = Object.entries(plan.take).map(([w, n]) => `${ar(n)} ${w === "intc" ? "صاروخ اعتراضي" : WEAPONS[w].name}`).join("، ");
       this.war.fine(plot, -plan.refund, "refund", `🎖️ صار الحد ١٥٠ صاروخ و١٥٠ مسيّرة و١٥٠ صاروخ اعتراضي (والأسلحة المدمّرة من ضمن الـ١٥٠ وما تنشال). شلنا الزايد (${what}) ورجّعنا لك قيمته كاملة: ${plan.refund.toLocaleString("en-US")} ريال.`, "miltrim", { amount: plan.refund, reset: true, title: "حد المخزون الجديد", trim: [] });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", plan.refund, plot);
+    }
+  }
+  /**
+   * Once (the owner, 28 Nov 2026): the money given back for the stock over 150 came to too much for some. Half of it
+   * is taken back, quietly (a line in the town's money log, no notice on the screen).
+   */
+  stockTrimHalf() {
+    const key = "stock_trim_half_v1";
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'stock_trim_v1'").toArray().length) return; // the trim not done here (tests, a new world)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const row of this.war.db.list("acct", {})) {
+      const plot = Number(row.plot); if (!Number.isFinite(plot)) continue;
+      const got = this.war.db.list("note", { k1: String(plot) }).filter((n) => n.kind === "miltrim" && n.title === "حد المخزون الجديد").reduce((n, x) => n + (x.amount || 0), 0);
+      const half = Math.floor(got / 2);
+      if (half <= 0) continue;
+      const a = this.war.acct(plot);
+      this.war.charge(plot, a, half, "تصحيح: نص مبلغ إرجاع المخزون");
+      this.war.saveAcct(plot, a);
+      this.sql.exec("UPDATE plots SET money = money - ? WHERE plot = ?", half, plot);
     }
   }
   /** Once per key: a notification on every phone that has them on (the owner's announcement). */
