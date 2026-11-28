@@ -1225,8 +1225,5 @@ button.wr-step:not(.done) > i { color: #ff8a7d; background: rgba(224, 87, 74, .1
 .wr-budget button.on { color: #1a1206; background: linear-gradient(180deg, #ecd08e, #c99a48); border-color: transparent; }
 .wr-guard2 > div { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
 .wr-guard2 span b { font-size: 20px; }
-/* the side buttons (the owner, 28 Nov 2026): the ones used most stay, the rest open under «المزيد» */
-.side:not(.more-open) .side-more { display: none !important; }
-.side.more-open #moreBtn { background: linear-gradient(180deg, #ecd08e, #c99a48); }
 details.wn-more { margin-top: 12px; border: 1px solid rgba(184,145,63,.35); border-radius: 14px; padding: 8px 12px; }
 details.wn-more > summary { cursor: pointer; font-weight: 700; color: #8a6a24; }

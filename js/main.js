@@ -687,9 +687,6 @@ $("sheetBody").addEventListener("click", (e) => {
 });
 
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
-// «المزيد»: the side buttons used less open under it, and fold again once one is chosen (the owner, 28 Nov 2026)
-$("moreBtn").addEventListener("click", () => { sfx.tap(); const side = $("moreBtn").closest(".side"), open = side.classList.toggle("more-open"); $("moreBtn").setAttribute("aria-expanded", String(open)); scheduleLayout(); });
-document.querySelectorAll(".side-more").forEach((b) => b.addEventListener("click", () => { const side = b.closest(".side"); side.classList.remove("more-open"); $("moreBtn").setAttribute("aria-expanded", "false"); scheduleLayout(); }));
 
 // ---------- نشرة الجوف (world only): what happens in al-Jouf, for everyone ----------
 
