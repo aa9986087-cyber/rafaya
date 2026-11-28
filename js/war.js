@@ -48,7 +48,9 @@ export const WAR = {
   casualty: { dead: 0.06, hurt: 0.3, warned: 0.6 }, // of the people reached (occupants × damage): killed, injured; × warned when the sirens sounded
   repairPerPoint: 45 * 1000,  // repair time: 45 s per point of damage (a building at 60% → 45 min)
   repairPrice: 0.012,         // repair: × the building's price, per point of damage
-  autoBudget: 5000            // the deputy's default repair and refill budget, per day
+  autoBudget: 5000,           // the deputy's default repair and refill budget, per day
+  rubble: { price: 0.3, min: 500, ms: 15 * WAR_MIN }, // clearing the rubble of a building: × its price (at least min), and this long
+  heavyIntc: 2                // interceptors one try at a destructive weapon takes
 };
 
 /** The live rules as written (the trial copy shortens WAR's waits in place; the war guide always tells these). */
@@ -56,7 +58,7 @@ export const WAR_LIVE = JSON.parse(JSON.stringify(WAR));
 /** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
 export function fastWar(div = 30) {
   const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));
-  return { ...WAR, newPlayer: 0, T, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, awayWindow: WAR.caps.awayWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
+  return { ...WAR, newPlayer: 0, T, rubble: { ...WAR.rubble, ms: WAR.rubble.ms / div }, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, awayWindow: WAR.caps.awayWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
 }
 
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
@@ -64,8 +66,16 @@ export const WEAPONS = {
   drone: { name: "مسيّرة شاهين", kind: "drone", price: 900, fee: 150, power: 16, evade: 1, blast: 0.7, needs: ["dronebase", 0], icon: "🛩️", text: "رخيصة وبطيئة، ضررها محدود، والدفاع يصيدها بسهولة." },
   drone2: { name: "مسيّرة صقر", kind: "drone", price: 2400, fee: 300, power: 26, evade: 0.8, blast: 0.95, needs: ["dronebase", 1], icon: "🦅", text: "أغلى وأذكى: تتهرب من الدفاع أكثر وضررها أكبر." },
   missile: { name: "صاروخ طويق", kind: "missile", price: 4500, fee: 500, power: 38, evade: 0.75, blast: 1.5, needs: ["missilepad", 0], icon: "🚀", text: "سريع وضرره متوسط. الدفاع المتوسط والمتقدم يقدرون عليه." },
-  missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, blast: 2.1, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." }
+  missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, blast: 2.1, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." },
+  // the destructive weapons (the owner, 28 Nov 2026): every building they reach (never a mosque) falls to rubble,
+  // to be cleared before anything is built there again. Only «منظومة الحصن» can stop them.
+  quake: { name: "صاروخ الزلزال", kind: "missile", heavy: true, price: 30000, fee: 2500, power: 100, evade: 1, blast: 1.6, needs: ["missilepad", 2], icon: "🌋", text: "مدمّر: يسوّي كل المباني اللي حوله بالأرض ويخليها ركام. الدفاع الجوي العادي ما يقدر عليه، بس «منظومة الحصن»." },
+  storm: { name: "صاروخ الإعصار", kind: "missile", heavy: true, price: 70000, fee: 5000, power: 100, evade: 0.8, blast: 2.6, needs: ["missilepad", 2], icon: "🌪️", text: "أقوى سلاح بالجوف: يمسح حارة كاملة ويخليها ركام، وأصعب بالاعتراض حتى على «منظومة الحصن»." }
 };
+/** A destructive weapon: what it reaches falls to rubble. */
+export const isHeavy = (wid) => !!WEAPONS[wid]?.heavy;
+/** How many of one kind (drone or missile) in an arsenal or a load. */
+export const kindSum = (o, kind) => WEAPON_IDS.reduce((n, w) => n + (WEAPONS[w].kind === kind ? o?.[w] || 0 : 0), 0);
 export const WEAPON_IDS = Object.keys(WEAPONS);
 export const MIL_IDS = Object.keys(MIL);
 
@@ -74,6 +84,7 @@ export const TARGETS = {
   milhq: "تقل جاهزية العمليات: عمليات أقل بالجو",
   dronebase: "تقل سعة المسيّرات، وإذا تعطلت ما تطلق",
   missilepad: "تتعطل المنصة أو يطول تجهيزها",
+  fortdef: "تقل حمايتك من الأسلحة المدمّرة",
   radar: "يقل الإنذار ودقة الدفاع الجوي",
   airdef: "تقل جاهزية الحماية من الهجمات",
   armory: "تقل سعة التخزين",
@@ -137,7 +148,7 @@ export function snapBuildings(snap) {
  */
 export function milProfile(snapOrList, dmg = new Map()) {
   const town = Array.isArray(snapOrList) ? { list: snapOrList, era: 0 } : snapBuildings(snapOrList);
-  const p = { era: town.era, hq: null, bases: [], pads: [], radars: [], airdefs: [], armory: null, barracks: null };
+  const p = { era: town.era, hq: null, bases: [], pads: [], radars: [], airdefs: [], forts: [], armory: null, barracks: null };
   for (const b of town.list) {
     if (!MIL[b.id] || b.build > 0) continue;
     const it = { x: b.x, y: b.y, lvl: b.lvl, wd: dmg.get(`${b.x}:${b.y}`) || 0 };
@@ -146,6 +157,7 @@ export function milProfile(snapOrList, dmg = new Map()) {
     else if (b.id === "missilepad") p.pads.push(it);
     else if (b.id === "radar") p.radars.push(it);
     else if (b.id === "airdef") p.airdefs.push(it);
+    else if (b.id === "fortdef") p.forts.push(it);
     else if (b.id === "armory") p.armory = it;
     else if (b.id === "barracks") p.barracks = it;
   }
@@ -163,7 +175,7 @@ export function capacity(p) {
     drones: p.bases.some(milWorks) ? OPEN_STOCK : 0,
     missiles: p.pads.some(milWorks) ? OPEN_STOCK : 0,
     open: true,
-    intc: Math.floor(sum(p.airdefs, "intc", "airdef") * store)
+    intc: Math.floor((sum(p.airdefs, "intc", "airdef") + sum(p.forts || [], "intc", "fortdef")) * store)
   };
 }
 
@@ -180,10 +192,10 @@ export function weaponBlocker(p, wid) {
 
 /** The chance (0 … 0.85) that the town's air defence stops one weapon. 0 when it has no milWorks battery. */
 export function interceptChance(p, wid) {
-  const w = WEAPONS[wid], ads = p.airdefs.filter(milWorks).sort((a, b) => b.lvl - a.lvl || a.wd - b.wd);
-  if (!ads.length || !w) return 0;
-  const best = ads[0], st = milStat("airdef", best.lvl);
-  let c = (w.kind === "drone" ? st.vsDrone : st.vsMissile) * (1 - best.wd * 0.008);
+  const w = WEAPONS[wid], ads = (w?.heavy ? p.forts || [] : p.airdefs).filter(milWorks).sort((a, b) => b.lvl - a.lvl || a.wd - b.wd);
+  if (!ads.length || !w) return 0; // a destructive weapon: only «منظومة الحصن» tries
+  const best = ads[0], st = milStat(w.heavy ? "fortdef" : "airdef", best.lvl);
+  let c = (w.heavy ? st.vsHeavy : w.kind === "drone" ? st.vsDrone : st.vsMissile) * (1 - best.wd * 0.008);
   c += Math.min(0.12, (ads.length - 1) * 0.06);
   const radar = p.radars.filter(milWorks).sort((a, b) => b.lvl - a.lvl)[0];
   c *= radar ? milStat("radar", radar.lvl).detect * (1 - radar.wd * 0.006) : 0.55;
@@ -206,6 +218,9 @@ export const hitDamage = (wid, roll) => Math.round(WEAPONS[wid].power * (0.85 + 
 /** What repairing this much war damage costs and takes. */
 export const repairCostOf = (id, wd, cfg = WAR) => Math.round((B[id]?.cost || 1000) * cfg.repairPrice * wd);
 export const repairMsOf = (wd, cfg = WAR) => Math.round(wd * cfg.repairPerPoint);
+/** Clearing the rubble a destructive weapon left (then the land is empty, to build on again). */
+export const rubbleCostOf = (id, lvl = 0, cfg = WAR) => Math.max(cfg.rubble.min, Math.round((B[id]?.cost || 1000) * (1 + (lvl || 0)) * cfg.rubble.price));
+export const rubbleMsOf = (cfg = WAR) => cfg.rubble.ms;
 
 // ---------- relations between two towns ----------
 

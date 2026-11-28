@@ -512,3 +512,47 @@ test("military count: the extra buildings go once, from the kind most owned, low
   assert.equal(kept.length, 3); assert.ok(kept.some((b) => b.id === "airdef" && b.lvl === 2));
   assert.equal(milTrimPlan(list, 5).remove.length, 0);
 });
+
+test("destructive weapons: everything in reach falls to rubble (never a mosque), only the fortress stops them, rubble is cleared for money and time", () => {
+  const W = makeWorld({ rolls: Array(80).fill(0.99) }); // the dice never intercept
+  const a = W.addTown(1, "المهاجمة", { era: 3, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [26, 20, "radar"]] });
+  const b = W.addTown(2, "الهدف", { era: 3, mil: [[20, 20, "milhq"], [28, 20, "airdef", 2], [30, 30, "radar", 2], [40, 40, "house", 3], [41, 40, "house", 3], [40, 41, "mosque"], [45, 45, "factory"]] });
+  W.war.handle("settings", { repair: true, refill: false, budget: 900000 }, b);
+  atWar(W, a, b);
+  const acct = W.war.acct(a.plot); acct.arsenal.quake = 2; W.war.saveAcct(a.plot, acct);
+  const da = W.war.acct(b.plot); da.arsenal.intc = 8; W.war.saveAcct(b.plot, da);
+  // the air defence has no chance at all against it
+  const pb = milProfile(W.towns.get(2).snapshot);
+  assert.equal(interceptChance(pb, "quake"), 0);
+  assert.ok(interceptChance(pb, "missile2") > 0);
+  const r = W.war.handle("launch", { op: "hv", to: 2, x: 40, y: 40, load: { quake: 1 } }, a);
+  assert.equal(r.error, undefined, r.error);
+  W.tick(30 * MIN); W.war.settle();
+  const res = W.db.get("op", "hv").result;
+  assert.equal(res.intcUsed, 0, "no interceptor spent on a weapon it cannot reach");
+  assert.ok(res.flat >= 2, JSON.stringify(res.area));
+  assert.ok(res.area.every((h) => h.flat && h.after === 100));
+  assert.ok(!res.area.some((h) => h.x === 40 && h.y === 41), "the mosque stands");
+  let st = W.war.handle("state", {}, b);
+  const rubble = st.damage.find((d) => d.x === 40 && d.y === 40);
+  assert.ok(rubble.flat && rubble.wd === 100 && !rubble.rep, "rubble is never repaired, not even by the deputy");
+  assert.match(W.war.handle("repair", { req: "rp", x: 40, y: 40 }, b).error, /ركام/);
+  // clearing: paid now, done after a while; then the spot is empty and the town's game takes the building off
+  const c = W.war.handle("clear", { req: "cl", x: 40, y: 40 }, b);
+  assert.equal(c.ok, true, c.error);
+  assert.ok(c.charge.amount > 0);
+  assert.match(W.war.handle("clear", { req: "cl2", x: 40, y: 40 }, b).error, /يتشال/);
+  W.tick(c.ms + 1);
+  st = W.war.handle("state", {}, b);
+  assert.ok(!st.damage.some((d) => d.x === 40 && d.y === 40));
+  assert.ok(st.cleared.some((d) => d.x === 40 && d.y === 40 && d.bid === "house"));
+  // the town's game took the building off: the row goes
+  W.resync(2, (s) => { s.tiles[idx(40, 40)].b = null; });
+  st = W.war.handle("state", {}, b);
+  assert.ok(!st.cleared.some((d) => d.x === 40 && d.y === 40));
+  // with «منظومة الحصن», each try takes two interceptors and can stop it
+  W.resync(2, (s) => { s.tiles[idx(50, 50)].b = { id: "fortdef", lvl: 2, res: 0, cond: 100 }; });
+  const p2 = milProfile(W.towns.get(2).snapshot);
+  assert.ok(interceptChance(p2, "quake") > 0.5);
+  assert.ok(interceptChance(p2, "storm") < interceptChance(p2, "quake"));
+});

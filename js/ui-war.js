@@ -3,7 +3,7 @@
 import { ROOM, roomAfterScene, warRoom, warRoomBadge } from "./ui-warroom.js";
 import { LIVE, api, me, worldSync } from "./ui-online.js";
 import { $, A, S, ar, arrange, closeSheet, fine, inspect, leaveVisit, money, setTool, sheet, sheetFor, store, visitTown, visiting, warApply, world, worldMode } from "./main.js";
-import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker } from "./war.js";
+import { REL_ICONS, REL_NAMES, TARGETS, THREATS, WAR, WEAPONS, WEAPON_IDS, blastArea, canTarget, damageState, eraGap, flightMs, milStat, minutesText, relActions, repairCostOf, repairMsOf, targetText, warFactor, weaponBlocker, kindSum, rubbleCostOf, rubbleMsOf, isHeavy } from "./war.js";
 import { sfx, warSfx } from "./sound.js";
 import { namefixSheet, townRemoved } from "./ui-account.js";
 import { FIX, floatAt, row, toast } from "./ui-build.js";
@@ -172,7 +172,7 @@ export async function warSheet(tab = "home") {
   }
   const tabs = `<div class="war-tabs">${WAR_TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-wtab="${k}">${n}</button>`).join("")}</div>`;
   const p = st.profile, ars = st.arsenal, caps = st.caps;
-  const drones = ars.drone + ars.drone2, missiles = ars.missile + ars.missile2;
+  const drones = kindSum(ars, "drone"), missiles = kindSum(ars, "missile");
   const list = (items, id) => items.length ? items.map((it) => row(`${milStat(id, it.lvl).name}`, stateTag(it.wd))).join("") : "";
   let body = "";
   if (tab === "home") {
@@ -204,8 +204,10 @@ export async function warSheet(tab = "home") {
     body = `<div class="rows">${list(p.airdefs, "airdef") || row("بطاريات الدفاع الجوي", "✕ ما فيه")}${list(p.radars, "radar") || row("الرادار", "✕ ما فيه")}
         ${row("صواريخ اعتراضية", `${ar(ars.intc)} من ${ar(caps.intc)}`)}
         ${row("ضد المسيّرة الأساسية", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("ضد المسيّرة المتطورة", `${ar(Math.round(st.intercept.drone2 * 100))}٪`)}
-        ${row("ضد الصاروخ العادي", `${ar(Math.round(st.intercept.missile * 100))}٪`)}${row("ضد الصاروخ المتقدم", `${ar(Math.round(st.intercept.missile2 * 100))}٪`)}</div>
-      ${p.airdefs.length ? `<div class="sheet-actions keep"><button class="btn go block" type="button" data-buy="intc" ${ars.intc >= caps.intc || home.money < WAR.interceptor.price ? "disabled" : ""}>اشترِ صاروخ اعتراضي (${money(WAR.interceptor.price)} ريال)</button>
+        ${row("ضد الصاروخ العادي", `${ar(Math.round(st.intercept.missile * 100))}٪`)}${row("ضد الصاروخ المتقدم", `${ar(Math.round(st.intercept.missile2 * 100))}٪`)}
+        ${list(p.forts || [], "fortdef") || row("منظومة الحصن", "✕ ما فيه")}${row("ضد صاروخ الزلزال", `${ar(Math.round((st.intercept.quake || 0) * 100))}٪`, st.intercept.quake ? "" : "minus")}${row("ضد صاروخ الإعصار", `${ar(Math.round((st.intercept.storm || 0) * 100))}٪`, st.intercept.storm ? "" : "minus")}</div>
+      ${!(p.forts || []).length ? `<div class="need">💡 الأسلحة المدمّرة (الزلزال والإعصار) تخلي المباني ركام، والدفاع الجوي العادي ما يقدر عليها. بس «منظومة الحصن» تعترضها.</div>` : ""}
+      ${p.airdefs.length || (p.forts || []).length ? `<div class="sheet-actions keep"><button class="btn go block" type="button" data-buy="intc" ${ars.intc >= caps.intc || home.money < WAR.interceptor.price ? "disabled" : ""}>اشترِ صاروخ اعتراضي (${money(WAR.interceptor.price)} ريال)</button>
         <button class="btn block" type="button" data-buy="intcfill" ${ars.intc >= caps.intc ? "disabled" : ""}>عبّها كلها (${money((caps.intc - ars.intc) * WAR.interceptor.price)} ريال)</button></div>` : ""}
       <p class="hint">كل محاولة اعتراض تستهلك صاروخ اعتراضي. الرادار يرفع الدقة ويعطيك إنذار قبل الوصول، وبدونه الدفاع شبه أعمى. والضرر على الرادار أو البطارية يضعف الحماية.</p>`;
   } else if (tab === "ops") {
@@ -315,7 +317,7 @@ export async function startTargeting(plot) {
   toast("🎯 اضغط أي مكان بالمدينة: الضربة تنزل عليه وعلى اللي حوله (المساجد محمية)", "");
 }
 /** The weapons ready for this town's attack, best first (missiles before drones). */
-const readyWeapons = () => { const st = WARX.st, p = st?.profile; return p ? ["missile2", "missile", "drone2", "drone"].filter((w) => !weaponBlocker(p, w) && st.arsenal[w] > 0) : []; };
+const readyWeapons = () => { const st = WARX.st, p = st?.profile; return p ? ["storm", "quake", "missile2", "missile", "drone2", "drone"].filter((w) => !weaponBlocker(p, w) && st.arsenal[w] > 0) : []; };
 
 /** Each weapon drawn in its own shape (inline SVG, coloured by the button it sits in). */
 const WEAPON_SVG = {
@@ -327,6 +329,10 @@ const WEAPON_SVG = {
   drone: `<svg viewBox="0 0 48 32" aria-hidden="true"><path d="M44 16 L6 2 L12 16 L6 30 Z" fill="#c9c2b0"/><rect x="10" y="14" width="30" height="4" rx="2" fill="#8a8f8c"/><path d="M8 11 L4 16 L8 21 Z" fill="#5a5f5c"/><circle cx="6" cy="16" r="3.5" fill="none" stroke="#5a5f5c" stroke-width="1.5"/></svg>`,
   // مسيّرة صقر: long swept wings and a tail, like a falcon
   drone2: `<svg viewBox="0 0 48 32" aria-hidden="true"><path d="M40 16 L22 15 L14 2 L10 2 L15 15 L6 15 L2 10 H0 L3 16 L0 22 H2 L6 17 L15 17 L10 30 L14 30 L22 17 Z" fill="#b8b2a0"/><path d="M40 16 L46 16 L40 13 Z" fill="#c8463a"/><rect x="18" y="14" width="24" height="4" rx="2" fill="#7a7f7c"/></svg>`,
+  // صاروخ الزلزال: a fat black-and-yellow warhead, striped like a warning
+  quake: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M8 12 L15 4 H46 L62 12 L46 20 H15 Z" fill="#3b3a36"/><path d="M46 4 L62 12 L46 20 Z" fill="#f2b632"/><path d="M22 4 h4 v16 h-4 Z M30 4 h4 v16 h-4 Z M38 4 h4 v16 h-4 Z" fill="#f2b632"/><path d="M10 12 L1 0 L17 4 Z M10 12 L1 24 L17 20 Z" fill="#55534d"/><path d="M8 8 H0 V16 H8 Z" fill="#ff6a1a"/></svg>`,
+  // صاروخ الإعصار: the biggest, dark red with a white nose and a swirl
+  storm: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M8 12 L14 3 H44 L63 12 L44 21 H14 Z" fill="#6e1c18"/><path d="M44 3 L63 12 L44 21 Z" fill="#f1ede4"/><path d="M20 12 a5 5 0 1 1 10 0 a3 3 0 1 1 -6 0" fill="none" stroke="#f1ede4" stroke-width="1.6"/><path d="M10 12 L0 0 L17 3 Z M10 12 L0 24 L17 21 Z" fill="#3a3a3a"/><path d="M8 7 H0 V17 H8 Z" fill="#ff4a12"/></svg>`,
   // صاروخ اعتراضي: a slim white dart
   intc: `<svg viewBox="0 0 64 24" aria-hidden="true"><path d="M8 12 L14 9 H54 L62 12 L54 15 H14 Z" fill="#f4f6f2"/><path d="M54 9 L62 12 L54 15 Z" fill="#2c6fb0"/><path d="M12 12 L6 5 L16 9 Z M12 12 L6 19 L16 15 Z" fill="#2c6fb0"/><path d="M8 10.5 H2 V13.5 H8 Z" fill="#ffd27a"/></svg>`
 };
@@ -342,7 +348,7 @@ function strikeView() {
 /** Counts said the Arabic way: one, two, then the number. */
 const spotsText = (n) => (n === 1 ? "مكان واحد" : n === 2 ? "مكانين" : `${ar(n)} ${n <= 10 ? "أماكن" : "مكان"}`);
 const hitsText = (n) => (n === 1 ? "ضربة وحدة" : n === 2 ? "ضربتين" : `${ar(n)} ${n <= 10 ? "ضربات" : "ضربة"}`);
-const W_POWER = { drone: "ضرر خفيف", drone2: "ضرر متوسط", missile: "ضرر قوي", missile2: "ضرر مدمّر" };
+const W_POWER = { drone: "ضرر خفيف", drone2: "ضرر متوسط", missile: "ضرر قوي", missile2: "ضرر كبير", quake: "يخليها ركام", storm: "يمسح حارة ركام" };
 /**
  * The attack panel, in two plain steps: pick the weapon (big cards with what is left), then tap the town where
  * it falls. Every spot is a row (what is there, how many buildings it reaches, how many weapons) with − + and a
@@ -841,6 +847,24 @@ export function warDamageHtml(b) {
     <p class="hint">يستغرق ${fmtLeft(ms)}، ويرجّع كفاءة المبنى ١٠٠٪ تدريجيًا. ما يحتاج مواد بناء.</p>`;
   return html;
 }
+/** A building a destructive weapon flattened: only rubble is left, to clear (paid on the server) before building again. */
+export function warRubbleHtml(b) {
+  const clr = world.fx?.clearing?.get(WARX.inspectAt), cost = rubbleCostOf(b.id, b.lvl), ms = rubbleMsOf();
+  let html = `<div class="ins-head rubble-head"><b class="rubble-ic">🧱</b><div><h2>ركام ${levelName(b)}</h2><p>هذا المبنى انهدم كامل بسلاح مدمّر: ما يشتغل ولا يتصلح. شيل الركام، وبعدها الأرض تفضى وتقدر تبني فوقها من جديد.</p></div></div>`;
+  if (visiting) return html;
+  if (clr) html += `<div class="need ok">🧹 يتشال الركام الحين: يخلص بعد ${fmtLeft(clr.end - warNow())}</div><i class="prog"><i style="width:${Math.round(Math.min(1, Math.max(0, (warNow() - clr.start) / Math.max(1, clr.end - clr.start))) * 100)}%"></i></i>`;
+  else html += `<div class="sheet-actions"><button class="btn go block" id="warClear" type="button" ${S.money < cost ? "disabled" : ""}>🧹 شيل الركام (${money(cost)} ريال)</button></div>
+    <p class="hint">ياخذ ${fmtLeft(ms)}، وبعدها الأرض فاضية.</p>`;
+  return html;
+}
+export async function warClearAt(x, y) {
+  const r = await warApi("clear", { req: warReq(), x, y });
+  if (r.error) { toast(r.error, "bad"); sfx.deny(); return r; }
+  sfx.build(); toast(`🧹 بدأ شيل الركام (${money(r.charge?.amount || 0)} ريال)`, "goal");
+  await warPoll(true);
+  inspect(x, y);
+  return r;
+}
 export async function warRepairAt(x, y, quiet = false) {
   const r = await warApi("repair", { req: warReq(), x, y });
   if (r.error) { toast(r.error, "bad"); sfx.deny(); return r; }
@@ -857,6 +881,7 @@ export function milHtml(b) {
   if (st.cap && b.id === "dronebase") lines.push(row("سعة المسيّرات", ar(st.cap)), row("مسيّرات بالعملية", ar(st.salvo)), row("وقت التجهيز", `${ar(st.reload)} دقايق`));
   if (st.cap && b.id === "missilepad") lines.push(row("صواريخ عليها", ar(st.cap)), row("وقت التجهيز", `${ar(st.reload)} دقايق`));
   if (st.detect) lines.push(row("يرفع دقة الدفاع", `×${ar(st.detect)}`));
+  if (st.vsHeavy) lines.push(row("ضد صاروخ الزلزال والإعصار", `${ar(Math.round(st.vsHeavy * 100))}٪`), row("صواريخ اعتراضية", ar(st.intc)), row("كل محاولة اعتراض", `${ar(WAR.heavyIntc)} صواريخ اعتراضية`));
   if (st.vsDrone) lines.push(row("ضد المسيّرات", `${ar(Math.round(st.vsDrone * 100))}٪`), row("ضد الصواريخ", `${ar(Math.round(st.vsMissile * 100))}٪`), row("صواريخ اعتراضية", ar(st.intc)));
   if (st.store) lines.push(row("يزيد التخزين", "٥٠٪"));
   return lines.join("");

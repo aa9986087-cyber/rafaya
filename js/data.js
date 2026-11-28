@@ -176,6 +176,7 @@ export const B = {
   dronebase: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "قاعدة المسيّرات", cost: 1200, upkeep: 10, era: 1, power: -3, text: "هنقر يجهّز المسيّرات ويخزنها ويطلقها. كل تطوير يزيد السعة ويفتح مسيّرات أقوى." },
   radar: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "محطة الرادار والإنذار المبكر", cost: 1000, upkeep: 8, era: 1, power: -6, text: "رادار يدور طول الوقت: يرصد الهجمات قبل وصولها ويرفع دقة الدفاع الجوي. بدونه الدفاع شبه أعمى." },
   airdef: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "بطارية الدفاع الجوي", cost: 1600, upkeep: 12, era: 1, power: -3, text: "تعترض الصواريخ والمسيّرات الجاية لمدينتك بذخيرة اعتراضية تشتريها. كل مستوى أدق وأقوى ضد الصواريخ." },
+  fortdef: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "منظومة الحصن", cost: 12000, upkeep: 40, era: 2, power: -8, text: "الدرع الوحيد ضد الأسلحة المدمّرة (صاروخ الزلزال وصاروخ الإعصار): تعترضها بالصواريخ الاعتراضية قبل لا تسوّي مدينتك ركام. ما تعترض المسيّرات ولا الصواريخ العادية." },
   missilepad: { cat: "mil", worldOnly: true, hq: true, slot: true, name: "منصة الصواريخ", cost: 3000, upkeep: 20, era: 2, power: -5, text: "منصة إطلاق صواريخ بعيدة المدى، تنرفع قبل الإطلاق وتنجهز بعده. كل تطوير يزيد الصواريخ ويقصّر وقت التجهيز." },
   barracks: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "معسكر الجنود", cost: 2000, upkeep: 12, era: 1, power: -2, text: "يدرّب جنود مشاة وقوات خاصة وقناصة، عشان تزحف فيهم على قلعة مارد بنص الجوف. كل تطوير يزيد عدد الجنود ويسرّع التدريب." },
   armory: { cat: "mil", worldOnly: true, hq: true, unique: true, name: "مستودع الذخائر", cost: 1500, upkeep: 5, era: 1, text: "يزيد سعة تخزين المسيّرات والصواريخ والذخيرة الاعتراضية ٥٠٪، ويعرض المخزون كله." },
@@ -295,6 +296,7 @@ export const VAULT_MORE = 0.5;
  *   missilepad: cap = missiles, reload = minutes
  *   radar: detect = how much it sharpens the air defence
  *   airdef: vsDrone / vsMissile = interception chance, intc = interceptors it holds
+ *   fortdef: vsHeavy = interception chance against the destructive weapons (nothing else), intc = interceptors it holds
  *   armory: store = × storage of everything
  */
 export const MIL = {
@@ -303,6 +305,7 @@ export const MIL = {
   missilepad: [{ name: "منصة صواريخ", era: 2, cap: 1, reload: 8 }, { name: "منصة صواريخ مزدوجة", era: 2, cap: 2, reload: 6 }, { name: "مجمع صواريخ", era: 3, cap: 3, reload: 4 }],
   radar: [{ name: "رادار إنذار", era: 1, detect: 0.85 }, { name: "رادار بعيد المدى", era: 2, detect: 1 }, { name: "منظومة رادار متقدمة", era: 3, detect: 1.12 }],
   airdef: [{ name: "دفاع جوي قصير المدى", era: 1, vsDrone: 0.4, vsMissile: 0.15, intc: 4 }, { name: "دفاع جوي متوسط المدى", era: 2, vsDrone: 0.52, vsMissile: 0.35, intc: 8 }, { name: "دفاع جوي متقدم", era: 3, vsDrone: 0.62, vsMissile: 0.5, intc: 12 }],
+  fortdef: [{ name: "منظومة الحصن", era: 2, vsHeavy: 0.4, intc: 4 }, { name: "منظومة الحصن المتطورة", era: 3, vsHeavy: 0.55, intc: 6 }, { name: "منظومة الحصن الكبرى", era: 4, vsHeavy: 0.7, intc: 8 }],
   armory: [{ name: "مستودع الذخائر", era: 1, store: 1.5 }],
   barracks: [{ name: "معسكر تدريب", era: 1, cap: 30, speed: 1 }, { name: "معسكر كتيبة", era: 2, cap: 60, speed: 0.8 }, { name: "قاعدة لواء", era: 3, cap: 100, speed: 0.6 }]
 };

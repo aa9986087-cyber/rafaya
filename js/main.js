@@ -5,14 +5,14 @@ import { WHATS_NEW } from "./whats-new.js";
 import { pendingSaveMatches, rememberPendingSave, townSaveWriter } from "./save-version.js";
 import { GREATER_CITY_STAGE, greaterCityUpgrade } from "./data.js";
 import { B, MIL, CATS, TECH, GOALS, ERAS, EVENTS, DECISIONS, ACHIEVEMENTS, MAP_SIZE as N, HOURS, SEASON_DAYS, SEASONS, PRAYERS, PLOTS, LOANS, SUBSIDY, BIZ_LEVELS, bizLevel, VAULT, DISTRICT_NAMES, ELECTION_GRANT, PROVINCE_FEES, GROUND, FILL_COST, CHAINS, MAT, ROAD_IDS, TERRAINS, SITES, REGION, WORLD, worldTerrain, worldPlace, worldXY, worldPlot, townNameKey } from "./data.js";
-import { newGame, step, build, demolish, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, houseTop, housePrice, buildHouseAt, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
+import { newGame, step, build, demolish, raze, cantBuild, analyze, houseBlocker, upgradeHouse, upgradeCost, upgradePrice, upgradeEffect, upgradeAt, upgradeBlocker, upgradable, levelName, decide, optionCost, repair, repairAll, repairCost, condFactor, seasonOf, dayOf, hourOf, owns, plotAt, plotPrice, buyPlot, startResearch, fillWadi, deputyCatchUp, DEPUTY, AWAY_CAP, doorOf, roadPath, prayerNow, districtOf, districtName, districtStats, voteShare, hoursToElection, moveCost, moveBlocker, moveBuilding, layoutBlocker, creditLimit, loanBlocker, loanPer, takeLoan, payLoan, payoffCost, catchUp, pack, unpack, idx, inMap, ROCK_CLEAR, techUnlocked, changeMoney, worldEventsAt, provinceFee, moneyCap, priceOf, houseTop, housePrice, buildHouseAt, buildCost, removalRefund, joufHours, idleWhy } from "./sim.js";
 import { World, thumbnail } from "./world3d.js";
 import { advise, ADVISOR_FEE, ADVISOR_HOURS } from "./advisor.js";
 import { WarFX } from "./warfx.js";
 import { watchIcons, ICON_PATHS, medalSvg } from "./icons.js";
 import { castleCrown } from "./ui-castle.js";
 import { findSheet } from "./ui-find.js";
-import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText } from "./war.js";
+import { medalId, WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milStat, weaponBlocker, damageState, warFactor, repairCostOf, repairMsOf, flightMs, relActions, REL_NAMES, REL_ICONS, THREATS, minutesText, kindSum, rubbleCostOf, rubbleMsOf } from "./war.js";
 import { modelKey, setLandStyle, PLACE_STYLE } from "./models.js";
 import { sfx, ambience, warSfx, warMusic, WAR_MUSIC_ON } from "./sound.js";
 import { writePosts, followUps, decisionReaction, replyOptions, answerPost, moodOf, FIX_HINT, topicName } from "./news.js";
@@ -22,7 +22,7 @@ import { idleClamp, perf, perfHud, perfWatch, runHour } from "./ui-idle.js";
 import { focusTown, howTo, pauseMenu, reachClose, reachView } from "./ui-settings.js";
 import { canDo, canTurn, hoverAt, isMulti, paintAt, paintStarts, pointers, reachLine, roadAim, roadAimStart, roadNext, roadUpWhy, showPending, tileCost, upFits, upgradeWhy, whyNot } from "./ui-tools.js";
 import { arrBill, arrDrop, arrMovable, arrMove, arrPush, arrRemove, arrRender, arrRestore, arrSnapshot, arrUnstroke, arrUp, clearPreview, mosqueGaps, mosqueMap, nearRoad, showMove, showReach } from "./ui-arrange.js";
-import { WARX, apologyBox, cityMilestonePopup, followTown, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
+import { WARX, apologyBox, cityMilestonePopup, followTown, milHtml, relSheet, startTargeting, targetTap, warBack, warDamageHtml, warKey, warNews, warPoll, warRepairAt, warRubbleHtml, warClearAt, warSeen, warSheet, warTownKey, warWatch } from "./ui-war.js";
 import { F, FIX, NAME_KEEP, face, floatAt, here, nameLandmarks, renderCards, row, toast, toolsBar } from "./ui-build.js";
 import { addPosts, council, decisionSheet, newsSheet, plotSheet, showDistrict, showNewsCount, whenSheet, wnewsPoll } from "./ui-news.js";
 import { deputyReport, deputySheet, forgetTown, googleOffer, googleSection, nameSection, namefixSheet, openWorld, readCloudTown, readOwnTown, renameSheet, worldClosedSheet, worldIsClosed, worldJoinSheet } from "./ui-account.js";
@@ -707,6 +707,7 @@ export function inspect(x, y) {
     return;
   }
   sfx.tap();
+  if (worldMode && t.b.flat) { WARX.inspectAt = `${x}:${y}`; sheet(warRubbleHtml(t.b), "inspect"); $("warClear")?.addEventListener("click", () => warClearAt(x, y)); return; }
   const d = B[t.b.id];
   const works = t.b.works !== false;
   const title = levelName(t.b), up = bizLevel(t.b);
@@ -856,8 +857,7 @@ export async function visitTown(code, opts = {}) {
   let town;
   try { town = unpack(data.town.snapshot); } catch { toast("حفظ المدينة خربان", "bad"); return; }
   // war damage is the server's, never the town's own save
-  for (const t of town.tiles) if (t.b) delete t.b.wd;
-  for (const r of data.damage || []) { const t = town.tiles[idx(r.x, r.y)]; if (t?.b && t.b.id === r.bid) t.b.wd = r.wd; }
+  warDamageOnto(town, data.damage);
   if (visiting) leaveVisit(); // from one visit straight to another: home stays your own town
   save();
   visiting = { code, world: true, info: data.town, comments: data.comments, home: S, cam: S.cam };
@@ -873,6 +873,16 @@ export async function visitTown(code, opts = {}) {
   refresh();
   if (!opts.target && !opts.scene) toast(`أهلًا بك في ${data.town.name}`, "goal");
 }
+/** War damage onto a visited town (the server's, never the town's own save): rubble flat, cleared spots empty. */
+function warDamageOnto(town, rows) {
+  for (const t of town.tiles) if (t.b) { delete t.b.wd; delete t.b.flat; }
+  for (const r of rows || []) {
+    const t = town.tiles[idx(r.x, r.y)];
+    if (!t?.b || t.b.id !== r.bid) continue;
+    if (r.gone) { if (!(t.b.build > 0)) raze(town, r.x, r.y); continue; }
+    t.b.wd = r.wd; if (r.flat) t.b.flat = true;
+  }
+}
 /** The town being visited changed (its owner built something): show it as it is now, camera and sheet left alone. */
 export async function refreshVisit() {
   const visit = visiting;
@@ -880,8 +890,7 @@ export async function refreshVisit() {
   let data, town;
   try { data = await api(`/world/town/${visit.code}`); town = unpack(data.town.snapshot); } catch { return; }
   if (visiting !== visit) return;
-  for (const t of town.tiles) if (t.b) delete t.b.wd;
-  for (const r of data.damage || []) { const t = town.tiles[idx(r.x, r.y)]; if (t?.b && t.b.id === r.bid) t.b.wd = r.wd; }
+  warDamageOnto(town, data.damage);
   S = town; A = analyze(S);
   world.sync(S, { tiles: true, roads: true, buildings: true });
   refresh();
@@ -1344,9 +1353,12 @@ export function warApply(st) {
   const rows = new Map((st.damage || []).map((r) => [`${r.x}:${r.y}`, r]));
   home.tiles.forEach((t, i) => {
     if (!t.b) return;
-    const r = rows.get(`${i % N}:${Math.floor(i / N)}`), wd = r && r.bid === t.b.id ? Math.round(r.wd * 10) / 10 : 0;
+    const r = rows.get(`${i % N}:${Math.floor(i / N)}`), mine = r && r.bid === t.b.id, wd = mine ? Math.round(r.wd * 10) / 10 : 0;
     if ((t.b.wd || 0) !== wd) { if (wd) t.b.wd = wd; else delete t.b.wd; changed = true; }
+    if (!!t.b.flat !== !!(mine && r.flat)) { if (mine && r.flat) t.b.flat = true; else delete t.b.flat; changed = true; }
   });
+  // rubble cleared (paid on the server): the land is empty, ready to build on
+  for (const r of st.cleared || []) { const t = home.tiles[idx(r.x, r.y)]; if (t?.b?.id === r.bid && !(t.b.build > 0)) { raze(home, r.x, r.y); changed = true; } }
   // the dead and the injured of every strike that landed on us leave the town (each strike once): fewer people,
   // and a town in mourning (the people come back as it grows again; the grief fades over the hours)
   home.war.toll ||= [];
@@ -1370,7 +1382,8 @@ export function warApply(st) {
   if (lost && !WARX.scene) toast(`⚰️ فقدت المدينة ${ar(lost)} من أهلها في القصف. الله يرحمهم`, "bad");
   if (world.fx && !visiting) {
     world.fx.repairs = new Map((st.damage || []).filter((r) => r.rep).map((r) => [`${r.x}:${r.y}`, { start: r.rep.start, end: r.rep.end }]));
-    const ds = (st.arsenal?.drone || 0) + (st.arsenal?.drone2 || 0), ms = (st.arsenal?.missile || 0) + (st.arsenal?.missile2 || 0);
+    world.fx.clearing = new Map((st.damage || []).filter((r) => r.flat && r.clr).map((r) => [`${r.x}:${r.y}`, { start: r.clr.start, end: r.clr.end }]));
+    const ds = kindSum(st.arsenal, "drone"), ms = kindSum(st.arsenal, "missile");
     if (ds !== world.fx.droneStock || ms !== world.fx.missileStock) { world.fx.droneStock = ds; world.fx.missileStock = ms; changed = true; } // what stands on the pads
   }
   if (!visiting && (changed || posted)) { A = analyze(S); world.sync(S, { buildings: true }); refresh(); }

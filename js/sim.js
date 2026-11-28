@@ -756,6 +756,7 @@ export function demolish(s, x, y) {
   if (!owns(s, x, y)) return "الأرض هذي مو لك";
   if (t.b?.id === "decopart" && s.tiles[t.b.of]?.b?.span) return demolish(s, t.b.of % N, Math.floor(t.b.of / N)); // a piece of a big decoration: the whole of it
   if (t.b?.id === "decopart") { t.b = null; return ""; }
+  if (t.b?.flat) return "هذا ركام: شيله أول من «🧹 شيل الركام»";
   if (t.b?.span) dropParts(s, idx(x, y));
   if (t.b) {
     changeMoney(s, removalRefund(t.b), "remove", levelName(t.b));
@@ -768,6 +769,15 @@ export function demolish(s, x, y) {
     changeMoney(s, -ROCK_CLEAR, "rock"); t.t = "sand"; return "";
   }
   return "ما فيه شي هنا";
+}
+
+/** A building flattened in a war, its rubble cleared: the land is left empty (nothing is paid back). */
+export function raze(s, x, y) {
+  const i = idx(x, y), t = s.tiles[i];
+  if (!t?.b) return;
+  if (t.b.span) dropParts(s, i);
+  s.pop = Math.max(0, s.pop - (t.b.res || 0));
+  t.b = null;
 }
 
 // ---------- wear, repairs and insurance ----------

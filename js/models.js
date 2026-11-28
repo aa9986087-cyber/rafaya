@@ -2362,6 +2362,41 @@ Object.assign(MAKERS, {
   airdef(b) { MAKERS.airdef_any(b, 0); }, airdef1(b) { MAKERS.airdef_any(b, 1); }, airdef2(b) { MAKERS.airdef_any(b, 2); },
   airdef_b(b) { MAKERS.airdef_any(b, 0, false); }, airdef1_b(b) { MAKERS.airdef_any(b, 1, false); }, airdef2_b(b) { MAKERS.airdef_any(b, 2, false); },
 
+  // «منظومة الحصن»: the shield against the destructive weapons. A hardened concrete bunker with a field of
+  // vertical launch cells, a tall phased-array radar tower with four tilted faces, and blast walls round it.
+  fortdef_any(b, lvl = 0) {
+    pad(b);
+    // the blast walls (T-walls) along the back and one side
+    for (let k = 0; k < 6; k++) { b.rbox(0.12, 0.2, 0.04, 0.008, MC.concrete, { x: -0.33 + k * 0.13, z: -0.42 }, "paint"); b.box(0.16, 0.015, 0.07, MC.concrete, { x: -0.33 + k * 0.13, y: 0.0, z: -0.42 }, "paint"); }
+    for (let k = 0; k < 4; k++) b.rbox(0.04, 0.2, 0.12, 0.008, MC.concrete, { x: 0.43, z: -0.3 + k * 0.13 }, "paint");
+    // the launch bunker: low, sloped concrete with a steel deck of hatches (rows × cols by level)
+    const cols = [3, 4, 4][lvl], rows = [2, 2, 3][lvl], cw = 0.085, W = cols * cw + 0.06, D = rows * cw + 0.06, bx = -0.1, bz = 0.12;
+    b.rbox(W + 0.08, 0.1, D + 0.08, 0.03, "#b9ad95", { x: bx, z: bz }, "paint");
+    b.rbox(W, 0.03, D, 0.01, MC.steelDark, { x: bx, y: 0.1, z: bz }, "metal");
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = bx + (c - (cols - 1) / 2) * cw, z = bz + (r - (rows - 1) / 2) * cw;
+      b.rbox(0.07, 0.012, 0.07, 0.006, (r + c) % 2 ? "#4b524a" : "#565d54", { x, y: 0.13, z }, "metal");
+      b.cyl(0.012, 0.012, 0.004, "#c9a43a", { x, y: 0.142, z }, 8, "paint");
+    }
+    for (const s of [-1, 1]) b.box(W + 0.02, 0.012, 0.012, MC.yellow, { x: bx, y: 0.135, z: bz + s * (D / 2 + 0.008) }, "paint");
+    // the radar tower: a square concrete shaft and a crown of four tilted array faces
+    const tx = 0.26, tz = -0.18, th = [0.42, 0.52, 0.62][lvl];
+    b.rbox(0.16, th, 0.16, 0.012, MC.concrete, { x: tx, z: tz }, "paint");
+    for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2, ox = Math.sin(a) * 0.1, oz = Math.cos(a) * 0.1;
+      b.rbox(0.18, 0.2, 0.03, 0.01, MC.steelDark, { x: tx + ox, y: th - 0.02, z: tz + oz, ry: a, rx: 0.32 }, "metal");
+      b.box(0.15, 0.16, 0.004, "#2f3a3c", { x: tx + ox * 1.16, y: th + 0.0, z: tz + oz * 1.16, ry: a, rx: 0.32 }, "glass"); }
+    b.rbox(0.2, 0.04, 0.2, 0.01, MC.steelDark, { x: tx, y: th + 0.1, z: tz }, "metal");
+    b.add(new THREE.SphereGeometry(0.014, 8, 6), "#ff3b30", { x: tx, y: th + 0.16, z: tz }, "glow");
+    b.cyl(0.004, 0.004, 0.06, MC.steel, { x: tx, y: th + 0.12, z: tz }, 6, "metal");
+    // the control room door, a power unit, and from the top level a second, smaller array on a mast
+    b.box(0.08, 0.1, 0.006, MC.steel, { x: tx, y: 0.0, z: tz + 0.083 }, "metal");
+    b.rbox(0.14, 0.1, 0.1, 0.01, MC.olive, { x: 0.3, z: 0.3 }, "paint"); for (let k = 0; k < 4; k++) b.box(0.1, 0.006, 0.004, MC.oliveDark, { x: 0.3, y: 0.025 + k * 0.02, z: 0.352 }, "paint");
+    if (lvl >= 2) { b.cyl(0.012, 0.012, 0.34, MC.steelDark, { x: -0.38, z: 0.38 }, 8, "metal"); b.rbox(0.1, 0.1, 0.02, 0.008, MC.steelDark, { x: -0.38, y: 0.34, z: 0.38, rx: 0.3, ry: 0.6 }, "metal"); }
+    if (lvl >= 1) for (let k = 0; k < 3; k++) b.rbox(0.06, 0.035, 0.04, 0.01, MC.earth, { x: -0.38, y: k * 0.03, z: -0.2 + (k % 2) * 0.01 }, "matte");
+    flag(b, 0.42, 0.42, 0.5);
+  },
+  fortdef(b) { MAKERS.fortdef_any(b, 0); }, fortdef1(b) { MAKERS.fortdef_any(b, 1); }, fortdef2(b) { MAKERS.fortdef_any(b, 2); },
+
   armory(b) {
     pad(b);
     b.add(new THREE.SphereGeometry(0.44, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), MC.earth, { sy: 0.45, z: -0.08 }, "matte");
@@ -2405,7 +2440,7 @@ Object.assign(MAKERS, {
   wRotor(b) { rotorParts(b, false); }, wRotor2(b) { rotorParts(b, true); },
   wInterceptor(b) { interceptorParts(b); }
 });
-const MIL_MODELS = ["milhq", "dronebase", "missilepad", "radar", "airdef"];
+const MIL_MODELS = ["milhq", "dronebase", "missilepad", "radar", "airdef", "fortdef"];
 /** The base of a military building without its moving parts, when it has them (else the full model). */
 export const baseKey = (key) => (MAKERS[`${key}_b`] ? `${key}_b` : key);
 

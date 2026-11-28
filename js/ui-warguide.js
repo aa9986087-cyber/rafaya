@@ -38,6 +38,7 @@ export function warGuide(go = "") {
     ["missilepad", "🚀", "تطلق الصواريخ. المستوى الثالث «مجمع صواريخ» يطلق صاروخ النفود."],
     ["radar", "📡", "يرصد الهجوم قبل وصوله (تنطلق صفارات الإنذار)، ويرفع دقة دفاعك."],
     ["airdef", "🛡️", "يعترض المسيّرات والصواريخ بالصواريخ الاعتراضية."],
+    ["fortdef", "🏰", "الدرع الوحيد ضد صاروخ الزلزال وصاروخ الإعصار: كل محاولة اعتراض تاخذ صاروخين اعتراضيين. بدونها، الأسلحة المدمّرة توصل."],
     ["armory", "📦", "مخزن الذخيرة."]
   ];
   sheet(`<div class="wg">
@@ -53,7 +54,8 @@ export function warGuide(go = "") {
 
     ${section("arms", "🚀", "الأسلحة", `<div class="wg-table">${WEAPON_IDS.map((w) => { const W = WEAPONS[w], need = MIL[W.needs[0]][W.needs[1]]; return `<div class="wg-row"><span class="wg-ic wg-w">${weaponIcon(w)}</span><span><b>${W.name}</b><small>${W.text}</small><small class="wg-num2">السعر ${money(W.price)} · تشغيل كل ضربة ${money(W.fee)} · القوة ${ar(W.power)} · من ${era(need.era)}</small></span></div>`; }).join("")}
       <div class="wg-row"><span class="wg-ic wg-w">${weaponIcon("intc")}</span><span><b>${WAR_LIVE.interceptor.name}</b><small>ذخيرة الدفاع الجوي: كل واحد يحاول يسقط ضربة جاية.</small><small class="wg-num2">السعر ${money(WAR_LIVE.interceptor.price)} · المخزون حسب بطارياتك</small></span></div></div>
-      <p class="wg-note">المسيّرات والصواريخ تخزّن منها اللي تبي. المنصة والقاعدة تحدد كم ينطلق بكل مرة.</p>`)}
+      <p class="wg-note">المسيّرات والصواريخ تخزّن منها اللي تبي. المنصة والقاعدة تحدد كم ينطلق بكل مرة.</p>
+      <div class="wg-row"><span class="wg-ic">🧱</span><span><b>الأسلحة المدمّرة والركام</b><small>صاروخ الزلزال وصاروخ الإعصار يسوّون كل مبنى بمداهم بالأرض (إلا المساجد). المبنى يصير <b>ركام</b>: ما يشتغل ولا يتصلح. صاحبه لازم يضغطه ويختار «🧹 شيل الركام» (يدفع ويستنى ${real(WAR_LIVE.rubble.ms)})، وبعدها الأرض تفضى ويبني فوقها من جديد. الدفاع الجوي العادي ما يقدر عليها: بس «منظومة الحصن».</small></span></div>`)}
 
     ${section("before", "🤝", "قبل الحرب: الجزية والمحادثة والإعلان", `<p>من «القيادة ← 🗺️ الجوف والتفاوض» اضغط أي مدينة:</p>
       ${li([

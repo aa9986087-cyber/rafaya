@@ -865,6 +865,7 @@ export class World {
         continue;
       }
       if (roadAt(t) || t.b.id === "decopart") continue; // (a big decoration's other tiles: drawn with it)
+      if (t.b.flat) continue; // flattened by a destructive weapon: only its rubble is left (js/warfx.js draws it)
       // Face the road, then any quarter turns the mayor gave it.
       let angle = this.faceAngle(s, x, y) + (t.b.rot || 0) * Math.PI / 2;
       if (t.b.id === "pole") angle = poles.get(idx(x, y))?.angle ?? angle;

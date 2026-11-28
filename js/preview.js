@@ -9,6 +9,9 @@ Object.assign(WAR, PV_CFG); // the game shows the same short waits the trial ser
 const pvLoad = () => { try { return JSON.parse(localStorage.getItem(PV_KEY) || "null"); } catch { return null; } };
 const pvState = pvLoad() || { players: {}, plots: {}, comments: [], war: {}, bots: false, made: Date.now() };
 globalThis.__ROOM = () => ROOM; // the trial's checks look at the war room's map
+globalThis.__RUBBLE = () => { const out = []; S.tiles.forEach((t, i) => { if (t.b?.flat) out.push({ x: i % MAP_SIZE, y: Math.floor(i / MAP_SIZE), id: t.b.id }); }); return out; }; // the trial's checks: the rubble on the town
+globalThis.__INSPECT = (x, y, z = 0, yaw = null, pitch = null) => { world.focus(x, y); if (z) world.view.zoom = z; if (pitch != null) world.view.pitch = pitch; if (yaw != null) { world.view.yaw = yaw; world.view.yawTarget = yaw; } world.updateCamera(); inspect(x, y); };
+globalThis.__OPS = () => pvDb.list("op", {}).map((o) => ({ id: o.id, to: o.to, status: o.status, x: o.x, y: o.y, load: o.load, res: o.result && { flat: o.result.flat, blocked: o.result.blocked, hits: o.result.hits, area: (o.result.area || []).length } }));
 const pvSave = () => { try { localStorage.setItem(PV_KEY, JSON.stringify({ ...pvState, war: pvDb.dump() })); } catch { /* full: the trial still runs */ } };
 const pvDb = memWarDb(pvState.war);
 const pvWorld = {
@@ -128,8 +131,8 @@ function pvFill(me) {
   const a = pvWar.acct(me.plot), p = st.profile, c = { ...st.caps };
   if (c.open) { c.drones = Math.min(c.drones, 12); c.missiles = Math.min(c.missiles, 12); } // open war: a good stock to try, not the (unlimited) store
   const can = (w) => !weaponBlocker(p, w);
-  const drones = ["drone2", "drone"].filter(can), missiles = ["missile2", "missile"].filter(can);
-  a.arsenal = { drone: 0, drone2: 0, missile: 0, missile2: 0, intc: p.airdefs.length ? c.intc : 0 };
+  const drones = ["drone2", "drone"].filter(can), missiles = ["storm", "quake", "missile2", "missile"].filter(can);
+  a.arsenal = { drone: 0, drone2: 0, missile: 0, missile2: 0, quake: 0, storm: 0, intc: p.airdefs.length || (p.forts || []).length ? c.intc : 0 };
   drones.forEach((w, i) => { a.arsenal[w] = i === drones.length - 1 ? c.drones - drones.slice(0, -1).reduce((n, x) => n + a.arsenal[x], 0) : Math.floor(c.drones / drones.length); });
   missiles.forEach((w, i) => { a.arsenal[w] = i === missiles.length - 1 ? c.missiles - missiles.slice(0, -1).reduce((n, x) => n + a.arsenal[x], 0) : Math.floor(c.missiles / missiles.length); });
   a.reload = {}; pvWar.saveAcct(me.plot, a);
@@ -144,6 +147,17 @@ function pvSalvo(bot, n, w = "missile", to = null) {
   const t = pvState.plots[bot.plot];
   try { const o = JSON.parse(t.snapshot); o.tiles = o.tiles.map((str) => { const q = String(str).split(":"); if (q[1] === "missilepad") q[2] = "2"; if (q[1] === "dronebase") q[2] = "2"; return q.join(":"); }); t.snapshot = JSON.stringify(o); } catch { /* as it is */ }
   return pvWar.handle("salvo", { op: `bs${Date.now()}${Math.random()}`, to: me.plot, targets: spots.map((b, i) => ({ x: b.x, y: b.y, load: { [w !== "missile" ? w : i >= 3 ? "drone2" : i % 2 ? "missile2" : "missile"]: 1 } })) }, bot);
+}
+/** The bot fires one destructive weapon at the thickest block of the owner's town (where most buildings stand). */
+function pvHeavy(bot, w = "quake") {
+  pvLandAll();
+  const me = pvMe(), mine = snapBuildings(pvState.plots[me.plot].snapshot).list.filter((b) => canTarget(b.id) && !(b.build > 0) && !["asphalt", "road"].includes(b.id));
+  const near = (b) => mine.filter((o) => Math.hypot(o.x - b.x, o.y - b.y) <= WEAPONS[w].blast).length + (b.id === "house" ? 0.5 : 0);
+  const spot = mine.filter((b) => !(b.id === "house" && !b.lvl)).sort((p, q) => near(q) - near(p))[0];
+  pvArm(bot.plot, { [w]: 2 });
+  const t = pvState.plots[bot.plot];
+  try { const o = JSON.parse(t.snapshot); o.tiles = o.tiles.map((str) => { const q = String(str).split(":"); if (q[1] === "missilepad") q[2] = "2"; return q.join(":"); }); t.snapshot = JSON.stringify(o); } catch { /* as it is */ }
+  return spot ? pvWar.handle("launch", { op: `hv${Date.now()}${Math.random()}`, to: me.plot, x: spot.x, y: spot.y, load: { [w]: 1 } }, bot) : { error: "no target" };
 }
 /** Everything still in the air lands now (so a new scenario never waits on the last one's flights). */
 function pvLandAll() {
@@ -238,6 +252,17 @@ const PV_SCENARIOS = [
     const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
     const r = pvSalvo(bot, 4, "missile");
     return { plot: null, room: "attack", msg: r.ok ? "دفعة على ٤ أماكن جاية عليك. تابعها من الشريط، ولا وصلت اضغطها وشوف المشهد." : `ما انطلقت: ${r.error}` };
+  }],
+  ["quake", "🌋 صاروخ الزلزال على مدينتك", "«هجرة الشعيب» تطلق صاروخ الزلزال على أزحم حارة بمدينتك، و«منظومة الحصن» عندك بلا ذخيرة (والنائب موقف التعبئة): المباني تصير ركام. افتح الركام وشيله، وابنِ فوقه من جديد.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
+    const r = pvHeavy(bot, "quake"); pvArm(me.plot, { intc: 0 }); // after the last strikes landed (the deputy refills on them)
+    { const a = pvWar.acct(me.plot); a.settings = { ...a.settings, refill: false }; pvWar.saveAcct(me.plot, a); } // and it does not refill this time
+    return { plot: null, room: "attack", msg: r.ok ? "صاروخ الزلزال جاي عليك! بعد ما يوصل اضغط على الركام ← «🧹 شيل الركام»." : `ما انطلق: ${r.error}` };
+  }],
+  ["storm", "🌪️ صاروخ الإعصار ومنظومة الحصن تتصدى", "«هجرة الشعيب» تطلق صاروخ الإعصار (يمسح حارة)، و«منظومة الحصن» عندك معبّاة وتحاول تعترضه. كل محاولة تاخذ صاروخين اعتراضيين.", () => {
+    const me = pvMe(), bot = pvBot("enemy"); pvSetEra(bot, 4); pvSetRel(bot, me, "war"); pvFill(me);
+    const r = pvHeavy(bot, "storm");
+    return { plot: null, room: "attack", msg: r.ok ? "صاروخ الإعصار جاي، ومنظومة الحصن بتحاول تصده. إذا وصل، الحارة تصير ركام." : `ما انطلق: ${r.error}` };
   }],
   ["dry", "🔋 دفاعك بدون ذخيرة وجاك هجوم", "تنتهي صواريخ الاعتراض عندك، و«الخضراء» تضربك. تشوف الضرر وتجرب الإصلاح.", () => {
     const me = pvMe(), bot = pvBot("loud"); pvSetEra(bot, 4); pvSetRel(bot, me, "war");
@@ -518,7 +543,7 @@ function pvReadyTown(s) {
     [34,47,"lantern"], [37,47,"themepark"], [40,47,"skyline"], [35,49,"mandi"], [37,49,"hotel",2],
     [38,49,"streetpalm"], [40,49,"fountain"],
     [48,44,"milhq",2], [50,44,"dronebase",2], [52,44,"radar",2],
-    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], ...(CASTLE_ON ? [[48,48,"barracks",1]] : [])
+    [48,46,"armory"], [50,46,"airdef",2], [52,46,"missilepad",2], [52,48,"fortdef",1], ...(CASTLE_ON ? [[48,48,"barracks",1]] : [])
   ].forEach((args) => put(...args));
   s.tiles[idx(47,34)].t = "rock";
   s.tiles[idx(44,40)].t = "wadi";

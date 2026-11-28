@@ -13,7 +13,7 @@
 import { B, ERAS } from "./data.js";
 import {
   WAR, WEAPONS, WEAPON_IDS, TARGETS, canTarget, milProfile, capacity, weaponBlocker, interceptChance, detects, flightMs,
-  hitDamage, repairCostOf, repairMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
+  hitDamage, repairCostOf, repairMsOf, isHeavy, kindSum, rubbleCostOf, rubbleMsOf, relNow, relActions, conflictBlocker, minutesText, snapBuildings, milStat, THREATS, REL_NAMES, damageState,
   MOSQUES, blastArea, shieldPrice, tributeMax, casualties, economic, SPOILS, MEDALS
 } from "./war.js";
 import { CASTLE_ON, TROOPS, TROOP_IDS, CASTLE, troopCount, troopClean, barracksCap, trainFactor, finishTraining, castleBattle } from "./castle.js";
@@ -96,9 +96,26 @@ export class WarServer {
   damage(plot) {
     const now = this.now(), out = new Map();
     for (const r of this.db.list("dmg", { k1: String(plot) })) {
+      if (r.flat) { if (!this.rubbleDone(r, now)) out.set(`${r.x}:${r.y}`, r); continue; } // rubble stays at 100 until cleared
       const wd = this.wdNow(r, now);
       if (wd <= 0) { this.db.del("dmg", `${plot}:${r.x}:${r.y}`); continue; }
       out.set(`${r.x}:${r.y}`, { ...r, wd });
+    }
+    return out;
+  }
+  /** Rubble whose clearing has finished: the land is empty (the town's game takes the building off). */
+  rubbleDone(r, now) { return !!(r.flat && r.clr && now >= r.clr.end); }
+  /**
+   * The spots cleared of rubble that the town's own save may still show a building on: { x, y, bid }.
+   * Gone once the save no longer has that building there (or after three days).
+   */
+  cleared(plot, snapList = null) {
+    const now = this.now(), out = [];
+    for (const r of this.db.list("dmg", { k1: String(plot) })) {
+      if (!this.rubbleDone(r, now)) continue;
+      const still = snapList ? snapList.some((b) => b.x === r.x && b.y === r.y && b.id === r.bid && !(b.build > 0)) : true;
+      if ((snapList && !still) || now - r.clr.end > 3 * 24 * 3600000) { this.db.del("dmg", `${plot}:${r.x}:${r.y}`); continue; }
+      out.push({ x: r.x, y: r.y, bid: r.bid });
     }
     return out;
   }
@@ -382,6 +399,7 @@ export class WarServer {
       case "salvo": return this.once(me.plot, body.op, () => this.salvo(body, me));
       case "op": return this.opView(String(body.op || ""), me);
       case "repair": return this.once(me.plot, body.req, () => this.repair(body, me));
+      case "clear": return this.once(me.plot, body.req, () => this.clearRubble(body, me));
       case "settings": return this.settings(body, me);
       case "shield": return this.once(me.plot, body.req, () => this.buyShield(body, me));
       case "enemy": return { view: this.enemyView(me, Math.round(Number(body.plot))) };
@@ -440,11 +458,11 @@ export class WarServer {
     const ops = this.db.list("op", { either: String(me.plot), limit: 40 }).map((o) => this.opPublic(o, me));
     const notes = this.db.list("note", { k1: String(me.plot), limit: 60 }); // the newest 60 (the game knows which it has seen)
     const charges = this.db.list("charge", { k1: String(me.plot) }).filter((c) => c.seq > (Number(body.seq) || 0)).sort((x, y) => x.seq - y.seq);
-    const dmg = [...this.damage(me.plot).values()];
+    const dmg = [...this.damage(me.plot).values()], cleared = this.cleared(me.plot, info?.snap.list || null);
     return {
       now, arsenal: a.arsenal, caps: capacity(p), settings: a.settings, reload: a.reload, seq: a.seq,
-      profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, armory: p.armory, barracks: p.barracks, era: p.era },
-      openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
+      profile: { hq: p.hq, bases: p.bases, pads: p.pads, radars: p.radars, airdefs: p.airdefs, forts: p.forts, armory: p.armory, barracks: p.barracks, era: p.era },
+      openAt: (this.world?.shownOpenAt || this.world?.openAt)?.() || 0, medals: this.medals(), rels, ops, notes, charges, damage: dmg, cleared, shield: info ? this.shieldUntil(info, now) : 0, shieldBuy: this.shieldView(info, a, now),
       cityMilestoneSeq: a.cityMilestoneSeq || 0,
       castle: (() => { const c = this.castleRow(); return { holder: c.holder, town: c.holder != null ? this.townInfo(c.holder)?.town || c.holderTown : "", since: c.since, marching: this.db.list("cmarch", {}).length, marches: this.db.list("cmarch", {}).map((m) => ({ from: m.from, n: troopCount(m.units), mode: m.mode, sent: m.sent, at: m.at })) }; })(),
       intercept: Object.fromEntries(WEAPON_IDS.map((w) => [w, interceptChance(p, w)]))
@@ -453,7 +471,8 @@ export class WarServer {
   /** War damage of any town (for visitors and the town itself). */
   publicDamage(plot) {
     this.settle();
-    return [...this.damage(plot).values()].map((r) => ({ x: r.x, y: r.y, bid: r.bid, wd: r.wd, rep: r.rep || null }));
+    return [...this.damage(plot).values()].map((r) => ({ x: r.x, y: r.y, bid: r.bid, wd: r.wd, rep: r.rep || null, flat: !!r.flat, clr: r.clr || null }))
+      .concat(this.cleared(plot).map((r) => ({ ...r, wd: 0, gone: true })));
   }
   opPublic(o, me) {
     const mine = o.from === me.plot;
@@ -485,13 +504,13 @@ export class WarServer {
     const caps = capacity(p);
     let price, room;
     if (kind === "intc") {
-      if (!p.airdefs.length) return { error: "تحتاج بطارية دفاع جوي" };
+      if (!p.airdefs.length && !p.forts.length) return { error: "تحتاج بطارية دفاع جوي أو منظومة الحصن" };
       price = this.cfg.interceptor.price; room = caps.intc - a.arsenal.intc;
     } else {
       const why = weaponBlocker(p, kind);
       if (why) return { error: why };
       price = WEAPONS[kind].price;
-      const drones = a.arsenal.drone + a.arsenal.drone2, missiles = a.arsenal.missile + a.arsenal.missile2;
+      const drones = kindSum(a.arsenal, "drone"), missiles = kindSum(a.arsenal, "missile");
       room = WEAPONS[kind].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
     }
     if (room < n) return { error: room > 0 ? `المكان يكفي ${nf(room)} بس` : "المخزن مليان: طوّر أو ابنِ مستودع ذخائر" };
@@ -660,7 +679,7 @@ export class WarServer {
       const why = weaponBlocker(p, w);
       if (why) return { error: why };
     }
-    const drones = (load.drone || 0) + (load.drone2 || 0), missiles = (load.missile || 0) + (load.missile2 || 0);
+    const drones = kindSum(load, "drone"), missiles = kindSum(load, "missile");
     const readyBases = p.bases.filter((b) => b.wd < 85 && (a.reload[`b${b.x}:${b.y}`] || 0) <= now);
     const readyPads = p.pads.filter((b) => b.wd < 85 && (a.reload[`p${b.x}:${b.y}`] || 0) <= now);
     const slowest = Object.keys(load).reduce((n, w) => Math.max(n, flightMs(me.plot, to, w, this.cfg)), 0);
@@ -809,16 +828,19 @@ export class WarServer {
     const p = them ? this.profileOf(them) : null;
     // every weapon that gets through bursts on the spot: the buildings in its radius take a share of its damage
     const dmgMap = this.damage(op.to), area = new Map(), list = them ? them.snap.list.filter((b) => !(b.build > 0)) : [];
-    const wdOf = (b) => { const k = `${b.x}:${b.y}`; if (!area.has(k)) { const r0 = dmgMap.get(k); area.set(k, { x: b.x, y: b.y, id: b.id, before: r0 ? this.wdNow(r0, now) : 0, dmg: 0 }); } return area.get(k); };
+    const wdOf = (b) => { const k = `${b.x}:${b.y}`; if (!area.has(k)) { const r0 = dmgMap.get(k); area.set(k, { x: b.x, y: b.y, id: b.id, lvl: b.lvl || 0, before: r0 ? (r0.flat ? 100 : this.wdNow(r0, now)) : 0, wasFlat: !!r0?.flat, dmg: 0 }); } return area.get(k); };
     for (const w of weapons) {
       const h = { w, intercepted: false, tried: false, dmg: 0, chance: 0, reach: 0 };
       if (!res.blocked && p) {
-        const chance = interceptChance(p, w);
-        if (chance > 0 && da.arsenal.intc > 0) {
-          h.tried = true; h.chance = Math.round(chance * 100); da.arsenal.intc -= 1; res.intcUsed += 1;
+        const chance = interceptChance(p, w), need = isHeavy(w) ? this.cfg.heavyIntc : 1;
+        if (chance > 0 && da.arsenal.intc >= need) {
+          h.tried = true; h.chance = Math.round(chance * 100); da.arsenal.intc -= need; res.intcUsed += need;
           if (this.rand() < chance) h.intercepted = true;
         }
-        if (!h.intercepted) {
+        if (!h.intercepted && isHeavy(w)) { // everything in its reach falls to rubble
+          for (const b of blastArea(list, op.x, op.y, WEAPONS[w].blast)) { if (B[b.id]?.cat === "road") continue; const a = wdOf(b); if (a.flat || a.before >= 100 && a.wasFlat) continue; a.flat = true; a.dmg = Math.max(a.dmg, 100 - a.before, 1); h.reach++; }
+          h.dmg = 100; h.heavy = true;
+        } else if (!h.intercepted) {
           const base = hitDamage(w, this.rand());
           for (const b of blastArea(list, op.x, op.y, WEAPONS[w].blast || 0.7)) {
             const a = wdOf(b), room = Math.min(this.cfg.caps.perOp - a.dmg, this.cfg.caps.building - a.before - a.dmg);
@@ -830,10 +852,11 @@ export class WarServer {
       }
       res.hits.push(h);
     }
-    const hurt = [...area.values()].filter((a) => a.dmg > 0).map((a) => ({ ...a, after: Math.min(this.cfg.caps.building, a.before + a.dmg) })).sort((p, q) => q.dmg - p.dmg);
+    const hurt = [...area.values()].filter((a) => a.dmg > 0 && !a.wasFlat).map((a) => ({ ...a, after: a.flat ? 100 : Math.min(this.cfg.caps.building, a.before + a.dmg) })).sort((p, q) => q.dmg - p.dmg);
     const centre = hurt.find((a) => a.x === op.x && a.y === op.y) || hurt[0];
     const dmg = hurt.length ? hurt[0].dmg : 0;
-    res.area = hurt.map(({ x, y, id, dmg: d, before: b0, after }) => ({ x, y, id, dmg: d, before: b0, after }));
+    res.area = hurt.map(({ x, y, id, dmg: d, before: b0, after, flat }) => ({ x, y, id, dmg: d, before: b0, after, ...(flat ? { flat: true } : {}) }));
+    res.flat = hurt.filter((a) => a.flat).length; // buildings left as rubble
     res.dmg = dmg; res.before = centre ? centre.before : before; res.after = centre ? centre.after : before;
     // the people of the houses hit leave them until they are repaired (in the game's numbers)
     res.displaced = them ? hurt.filter((a) => a.id === "house").reduce((n, a) => { const t = them.snap.list.find((b) => b.x === a.x && b.y === a.y); return n + Math.round((t?.res || 0) * Math.min(1, a.dmg / 85)); }, 0) : 0;
@@ -853,7 +876,7 @@ export class WarServer {
     res.airdef = p ? p.airdefs.filter((x) => x.wd < 85).length : 0; // working batteries (to tell "no defence" from "no interceptors")
     res.intcValue = res.intcUsed * this.cfg.interceptor.price;
     if (dmg > 0) {
-      for (const a of hurt) this.db.put("dmg", `${op.to}:${a.x}:${a.y}`, { x: a.x, y: a.y, bid: a.id, wd: a.after, by: op.from, at: now }, { k1: String(op.to), at: now });
+      for (const a of hurt) this.db.put("dmg", `${op.to}:${a.x}:${a.y}`, { x: a.x, y: a.y, bid: a.id, wd: a.after, by: op.from, at: now, ...(a.flat ? { flat: true, lvl: a.lvl } : {}) }, { k1: String(op.to), at: now });
       this.db.put("hit", op.id, { x: op.x, y: op.y, at: now, from: op.from, dmg: hurt.reduce((n, a) => n + a.dmg, 0) }, { k1: String(op.to), at: now });
     }
     res.state = damageState(res.after).name;
@@ -866,11 +889,11 @@ export class WarServer {
       this.note(op.from, "result", `📋 عمليتك على «${op.toTown}» ما أصابت: ${why}.`, { op: op.id });
       this.note(op.to, "result", `🛡️ هجوم «${op.fromTown}» ما وصل: ${why}.`, { op: op.id });
     } else if (dmg > 0) {
-      const many = res.area.length > 1 ? ` وتضرر ${nf(res.area.length)} مباني حوله` : "", gone = res.displaced ? `، ونزح ${nf(res.displaced)} ساكن من بيوتهم` : "";
+      const many = res.flat ? ` وصار ${nf(res.flat)} ${res.flat === 1 ? "مبنى" : "مباني"} ركام` : res.area.length > 1 ? ` وتضرر ${nf(res.area.length)} مباني حوله` : "", gone = res.displaced ? `، ونزح ${nf(res.displaced)} ساكن من بيوتهم` : "";
       const toll = res.dead || res.hurt ? ` ⚰️ ${nf(res.dead)} وفاة و🤕 ${nf(res.hurt)} إصابة.` : "";
       this.note(op.to, "hit", `💥 ضربة عسكرية من «${op.fromTown}» على ${op.bname}${many} (أكبر ضرر ${nf(dmg)}٪)${gone}.${toll}${intercepted ? ` (دفاعك اعترض ${nf(intercepted)} من ${nf(total)})` : ""}`, { op: op.id, x: op.x, y: op.y });
       this.note(op.from, "result", `🎯 إصابة ناجحة على ${op.bname} في «${op.toTown}»${many} (أكبر ضرر ${nf(dmg)}٪).${toll}${res.spoils ? ` 💰 غنيمة ${nf(res.spoils)} ريال.` : ""}`, { op: op.id });
-      this.news("hit", `💥 «${op.fromTown}» ضربت ${op.bname} في «${op.toTown}»${res.dead || res.hurt ? `: ${nf(res.dead)} وفاة و${nf(res.hurt)} إصابة` : ""}`, op.to);
+      this.news("hit", `${res.flat ? `🌋 «${op.fromTown}» سوّت ${nf(res.flat)} ${res.flat === 1 ? "مبنى" : "مباني"} بالأرض` : `💥 «${op.fromTown}» ضربت ${op.bname}`} في «${op.toTown}»${res.dead || res.hurt ? `: ${nf(res.dead)} وفاة و${nf(res.hurt)} إصابة` : ""}`, op.to);
     } else {
       this.note(op.to, "intercept", `🛡️ دفاعاتك نجحت في اعتراض هجوم «${op.fromTown}».`, { op: op.id });
       this.note(op.from, "result", `🛡️ دفاع «${op.toTown}» اعترض عمليتك.`, { op: op.id });
@@ -896,7 +919,7 @@ export class WarServer {
     }
     if (a.settings.repair && !refillOnly) {
       for (const r of [...this.damage(info.plot).values()].sort((p, q) => q.wd - p.wd)) {
-        if (r.rep) continue;
+        if (r.rep || r.flat) continue;
         const cost = repairCostOf(r.bid, r.wd, this.cfg);
         if (cost > left() || cost > this.available(info, a)) continue;
         this.startRepair(info.plot, r, a, cost, now, true);
@@ -918,11 +941,27 @@ export class WarServer {
     const x = Math.round(Number(body.x)), y = Math.round(Number(body.y)), now = this.now();
     const info = this.townInfo(me.plot), r = this.damage(me.plot).get(`${x}:${y}`);
     if (!r) return { error: "ما فيه ضرر هنا" };
+    if (r.flat) return { error: "هذا ركام: ما يتصلح، شيله وابنِ من جديد" };
     if (r.rep) return { error: "يتصلح الحين" };
     const a = this.acct(me.plot), cost = repairCostOf(r.bid, r.wd, this.cfg);
     if (this.available(info, a) < cost) return { error: "ما يكفي المال" };
     const ms = this.startRepair(me.plot, r, a, cost, now, false);
     this.saveAcct(me.plot, a);
+    return { ok: true, ms, charge: this.db.get("charge", `${me.plot}:${a.seq}`) };
+  }
+  /** Clear the rubble a destructive weapon left: paid now, done after a while; then the land is empty to build on. */
+  clearRubble(body, me) {
+    const x = Math.round(Number(body.x)), y = Math.round(Number(body.y)), now = this.now();
+    const info = this.townInfo(me.plot), key = `${me.plot}:${x}:${y}`, r = this.db.get("dmg", key);
+    if (!r?.flat) return { error: "ما فيه ركام هنا" };
+    if (r.clr) return { error: now >= r.clr.end ? "انشال الركام" : "يتشال الحين" };
+    const a = this.acct(me.plot), cost = rubbleCostOf(r.bid, r.lvl, this.cfg), name = r.bid === "house" ? "مبنى سكني" : B[r.bid]?.name || "مبنى";
+    if (!info || this.available(info, a) < cost) return { error: "ما يكفي المال" };
+    const ms = rubbleMsOf(this.cfg);
+    this.db.put("dmg", key, { ...r, clr: { start: now, end: now + ms } }, { k1: String(me.plot), at: now });
+    this.charge(me.plot, a, cost, `شيل ركام ${name}`);
+    this.saveAcct(me.plot, a);
+    this.note(me.plot, "repair", `🧹 بدأ شيل ركام ${name} (${nf(cost)} ريال)، يخلص بعد ${minutesText(ms)}، وبعدها تقدر تبني مكانه.`, { x, y });
     return { ok: true, ms, charge: this.db.get("charge", `${me.plot}:${a.seq}`) };
   }
 }

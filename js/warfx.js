@@ -70,6 +70,7 @@ function fxTexture(kind) {
   return (FX_TEX[kind] = t);
 }
 
+const HEAVY_FX = new Set(["quake", "storm"]); // the destructive weapons (js/war.js): bigger missile, bigger blast
 export class WarFX {
   constructor(world) {
     this.w = world;
@@ -88,6 +89,7 @@ export class WarFX {
     this.reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.maxParts = world.quality === "low" ? 80 : world.quality === "medium" ? 200 : 320;
     this.repairs = new Map(); // "x:y" → { start, end } (from the server)
+    this.clearing = new Map(); // "x:y" → { start, end }: rubble being cleared (from the server)
     // one light for blasts and rocket flames (always in the scene, so nothing recompiles when it shines)
     this.light = new THREE.PointLight("#ffa04a", 0, 7, 1.6); this.light.position.set(0, -50, 0); world.scene.add(this.light);
     this.lightT = 0;
@@ -127,6 +129,7 @@ export class WarFX {
     for (let y = 0; y < FX_N; y++) for (let x = 0; x < FX_N; x++) {
       const t = s.tiles[idx(x, y)], b = t.b;
       if (!b || b.build > 0) continue;
+      if (b.flat) { this.addFlat(x, y, b); continue; } // flattened: a heap of rubble where it stood
       const c = tileCenter(x, y), kept = this.parts.get(idx(x, y))?.held;
       if (b.id === "windfarm" && !kept) {
         // the turbines' blades turn (slower when damaged, still when wrecked)
@@ -203,18 +206,20 @@ export class WarFX {
   buildRubble() {
     const list = this.rubble;
     if (!list.length) return;
-    const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.05, 0), new THREE.MeshStandardMaterial({ roughness: 0.95, color: "#ffffff" }), list.filter((r) => !r.bar).length);
+    const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.05, 0), new THREE.MeshStandardMaterial({ roughness: 0.95, color: "#ffffff" }), Math.max(1, list.filter((r) => !r.bar && !r.slab).length));
     const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, 0.16, 0.008), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.4, color: "#5b3a26" }), Math.max(1, list.filter((r) => r.bar).length));
+    const slabs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.022, 0.08), new THREE.MeshStandardMaterial({ roughness: 0.92, color: "#ffffff" }), Math.max(1, list.filter((r) => r.slab).length));
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
-    let ri = 0, bi = 0;
+    let ri = 0, bi = 0, si = 0;
     for (const r of list) {
       q.setFromEuler(e.set(r.rx, r.ry, r.rz));
       m4.compose(r.p, q, new THREE.Vector3(r.s, r.s * (r.bar ? 1 : 0.7), r.s));
-      if (r.bar) bars.setMatrixAt(bi++, m4);
+      if (r.slab) { m4.compose(r.p, q, new THREE.Vector3(r.s, r.s, r.s)); slabs.setMatrixAt(si, m4); slabs.setColorAt(si++, c.set(r.c)); }
+      else if (r.bar) bars.setMatrixAt(bi++, m4);
       else { rocks.setMatrixAt(ri, m4); rocks.setColorAt(ri++, c.set(r.c)); }
     }
-    bars.count = bi;
-    for (const m of [rocks, bars]) { m.castShadow = this.w.quality !== "low"; m.receiveShadow = true; m.userData.rubble = true; m.frustumCulled = false; this.marks.add(m); }
+    bars.count = bi; slabs.count = si; rocks.count = ri;
+    for (const m of [rocks, bars, slabs]) { m.castShadow = this.w.quality !== "low"; m.receiveShadow = true; m.userData.rubble = true; m.frustumCulled = false; this.marks.add(m); }
   }
 
   addDamage(x, y, wd, b) {
@@ -238,6 +243,35 @@ export class WarFX {
     decal.rotation.x = -Math.PI / 2; decal.position.set(c.x, 0.03, c.z); decal.renderOrder = 2;
     this.marks.add(decal);
     this.burning.push({ p: c, wd, t: Math.random(), top });
+  }
+  /** A building flattened by a destructive weapon: a heap of broken concrete, slabs and bent steel, scorched, a thin smoke. */
+  addFlat(x, y, b) {
+    const span = b.span || 1, c = tileCenter(x, y);
+    if (span > 1) { c.x += (span - 1) / 2; c.z += (span - 1) / 2; }
+    let seed = (x * 73856093) ^ (y * 19349663) ^ 991;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const R = 0.44 * span, mud = ["house", "tent"].includes(b.id) && (b.lvl || 0) < 2;
+    const greys = mud ? ["#c4a47a", "#b08f66", "#d2b48c", "#9c7d58", "#dcc39e"] : ["#b9b1a3", "#cbc3b4", "#a39b8d", "#d8d0c0", "#8d857a", "#6d665d"];
+    const heap = 0.16 * span; // a low mound (the building is gone: its model is not drawn, so its height is not known here)
+    for (let k = 0, n = Math.round(110 * span); k < n; k++) { // a low mound: higher in the middle
+      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R, h = heap * (1 - d / R) * (0.55 + rnd() * 0.45);
+      this.rubble.push({ p: new THREE.Vector3(c.x + Math.cos(a) * d, 0.02 + h, c.z + Math.sin(a) * d), rx: rnd() * 3, ry: rnd() * 3, rz: rnd() * 3, s: 0.5 + rnd() * 1.1, c: greys[Math.floor(rnd() * greys.length)] });
+    }
+    for (let k = 0, n = Math.round(14 * span); k < n; k++) { // big broken slabs leaning on the heap
+      const a = rnd() * Math.PI * 2, d = rnd() * R * 0.8;
+      this.rubble.push({ slab: true, p: new THREE.Vector3(c.x + Math.cos(a) * d, 0.03 + heap * (1 - d / R) * 0.75, c.z + Math.sin(a) * d), rx: (rnd() - 0.5) * 1.3, ry: rnd() * 3, rz: (rnd() - 0.5) * 1.3, s: 0.8 + rnd() * 0.9, c: greys[Math.floor(rnd() * 4)] });
+    }
+    for (let k = 0, n = Math.round(4 * span); k < n; k++) { // pieces of wall still half standing at the edge of the heap
+      const a = rnd() * Math.PI * 2, d = R * (0.55 + rnd() * 0.35);
+      this.rubble.push({ slab: true, p: new THREE.Vector3(c.x + Math.cos(a) * d, 0.06 + rnd() * 0.03, c.z + Math.sin(a) * d), rx: 1.25 + rnd() * 0.3, ry: -a + (rnd() - 0.5) * 0.5, rz: (rnd() - 0.5) * 0.4, s: 1.3 + rnd() * 0.9, c: greys[Math.floor(rnd() * 3)] });
+    }
+    if (!mud) for (let k = 0, n = Math.round(12 * span); k < n; k++) // bent steel bars sticking out
+      this.rubble.push({ bar: true, p: new THREE.Vector3(c.x + (rnd() - 0.5) * R * 1.4, heap * 0.6 + 0.04, c.z + (rnd() - 0.5) * R * 1.4), rx: (rnd() - 0.5) * 1.8, ry: rnd() * 3, rz: (rnd() - 0.5) * 1.8, s: 0.8 + rnd() * 0.9 });
+    const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.35 * span, 1.35 * span), new THREE.MeshBasicMaterial({ map: fxTexture("scorch"), transparent: true, depthWrite: false, opacity: 0.95 }));
+    decal.rotation.x = -Math.PI / 2; decal.position.set(c.x, 0.03, c.z); decal.renderOrder = 2;
+    this.marks.add(decal);
+    if ((x + y) % 2 === 0) this.burning.push({ p: c, wd: 8, t: Math.random(), top: heap }); // a thin smoke from some of the heaps
+    if (this.clearing?.get(`${x}:${y}`)) this.addRepairSign(x, y);
   }
   addRepairSign(x, y) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTexture("wrench"), depthTest: false, transparent: true }));
@@ -423,7 +457,7 @@ export class WarFX {
       const live = missiles.filter(Boolean);
       const at = (m, z) => m.localToWorld(new THREE.Vector3(0, 0, z));
       if (live.length) {
-        if (o.wid === "missile2") live.forEach((m, i) => { // the tube holds a heavy missile: the one that slides out is that missile
+        if (o.wid === "missile2" || HEAVY_FX.has(o.wid)) live.forEach((m, i) => { // the tube holds a heavy missile: the one that slides out is that missile
           const heavy = this.mesh("wMissile2"); heavy.position.copy(m.position); heavy.quaternion.copy(m.quaternion); m.parent.add(heavy);
           m.visible = false; heavy.userData = { ...m.userData, swap: m }; live[i] = heavy;
         });
@@ -440,7 +474,7 @@ export class WarFX {
       }
       for (const [i, m] of missiles.entries()) {
         // the missile leaves its rail: from the arm to the world
-        const fly = this.mesh(o.wid === "missile2" ? "wMissile2" : "wMissile");
+        const fly = this.mesh(o.wid === "missile2" || HEAVY_FX.has(o.wid) ? "wMissile2" : "wMissile");
         const start = new THREE.Vector3(), q = new THREE.Quaternion();
         const mm = m?.userData.swap ? live.find((x) => x.userData.swap === m) || m : live.find((x) => x.userData.swap === m) || m;
         if (mm) { mm.getWorldPosition(start); mm.getWorldQuaternion(q); mm.visible = false; if (mm.userData.swap) { mm.parent?.remove(mm); } else { mm.position.z = mm.userData.z0 ?? mm.position.z; } (mm.userData.swap || mm).userData.loaded = false; } else { start.set(c.x, 0.4, c.z); q.setFromEuler(new THREE.Euler(-1.2, 0, 0)); }
@@ -547,7 +581,7 @@ export class WarFX {
       const sdir = st.dir ? new THREE.Vector3(st.dir.x, 0, st.dir.z).normalize() : dir, sside = new THREE.Vector3(-sdir.z, 0, sdir.x);
       const lateral = ((k % 5) - 2) * 0.9;
       const from = st.c.clone().addScaledVector(sdir, missile ? 11 : 8).addScaledVector(sside, lateral).setY(missile ? 7 : 3);
-      const fly = this.mesh({ missile: "wMissile", missile2: "wMissile2", drone: "wDrone", drone2: "wDrone2" }[h.w] || "wMissile");
+      const fly = this.mesh({ missile: "wMissile", missile2: "wMissile2", quake: "wMissile2", storm: "wMissile2", drone: "wDrone", drone2: "wDrone2" }[h.w] || "wMissile");
       const rotor = !missile ? this.mesh(h.w === "drone2" ? "wRotor2" : "wRotor") : null;
       if (rotor) fly.add(rotor);
       fly.position.copy(from); fly.scale.setScalar(1); this.flyers.add(fly);
@@ -568,7 +602,7 @@ export class WarFX {
         if (gone) return;
         const p = at(kk), next = at(Math.min(1, kk + 0.01));
         fly.position.copy(p);
-        fly.scale.setScalar(Math.max(0.85, Math.min(1.5, 1.1 / Math.max(0.5, this.w.view.zoom)))); // a little bigger when seen from far, never huge
+        fly.scale.setScalar(Math.max(0.85, Math.min(1.5, 1.1 / Math.max(0.5, this.w.view.zoom))) * (HEAVY_FX.has(h.w) ? 1.45 : 1)); // a little bigger when seen from far, never huge (a destructive one: bigger)
         if (missile) fly.lookAt(next); else { fly.lookAt(new THREE.Vector3(next.x, p.y, next.z)); rotor.rotation.y += 0.9; }
         if (missile) {
           const aft = p.clone().sub(next).normalize(), sc = fly.scale.x, back = p.clone().addScaledVector(aft, 0.3 * sc);
@@ -648,7 +682,14 @@ export class WarFX {
    * fireball, and smaller bursts on the buildings around it that the blast reached.
    */
   blast(st, missile, h) {
-    const r = Math.max(0.7, st.r || 0.7), big = missile ? 0.9 + r * 0.35 : 0.7 + r * 0.3;
+    const heavy = HEAVY_FX.has(h?.w), r = Math.max(0.7, st.r || 0.7), big = (missile ? 0.9 + r * 0.35 : 0.7 + r * 0.3) * (heavy ? 1.7 : 1);
+    if (heavy) { // a destructive weapon: the ground shakes, a white flash, a second wave of dust, the buildings around fold down
+      this.shake(0.22, 1.6); this.onFlash?.(1);
+      const ring2 = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: fxTexture("shock"), color: new THREE.Color(1.4, 1.2, 1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      ring2.rotation.x = -Math.PI / 2; ring2.position.set(st.c.x, 0.09, st.c.z); ring2.renderOrder = 4; this.flyers.add(ring2); this.rings.push({ m: ring2, t: -0.25, size: (r * 2 + 1) * 1.9 });
+      for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2; this.wait(0.25).then(() => this.emit("dust", st.c.clone().setY(0.12), { size: 0.9, life: 2.8, color: "#bfa983", v: new THREE.Vector3(Math.cos(a) * (3 + r), 0.35, Math.sin(a) * (3 + r)) })); }
+      for (let i = 0; i < 16; i++) this.wait(0.3 + i * 0.05).then(() => this.emit("smoke", st.c.clone().setY(1.2 + i * 0.12), { keep: true, size: 1.4 + i * 0.12, life: 7, color: i % 2 ? "#2a241f" : "#4a4038", alpha: 0.9, grow: 2.4, v: new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.2, (Math.random() - 0.5) * 0.5) }));
+    }
     this.onFlash?.(missile ? Math.min(1, 0.45 + r * 0.25) : 0.35);
     this.explode(st.top.clone().setY(0.35), big, false);
     const c = st.c, q = this.w.quality === "low" ? 0.5 : 1;

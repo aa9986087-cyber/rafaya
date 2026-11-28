@@ -12,7 +12,7 @@ import { castleCard, castleSheet } from "./ui-castle.js";
 import { CASTLE, CASTLE_ON } from "./castle.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
-import { medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap } from "./war.js";
+import { medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap, kindSum } from "./war.js";
 import { medalSvg } from "./icons.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
@@ -306,7 +306,7 @@ function shieldCard(st) {
 }
 function defTab(st) {
   const p = st.profile, ars = st.arsenal, caps = st.caps, home = visiting ? visiting.home : S;
-  const drones = ars.drone + ars.drone2, missiles = ars.missile + ars.missile2;
+  const drones = kindSum(ars, "drone"), missiles = kindSum(ars, "missile");
   const room = (w) => w === "intc" ? caps.intc - ars.intc : WEAPONS[w].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
   const line = (w, name, icon, price, why) => `<div class="war-arm ${why ? "locked" : ""}"><b class="ic">${icon}</b><span><b>${name}</b><small>${why || `عندك <b>${ar(ars[w])}</b> · السعر ${money(price)}`}</small></span>
     ${why ? "" : w !== "intc" && caps.open
@@ -316,10 +316,10 @@ function defTab(st) {
       <div><b>${ar(drones)}${caps.open ? "" : `<small>/${ar(caps.drones)}</small>`}</b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}${caps.open ? "" : `<small>/${ar(caps.missiles)}</small>`}</b><span>🚀 صواريخ</span></div>
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
-    <div class="rows">${p.airdefs.length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
+    <div class="rows">${p.airdefs.length || (p.forts || []).length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
       ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), WEAPONS[w].price, weaponBlocker(p, w))).join("")}</div>
     <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
-      ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}
+      ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}${row("منظومة الحصن (ضد المدمّرة)", (p.forts || []).length ? `${ar(p.forts.length)} · صدّ الزلزال ${ar(Math.round((st.intercept.quake || 0) * 100))}٪` : "✕ ما فيه: الزلزال والإعصار يوصلون", (p.forts || []).length ? "" : "minus")}
       ${row("النائب يعبّي ويصلّح", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>
     <h3>🎬 عرض الهجمات عليك</h3>
     <div class="wr-modes">${[["full", "مشاهد كاملة", "كل الهجمات بمشهد واحد"], ["fast", "مشاهد سريعة", "نفس المشهد بضعف السرعة"], ["off", "التقرير بس", "بدون مشاهد"]].map(([k, n, t]) => `<button type="button" class="${sceneMode() === k ? "on" : ""}" data-wrmode="${k}"><b>${n}</b><small>${t}</small></button>`).join("")}</div>
@@ -348,7 +348,7 @@ function guardHtml(st) {
   const best = Math.max(-1, ...ads.map((a) => a.lvl || 0)), eraNow = (visiting ? visiting.home : S).era || 0;
   const tip = !ads.length ? "🛡️ ما عندك دفاع جوي شغال: ابنِ بطارية عشان تتصدى" : !radar ? "📡 ما عندك رادار شغال: ابنِه ويرتفع تصديك تقريبًا للضعف"
     : best < 1 && eraNow >= 2 ? "⬆️ طوّر البطارية لـ«متوسط المدى» يرتفع تصديك" : best < 2 && eraNow >= 3 ? "⬆️ طوّر البطارية لـ«متقدم» يرتفع تصديك"
-    : ads.length < 3 ? "➕ كل بطارية زيادة (لين ٣) ترفع تصديك شوي" : "✓ دفاعك بأعلى ما يقدر";
+    : ads.length < 3 ? "➕ كل بطارية زيادة (لين ٣) ترفع تصديك شوي" : !(p.forts || []).some(ok) ? "🏰 ابنِ «منظومة الحصن»: بدونها صاروخ الزلزال والإعصار يخلون مبانيك ركام" : "✓ دفاعك بأعلى ما يقدر";
   return `<div class="wr-guard"><b>🛡️ فرصة تصدّيك لكل ضربة</b><div>${WEAPON_IDS.map((w) => `<span>${weaponIcon(w)}<small>${WEAPONS[w].name}</small><b>${ar(Math.round((st.intercept?.[w] || 0) * 100))}٪</b></span>`).join("")}</div><small>${tip}</small></div>`;
 }
 /** Open the war room (or draw it again) on a tab. */
@@ -445,8 +445,8 @@ function bind(st) {
     $("wrFillAll").disabled = true; await warSyncNow();
     const p = st.profile, ars = st.arsenal, caps = st.caps;
     let spent = 0, got = 0;
-    const kinds = [...(p.airdefs.length ? ["intc"] : []), ...(caps.open ? [] : WEAPON_IDS.filter((w) => !weaponBlocker(p, w)))]; // open war: no store to fill, the interceptors only
-    let drones = ars.drone + ars.drone2, missiles = ars.missile + ars.missile2;
+    const kinds = [...(p.airdefs.length || (p.forts || []).length ? ["intc"] : []), ...(caps.open ? [] : WEAPON_IDS.filter((w) => !weaponBlocker(p, w)))]; // open war: no store to fill, the interceptors only
+    let drones = kindSum(ars, "drone"), missiles = kindSum(ars, "missile");
     for (const w of kinds) {
       const room = w === "intc" ? caps.intc - ars.intc : WEAPONS[w].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
       if (room <= 0) continue;
