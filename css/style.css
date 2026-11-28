@@ -806,7 +806,7 @@ body:has(#sheet:not([hidden])) #pvScenarios, body.targeting #pvScenarios, body.w
 @media (prefers-reduced-motion: reduce) { #warFlash.on { animation-duration: .3s; } }
 
 /* war room: al-Jouf map and diplomacy */
-.wr-world { width: 100%; height: auto; max-height: 300px; border-radius: 14px; border: 1px solid var(--wr-line); background: radial-gradient(ellipse at 50% 40%, #2a2619, #121512 75%); touch-action: manipulation; }
+.wr-world { width: 100%; height: min(60vh, 560px); max-height: none; border-radius: 14px; border: 1px solid var(--wr-line); background: radial-gradient(ellipse at 50% 40%, #2a2619, #121512 75%); touch-action: manipulation; }
 .wr-world .wm-pl { fill: #8d7f5c; font: 700 7px Almarai, system-ui; text-anchor: middle; opacity: .35; }
 .wr-world .wm-t circle { fill: #8f8a78; stroke: #0b1012; stroke-width: 1; }
 .wr-world .wm-t text { fill: #f1e7cc; font: 800 9px Almarai, system-ui; text-anchor: middle; paint-order: stroke; stroke: #0b1012; stroke-width: 2.4px; }
@@ -1034,7 +1034,7 @@ body:has(.zero-full) .zero-chip { display: none; }
 
 /* the war room's al-Jouf map: zoom and pan */
 .wr-world-box { position: relative; }
-.wr-world { touch-action: none; max-height: 340px; aspect-ratio: auto; cursor: grab; }
+.wr-world { touch-action: none; max-height: none; aspect-ratio: auto; cursor: grab; }
 .wr-world .wm-t text.wm-name { font-size: 9px; }
 .wr-zoom { position: absolute; top: 8px; left: 8px; display: grid; gap: 4px; }
 .wr-zoom button { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--wr-line); background: rgba(16, 23, 25, .85); color: var(--wr-ink); font-size: 16px; font-weight: 800; }

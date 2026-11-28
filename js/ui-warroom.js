@@ -618,11 +618,14 @@ function bind(st) {
 function worldZoom() { zoomable($("wrWorld"), ROOM.wz); zoomable($("wrFront"), ROOM.fz); }
 function zoomable(svg, Z) {
   if (!svg || !Z?.full) return;
-  const [fx, fy, fw, fh] = Z.full, ratio = fh / fw;
+  // the view keeps the box's own shape (the owner, 28 Nov 2026: a bigger map): a box taller than the map shows its full
+  // height and part of its width, opening on my town, and a finger drags it sideways
+  const [fx, fy, fw, fh] = Z.full, box = svg.getBoundingClientRect(), ratio = box.width > 0 && box.height > 0 ? box.height / box.width : fh / fw, maxW = Math.min(fw, fh / ratio);
   let v = Z.mv && Z.mvFull === Z.full.join() ? [...Z.mv] : [...(Z.start || Z.full)];
+  if (!(Z.mv && Z.mvFull === Z.full.join()) && maxW < fw) { const me0 = svg.querySelector(".wm-t.me circle"), cx = me0 ? Number(me0.getAttribute("cx")) : fx + fw / 2; v = [cx - maxW / 2, fy, maxW, fh]; }
   Z.mvFull = Z.full.join();
   const apply = () => {
-    v[2] = Math.min(fw, Math.max(fw / 10, v[2])); v[3] = v[2] * ratio;
+    v[2] = Math.min(maxW, Math.max(fw / 10, v[2])); v[3] = v[2] * ratio;
     v[0] = Math.min(fx + fw - v[2], Math.max(fx, v[0])); v[1] = Math.min(fy + fh - v[3], Math.max(fy, v[1]));
     Z.mv = [...v];
     svg.setAttribute("viewBox", v.join(" "));
