@@ -191,7 +191,7 @@ export function scheduleLayout() {
     const toolHeight = $("toolChip").offsetHeight;
     const bottom = (dockHeight ? dock.offsetTop : visit.offsetHeight ? visit.offsetTop : innerHeight) - (toolHeight ? toolHeight + 12 : 6);
     const available = Math.max(0, bottom - top);
-    const count = document.body.classList.contains("world") ? side.children.length : side.querySelectorAll(".side-btn:not(.world-only)").length;
+    const count = [...side.children].filter((b) => getComputedStyle(b).display !== "none").length; // only those showing (the rest wait under «المزيد»)
     // one column, always all of it: on a short screen (a browser with its bars) the buttons and gaps shrink to fit
     const gap = count * 50 + (count - 1) * 6 > available ? 4 : 6;
     const size = Math.min(50, Math.max(30, Math.floor((available - (count - 1) * gap) / count)));
@@ -687,6 +687,9 @@ $("sheetBody").addEventListener("click", (e) => {
 });
 
 $("newsBtn").addEventListener("click", () => { sfx.tap(); newsSheet(); });
+// «المزيد»: the side buttons used less open under it, and fold again once one is chosen (the owner, 28 Nov 2026)
+$("moreBtn").addEventListener("click", () => { sfx.tap(); const side = $("moreBtn").closest(".side"), open = side.classList.toggle("more-open"); $("moreBtn").setAttribute("aria-expanded", String(open)); scheduleLayout(); });
+document.querySelectorAll(".side-more").forEach((b) => b.addEventListener("click", () => { const side = b.closest(".side"); side.classList.remove("more-open"); $("moreBtn").setAttribute("aria-expanded", "false"); scheduleLayout(); }));
 
 // ---------- نشرة الجوف (world only): what happens in al-Jouf, for everyone ----------
 

@@ -212,11 +212,13 @@ export async function worldNewsSheet(refreshed) {
   const mine = S.world?.plot;
   const town = (t) => `<button type="button" class="linkish" data-goplot="${t.plot}">«${t.town}»${t.plot === mine ? " (مدينتك)" : ""}</button>`;
   sheet(`${newsTabs("world")}<div class="news-head"><h2>🌍 نشرة الجوف</h2><p>اللي يصير بأرض الجوف كلها: الأجواء، والمدن الجديدة، واللي كبرت، والحروب والصلح.</p></div>
+    <h3>📰 الأخبار</h3>
+    <div class="rows">${WNEWS.items.length ? newsRows(WNEWS.items) : `<p class="hint">${refreshed ? "للحين ما صار شي بالجوف." : "نحمّل…"}</p>`}</div>
+    <details class="wn-more"><summary>🏆 أكبر المدن · 😊 أسعدها · 🌦️ الأجواء</summary>
     <h3>🌦️ أجواء الجوف (واحدة للكل)</h3><div class="rows">${worldForecast()}</div>
     ${big.length ? `<h3>🏆 أكبر المدن</h3><div class="rows">${big.map((t, i) => row(`${ar(i + 1)}. ${town(t)}`, `${money(t.pop)} ساكن · ${ERAS[t.era]?.name || ""}`)).join("")}</div>` : ""}
     ${happy.length ? `<h3>😊 أسعد المدن</h3><div class="rows">${happy.map((t) => row(town(t), `${ar(t.happy)}٪`, "plus")).join("")}</div>` : ""}
-    <h3>📰 الأخبار</h3>
-    <div class="rows">${WNEWS.items.length ? newsRows(WNEWS.items) : `<p class="hint">${refreshed ? "للحين ما صار شي بالجوف." : "نحمّل…"}</p>`}</div>`, "wnews");
+    </details>`, "wnews");
   bindNewsTabs();
   $("sheetBody").querySelectorAll("[data-goplot]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); const p = Number(b.dataset.goplot); if (p === mine) closeSheet(); else visitTown(p); }));
   if (WNEWS.items.length) store.set("rafaya-wnews-seen", String(WNEWS.items[0].id));

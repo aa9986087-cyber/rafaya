@@ -61,16 +61,17 @@
 
     <div class="side">
       <button id="councilBtn" aria-label="المجلس" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M3 10h18L12 4 3 10Z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>المجلس</span><i class="dot" id="councilDot" hidden></i></button>
-      <button id="budgetBtn" aria-label="الميزانية" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الأرقام</span></button>
-      <button id="findBtn" aria-label="ابحث في مدينتك" class="side-btn" type="button"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>بحث</span></button>
+      <button id="budgetBtn" aria-label="الميزانية" class="side-btn side-more" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الأرقام</span></button>
+      <button id="findBtn" aria-label="ابحث في مدينتك" class="side-btn side-more" type="button"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>بحث</span></button>
       <button id="newsBtn" aria-label="النشرة" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 12h7M7 15h4"/></svg><span>النشرة</span><i class="count" id="newsCount" hidden></i></button>
       <button id="worldBtn" aria-label="خريطة الجوف" class="side-btn" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z"/></svg><span>الجوف</span></button>
       <button id="warBtn" aria-label="القيادة" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>القيادة</span><i class="dot" id="warDot" hidden></i></button>
-      <button id="warGuideBtn" aria-label="دليل الحرب" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M19 17H6a2 2 0 0 0-2 2M9 7h6M9 10h4"/></svg><span>الدليل</span></button>
+      <button id="warGuideBtn" aria-label="دليل الحرب" class="side-btn side-more world-only" type="button"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M19 17H6a2 2 0 0 0-2 2M9 7h6M9 10h4"/></svg><span>الدليل</span></button>
       <button id="chatBtn" aria-label="الشات" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span>الشات</span><i class="count" id="chatCount" hidden></i></button>
-      <button id="deputyBtn" aria-label="نائب العمدة" class="side-btn world-only" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/><path d="M12 13l-1.5 3 1.5 4 1.5-4z"/></svg><span>النائب</span></button>
-      <button id="turnBtn" aria-label="لف الكاميرا" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>لفّ</span></button>
-      <button id="advisorBtn" aria-label="المستشار المالي" class="side-btn" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18M11 13v2h2v-2"/></svg><span>المستشار</span></button>
+      <button id="deputyBtn" aria-label="نائب العمدة" class="side-btn side-more world-only" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/><path d="M12 13l-1.5 3 1.5 4 1.5-4z"/></svg><span>النائب</span></button>
+      <button id="turnBtn" aria-label="لف الكاميرا" class="side-btn side-more" type="button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>لفّ</span></button>
+      <button id="advisorBtn" aria-label="المستشار المالي" class="side-btn side-more" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18M11 13v2h2v-2"/></svg><span>المستشار</span></button>
+      <button id="moreBtn" aria-label="المزيد" aria-expanded="false" class="side-btn" type="button"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>المزيد</span></button>
       <button id="pauseMenuBtn" aria-label="القائمة" class="side-btn" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>القائمة</span></button>
     </div>
 

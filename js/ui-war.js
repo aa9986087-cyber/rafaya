@@ -229,7 +229,7 @@ export async function warSheet(tab = "home") {
     body = `<p>وأنت طالع، النائب يتصرف بالدفاع بس: ما يعلن حرب ولا يهاجم ولا يشتري أسلحة هجومية.</p>
       <div class="rows"><label class="row toggle"><span>يصلح الأضرار العسكرية بنفسه</span><input type="checkbox" id="wdRepair" ${o.repair ? "checked" : ""}></label>
         <label class="row toggle"><span>يعبي الصواريخ الاعتراضية</span><input type="checkbox" id="wdRefill" ${o.refill ? "checked" : ""}></label>
-        <div class="row"><span>أقصى صرف له باليوم</span><select id="wdBudget">${[0, 2000, 5000, 10000, 25000, 50000].map((v) => `<option value="${v}" ${o.budget === v ? "selected" : ""}>${money(v)}</option>`).join("")}</select></div></div>
+        <div class="row"><span>أقصى صرف له باليوم</span><select id="wdBudget">${[...new Set([0, 5000, 20000, 50000, 80000, 150000, 200000, o.budget])].sort((x, y) => x - y).map((v) => `<option value="${v}" ${o.budget === v ? "selected" : ""}>${money(v)}</option>`).join("")}</select></div></div>
       <p class="hint">يصرف من ميزانية مدينتك، وما يتعدى الحد اللي حددته.</p>`;
   }
   sheet(`<h2>⚔️ القيادة العسكرية — عالم الجوف</h2>${tabs}${body}`, "war");

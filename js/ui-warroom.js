@@ -40,6 +40,32 @@ function startRoom(home) {
   $("sheetBody").querySelector("[data-wrbuild]")?.addEventListener("click", () => { sfx.tap(); closeSheet(); document.querySelector('#cats [data-cat="mil"]')?.click(); });
   $("wrRules")?.addEventListener("click", () => { sfx.tap(); warGuide("rules"); });
 }
+/** The deputy's orders in the war room's own look (the owner, 28 Nov 2026): two switches and the most it spends a day. */
+function deputyRoom(st) {
+  const o = { ...st.settings }, steps = [...new Set([0, 5000, 20000, 50000, 80000, 150000, 200000, o.budget || 0])].sort((x, y) => x - y);
+  const draw = () => {
+    sheet(`<div class="wr-head wr-head2"><span class="wr-radar"><i></i></span><span><h2>أوامر النائب</h2><small>وأنت برا، يدافع عنك بس: ما يعلن حرب ولا يهاجم</small></span></div>
+      <div class="wr-steps">
+        <button type="button" class="wr-step ${o.repair ? "done" : ""}" data-dep="repair"><i>${o.repair ? "✓" : "✕"}</i><span><b>🔧 يصلّح الأضرار بنفسه</b><small>${o.repair ? "شغال" : "موقف"}</small></span></button>
+        <button type="button" class="wr-step ${o.refill ? "done" : ""}" data-dep="refill"><i>${o.refill ? "✓" : "✕"}</i><span><b>🛡️ يعبّي الصواريخ الاعتراضية</b><small>${o.refill ? "شغال" : "موقف"}</small></span></button>
+      </div>
+      <h3>💰 أقصى صرف باليوم</h3>
+      <div class="wr-budget">${steps.map((v) => `<button type="button" class="${o.budget === v ? "on" : ""}" data-depb="${v}">${v ? money(v) : "ولا ريال"}</button>`).join("")}</div>
+      <p class="hint">يصرف من ميزانية مدينتك، وما يتعدى هالحد باليوم.</p>
+      <div class="sheet-actions keep"><button class="btn go block" type="button" id="depSave">حفظ</button><button class="btn block" type="button" id="depBack">رجوع للدفاع</button></div>`, "warroom");
+    $("sheet").classList.add("warroom");
+    const q = (sel) => $("sheetBody").querySelectorAll(sel);
+    q("[data-dep]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); o[b.dataset.dep] = !o[b.dataset.dep]; draw(); }));
+    q("[data-depb]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); o.budget = Number(b.dataset.depb); draw(); }));
+    $("depBack").addEventListener("click", () => { sfx.tap(); warRoom("def"); });
+    $("depSave").addEventListener("click", async () => {
+      const r = await warApi("settings", { repair: !!o.repair, refill: !!o.refill, budget: o.budget || 0 });
+      if (r.error) { toast(r.error, "bad"); sfx.deny(); return; }
+      WARX.st.settings = r.settings; toast("✓ حفظنا أوامر النائب", "goal"); warRoom("def");
+    });
+  };
+  draw();
+}
 /** A small switch at the top of a tab between its two views. */
 const subTabs = (key, cur, items) => `<div class="wr-sub">${items.map(([k, n]) => `<button type="button" class="${cur === k ? "on" : ""}" data-wrsub="${key}:${k}">${n}</button>`).join("")}</div>`;
 
@@ -377,11 +403,10 @@ function defTab(st) {
     <div class="rows">${p.airdefs.length || (p.forts || []).length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
       ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), weaponPrice(w, home.era), weaponBlocker(p, w))).join("")}</div>`;
   return `${subTabs("def", "mine", DEF_VIEWS)}${guardHtml(st)}
-    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
+    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? `⚡ عبّي الاعتراضية (${ar(ars.intc)}/${ar(caps.intc)})` : "⚡ عبّي كل شي مرة وحدة"}</button></div>
     ${shieldCard(st)}
-    <div class="rows">${row("صدّ المسيّرة", `${ar(Math.round(st.intercept.drone * 100))}٪`)}${row("صدّ الصاروخ", `${ar(Math.round(st.intercept.missile * 100))}٪`)}
-      ${row("الرادار", p.radars.length ? `${ar(p.radars.length)} ${p.radars.some((r) => r.wd < 85) ? "✓ يرصد" : "✕ متعطل"}` : "✕ ما فيه")}${row("بطاريات الدفاع", ar(p.airdefs.length))}${HEAVY_ON ? row("منظومة الحصن (ضد المدمّرة)", (p.forts || []).length ? `${ar(p.forts.length)} · صدّ الزلزال ${ar(Math.round((st.intercept.quake || 0) * 100))}٪` : "✕ ما فيه: الزلزال والإعصار يوصلون", (p.forts || []).length ? "" : "minus") : ""}
-      ${row("النائب يعبّي ويصلّح", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>
+    <div class="rows">${row(`📡 الرادار ${p.radars.some((r) => r.wd < 85) ? "✓" : "✕"} · 🛡️ البطاريات ${ar(p.airdefs.length)}${HEAVY_ON ? ` · 🏰 الحصن ${ar((p.forts || []).length)}` : ""}`, "")}
+      ${row("🧑‍💼 النائب", st.settings.refill || st.settings.repair ? `✓ لين ${money(st.settings.budget)} باليوم` : "✕ موقف")}</div>
     <button class="btn block" type="button" id="wrDeputy">⚙️ أوامر النائب والقيادة التفصيلية</button>
     <details class="wr-more"><summary>🎬 عرض الهجمات عليك</summary>
     <div class="wr-modes">${[["full", "مشاهد كاملة", "كل الهجمات بمشهد واحد"], ["fast", "مشاهد سريعة", "نفس المشهد بضعف السرعة"], ["off", "التقرير بس", "بدون مشاهد"]].map(([k, n, t]) => `<button type="button" class="${sceneMode() === k ? "on" : ""}" data-wrmode="${k}"><b>${n}</b><small>${t}</small></button>`).join("")}</div>
@@ -431,7 +456,10 @@ function guardHtml(st) {
   const tip = !ads.length ? "🛡️ ما عندك دفاع جوي شغال: ابنِ بطارية عشان تتصدى" : !radar ? "📡 ما عندك رادار شغال: ابنِه ويرتفع تصديك تقريبًا للضعف"
     : best < 1 && eraNow >= 2 ? "⬆️ طوّر البطارية لـ«متوسط المدى» يرتفع تصديك" : best < 2 && eraNow >= 3 ? "⬆️ طوّر البطارية لـ«متقدم» يرتفع تصديك"
     : ads.length < 3 ? "➕ كل بطارية زيادة (لين ٣) ترفع تصديك شوي" : HEAVY_ON && !(p.forts || []).some(ok) ? "🏰 ابنِ «منظومة الحصن»: بدونها صاروخ الزلزال والإعصار يخلون مبانيك ركام" : "✓ دفاعك بأعلى ما يقدر";
-  return `<div class="wr-guard"><b>🛡️ فرصة تصدّيك لكل ضربة</b><div>${WEAPON_IDS.map((w) => `<span>${weaponIcon(w)}<small>${WEAPONS[w].name}</small><b>${ar(Math.round((st.intercept?.[w] || 0) * 100))}٪</b></span>`).join("")}</div><small>${tip}</small></div>`;
+  // one short row (the owner, 28 Nov 2026): the best chance against drones, missiles and (when on) the destructive ones
+  const bestOf = (kind) => Math.max(0, ...WEAPON_IDS.filter((w) => WEAPONS[w].kind === kind && !WEAPONS[w].heavy).map((w) => st.intercept?.[w] || 0));
+  const heavy = WEAPON_IDS.filter((w) => WEAPONS[w].heavy), cells = [["🛩️", "المسيّرات", bestOf("drone")], ["🚀", "الصواريخ", bestOf("missile")], ...(heavy.length ? [["🧱", "المدمّرة", Math.max(...heavy.map((w) => st.intercept?.[w] || 0))]] : [])];
+  return `<div class="wr-guard wr-guard2"><b>🛡️ تصدّيك</b><div>${cells.map(([i, n, v]) => `<span><small>${i} ${n}</small><b>${ar(Math.round(v * 100))}٪</b></span>`).join("")}</div><small>${tip}</small></div>`;
 }
 /** Open the war room (or draw it again) on a tab. */
 export async function warRoom(tab = ROOM.tab) {
@@ -551,7 +579,7 @@ function bind(st) {
     if (got) { sfx.coin(); toast(`⚡ تعبّت الترسانة: ${ar(got)} قطعة بـ${money(spent)} ريال`, "goal"); } else toast("الترسانة مليانة أو ما تكفي الفلوس", "bad");
     await warPoll(true); warRoom("def");
   });
-  $("wrDeputy")?.addEventListener("click", () => warSheet("deputy"));
+  $("wrDeputy")?.addEventListener("click", () => { sfx.tap(); deputyRoom(st); });
   q("[data-wrmode]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); setSceneMode(b.dataset.wrmode); toast({ full: "🎬 المشاهد كاملة", fast: "⏩ المشاهد سريعة", off: "📋 التقرير بس، بدون مشاهد" }[b.dataset.wrmode], "goal"); warRoom("def"); }));
   // repairs and replays
   // a repair (or a rubble clearing) starts: its button becomes the time left, in place (no redraw, no blink)
