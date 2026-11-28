@@ -2,7 +2,7 @@
 // (ours and theirs, with their countdowns) and a small map of the front; below, five tabs: a batch attack on
 // several targets at once, defence and refilling, the enemies, negotiation, and the log with the damage to
 // repair. Alerts never throw the mayor out of it; a scene they choose to watch brings them back after.
-import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, worldMode } from "./main.js";
+import { $, S, ar, closeSheet, money, sheet, sheetFor, visiting, world, worldMode } from "./main.js";
 import { WARX, sceneMode, setSceneMode, weaponIcon, warApi, warNow, warPoll, warReq, warSyncNow, secLeft, fmtLeft, relTimer, weaponsText, replayOp, replayFeed, warDefenseScene, warSalvoScene, salvoOf, followTown, launcherTimes, warRepairAt, warSheet, startTargeting, stateTag, warTownKey } from "./ui-war.js";
 import { api, me } from "./ui-online.js";
 import { ZERO } from "./ui-zero.js";
@@ -12,7 +12,7 @@ import { castleCard, castleSheet } from "./ui-castle.js";
 import { CASTLE, CASTLE_ON } from "./castle.js";
 import { unpack } from "./sim.js";
 import { B, ERAS, WORLD, worldXY } from "./data.js";
-import { HEAVY_ON, medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap, kindSum, weaponPrice } from "./war.js";
+import { HEAVY_ON, medalId, WAR, WEAPONS, WEAPON_IDS, weaponBlocker, relActions, REL_NAMES, REL_ICONS, canTarget, TARGETS, flightMs, damageState, tributeMax, eraGap, kindSum, weaponPrice, repairCostOf, rubbleCostOf } from "./war.js";
 import { medalSvg } from "./icons.js";
 
 export const ROOM = { tab: "attack", enemy: null, talk: null, sel: null, form: "", pick: {}, towns: new Map(), tick: null, back: false };
@@ -136,6 +136,7 @@ function tick() {
     el.querySelector(".bar span").style.width = `${x.left ? Math.max(4, 100 - x.left / 6000) : 100}%`;
   });
   const now = warNow();
+  document.querySelectorAll(".wr-fixing[data-t1]").forEach((el) => { const left = Number(el.dataset.t1) - now; el.textContent = left > 0 ? `⏳ ${fmtLeft(left)}` : "✓ خلص"; });
   document.querySelectorAll(".wr-dot, .cs-army").forEach((d) => {
     const [ax, ay] = d.dataset.a.split(",").map(Number), [cx, cy] = d.dataset.c.split(",").map(Number), [bx, by] = d.dataset.b.split(",").map(Number), t0 = Number(d.dataset.t0), t1 = Number(d.dataset.t1);
     const k = Math.max(0, Math.min(1, (now - t0) / Math.max(1, t1 - t0))), q = 1 - k;
@@ -348,8 +349,9 @@ function defTab(st) {
       ? `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="5" ${home.money < price * 5 ? "disabled" : ""}>+٥</button></span>`
       : `<span class="wr-buy"><button class="btn" type="button" data-wrbuy="${w}" data-n="1" ${room(w) <= 0 || home.money < price ? "disabled" : ""}>+١</button><button class="btn go" type="button" data-wrbuy="${w}" data-n="${Math.max(0, room(w))}" ${room(w) <= 0 ? "disabled" : ""}>عبّي (${ar(Math.max(0, room(w)))})</button></span>`}</div>`;
   return `${guardHtml(st)}${shieldCard(st)}<div class="war-grid">
-      <div><b>${ar(drones)}${caps.open ? "" : `<small>/${ar(caps.drones)}</small>`}</b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}${caps.open ? "" : `<small>/${ar(caps.missiles)}</small>`}</b><span>🚀 صواريخ</span></div>
+      <div><b>${ar(drones)}<small>/${ar(caps.drones)}</small></b><span>🛩️ مسيّرات</span></div><div><b>${ar(missiles)}<small>/${ar(caps.missiles)}</small></b><span>🚀 صواريخ</span></div>
       <div><b>${ar(ars.intc)}<small>/${ar(caps.intc)}</small></b><span>🛡️ اعتراضية</span></div><div><b>${ar(Math.round(st.intercept.missile * 100))}٪</b><span>صدّ الصواريخ</span></div></div>
+    <div class="wr-types">${WEAPON_IDS.filter((w) => ars[w] > 0).map((w) => `<span>${weaponIcon(w)}<small>${WEAPONS[w].name}</small><b>${ar(ars[w])}</b></span>`).join("") || `<small class="hint">ما عندك صواريخ ولا مسيّرات للحين</small>`}</div>
     <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrFillAll">${caps.open ? "⚡ عبّي الاعتراضية كلها" : "⚡ عبّي كل شي مرة وحدة"}</button></div>
     <div class="rows">${p.airdefs.length || (p.forts || []).length ? line("intc", WAR.interceptor.name, weaponIcon("intc"), WAR.interceptor.price, "") : row("الدفاع الجوي", "✕ ما فيه: ابنِ بطارية دفاع جوي")}
       ${WEAPON_IDS.map((w) => line(w, WEAPONS[w].name, weaponIcon(w), weaponPrice(w, home.era), weaponBlocker(p, w))).join("")}</div>
@@ -361,6 +363,26 @@ function defTab(st) {
     <p class="hint">كل اللي يوصلك من هجمات، من مدينة وحدة أو أكثر، ينعرض مرة وحدة مع بعض، وبعده تقرير واحد.</p>
     <button class="btn block" type="button" id="wrDeputy">⚙️ أوامر النائب والقيادة التفصيلية</button>`;
 }
+/** One damaged building: its state, and a button that becomes the time left once its repair (or rubble clearing) runs. */
+function fixRowHtml({ x, y, b }, home) {
+  const k = `${x}:${y}`, run = b.flat ? world.fx?.clearing?.get(k) : world.fx?.repairs?.get(k);
+  const cost = b.flat ? rubbleCostOf(b.id, b.lvl, WAR, home.era) : repairCostOf(b.id, b.wd);
+  const btn = run ? `<span class="btn wr-fixing" data-t1="${run.end}">⏳ ${fmtLeft(run.end - warNow())}</span>`
+    : `<button class="btn go" type="button" data-wrfix="${k}" data-flat="${b.flat ? 1 : ""}" ${home.money < cost ? "disabled" : ""}>${b.flat ? "🧹 شيل" : "صلّح"}<small>${money(cost)}</small></button>`;
+  return `<div class="row" data-wrrow="${k}"><span><b>${b.flat ? `🧱 ركام ${B[b.id].name}` : B[b.id].name}</b><small>${b.flat ? "انهدم: شيله وابنِ من جديد" : stateTag(b.wd)}</small></span>${btn}</div>`;
+}
+/** What «صلّح الكل» / «شيل كل الركام» would do now: the damaged (or the rubble) not yet being worked on, the worst first. */
+function fixTodo(hurt, flat) {
+  return hurt.filter(({ x, y, b }) => !!b.flat === flat && !(flat ? world.fx?.clearing?.get(`${x}:${y}`) : world.fx?.repairs?.get(`${x}:${y}`)));
+}
+const fixCost = (b, home) => (b.flat ? rubbleCostOf(b.id, b.lvl, WAR, home.era) : repairCostOf(b.id, b.wd));
+/** «🔧 صلّح الكل» and «🧹 شيل كل الركام»: each for one total; when the money is short, the worst go first. */
+function fixAllHtml(hurt, home) {
+  const btn = (flat, label) => { const todo = fixTodo(hurt, flat); if (!todo.length) return ""; const total = todo.reduce((n, { b }) => n + fixCost(b, home), 0);
+    return `<button class="btn ${flat ? "" : "go"} block" type="button" data-wrfixall="${flat ? "flat" : "fix"}">${label} (${ar(todo.length)}) · ${money(total)} ريال</button>${home.money < total ? `<p class="hint">فلوسك ما تكفي الكل: يبدأ بالأهم لين تخلص الفلوس.</p>` : ""}`; };
+  const html = btn(false, "🔧 صلّح الكل") + btn(true, "🧹 شيل كل الركام");
+  return html ? `<div class="sheet-actions keep">${html}</div>` : "";
+}
 function logTab(st) {
   const home = visiting ? visiting.home : S, N = Math.round(Math.sqrt(home.tiles.length));
   const hurt = []; home.tiles.forEach((t, i) => { if (t.b?.wd > 0) hurt.push({ x: i % N, y: Math.floor(i / N), b: t.b }); });
@@ -369,7 +391,7 @@ function logTab(st) {
   const filter = ROOM.logFilter || "all";
   const shown = ops.filter((o) => filter === "all" || (filter === "in" ? o.side === "in" : o.side === "out"));
   return `<h3>🔧 الأضرار (${ar(hurt.length)})</h3>
-    ${hurt.length ? `<div class="rows">${hurt.map(({ x, y, b }) => `<div class="row"><span><b>${B[b.id].name}</b><small>${stateTag(b.wd)}${b.rep ? ` · يتصلّح، يخلص بعد ${fmtLeft(b.rep.end - warNow())}` : ""}</small></span>${b.rep ? "" : `<button class="btn go" type="button" data-wrfix="${x}:${y}">صلّح</button>`}</div>`).join("")}</div>` : `<p class="hint">ما فيه أضرار. ✓</p>`}
+    ${hurt.length ? `${fixAllHtml(hurt, home)}<div class="rows">${hurt.map((h) => fixRowHtml(h, home)).join("")}</div>` : `<p class="hint">ما فيه أضرار. ✓</p>`}
     <h3>📜 العمليات</h3><div class="wr-enemies">${[["all", "الكل"], ["in", "الوارد"], ["out", "الصادر"]].map(([k, n]) => `<button type="button" class="${filter === k ? "on" : ""}" data-wrlog="${k}">${n}</button>`).join("")}</div>
     ${shown.length ? `<div class="rows">${shown.map((o) => { const r = o.result, out = o.side === "out"; return `<button class="row link" type="button" data-wrop="${o.id}"><span><b>${out ? "➡️ على" : "⬅️ من"} «${out ? o.toTown : o.fromTown}»</b><small>${o.bname} · ${weaponsText(o.load)}</small></span><b class="${r?.dmg ? (out ? "plus" : "minus") : out ? "minus" : "plus"}">${r?.blocked ? "ما أصابت" : r?.dmg ? `إصابة ${ar(r.dmg)}٪` : "انعترضت"} ▶️</b></button>`; }).join("")}</div>` : `<p class="hint">ما فيه عمليات للحين.</p>`}`;
 }
@@ -507,12 +529,32 @@ function bind(st) {
   $("wrDeputy")?.addEventListener("click", () => warSheet("deputy"));
   q("[data-wrmode]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); setSceneMode(b.dataset.wrmode); toast({ full: "🎬 المشاهد كاملة", fast: "⏩ المشاهد سريعة", off: "📋 التقرير بس، بدون مشاهد" }[b.dataset.wrmode], "goal"); warRoom("def"); }));
   // repairs and replays
-  q("[data-wrfix]").forEach((b) => b.addEventListener("click", async () => {
-    const [x, y] = b.dataset.wrfix.split(":").map(Number);
+  // a repair (or a rubble clearing) starts: its button becomes the time left, in place (no redraw, no blink)
+  const fixOne = async (b) => {
+    const [x, y] = b.dataset.wrfix.split(":").map(Number), flat = !!b.dataset.flat, label = b.innerHTML;
     b.disabled = true; b.textContent = "…";
-    const r = await warRepairAt(x, y, true);
-    if (r?.error) { b.disabled = false; b.textContent = "صلّح"; return; }
-    b.replaceWith(Object.assign(document.createElement("small"), { className: "wr-fixing", textContent: "🔧 يتصلّح" })); // the row changes in place: no redraw, no blink
+    const r = flat ? await warApi("clear", { req: warReq(), x, y }) : await warRepairAt(x, y, true);
+    if (r?.error) { if (flat) { toast(r.error, "bad"); sfx.deny(); } b.disabled = false; b.innerHTML = label; return false; }
+    const end = warNow() + (r.ms || 0);
+    b.replaceWith(Object.assign(document.createElement("span"), { className: "btn wr-fixing", textContent: `⏳ ${fmtLeft(end - warNow())}`, dataset: { t1: String(end) } }));
+    return true;
+  };
+  q("[data-wrfix]").forEach((b) => b.addEventListener("click", () => fixOne(b)));
+  // all at once: straight to the server one by one (no redraw in between, which used to lose the rest), then one redraw
+  q("[data-wrfixall]").forEach((btn) => btn.addEventListener("click", async () => {
+    // what the server holds (never what is on screen, which a scene may be redrawing): not yet being worked on, the worst first
+    const flat = btn.dataset.wrfixall === "flat";
+    const todo = (WARX.st?.damage || []).filter((r) => !!r.flat === flat && !(flat ? r.clr : r.rep)).sort((p, q2) => q2.wd - p.wd);
+    q("[data-wrfixall]").forEach((x) => { x.disabled = true; }); btn.textContent = flat ? "🧹 نشيل…" : "🔧 نصلّح…";
+    let n = 0, spent = 0, why = "";
+    for (const { x, y } of todo) {
+      const r = await warApi(flat ? "clear" : "repair", { req: warReq(), x, y });
+      if (r.error) { why = r.error; break; }
+      n++; spent += r.charge?.amount || 0;
+    }
+    if (n) { sfx.build(); toast(`${flat ? "🧹 بدأ شيل" : "🔧 بدأ إصلاح"} ${ar(n)} ${flat ? "ركام" : "مباني"} (${money(spent)} ريال)${why ? ` · وقف: ${why}` : ""}`, "goal"); }
+    else { sfx.deny(); toast(why || "ما فيه شي", "bad"); }
+    await warPoll(true); if (sheetFor === "warroom") warRoom(ROOM.tab);
   }));
 }
 
@@ -715,5 +757,5 @@ export function warRoomBadge(st) {
   const sig = JSON.stringify([st.rels?.map((r) => [r.other, r.state, r.offer?.at, r.tribute?.at, r.chat?.length, r.chatOpen, r.hurt?.me, r.hurt?.them]), st.ruin, st.demote?.era, st.shieldBuy?.until, st.ops?.map((o) => [o.id, o.status]), st.arsenal, (visiting ? visiting.home : S)?.tiles.reduce((n, t) => n + (t.b?.wd ? 1 : 0), 0)]);
   if (sig === ROOM.sig) return;
   ROOM.sig = sig;
-  if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }
+  if (sheetFor === "warroom" && !ROOM.redrawing) { ROOM.redrawing = true; setTimeout(() => { ROOM.redrawing = false; if (document.activeElement?.id === "wrSay") { ROOM.sig = null; return; } /* typing a message: drawn on the next change, not under the keyboard */ if (sheetFor === "warroom" && !document.activeElement?.closest?.(".wr-body select")) warRoom(ROOM.tab); }, 300); }
 }

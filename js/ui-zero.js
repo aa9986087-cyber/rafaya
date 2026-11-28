@@ -2,7 +2,8 @@
 // countdown (days of al-Jouf, and the real clock to the second) shows in the town; at zero a grand official
 // announcement opens the war. The first time a player enters the world after this release, the war trailer
 // plays first (once, with a skip button), then the countdown.
-import { $, ar, store, worldClock, worldMode } from "./main.js";
+import { $, ar, sheetFor, store, worldClock, worldMode } from "./main.js";
+import { whatsNewSheet, wnSeen } from "./ui-whatsnew.js";
 import { JOUF_DAY } from "./war.js";
 import { sfx, warSfx, warMusic } from "./sound.js";
 import { warGuide } from "./ui-warguide.js";
@@ -29,8 +30,18 @@ export function setWarOpen(at) {
 /** Right after entering one's town: the trailer (first time only), then the countdown or the announcement. */
 export function zeroEnter() {
   if (!worldMode) return;
-  const next = () => clockNotice(() => warNotice(() => milNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else maybeAnnounce(); })));
+  const next = () => clockNotice(() => warNotice(() => milNotice(() => { if (ZERO.at > nowS()) zeroSheet(); else { maybeAnnounce(); updatesOnEnter(); } })));
   if (!store.get(INTRO)) { store.set(INTRO, "1"); playIntro(next); } else next();
+}
+
+/**
+ * The owner (28 Nov 2026): what changed shows by itself, once per update, when the player comes into the world
+ * («النشرة ← التحديثات», the same list), after any announcement on the screen has been closed.
+ */
+function updatesOnEnter(tries = 0) {
+  if (!worldMode || wnSeen("world") || tries > 20) return;
+  if (document.querySelector(".zero-ann") || $("introVid") || WARX.scene || (sheetFor && !["warroom", "war", "inspect"].includes(sheetFor))) { setTimeout(() => updatesOnEnter(tries + 1), 1500); return; }
+  whatsNewSheet();
 }
 
 // ---------- the owner's notice before the war: once for every player, on the screen ----------
@@ -88,7 +99,7 @@ function milNotice(done) {
   el.className = "zero-ann notice"; el.id = "milNotice";
   el.innerHTML = `<div class="za-card"><div class="za-seal"><b>🎖️</b></div><small class="za-kicker">إعلان من الإدارة</small>
       <h2>كم مبنى عسكري تقدر تبني؟</h2>
-      <div class="nt-box"><p>🏘️ البلدة: <b>٣ مباني</b><br>🏙️ المدينة: <b>٥ مباني</b><br>🏛️ المحافظة: <b>٧ مباني</b><br>🌆 الحاضرة: <b>٩ مباني</b><br>👑 الحاضرة الكبرى: <b>١١ مبنى</b></p></div>
+      <div class="nt-box"><p>🏘️ البلدة: <b>٤ مباني</b><br>🏙️ المدينة: <b>٦ مباني</b><br>🏛️ المحافظة: <b>٩ مباني</b><br>🌆 الحاضرة: <b>١٢ مبنى</b><br>👑 الحاضرة الكبرى: <b>١٥ مبنى</b></p></div>
       <div class="nt-box"><b>🎯 وأنت تختار وش تبني</b><p>تبي كلها منصات صواريخ؟ لك.<br>تبي كلها دفاع جوي؟ لك.<br>تبي تخلط؟ لك.<br>(مركز القيادة والمستودع ما ينحسبون)</p></div>
       <p>اللي كان عنده أكثر من عدده، شلنا الزايد ورجّعنا له قيمته <b>ومرة ونص</b> 💰</p>
       <p>💪 كبّر مدينتك يزيد عددك</p>

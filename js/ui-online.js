@@ -393,7 +393,9 @@ export function liveHint(m) {
   else if (m.t === "news") { wnewsPoll(true).then(() => { if (sheetFor === "wnews") worldNewsSheet(true); }); }
   else if (m.t === "town") {
     if (m.plot === me()?.plot) return;
-    if (sheetFor === "world") clearTimeout(liveHint.map), liveHint.map = setTimeout(() => { if (sheetFor === "world") worldMapSheet(); }, 800);
+    // the open map follows the changes at most every 30 s (every town that saves says so: with many playing, the
+    // map was drawn again every few seconds, jumping under the finger and reading the whole map from the server each time)
+    if (sheetFor === "world" && !liveHint.map) liveHint.map = setTimeout(() => { liveHint.map = 0; if (sheetFor === "world") { liveHint.mapAt = Date.now(); worldMapSheet(); } }, Math.max(800, 30000 - (Date.now() - (liveHint.mapAt || 0))));
     if (visiting?.world && Number(visiting.code) === m.plot) {
       clearTimeout(liveHint.visit);
       if (m.removed) { leaveVisit(); toast("المدينة انشالت من عالم الجوف", "bad"); }

@@ -1188,3 +1188,10 @@ body.targeting .hud .stats, body.targeting .hud .timebar, body.targeting .hud .g
 /* every attack in the air over al-Jouf on the negotiation map: others' in amber, the destructive ones bigger and red-hot */
 .wr-world .wr-line { vector-effect: non-scaling-stroke; stroke-width: 1.6px; } .wr-line.other { stroke: #f2b632; opacity: .75; }
 .wr-dot.other { fill: #f2b632; color: #f2b632; } .wr-dot.heavy { fill: #ff3b1a; color: #ff3b1a; stroke: #fff3d6; stroke-width: 1; }
+/* the damage list: a repair running shows its time left on the button's place; the price under the button */
+.wr-fixing { pointer-events: none; opacity: .9; background: #2b3a33; color: #9fe0b5; border: 1px solid #3f6b52; font-variant-numeric: tabular-nums; white-space: nowrap; }
+[data-wrfix] small { display: block; font-size: 11px; opacity: .8; font-weight: 600; }
+/* what the town owns, by kind of weapon, under the totals */
+.wr-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin: 8px 0 4px; }
+.wr-types > span { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; border-radius: 14px; background: #1b2226; border: 1px solid #ffffff14; text-align: center; }
+.wr-types .w-ic { width: 44px; height: 18px; } .wr-types small { font-size: 11px; opacity: .8; } .wr-types b { font-size: 17px; color: #f2d48a; }

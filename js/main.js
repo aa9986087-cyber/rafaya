@@ -1439,13 +1439,28 @@ export function warApply(st) {
 // ---------- war damage in the building's sheet ----------
 
 // ---------- the public chat of al-Jouf (world only; it never shows who is online) ----------
-export function chatSheet(keep, draft = $("chatText")?.value || "") {
-  const id = me(), box = $("chatList"), stick = !keep || !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+/** The messages of the chat, as HTML (the list only). */
+function chatListHtml(id) {
   const when = (at) => { const d = new Date(at), today = new Date().toDateString() === d.toDateString(); return d.toLocaleString("ar-SA", today ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" }); };
-  sheet(`<h2>💬 شات الجوف</h2>
-    <div class="chat-list" id="chatList">${CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
+  return CHAT.msgs.length ? CHAT.msgs.map((m) => `<div class="chat-msg ${m.name === id?.name ? "mine" : ""}">
         <div class="chat-head"><b>${m.name}${castleCrown(m.plot)}${(WARX.st?.medals?.[m.plot] || []).map((x) => `<span class="medal" title="${x.name}">${medalSvg(medalId(x), 18)}</span>`).join("")}</b>${m.town ? `<button type="button" class="chat-town" data-town="${m.plot}">${m.town}</button>` : ""}<small>${when(m.at)}</small>${m.name !== id?.name ? `<button type="button" class="chat-rep" data-rep="${m.id}" aria-label="بلّغ">🚩</button>` : ""}</div>
-        <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`}</div>
+        <p>${m.text}</p></div>`).join("") : `<p class="hint">ما أحد كتب للحين. ابدأ السالفة!</p>`;
+}
+/**
+ * The chat. A new message (keep) only redraws the list: the box being typed in, the keyboard and the page stay put,
+ * and the list follows the newest message only if you were already at the bottom (reading older ones, it stays there).
+ */
+export function chatSheet(keep, draft = $("chatText")?.value || "", toBottom = false) {
+  const id = me(), box = $("chatList"), stick = toBottom || !keep || !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  if (keep && box && sheetFor === "chat") {
+    const top = box.scrollTop;
+    box.innerHTML = chatListHtml(id);
+    box.scrollTop = stick ? box.scrollHeight : top;
+    store.set("rafaya-chat-seen", String(CHAT.last)); chatCount();
+    return;
+  }
+  sheet(`<h2>💬 شات الجوف</h2>
+    <div class="chat-list" id="chatList">${chatListHtml(id)}</div>
     <div class="chat-send keep"><input id="chatText" type="text" maxlength="200" autocomplete="off" enterkeyhint="send" name="chat-message-${Date.now()}" placeholder="اكتب رسالة للكل…" value="${draft.replace(/"/g, "&quot;")}"><button class="btn go" id="chatGo" type="button">أرسل</button></div>
     <p class="hint">الكلام يطلع لكل لاعبين الجوف باسمك. خلك محترم، والكلام المسيء ينحذف ويتبلّغ عنه.</p>
     ${globalThis.RAFAYA_PREVIEW ? "" : '<div class="sheet-actions keep"><button class="btn block" id="developerNote" type="button">ملاحظة خاصة للمطور</button></div>'}`, "chat");
@@ -1477,16 +1492,19 @@ export function chatSheet(keep, draft = $("chatText")?.value || "") {
     if (input?.value.trim() === text) input.value = "";
     sfx.tap();
     await chatPoll(true);
-    if (sheetFor === "chat") chatSheet();
+    if (sheetFor === "chat") chatSheet(true, undefined, true); // the list only: the keyboard stays open for the next message
   };
   $("chatGo").addEventListener("click", send);
   $("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
-  $("sheetBody").querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(Number(b.dataset.town)); }));
-  $("sheetBody").querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", async () => {
+  // one listener on the list (its messages are redrawn as they come)
+  list.addEventListener("click", async (e) => {
+    const town = e.target.closest("[data-town]"), b = e.target.closest("[data-rep]");
+    if (town) { wmView = null; wmSeen = false; worldMapSheet(Number(town.dataset.town)); return; }
+    if (!b) return;
     const m = CHAT.msgs.find((x) => x.id === Number(b.dataset.rep));
     if (!m || !id) return;
     try { await api("/world/report", { name: id.name, secret: id.secret, plot: m.plot, reason: `شات (${m.name}): ${m.text}` }); toast("وصل البلاغ، شكرًا", "goal"); b.disabled = true; } catch { toast("ما وصل البلاغ", "bad"); }
-  }));
+  });
 }
 $("chatBtn").addEventListener("click", async () => { sfx.tap(); chatSheet(); await chatPoll(true); });
 

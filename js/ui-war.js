@@ -55,7 +55,7 @@ export function apologyBox(n, onClose) {
     el.setAttribute("aria-modal", "true");
     el.setAttribute("aria-label", CITY_MILESTONE.title);
   }
-  el.innerHTML = n.kind === "miltrim" && n.reset ? `<div class="apology-card"><div class="apology-ic">🏰</div><h2>الأسعار الجديدة للأسلحة المدمّرة والحصن</h2>
+  el.innerHTML = n.kind === "miltrim" && n.reset ? `<div class="apology-card"><div class="apology-ic">${n.title ? "🎖️" : "🏰"}</div><h2>${n.title || "الأسعار الجديدة للأسلحة المدمّرة والحصن"}</h2>
     <p>${n.text}</p>
     <div class="apology-back">رجّعنا لك كل اللي دفعته<b>+${money(n.amount || 0)} ريال</b></div>` : n.kind === "miltrim" ? `<div class="apology-card"><div class="apology-ic">🎖️</div><h2>النظام العسكري الجديد</h2>
     <p>صار لكل مرحلة عدد مباني عسكرية: البلدة ٣، المدينة ٥، المحافظة ٧، الحاضرة ٩، والحاضرة الكبرى ١١.</p>

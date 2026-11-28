@@ -282,3 +282,17 @@ test("rubble given back once: the rows go, cleared spots come back to the phone,
   assert.deepEqual(note.put, [{ x: 6, y: 5, id: "factory", lvl: 0 }]);
   assert.equal(w.list("note", { k1: "41" }).filter((n) => n.kind === "apology").length, 0, "no apology");
 });
+
+test("half of the stock refund is taken back once, quietly", async (t) => {
+  const { db, board } = worldFixture(t);
+  db.prepare("INSERT INTO players (name, secret, created, plot) VALUES ('richMayor', 's', 1, 51)").run();
+  db.prepare("INSERT INTO plots (plot, owner, town, money, updated, snapshot) VALUES (51, 'richMayor', 'Rich', 1000000, 1, '')").run();
+  const a = board.war.acct(51); board.war.saveAcct(51, a);
+  board.war.note(51, "miltrim", "x", { amount: 600000, reset: true, title: "حد المخزون الجديد", trim: [] }, false);
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('stock_trim_v1', '1')").run();
+  db.prepare("DELETE FROM meta WHERE key = 'stock_trim_half_v1'").run();
+  board.stockTrimHalf(); board.stockTrimHalf();
+  assert.equal(db.prepare("SELECT money FROM plots WHERE plot = 51").get().money, 700000);
+  const c = board.war.db.list("charge", { k1: "51" }).find((x) => x.why.startsWith("تصحيح"));
+  assert.equal(c.amount, 300000);
+});

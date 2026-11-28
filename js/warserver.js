@@ -100,6 +100,23 @@ export class WarServer {
    * other cfg.prize of its budget; with no strike landed either way, or the same, a draw. Then any side with half its
    * worth or more out of action drops a stage (one at a time). Once per war. Returns the relation as it should be stored.
    */
+  /**
+   * Once (the owner, 28 Nov 2026): wars declared before the new rules kept their old length (about two hours) and
+   * then the new day of waiting. Every one of them still inside a day from its start is a war again until that day
+   * ends (judged then, with the new rules). Returns how many.
+   */
+  extendOldWars() {
+    const now = this.now(); let n = 0;
+    for (const r of this.db.list("rel", {})) {
+      if (!r.warStart || (r.rules || 0) >= WAR_RULES || !["war", "warning"].includes(r.state)) continue; // a truce, a peace or a shield ended it: left alone
+      const end = r.warStart + this.cfg.T.war;
+      if (end <= now || (r.warEnd || 0) >= end) continue;
+      const out = { ...r, warEnd: end, rules: WAR_RULES };
+      delete out.judged; delete out.warCool;
+      this.saveRel(r.a, r.b, out); n++;
+    }
+    return n;
+  }
   judge(r, now, how = "time") {
     if (!r?.warStart || r.judged === r.warStart) return r;
     const out = { ...r, judged: r.warStart };
@@ -698,7 +715,7 @@ export class WarServer {
       const drones = kindSum(a.arsenal, "drone"), missiles = kindSum(a.arsenal, "missile");
       room = WEAPONS[kind].kind === "drone" ? caps.drones - drones : caps.missiles - missiles;
     }
-    if (room < n) return { error: room > 0 ? `المكان يكفي ${nf(room)} بس` : "المخزن مليان: طوّر أو ابنِ مستودع ذخائر" };
+    if (room < n) return { error: room > 0 ? `المكان يكفي ${nf(room)} بس` : kind !== "intc" && caps.open ? `وصلت الحد: ${nf(WEAPONS[kind].kind === "drone" ? caps.drones : caps.missiles)} ${WEAPONS[kind].kind === "drone" ? "مسيّرة" : "صاروخ"}` : "المخزن مليان: طوّر أو ابنِ مستودع ذخائر" };
     const cost = price * n;
     if (this.available(info, a) < cost) return { error: "ما يكفي المال" };
     a.arsenal[kind] += n;
@@ -872,9 +889,9 @@ export class WarServer {
     const heavyN = Object.entries(load).reduce((n, [w, k]) => n + (isHeavy(w) ? k : 0), 0);
     if (heavyN) {
       if (heavyN > 1) return { error: "سلاح مدمّر واحد بس بالعملية" };
-      const D = this.cfg.heavyDay, mine0 = (a.heavyLog || []).filter((t) => now - t < D).sort((p, q) => p - q);
+      const D = this.cfg.heavyDay, from = this.cfg.heavyFrom || 0, mine0 = (a.heavyLog || []).filter((t) => now - t < D && t >= from).sort((p, q) => p - q);
       if (mine0.length >= this.cfg.heavyOut) return { error: `أطلقت ${nf(this.cfg.heavyOut)} أسلحة مدمّرة باليوم: تقدر بعد ${minutesText(D - (now - mine0[0]))}` };
-      const onThem = this.db.list("op", { k2: String(to), since: now - D, limit: 500 }).filter((o) => Object.keys(o.load || {}).some(isHeavy)).map((o) => o.launchAt).sort((p, q) => p - q);
+      const onThem = this.db.list("op", { k2: String(to), since: now - D, limit: 500 }).filter((o) => Object.keys(o.load || {}).some(isHeavy) && o.launchAt >= from).map((o) => o.launchAt).sort((p, q) => p - q);
       if (onThem.length >= this.cfg.heavyIn) return { error: `المدينة انضربت بـ${nf(this.cfg.heavyIn)} أسلحة مدمّرة باليوم: تنضرب مرة ثانية بعد ${minutesText(D - (now - onThem[0]))}` };
     }
     const drones = kindSum(load, "drone"), missiles = kindSum(load, "missile");

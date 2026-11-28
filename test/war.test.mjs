@@ -73,7 +73,7 @@ test("buying: needs the right building, room and money; a request sent twice buy
   assert.equal(W.war.handle("state", {}, a).arsenal.drone, 2);
   // open war: the store has no limit for drones and missiles (the launchers set how many go at once)
   const caps = W.war.handle("state", {}, a).caps;
-  assert.equal(caps.open, true); assert.ok(caps.drones >= 9999); assert.equal(caps.missiles, 0);
+  assert.equal(caps.open, true); assert.equal(caps.drones, 150); assert.equal(caps.missiles, 0); // at most 150 (the owner, 28 Nov 2026)
   // money already charged but not yet taken off the synced budget counts
   W.resync(10, (s) => { s.money = 3000; s.tiles[idx(23, 20)].b = { id: "dronebase", lvl: 0, res: 0, cond: 100 }; }); // 3000 ≥ 1800, but 1800 is still owed
   assert.match(W.war.handle("buy", { req: "r4", kind: "drone", n: 2 }, a).error, /المال/);
@@ -748,4 +748,28 @@ test("repairs cost half what they did; the deputy's default budget grows with th
   assert.equal(deputyBudget({ budget: 5000 }, 5), 150000, "the old default: by the stage");
   assert.equal(deputyBudget({ budget: 5000, set: true }, 5), 5000, "the mayor's own choice stays");
   assert.equal(deputyBudget({ budget: 30000 }, 5), 30000);
+});
+
+test("stock: 150 drones, 150 missiles (the destructive ones inside, never taken), 150 interceptors; what is over goes back for its price", async () => {
+  const { stockTrimPlan, capacity, WEAPONS: W } = await import("../js/war.js");
+  const plan = stockTrimPlan({ drone: 100, drone2: 120, missile: 90, missile2: 70, quake: 10, storm: 0, intc: 160 });
+  assert.deepEqual(plan.take, { drone: 70, missile: 20, intc: 10 }, "cheapest first, destructive ones kept");
+  assert.equal(plan.refund, 70 * W.drone.price + 20 * W.missile.price + 10 * WAR.interceptor.price);
+  assert.equal(stockTrimPlan({ drone: 5, missile: 5, intc: 3 }).refund, 0);
+  const c = capacity({ bases: [{ lvl: 0, wd: 0 }], pads: [{ lvl: 0, wd: 0 }], airdefs: [], forts: [], armory: null });
+  assert.equal(c.drones, 150); assert.equal(c.missiles, 150);
+});
+
+test("wars declared before the new rules last a day from their start too (once)", () => {
+  const W = makeWorld();
+  const a = W.addTown(1, "أ", { mil: BASE }), b = W.addTown(2, "ب", { mil: BASE });
+  const now = W.now(), start = now - 3 * HOUR;
+  W.war.saveRel(1, 2, { a: 1, b: 2, state: "war", since: start, warStart: start, warEnd: start + 2 * HOUR, judged: start, hist: [] });
+  assert.equal(relNow(W.war.db.get("rel", "1:2"), now, WAR).state, "hostile");
+  assert.equal(W.war.extendOldWars(), 1);
+  const r = W.war.db.get("rel", "1:2");
+  assert.equal(relNow(r, now, WAR).state, "war");
+  assert.equal(r.warEnd, start + WAR.T.war);
+  assert.equal(W.war.extendOldWars(), 0, "already on the new rules");
+  void a; void b;
 });

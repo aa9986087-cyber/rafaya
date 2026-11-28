@@ -27,7 +27,7 @@
 //        state · buy · rel · launch · op · repair · settings · enemy
 import { DurableObject } from "cloudflare:workers";
 import { WarServer, sqlWarDb } from "../js/warserver.js";
-import { fastWar, milTrimPlan, milValue, snapBuildings, WEAPONS } from "../js/war.js";
+import { fastWar, milTrimPlan, milValue, snapBuildings, stockTrimPlan, WEAPONS } from "../js/war.js";
 import { B, CITY_MILESTONE, ERAS, WORLD, worldPlace, townNameKey } from "../js/data.js";
 import { AWAY_CAP, dayOf, joufHours, joufDayStart } from "../js/sim.js";
 import { VERSION, REQUIRED } from "../js/version.js";
@@ -205,7 +205,11 @@ export class Board extends DurableObject {
     this.shieldNoticeFix();
     this.milTrim();
     this.heavyReset();
+    if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'old_wars_v1'").toArray().length) { this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('old_wars_v1', ?)", String(Date.now())); try { this.war.extendOldWars(); } catch { /* the war never stops the world */ } }
+    this.stockTrim();
+    this.stockTrimHalf();
     this.rubbleRestore("rubble_restore_v1", ["الرافعية", "حي القدس"]);
+    this.pushAllOnce("reopen_push_v1", "🎮 رجعت الرافعية!", "اللعبة رجعت تشتغل، ومعها تحديثات جديدة: أسلحة مدمّرة، ومنظومة الحصن، ومباني عسكرية أكثر. ادخل وشوف وش الجديد 🔥");
     this.clockBan();
     this.clockChat();
     this.outageRefund();
@@ -733,6 +737,55 @@ export class Board extends DurableObject {
       this.war.fine(r.plot, -refund, "refund", `🏰 الأسعار الجديدة: «منظومة الحصن» والأسلحة المدمّرة صار سعرها حسب مرحلة المدينة. شلنا اللي عندك (${what.join("، ")}) ورجّعنا لك كل ريال دفعته: ${refund.toLocaleString("en-US")} ريال. تقدر تشتريها من جديد بالأسعار الجديدة إذا تبي.`, "miltrim", { amount: refund, reset: true, trim: forts.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", refund, r.plot);
     }
+  }
+  /**
+   * Once (the owner, 28 Nov 2026): at most 150 drones, 150 missiles and 150 interceptors. What is over goes back for
+   * its price (the destructive weapons always stay, inside the 150), with a notice on the screen.
+   */
+  stockTrim() {
+    const key = "stock_trim_v1";
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now())); // first: never paid twice
+    const ar = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+    for (const row of this.war.db.list("acct", {})) {
+      const plot = Number(row.plot); if (!Number.isFinite(plot)) continue;
+      const a = this.war.acct(plot), plan = stockTrimPlan(a.arsenal);
+      if (!plan.refund) continue;
+      for (const [w, n] of Object.entries(plan.take)) a.arsenal[w] -= n;
+      this.war.saveAcct(plot, a);
+      const what = Object.entries(plan.take).map(([w, n]) => `${ar(n)} ${w === "intc" ? "صاروخ اعتراضي" : WEAPONS[w].name}`).join("، ");
+      this.war.fine(plot, -plan.refund, "refund", `🎖️ صار الحد ١٥٠ صاروخ و١٥٠ مسيّرة و١٥٠ صاروخ اعتراضي (والأسلحة المدمّرة من ضمن الـ١٥٠ وما تنشال). شلنا الزايد (${what}) ورجّعنا لك قيمته كاملة: ${plan.refund.toLocaleString("en-US")} ريال.`, "miltrim", { amount: plan.refund, reset: true, title: "حد المخزون الجديد", trim: [] });
+      this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", plan.refund, plot);
+    }
+  }
+  /**
+   * Once (the owner, 28 Nov 2026): the money given back for the stock over 150 came to too much for some. Half of it
+   * is taken back, quietly (a line in the town's money log, no notice on the screen).
+   */
+  stockTrimHalf() {
+    const key = "stock_trim_half_v1";
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM meta WHERE key = 'stock_trim_v1'").toArray().length) return; // the trim not done here (tests, a new world)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const row of this.war.db.list("acct", {})) {
+      const plot = Number(row.plot); if (!Number.isFinite(plot)) continue;
+      const got = this.war.db.list("note", { k1: String(plot) }).filter((n) => n.kind === "miltrim" && n.title === "حد المخزون الجديد").reduce((n, x) => n + (x.amount || 0), 0);
+      const half = Math.floor(got / 2);
+      if (half <= 0) continue;
+      const a = this.war.acct(plot);
+      this.war.charge(plot, a, half, "تصحيح: نص مبلغ إرجاع المخزون");
+      this.war.saveAcct(plot, a);
+      this.sql.exec("UPDATE plots SET money = money - ? WHERE plot = ?", half, plot);
+    }
+  }
+  /** Once per key: a notification on every phone that has them on (the owner's announcement). */
+  pushAllOnce(key, title, body) {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const { plot } of this.sql.exec("SELECT DISTINCT plot FROM pushsubs WHERE plot IS NOT NULL").toArray()) this.push(plot, title, body, key, true);
+    try { this.ctx.waitUntil(this.flush()); } catch { /* sent with the next request */ }
   }
   /**
    * Once (the owner, 28 Nov 2026): these towns were flattened while the destructive weapons were cheap. Every building
