@@ -206,6 +206,7 @@ export class Board extends DurableObject {
     this.milTrim();
     this.heavyReset();
     this.rubbleRestore("rubble_restore_v1", ["الرافعية", "حي القدس"]);
+    this.pushAllOnce("reopen_push_v1", "🎮 رجعت الرافعية!", "اللعبة رجعت تشتغل، ومعها تحديثات جديدة: أسلحة مدمّرة، ومنظومة الحصن، ومباني عسكرية أكثر. ادخل وشوف وش الجديد 🔥");
     this.clockBan();
     this.clockChat();
     this.outageRefund();
@@ -733,6 +734,14 @@ export class Board extends DurableObject {
       this.war.fine(r.plot, -refund, "refund", `🏰 الأسعار الجديدة: «منظومة الحصن» والأسلحة المدمّرة صار سعرها حسب مرحلة المدينة. شلنا اللي عندك (${what.join("، ")}) ورجّعنا لك كل ريال دفعته: ${refund.toLocaleString("en-US")} ريال. تقدر تشتريها من جديد بالأسعار الجديدة إذا تبي.`, "miltrim", { amount: refund, reset: true, trim: forts.map(({ x, y, id, lvl }) => ({ x, y, id, lvl })) });
       this.sql.exec("UPDATE plots SET money = money + ? WHERE plot = ?", refund, r.plot);
     }
+  }
+  /** Once per key: a notification on every phone that has them on (the owner's announcement). */
+  pushAllOnce(key, title, body) {
+    if (this.sql.exec("SELECT 1 FROM meta WHERE key = ?", key).toArray().length) return;
+    if (!this.sql.exec("SELECT 1 FROM players LIMIT 1").toArray().length) return; // a brand-new world (tests)
+    this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, String(Date.now()));
+    for (const { plot } of this.sql.exec("SELECT DISTINCT plot FROM pushsubs WHERE plot IS NOT NULL").toArray()) this.push(plot, title, body, key, true);
+    try { this.ctx.waitUntil(this.flush()); } catch { /* sent with the next request */ }
   }
   /**
    * Once (the owner, 28 Nov 2026): these towns were flattened while the destructive weapons were cheap. Every building
