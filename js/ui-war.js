@@ -787,9 +787,10 @@ export function salvoReport(ops, fresh) {
     <div class="rows">${row(out ? "المدينة المستهدفة" : ops.length > 1 && new Set(ops.map((o) => o.from)).size > 1 ? "المهاجمين" : "المهاجم", out ? `«${ops[0].toTown}»` : [...new Set(ops.map((o) => o.fromTown))].map((t) => `«${t}»`).join(" · "))}
       ${ops.map((o, i) => { const r = o.result; return row(`${ar(i + 1)}. ${out || new Set(ops.map((x) => x.from)).size === 1 ? "" : `«${o.fromTown}» ← `}${o.bname} · ${weaponsText(o.load)}`, !r ? "بالجو" : r.blocked ? "ما أصابت" : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت", r?.dmg ? (out ? "plus" : "minus") : ""); }).join("")}</div>
     ${!out && area ? `<div class="need">💡 الإصلاح من «غرفة العمليات ← السجل والأضرار»: كل مبنى وجنبه «صلّح».</div>` : ""}
-    <div class="sheet-actions keep"><button class="btn go block" type="button" id="srReplay">🎬 شاهد الإعادة</button><button class="btn block" type="button" id="srRoom">⚔️ غرفة العمليات</button>${fresh ? `<button class="btn block" type="button" id="srOk">تمام</button>` : ""}</div>`, "war-report");
+    <div class="sheet-actions keep">${exploreBtn()}<button class="btn go block" type="button" id="srReplay">🎬 شاهد الإعادة</button><button class="btn block" type="button" id="srRoom">⚔️ غرفة العمليات</button>${fresh ? `<button class="btn block" type="button" id="srOk">تمام</button>` : ""}</div>`, "war-report");
   $("srReplay").addEventListener("click", () => (out ? replayOp(ops[0]) : warReplayAll(ops)));
-  $("srRoom").addEventListener("click", () => warRoom("log"));
+  bindExplore();
+  $("srRoom").addEventListener("click", () => { homeFirst(); warRoom("log"); });
   $("srOk")?.addEventListener("click", closeSheet);
 }
 /** Watch an operation again from its saved data: nothing is charged or damaged again. */
@@ -812,7 +813,8 @@ export async function replayOp(op, list = null) {
     }
   } finally {
     world.fx.clear(); sceneUi(false); WARX.scene = null;
-    if (homeWas && visiting) leaveVisit();
+    // another town's strike: the mayor stays there after it, free to look around the damage, and goes back from the visit bar
+    if (visiting) $("visitBar").hidden = false; void homeWas;
     if (op.side === "watch") watchReport(ops); else if (ops.length > 1) salvoReport(ops); else opReport(op);
   }
 }
@@ -826,6 +828,11 @@ export async function replayFeed(id, back = "sheet") {
   WARX.feedBack = back;
   await replayOp(r.op, r.ops?.length ? r.ops : [r.op]);
 }
+/** After a replay in another town: a button to stay and look around it (the sheet closes; «رجوع» on the visit bar goes home). */
+const exploreBtn = () => (visiting ? `<button class="btn block" type="button" id="wrExplore">🏙️ تجوّل بـ«${visiting.info?.name || "المدينة"}» وشوف أثر الضربة</button>` : "");
+function bindExplore() { $("wrExplore")?.addEventListener("click", () => { closeSheet(); toast("🏙️ تجوّل بحرية وشوف الأضرار. ولا خلصت اضغط «رجوع» فوق", "goal"); }); }
+/** Leave the visited town first (a report's way back goes home). */
+const homeFirst = () => { if (visiting) leaveVisit(); };
 /** What a watched strike did (anyone's): who, where, what landed, the dead; then back to the war log. */
 function watchReport(ops) {
   const o = ops[0], dead = ops.reduce((n, x) => n + (x.result?.dead || 0), 0), hurt = ops.reduce((n, x) => n + (x.result?.hurt || 0), 0);
@@ -836,9 +843,10 @@ function watchReport(ops) {
     <div class="war-grid"><div><b>${ar(ops.length)}</b><span>📍 أماكن</span></div><div><b>${ar(area)}</b><span>🏚️ مباني تضررت</span></div><div><b>${ar(stopped)}<small>/${ar(sent)}</small></b><span>🛡️ انعترض</span></div><div><b>${ar(flat)}</b><span>🧱 ركام</span></div></div>
     ${dead || hurt ? `<div class="war-toll"><span>⚰️ <b>${ar(dead)}</b> وفاة</span><span>🤕 <b>${ar(hurt)}</b> إصابة</span></div>` : ""}
     <div class="rows">${ops.map((x, i) => { const r = x.result; return row(`${ops.length > 1 ? `${ar(i + 1)}. ` : ""}${x.bname} · ${weaponsText(x.load)}`, r.blocked ? "ما أصابت" : r.flat ? `🧱 ${ar(r.flat)} ركام` : r.dmg ? `💥 ${ar(r.area?.length || 1)} مباني · أكبر ضرر ${ar(r.dmg)}٪` : "🛡️ انعترضت"); }).join("")}${row("وقت الضربة", when)}</div>
-    <div class="sheet-actions keep"><button class="btn go block" type="button" id="wrAgain">🎬 شوفها مرة ثانية</button><button class="btn block" type="button" id="wrFeedBack">رجوع للسجل</button></div>`, "war-report");
+    <div class="sheet-actions keep">${exploreBtn()}<button class="btn go block" type="button" id="wrAgain">🎬 شوفها مرة ثانية</button><button class="btn block" type="button" id="wrFeedBack">رجوع للسجل</button></div>`, "war-report");
+  bindExplore();
   $("wrAgain").addEventListener("click", () => replayOp(o, ops));
-  $("wrFeedBack").addEventListener("click", () => (WARX.feedBack === "room" ? warRoom("feed") : feedSheet()));
+  $("wrFeedBack").addEventListener("click", () => { homeFirst(); WARX.feedBack === "room" ? warRoom("feed") : feedSheet(); });
 }
 export function opReport(op, fresh) {
   WARX.lastReport = op;
@@ -857,9 +865,10 @@ export function opReport(op, fresh) {
       ${out ? row("تكلفة العملية", `${money(op.fee)} ريال تشغيل + ذخائر بقيمة ${money(op.value)}`) : r?.intcUsed ? row("ذخيرة الدفاع المستخدمة", `${ar(r.intcUsed)} صاروخ اعتراضي (${money(r.intcValue)} ريال)`) : ""}
       ${row("وقت العملية", when)}</div>
     ${!out && r?.dmg ? `<div class="need">💡 اضغط على ${op.bname} بمدينتك واختر «🔧 إصلاح الأضرار العسكرية»، أو خلّ النائب يصلحها (القيادة ← النائب).</div>` : ""}
-    <div class="sheet-actions keep">${r ? `<button class="btn go block" type="button" id="opReplay">🎬 مشاهدة إعادة العملية</button>` : ""}<button class="btn block" type="button" id="opBack">${fresh ? "تمام" : "رجوع للعمليات"}</button></div>`, "war-report");
+    <div class="sheet-actions keep">${exploreBtn()}${r ? `<button class="btn go block" type="button" id="opReplay">🎬 مشاهدة إعادة العملية</button>` : ""}<button class="btn block" type="button" id="opBack">${fresh ? "تمام" : "رجوع للعمليات"}</button></div>`, "war-report");
   $("opReplay")?.addEventListener("click", () => replayOp(op));
-  $("opBack").addEventListener("click", () => (fresh ? closeSheet() : warSheet("ops")));
+  bindExplore();
+  $("opBack").addEventListener("click", () => { homeFirst(); fresh ? closeSheet() : warSheet("ops"); });
 }
 export function warDamageHtml(b) {
   if (!worldMode || !b?.wd) return "";
