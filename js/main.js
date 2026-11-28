@@ -1121,21 +1121,23 @@ let wmView = null, wmSeen = false;
  * Two fingers zoom the map in and out, one finger drags it, and a short tap picks a plot.
  * The view is the SVG viewBox, kept inside the map.
  */
-function mapZoom(svg, W, H, onPick) {
+function mapZoom(svg, W, H, onPick, focus = null) {
   if (!svg) return;
-  let v = wmView || { x: 0, y: 0, w: W, h: H };
-  const ratio = H / W;
+  // the box is taller than the map (the owner, 28 Nov 2026: a bigger map): the view keeps the box's shape, so at its
+  // widest it shows the map's full height and part of its width, and a finger drags it sideways
+  const box = svg.getBoundingClientRect(), ratio = box.width > 0 && box.height > 0 ? box.height / box.width : H / W, maxW = Math.min(W, H / ratio);
+  let v = wmView || (focus ? { x: focus[0] - maxW / 2, y: 0, w: maxW, h: maxW * ratio } : { x: 0, y: 0, w: maxW, h: maxW * ratio });
   const apply = () => {
-    v.w = Math.min(W, Math.max(W / 6, v.w)); v.h = v.w * ratio;
+    v.w = Math.min(maxW, Math.max(W / 6, v.w)); v.h = v.w * ratio;
     v.x = Math.min(W - v.w, Math.max(0, v.x)); v.y = Math.min(H - v.h, Math.max(0, v.y));
     svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
-    wmView = v.w >= W ? null : { ...v };
+    wmView = { ...v };
   };
   // zoom by k around a point given in screen pixels
   const zoomAt = (k, cx, cy) => {
     const r = svg.getBoundingClientRect();
     const px = v.x + ((cx - r.left) / r.width) * v.w, py = v.y + ((cy - r.top) / r.height) * v.h;
-    const nw = Math.min(W, Math.max(W / 6, v.w / k)), s2 = nw / v.w;
+    const nw = Math.min(maxW, Math.max(W / 6, v.w / k)), s2 = nw / v.w;
     v.x = px - (px - v.x) * s2; v.y = py - (py - v.y) * s2; v.w = nw;
     apply();
   };
@@ -1161,7 +1163,7 @@ function mapZoom(svg, W, H, onPick) {
     } else if (start) {
       const dx = e.clientX - start.x, dy = e.clientY - start.y;
       if (Math.hypot(dx, dy) > 8) moved = true;
-      if (moved && v.w < W) { v.x = start.vx - (dx / r.width) * v.w; v.y = start.vy - (dy / r.height) * v.h; apply(); }
+      if (moved && (v.w < W || v.h < H)) { v.x = start.vx - (dx / r.width) * v.w; v.y = start.vy - (dy / r.height) * v.h; apply(); }
     }
   });
   const up = (e) => {
@@ -1237,7 +1239,8 @@ export async function worldMapSheet(pick) {
   // first time open: close in on your own town (or the middle), the whole of al-Jouf is a pinch away
   if (!wmView && !wmSeen) { const [mx, my] = id?.plot != null ? worldXY(id.plot) : [WORLD.cols / 2, WORLD.rows / 2]; const w = cols * cell / 2, h = rows * cell / 2; wmView = { x: mx * cell - w / 2, y: my * cell - h / 2, w, h }; }
   wmSeen = true;
-  mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); });
+  { const home = me()?.plot ?? sel; const f = home != null ? [(worldXY(home)[0] + 0.5) * cell, (worldXY(home)[1] + 0.5) * cell] : null;
+    mapZoom($("wmMap"), cols * cell, rows * cell, (plot) => { sfx.tap(); worldMapSheet(plot); }, f); }
   $("wmMine")?.addEventListener("click", () => { wmView = null; wmSeen = false; worldMapSheet(id.plot); });
   $("wmRank")?.addEventListener("click", () => { sfx.tap(); rankSheet(); });
   $("wmFeed")?.addEventListener("click", () => { sfx.tap(); feedSheet(); });
