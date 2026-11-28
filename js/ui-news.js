@@ -168,6 +168,39 @@ export function agoText(at) {
   const m = Math.max(0, Math.round((Date.now() - at) / 60000));
   return m < 1 ? "الحين" : m < 60 ? `قبل ${ar(m)} دقيقة` : m < 1440 ? `قبل ${ar(Math.round(m / 60))} ساعة` : `قبل ${ar(Math.round(m / 1440))} يوم`;
 }
+// ---------- the strikes of one war in one card (the owner, 28 Nov 2026): no line lost, the list kept short ----------
+
+const DIG = (t) => String(t).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+/** A strike line of the bulletin: { a (attacker), b (hit), hit, dead, hurt } or null for any other news. */
+function strikeOf(x) {
+  const t = DIG(x.text);
+  if (x.kind === "intercept") { const m = t.match(/دفاع «(.+?)» صدّ هجوم «(.+?)»/); return m ? { a: m[2], b: m[1], hit: 0 } : null; }
+  if (x.kind !== "hit") return null;
+  const m = t.match(/«(.+?)» (?:ضربت .+? في|سوّت .+? بالأرض في) «(.+?)»/); if (!m) return null;
+  const n = t.match(/(\d+) وفاة و(\d+) إصابة/);
+  return { a: m[1], b: m[2], hit: 1, dead: n ? Number(n[1]) : 0, hurt: n ? Number(n[2]) : 0 };
+}
+const newsRow = (x) => `<div class="row wnews ${x.id > wnewsSeen() ? "new" : ""}"><span>${ar(x.text)}</span><small>${agoText(x.at)}</small></div>`;
+/** The bulletin's lines, newest first: every war's strikes gathered in one card where its newest strike stands. */
+export function newsRows(items) {
+  const pairs = new Map();
+  for (const x of items) { const st = strikeOf(x); if (!st) continue; const k = [st.a, st.b].sort().join("|"); if (!pairs.has(k)) pairs.set(k, []); pairs.get(k).push({ x, st }); }
+  const done = new Set();
+  return items.map((x) => {
+    const st = strikeOf(x);
+    if (!st) return newsRow(x);
+    const k = [st.a, st.b].sort().join("|");
+    if (done.has(k)) return "";
+    done.add(k);
+    const list = pairs.get(k), hits = list.filter((e) => e.st.hit).length, stopped = list.length - hits;
+    const dead = list.reduce((n, e) => n + (e.st.dead || 0), 0), hurt = list.reduce((n, e) => n + (e.st.hurt || 0), 0);
+    const [p, q] = k.split("|"), fresh = list.some((e) => e.x.id > wnewsSeen());
+    return `<details class="row wnews wn-war ${fresh ? "new" : ""}"><summary><span><b>🔥 حرب «${p}» و«${q}»</b>
+        <small>${hits ? `💥 ${ar(hits)} ${hits === 1 ? "ضربة أصابت" : "ضربات أصابت"}` : ""}${hits && stopped ? " · " : ""}${stopped ? `🛡️ ${ar(stopped)} صدّها الدفاع` : ""}${dead ? ` · ⚰️ ${ar(dead)} وفاة` : ""}${hurt ? ` · 🤕 ${ar(hurt)} إصابة` : ""}</small></span>
+        <small>آخر ضربة ${agoText(list[0].x.at)}<br><em>▾ ${ar(list.length)} ${list.length === 1 ? "خبر" : "أخبار"}</em></small></summary>
+      <div class="wn-list">${list.map((e) => newsRow(e.x)).join("")}</div></details>`;
+  }).join("");
+}
 export async function worldNewsSheet(refreshed) {
   const top = (WNEWS.map || []).slice();
   const big = top.sort((p, q) => q.pop - p.pop).slice(0, 5), happy = (WNEWS.map || []).filter((t) => t.pop >= 30).sort((p, q) => q.happy - p.happy).slice(0, 3);
@@ -178,7 +211,7 @@ export async function worldNewsSheet(refreshed) {
     ${big.length ? `<h3>🏆 أكبر المدن</h3><div class="rows">${big.map((t, i) => row(`${ar(i + 1)}. ${town(t)}`, `${money(t.pop)} ساكن · ${ERAS[t.era]?.name || ""}`)).join("")}</div>` : ""}
     ${happy.length ? `<h3>😊 أسعد المدن</h3><div class="rows">${happy.map((t) => row(town(t), `${ar(t.happy)}٪`, "plus")).join("")}</div>` : ""}
     <h3>📰 الأخبار</h3>
-    <div class="rows">${WNEWS.items.length ? WNEWS.items.map((x) => `<div class="row wnews ${x.id > wnewsSeen() ? "new" : ""}"><span>${ar(x.text)}</span><small>${agoText(x.at)}</small></div>`).join("") : `<p class="hint">${refreshed ? "للحين ما صار شي بالجوف." : "نحمّل…"}</p>`}</div>`, "wnews");
+    <div class="rows">${WNEWS.items.length ? newsRows(WNEWS.items) : `<p class="hint">${refreshed ? "للحين ما صار شي بالجوف." : "نحمّل…"}</p>`}</div>`, "wnews");
   bindNewsTabs();
   $("sheetBody").querySelectorAll("[data-goplot]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); const p = Number(b.dataset.goplot); if (p === mine) closeSheet(); else visitTown(p); }));
   if (WNEWS.items.length) store.set("rafaya-wnews-seen", String(WNEWS.items[0].id));
