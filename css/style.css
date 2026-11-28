@@ -1205,3 +1205,4 @@ details.wn-war > summary small { font-size: 12px; line-height: 1.6; } details.wn
 details.wn-war { border-inline-start: 4px solid #e0573f; }
 details.wn-war[open] > summary em { opacity: .5; }
 .wn-list { display: grid; gap: 4px; padding: 0 8px 8px; } .wn-list .row { margin: 0; font-size: 13px; background: rgba(0,0,0,.04); }
+.wn-side { display: block; } .wn-side b { font-size: 12px !important; color: #8a3a22; }

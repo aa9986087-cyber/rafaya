@@ -192,11 +192,16 @@ export function newsRows(items) {
     const k = [st.a, st.b].sort().join("|");
     if (done.has(k)) return "";
     done.add(k);
-    const list = pairs.get(k), hits = list.filter((e) => e.st.hit).length, stopped = list.length - hits;
-    const dead = list.reduce((n, e) => n + (e.st.dead || 0), 0), hurt = list.reduce((n, e) => n + (e.st.hurt || 0), 0);
-    const [p, q] = k.split("|"), fresh = list.some((e) => e.x.id > wnewsSeen());
-    return `<details class="row wnews wn-war ${fresh ? "new" : ""}"><summary><span><b>🔥 حرب «${p}» و«${q}»</b>
-        <small>${hits ? `💥 ${ar(hits)} ${hits === 1 ? "ضربة أصابت" : "ضربات أصابت"}` : ""}${hits && stopped ? " · " : ""}${stopped ? `🛡️ ${ar(stopped)} صدّها الدفاع` : ""}${dead ? ` · ⚰️ ${ar(dead)} وفاة` : ""}${hurt ? ` · 🤕 ${ar(hurt)} إصابة` : ""}</small></span>
+    const list = pairs.get(k), fresh = list.some((e) => e.x.id > wnewsSeen());
+    // who struck whom: one line for each side that fired (the attacker first, then what came of it)
+    const side = (from) => {
+      const mine = list.filter((e) => e.st.a === from); if (!mine.length) return "";
+      const hits = mine.filter((e) => e.st.hit).length, stopped = mine.length - hits, dead = mine.reduce((n, e) => n + (e.st.dead || 0), 0), hurt = mine.reduce((n, e) => n + (e.st.hurt || 0), 0);
+      const to = mine[0].st.b;
+      return `<small class="wn-side"><b>🚀 «${from}» ← «${to}»</b> ${ar(mine.length)} ${mine.length === 1 ? "ضربة" : "ضربات"}: ${[hits ? `💥 ${ar(hits)} أصابت` : "", stopped ? `🛡️ ${ar(stopped)} انصدّت` : "", dead ? `⚰️ ${ar(dead)} وفاة` : "", hurt ? `🤕 ${ar(hurt)} إصابة` : ""].filter(Boolean).join(" · ")}</small>`;
+    };
+    const first = list[list.length - 1].st.a, other = first === list[list.length - 1].st.a ? list[list.length - 1].st.b : first;
+    return `<details class="row wnews wn-war ${fresh ? "new" : ""}"><summary><span><b>🔥 حرب «${first}» على «${other}»</b>${side(first)}${side(other)}</span>
         <small>آخر ضربة ${agoText(list[0].x.at)}<br><em>▾ ${ar(list.length)} ${list.length === 1 ? "خبر" : "أخبار"}</em></small></summary>
       <div class="wn-list">${list.map((e) => newsRow(e.x)).join("")}</div></details>`;
   }).join("");
