@@ -2,7 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { newGame, pack, unpack, idx, analyze, cantBuild, build, condFactor, step, riseStage } from "../js/sim.js";
-import { WAR, WEAPONS, HEAVY_ON, interceptChance, milProfile, warFactor, relNow, weaponBlocker, worthOf, ruinOf, warPrize } from "../js/war.js";
+import { WAR, WEAPONS, HEAVY_ON, interceptChance, milProfile, warFactor, relNow, weaponBlocker, worthOf, ruinOf, warPrize, repairCostOf, deputyBudget } from "../js/war.js";
+import { B } from "../js/data.js";
 import { WarServer, memWarDb, sqlWarDb } from "../js/warserver.js";
 
 const HOUR = 3600000, MIN = 60000;
@@ -482,6 +483,7 @@ test("rewards: spoils from economic buildings, medals for the leaders, an offici
   const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] });
   const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], ...Array.from({ length: 6 }, (_, k) => [30 + k, 30, "factory"])] });
   W.war.handle("buy", { req: "m", kind: "missile", n: 6 }, a);
+  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
   atWar(W, a, b);
   for (let k = 0; k < 3; k++) {
     const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac);
@@ -501,7 +503,7 @@ test("rewards: spoils from economic buildings, medals for the leaders, an offici
   assert.ok(st.notes.some((n) => n.kind === "victory"));
   assert.ok(W.war.handle("state", {}, b).notes.some((n) => n.kind === "defeat"));
   const prize = -st.charges.find((c) => /جائزة النصر/.test(c.why)).amount;
-  assert.ok(prize >= 38000 && prize <= 40000, `20% of صفان's budget (200,000 less its deputy's repairs): ${prize}`);
+  assert.equal(prize, 40000, "20% of صفان's 200,000");
   assert.equal(W.war.handle("state", { seq: 0 }, b).charges.find((c) => /خسارة الحرب/.test(c.why)).amount, prize);
   assert.ok(st.medals[10].some((m) => m.name === "القائد الذكي"));
   assert.ok(st.medals[10].some((m) => m.name === "بطل الجوف"));
@@ -638,6 +640,7 @@ test("a building out of action that is hit again falls to rubble; rubble is clea
   const a = W.addTown(10, "الرافعية", { mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2]] });
   const b = W.addTown(30, "صفان", { mil: [[20, 20, "milhq"], [40, 40, "factory"]] });
   W.war.handle("buy", { req: "m", kind: "missile2", n: 9 }, a);
+  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
   atWar(W, a, b);
   const hit = (k, x, y) => { const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); const r = W.war.handle("launch", { op: `fl${k}`, to: 30, x, y, load: { missile2: 1 } }, a); assert.equal(r.ok, true, r.error); W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); return W.db.get("op", `fl${k}`).result; };
   const r1 = hit(1, 40, 40); assert.ok(r1.after < 85 && r1.after > 0, `one strike: ${r1.after}`);
@@ -670,6 +673,7 @@ test("a town half in ruins at its war's end drops a stage (even the greater city
   const a = W.addTown(10, "الرافعية", { era: 5, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [25, 20, "missilepad", 2], [26, 20, "missilepad", 2]] });
   const b = W.addTown(30, "صفان", { era: 5, mil: [[20, 20, "milhq"], [40, 40, "factory"], [44, 44, "factory"]] });
   W.war.handle("buy", { req: "m", kind: "missile2", n: 12 }, a);
+  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
   atWar(W, a, b);
   const hit = (k, x, y) => { const ac = W.war.acct(10); ac.reload = {}; W.war.saveAcct(10, ac); const r = W.war.handle("launch", { op: `dm${k}`, to: 30, x, y, load: { missile2: 1 } }, a); assert.equal(r.ok, true, r.error); W.tick(r.op.arriveAt - W.now() + 1); W.war.settle(); };
   for (let k = 0; k < 2; k++) { hit(`a${k}`, 40, 40); hit(`b${k}`, 44, 44); }
@@ -684,7 +688,6 @@ test("a town half in ruins at its war's end drops a stage (even the greater city
   // the game drops the town to it and does not let it rise past it
   // (js/main.js warApply sets s.war.eraCap; js/sim.js step stops there)
   // repairs: once nothing is out of action the stage comes back
-  W.war.handle("settings", { repair: false, refill: false, budget: 0 }, b);
   for (const d of st.damage) assert.equal(W.war.handle("repair", { req: `r${d.x}${d.y}`, x: d.x, y: d.y }, b).ok, true);
   W.tick(2 * HOUR);
   const back = W.war.handle("state", {}, b);
@@ -736,4 +739,13 @@ test("«سجل حروب الجوف»: anyone sees the strikes and wars between a
   assert.equal(w.op.fee, undefined); assert.equal(w.op.pads, undefined); assert.equal(w.op.side, "watch");
   assert.equal(w.ops.length, 1);
   assert.match(W.war.handle("opwatch", { op: "nope" }, c).error, /ما عادت/);
+});
+
+test("repairs cost half what they did; the deputy's default budget grows with the town's stage", () => {
+  assert.equal(repairCostOf("factory", 85), Math.round(B.factory.cost * 0.006 * 85));
+  assert.ok(repairCostOf("factory", 85) < B.factory.cost * 0.6, "out of action: about half its price");
+  assert.equal(deputyBudget({ budget: 5000 }, 1), 5000);
+  assert.equal(deputyBudget({ budget: 5000 }, 5), 150000, "the old default: by the stage");
+  assert.equal(deputyBudget({ budget: 5000, set: true }, 5), 5000, "the mayor's own choice stays");
+  assert.equal(deputyBudget({ budget: 30000 }, 5), 30000);
 });
