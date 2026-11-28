@@ -759,3 +759,17 @@ test("stock: 150 drones, 150 missiles (the destructive ones inside, never taken)
   const c = capacity({ bases: [{ lvl: 0, wd: 0 }], pads: [{ lvl: 0, wd: 0 }], airdefs: [], forts: [], armory: null });
   assert.equal(c.drones, 150); assert.equal(c.missiles, 150);
 });
+
+test("wars declared before the new rules last a day from their start too (once)", () => {
+  const W = makeWorld();
+  const a = W.addTown(1, "أ", { mil: BASE }), b = W.addTown(2, "ب", { mil: BASE });
+  const now = W.now(), start = now - 3 * HOUR;
+  W.war.saveRel(1, 2, { a: 1, b: 2, state: "war", since: start, warStart: start, warEnd: start + 2 * HOUR, judged: start, hist: [] });
+  assert.equal(relNow(W.war.db.get("rel", "1:2"), now, WAR).state, "hostile");
+  assert.equal(W.war.extendOldWars(), 1);
+  const r = W.war.db.get("rel", "1:2");
+  assert.equal(relNow(r, now, WAR).state, "war");
+  assert.equal(r.warEnd, start + WAR.T.war);
+  assert.equal(W.war.extendOldWars(), 0, "already on the new rules");
+  void a; void b;
+});

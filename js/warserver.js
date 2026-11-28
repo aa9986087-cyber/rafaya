@@ -100,6 +100,23 @@ export class WarServer {
    * other cfg.prize of its budget; with no strike landed either way, or the same, a draw. Then any side with half its
    * worth or more out of action drops a stage (one at a time). Once per war. Returns the relation as it should be stored.
    */
+  /**
+   * Once (the owner, 28 Nov 2026): wars declared before the new rules kept their old length (about two hours) and
+   * then the new day of waiting. Every one of them still inside a day from its start is a war again until that day
+   * ends (judged then, with the new rules). Returns how many.
+   */
+  extendOldWars() {
+    const now = this.now(); let n = 0;
+    for (const r of this.db.list("rel", {})) {
+      if (!r.warStart || (r.rules || 0) >= WAR_RULES || !["war", "warning"].includes(r.state)) continue; // a truce, a peace or a shield ended it: left alone
+      const end = r.warStart + this.cfg.T.war;
+      if (end <= now || (r.warEnd || 0) >= end) continue;
+      const out = { ...r, warEnd: end, rules: WAR_RULES };
+      delete out.judged; delete out.warCool;
+      this.saveRel(r.a, r.b, out); n++;
+    }
+    return n;
+  }
   judge(r, now, how = "time") {
     if (!r?.warStart || r.judged === r.warStart) return r;
     const out = { ...r, judged: r.warStart };
