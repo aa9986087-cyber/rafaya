@@ -679,6 +679,14 @@ export class WarServer {
       const why = weaponBlocker(p, w);
       if (why) return { error: why };
     }
+    // the destructive weapons: one at a time, a town fires one every 6 hours and is the target of one every 12
+    const heavyN = Object.entries(load).reduce((n, [w, k]) => n + (isHeavy(w) ? k : 0), 0);
+    if (heavyN) {
+      if (heavyN > 1) return { error: "سلاح مدمّر واحد بس بالعملية" };
+      if (a.heavyAt && now - a.heavyAt < this.cfg.heavyEvery) return { error: `أطلقت سلاح مدمّر قبل شوي: تقدر بعد ${minutesText(this.cfg.heavyEvery - (now - a.heavyAt))}` };
+      const last = this.db.list("op", { k2: String(to), since: now - this.cfg.heavyTargetEvery, limit: 200 }).filter((o) => Object.keys(o.load || {}).some(isHeavy)).sort((p, q) => q.launchAt - p.launchAt)[0];
+      if (last) return { error: `المدينة انضربت بسلاح مدمّر قبل شوي: تنضرب مرة ثانية بعد ${minutesText(this.cfg.heavyTargetEvery - (now - last.launchAt))}` };
+    }
     const drones = kindSum(load, "drone"), missiles = kindSum(load, "missile");
     const readyBases = p.bases.filter((b) => b.wd < 85 && (a.reload[`b${b.x}:${b.y}`] || 0) <= now);
     const readyPads = p.pads.filter((b) => b.wd < 85 && (a.reload[`p${b.x}:${b.y}`] || 0) <= now);
@@ -730,6 +738,7 @@ export class WarServer {
     const { now, to, a, p, mine, them, readyBases, readyPads } = plans[0];
     const need = {};
     for (const pl of plans) for (const [w, n] of Object.entries(pl.load)) need[w] = (need[w] || 0) + n;
+    if (Object.entries(need).reduce((n, [w, k]) => n + (isHeavy(w) ? k : 0), 0) > 1) return { error: "سلاح مدمّر واحد بس بالدفعة" };
     for (const [w, n] of Object.entries(need)) if (a.arsenal[w] < n) return { error: `الدفعة تحتاج ${nf(n)} ${WEAPONS[w].name} وعندك ${nf(a.arsenal[w])}` };
     const drones = plans.reduce((n, pl) => n + pl.drones, 0), missiles = plans.reduce((n, pl) => n + pl.missiles, 0);
     const droneRoom = readyBases.reduce((n, b) => n + milStat("dronebase", b.lvl).salvo, 0), padRoom = readyPads.reduce((n, b) => n + milStat("missilepad", b.lvl).cap, 0);
@@ -744,6 +753,7 @@ export class WarServer {
     if (this.available(mine, a) < fee) return { error: "ما يكفي المال لتشغيل الدفعة" };
     // spend: the ammunition, and the launchers that fired (only as many as the batch needed)
     for (const [w, n] of Object.entries(need)) a.arsenal[w] -= n;
+    if (Object.keys(need).some(isHeavy)) a.heavyAt = now;
     let left = drones;
     for (const b of readyBases.sort((q, r) => r.lvl - q.lvl)) { if (left <= 0) break; left -= milStat("dronebase", b.lvl).salvo; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     left = missiles;
@@ -777,6 +787,7 @@ export class WarServer {
     if (pl.error) return pl;
     const { now, to, x, y, target, load, fee, a, mine, them, readyBases, readyPads, drones, missiles, flight } = pl;
     for (const [w, n] of Object.entries(load)) a.arsenal[w] -= n;
+    if (Object.keys(load).some(isHeavy)) a.heavyAt = now;
     if (drones) { const b = readyBases.sort((p, q) => q.lvl - p.lvl)[0]; a.reload[`b${b.x}:${b.y}`] = this.reloadAfter(a, `b${b.x}:${b.y}`, milStat("dronebase", b.lvl).reload, now); }
     if (missiles) { let left = missiles; for (const b of readyPads.sort((p, q) => q.lvl - p.lvl)) { if (left <= 0) break; left -= milStat("missilepad", b.lvl).cap; a.reload[`p${b.x}:${b.y}`] = this.reloadAfter(a, `p${b.x}:${b.y}`, milStat("missilepad", b.lvl).reload, now); } }
     this.breakShield(me.plot, a, now);

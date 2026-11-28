@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { newGame, pack, unpack, idx, analyze, cantBuild, build, condFactor } from "../js/sim.js";
-import { WAR, WEAPONS, interceptChance, milProfile, warFactor, relNow } from "../js/war.js";
+import { WAR, WEAPONS, interceptChance, milProfile, warFactor, relNow, weaponBlocker } from "../js/war.js";
 import { WarServer, memWarDb, sqlWarDb } from "../js/warserver.js";
 
 const HOUR = 3600000, MIN = 60000;
@@ -515,8 +515,8 @@ test("military count: the extra buildings go once, from the kind most owned, low
 
 test("destructive weapons: everything in reach falls to rubble (never a mosque), only the fortress stops them, rubble is cleared for money and time", () => {
   const W = makeWorld({ rolls: Array(80).fill(0.99) }); // the dice never intercept
-  const a = W.addTown(1, "المهاجمة", { era: 3, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [26, 20, "radar"]] });
-  const b = W.addTown(2, "الهدف", { era: 3, mil: [[20, 20, "milhq"], [28, 20, "airdef", 2], [30, 30, "radar", 2], [40, 40, "house", 3], [41, 40, "house", 3], [40, 41, "mosque"], [45, 45, "factory"]] });
+  const a = W.addTown(1, "المهاجمة", { era: 4, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2], [26, 20, "radar"]] });
+  const b = W.addTown(2, "الهدف", { era: 4, mil: [[20, 20, "milhq"], [28, 20, "airdef", 2], [30, 30, "radar", 2], [40, 40, "house", 3], [41, 40, "house", 3], [40, 41, "mosque"], [45, 45, "factory"]] });
   W.war.handle("settings", { repair: true, refill: false, budget: 900000 }, b);
   atWar(W, a, b);
   const acct = W.war.acct(a.plot); acct.arsenal.quake = 2; W.war.saveAcct(a.plot, acct);
@@ -555,4 +555,23 @@ test("destructive weapons: everything in reach falls to rubble (never a mosque),
   const p2 = milProfile(W.towns.get(2).snapshot);
   assert.ok(interceptChance(p2, "quake") > 0.5);
   assert.ok(interceptChance(p2, "storm") < interceptChance(p2, "quake"));
+  // fair play: the attacker waits (6 hours live) for the next one, the town (12 hours live) before another lands on it
+  assert.equal(WAR.heavyEvery, 6 * HOUR); assert.equal(WAR.heavyTargetEvery, 12 * HOUR);
+  W.war.cfg = { ...W.war.cfg, heavyEvery: 10 * MIN, heavyTargetEvery: 20 * MIN }; // shorter here: the war lasts a week of al-Jouf
+  const ac = W.war.acct(a.plot); ac.arsenal.quake = 4; ac.reload = {}; W.war.saveAcct(a.plot, ac);
+  assert.equal(W.war.handle("launch", { op: "hv1", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).ok, true);
+  assert.match(W.war.handle("launch", { op: "hv2", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).error, /قبل شوي/);
+  W.tick(10 * MIN); { const r = W.war.acct(a.plot); r.reload = {}; W.war.saveAcct(a.plot, r); }
+  assert.match(W.war.handle("launch", { op: "hv3", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).error, /المدينة انضربت/);
+  W.tick(10 * MIN); { const r = W.war.acct(a.plot); r.reload = {}; W.war.saveAcct(a.plot, r); }
+  assert.equal(W.war.handle("launch", { op: "hv4", to: 2, x: 45, y: 45, load: { quake: 1 } }, a).ok, true);
+});
+
+test("destructive weapons are for a حاضرة and above", () => {
+  const W = makeWorld();
+  const a = W.addTown(1, "محافظة", { era: 3, mil: [[20, 20, "milhq", 2], [24, 20, "missilepad", 2]] });
+  const p = milProfile(W.towns.get(1).snapshot); p.era = 3;
+  assert.match(weaponBlocker(p, "quake"), /حاضرة/);
+  p.era = 4; assert.equal(weaponBlocker(p, "quake"), "");
+  void a;
 });

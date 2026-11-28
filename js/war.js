@@ -49,8 +49,10 @@ export const WAR = {
   repairPerPoint: 45 * 1000,  // repair time: 45 s per point of damage (a building at 60% → 45 min)
   repairPrice: 0.012,         // repair: × the building's price, per point of damage
   autoBudget: 5000,           // the deputy's default repair and refill budget, per day
-  rubble: { price: 0.3, min: 500, ms: 15 * WAR_MIN }, // clearing the rubble of a building: × its price (at least min), and this long
-  heavyIntc: 2                // interceptors one try at a destructive weapon takes
+  rubble: { price: 0.1, min: 500, ms: 15 * WAR_MIN }, // clearing the rubble of a building: × its price × (1 + level) (at least min), and this long
+  heavyIntc: 2,               // interceptors one try at a destructive weapon takes
+  heavyEvery: 6 * WAR_HOUR,   // a town launches one destructive weapon this often (the owner, 28 Nov 2026)
+  heavyTargetEvery: 12 * WAR_HOUR // and a town is the target of one this often
 };
 
 /** The live rules as written (the trial copy shortens WAR's waits in place; the war guide always tells these). */
@@ -58,7 +60,7 @@ export const WAR_LIVE = JSON.parse(JSON.stringify(WAR));
 /** The same rules with every wait cut short: only for local tests and the trial copy, never the live world. */
 export function fastWar(div = 30) {
   const T = Object.fromEntries(Object.entries(WAR.T).map(([k, v]) => [k, Math.round(v / div)]));
-  return { ...WAR, newPlayer: 0, T, rubble: { ...WAR.rubble, ms: WAR.rubble.ms / div }, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, awayWindow: WAR.caps.awayWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
+  return { ...WAR, newPlayer: 0, T, rubble: { ...WAR.rubble, ms: WAR.rubble.ms / div }, heavyEvery: WAR.heavyEvery / div, heavyTargetEvery: WAR.heavyTargetEvery / div, caps: { ...WAR.caps, rehitWindow: WAR.caps.rehitWindow / div, awayWindow: WAR.caps.awayWindow / div }, repairPerPoint: WAR.repairPerPoint / 6 };
 }
 
 /** The weapons. needs: the building and level that must stand (milWorks) to own and launch it. */
@@ -69,8 +71,8 @@ export const WEAPONS = {
   missile2: { name: "صاروخ النفود", kind: "missile", price: 11000, fee: 900, power: 56, evade: 0.55, blast: 2.1, needs: ["missilepad", 2], icon: "☄️", text: "الأقوى: ضرر كبير ويصعب اعتراضه. يحتاج مجمع صواريخ." },
   // the destructive weapons (the owner, 28 Nov 2026): every building they reach (never a mosque) falls to rubble,
   // to be cleared before anything is built there again. Only «منظومة الحصن» can stop them.
-  quake: { name: "صاروخ الزلزال", kind: "missile", heavy: true, price: 30000, fee: 2500, power: 100, evade: 1, blast: 1.6, needs: ["missilepad", 2], icon: "🌋", text: "مدمّر: يسوّي كل المباني اللي حوله بالأرض ويخليها ركام. الدفاع الجوي العادي ما يقدر عليه، بس «منظومة الحصن»." },
-  storm: { name: "صاروخ الإعصار", kind: "missile", heavy: true, price: 70000, fee: 5000, power: 100, evade: 0.8, blast: 2.6, needs: ["missilepad", 2], icon: "🌪️", text: "أقوى سلاح بالجوف: يمسح حارة كاملة ويخليها ركام، وأصعب بالاعتراض حتى على «منظومة الحصن»." }
+  quake: { name: "صاروخ الزلزال", kind: "missile", heavy: true, price: 150000, fee: 10000, power: 100, evade: 1, blast: 1.6, needs: ["missilepad", 2], minEra: 4, icon: "🌋", text: "مدمّر: يسوّي كل المباني اللي حوله بالأرض ويخليها ركام. الدفاع الجوي العادي ما يقدر عليه، بس «منظومة الحصن»." },
+  storm: { name: "صاروخ الإعصار", kind: "missile", heavy: true, price: 400000, fee: 25000, power: 100, evade: 0.8, blast: 2.6, needs: ["missilepad", 2], minEra: 4, icon: "🌪️", text: "أقوى سلاح بالجوف: يمسح حارة كاملة ويخليها ركام، وأصعب بالاعتراض حتى على «منظومة الحصن»." }
 };
 /** A destructive weapon: what it reaches falls to rubble. */
 export const isHeavy = (wid) => !!WEAPONS[wid]?.heavy;
@@ -183,6 +185,7 @@ export function capacity(p) {
 export function weaponBlocker(p, wid) {
   const w = WEAPONS[wid];
   if (!w) return "سلاح غير معروف";
+  if (w.minEra && (p.era || 0) < w.minEra) return `للحاضرة وفوق بس: مدينتك لازم تصير «${ERAS[w.minEra].name}»`;
   const [id, lvl] = w.needs, list = id === "dronebase" ? p.bases : p.pads;
   if (!list.length) return `يحتاج ${B[id].name}`;
   if (!list.some((it) => it.lvl >= lvl)) return `يحتاج «${milStat(id, lvl).name}»`;
