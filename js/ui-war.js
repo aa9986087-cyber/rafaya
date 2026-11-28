@@ -542,7 +542,7 @@ export function salvoOpts(ops, prof) {
       weapons: op.result.hits.map((h) => ({ ...h, kind: WEAPONS[h.w].kind })), area: op.result.area || [{ x: op.x, y: op.y, dmg: op.result.dmg, after: op.result.after }],
       onHit: (dmg) => {
         let changed = false;
-        for (const a of op.result.area || [{ x: op.x, y: op.y, after: op.result.after }]) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b && (t.b.wd || 0) < a.after) { t.b.wd = Math.min(100, a.after); changed = true; } }
+        for (const a of op.result.area || [{ x: op.x, y: op.y, after: op.result.after }]) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b && (t.b.wd || 0) < a.after) { t.b.wd = Math.min(100, a.after); changed = true; } if (t?.b && a.flat && !t.b.flat) { t.b.flat = true; changed = true; } } // the blast: now it falls
         if (changed) world.sync(S, { buildings: true });
         if (dmg) floatAt(op.x, op.y, `💥 −${ar(op.result.dmg)}٪${(op.result.area?.length || 1) > 1 ? ` · ${ar(op.result.area.length)} مباني` : ""}`, "down");
       }
@@ -554,7 +554,7 @@ export function salvoOpts(ops, prof) {
 }
 /** The buildings a salvo hit, put back as they stood before it (the scene then shows the damage arriving). */
 function salvoBefore(ops) {
-  for (const op of ops) for (const a of op.result?.area || []) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b) { if (a.before) t.b.wd = a.before; else delete t.b.wd; } }
+  for (const op of ops) for (const a of op.result?.area || []) { const t = S.tiles[idx(a.x, a.y)]; if (t?.b) { if (a.before) t.b.wd = a.before; else delete t.b.wd; if (a.flat) delete t.b.flat; } } // standing until the blast (rubble only after it)
   world.sync(S, { buildings: true });
 }
 /** How the attacks on us are shown (the mayor's choice, kept on the phone): "full", "fast" or "off" (the report only). */

@@ -1355,7 +1355,7 @@ export function warApply(st) {
     if (!t.b) return;
     const r = rows.get(`${i % N}:${Math.floor(i / N)}`), mine = r && r.bid === t.b.id, wd = mine ? Math.round(r.wd * 10) / 10 : 0;
     if ((t.b.wd || 0) !== wd) { if (wd) t.b.wd = wd; else delete t.b.wd; changed = true; }
-    if (!!t.b.flat !== !!(mine && r.flat)) { if (mine && r.flat) t.b.flat = true; else delete t.b.flat; changed = true; }
+    if (!WARX.scene && !!t.b.flat !== !!(mine && r.flat)) { if (mine && r.flat) t.b.flat = true; else delete t.b.flat; changed = true; }
   });
   // rubble cleared (paid on the server): the land is empty, ready to build on
   for (const r of st.cleared || []) { const t = home.tiles[idx(r.x, r.y)]; if (t?.b?.id === r.bid && !(t.b.build > 0)) { raze(home, r.x, r.y); changed = true; } }
