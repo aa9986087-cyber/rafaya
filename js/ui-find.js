@@ -29,9 +29,44 @@ function findItems() {
 }
 const findRank = (it) => (it.hurt ? 0 : it.idle ? 1 : it.up ? 2 : it.tag[0] === "build" ? 3 : 4);
 
+/**
+ * The town's buildings are read once when the search opens (a big town has thousands of tiles: reading them on
+ * every letter made typing lag), and typing only redraws the results under the box: the box itself is never
+ * redrawn, so the keyboard, the cursor and Arabic word suggestions stay as they are.
+ */
 export function findSheet() {
   if (visiting) { toast("البحث داخل مدينتك بس: ارجع لمدينتك", "bad"); return; }
-  const all = findItems(), q = findNorm(FIND.q);
+  FIND.all = findItems();
+  const all = FIND.all, count = (k) => all.filter((it) => (k === "up" ? it.up : k === "hurt" ? it.hurt : it.idle)).length;
+  sheet(`<h2>🔍 ابحث في مدينتك</h2>
+    <input id="findQ" class="fd-q" type="search" placeholder="اكتب: مسجد، بئر، مستشفى، اسم حارة…" value="${FIND.q.replace(/"/g, "&quot;")}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+    <div class="fd-chips">${[["", "الكل"], ...CATS.filter((c) => c.id !== "road" && (c.id !== "mil" || S.world)).map((c) => [c.id, c.name])].map(([id, n]) => `<button type="button" class="${FIND.cat === id ? "on" : ""}" data-fdcat="${id}">${n}</button>`).join("")}</div>
+    <div class="fd-chips flt">${[["up", "⬆️ يقدر يتطور"], ["hurt", "🔧 يحتاج تصليح"], ["idle", "⚠️ واقف"]].map(([k, n]) => `<button type="button" class="${FIND.flt === k ? "on" : ""}" data-fdflt="${k}">${n} (${ar(count(k))})</button>`).join("")}</div>
+    <div id="fdRes"></div>`, "find");
+  const qi = $("findQ");
+  const typed = () => { FIND.q = qi.value; clearTimeout(FIND.t); FIND.t = setTimeout(findResults, 150); };
+  qi.addEventListener("input", (e) => { if (!e.isComposing) typed(); });
+  qi.addEventListener("compositionend", typed);
+  qi.addEventListener("keydown", (e) => { if (e.key === "Enter") qi.blur(); });
+  const q2 = (s) => $("sheetBody").querySelectorAll(s);
+  q2("[data-fdcat]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); FIND.cat = b.dataset.fdcat; q2("[data-fdcat]").forEach((x) => x.classList.toggle("on", x === b)); findResults(); }));
+  q2("[data-fdflt]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); FIND.flt = FIND.flt === b.dataset.fdflt ? "" : b.dataset.fdflt; q2("[data-fdflt]").forEach((x) => x.classList.toggle("on", x.dataset.fdflt === FIND.flt)); findResults(); }));
+  $("fdRes").addEventListener("click", (e) => {
+    const open = e.target.closest("[data-fdopen]"), go = e.target.closest("[data-fdgo]");
+    if (open) { sfx.tap(); FIND.open = FIND.open === open.dataset.fdopen ? "" : open.dataset.fdopen; findResults(); return; }
+    if (!go) return;
+    sfx.tap();
+    const i = Number(go.dataset.fdgo), g = (FIND.groups || []).find((r) => r.some((it) => it.i === i)) || [];
+    FIND.list = g.map((it) => it.i); FIND.at = Math.max(0, FIND.list.indexOf(i));
+    findGo();
+  });
+  findResults();
+}
+/** The results under the search box, for what is typed and the chips chosen (the box is left alone). */
+function findResults() {
+  const box = $("fdRes");
+  if (!box || sheetFor !== "find") return;
+  const all = FIND.all || [], q = findNorm(FIND.q);
   let list = all.filter((it) => (!FIND.cat || it.cat === FIND.cat) && (!FIND.flt || (FIND.flt === "up" ? it.up : FIND.flt === "hurt" ? it.hurt : it.idle)));
   if (q) list = list.filter((it) => [it.name, it.kind, it.district, CATS.find((c) => c.id === it.cat)?.name].some((s) => findNorm(s).includes(q)));
   // one line per kind, the kinds that need the mayor first, then the biggest
@@ -39,7 +74,6 @@ export function findSheet() {
   for (const it of list) (groups.get(it.id) || groups.set(it.id, []).get(it.id)).push(it);
   const rows = [...groups.values()].map((g) => g.sort((a, b) => findRank(a) - findRank(b) || a.name.localeCompare(b.name, "ar")))
     .sort((a, b) => findRank(a[0]) - findRank(b[0]) || b.length - a.length);
-  const count = (k) => all.filter((it) => (k === "up" ? it.up : k === "hurt" ? it.hurt : it.idle)).length;
   const sum = (g) => { const lv = new Map(); g.forEach((it) => lv.set(it.name, (lv.get(it.name) || 0) + 1));
     const s = [...lv].map(([n, c]) => `${ar(c)} ${n}`), h = g.filter((it) => it.hurt).length, i = g.filter((it) => it.idle).length, u = g.filter((it) => it.up).length;
     return [...s.slice(0, 3), ...(s.length > 3 ? ["…"] : []), h ? `🔧 ${ar(h)} متضرر` : "", i ? `⚠️ ${ar(i)} واقف` : "", u ? `⬆️ ${ar(u)} يتطور` : ""].filter(Boolean).join(" · "); };
@@ -47,27 +81,9 @@ export function findSheet() {
   const body = rows.map((g) => g.length === 1 ? `<div class="fd-group single">${line(g[0])}</div>`
     : `<div class="fd-group ${FIND.open === g[0].id ? "open" : ""}"><button type="button" class="fd-head" data-fdopen="${g[0].id}"><span><b>${g[0].kind} (${ar(g.length)})</b><small>${sum(g)}</small></span><i>${FIND.open === g[0].id ? "▴" : "▾"}</i></button>
       ${FIND.open === g[0].id ? `<div class="fd-list">${g.map(line).join("")}</div>` : ""}</div>`).join("");
-  const keep = $("findQ") && document.activeElement === $("findQ");
-  sheet(`<h2>🔍 ابحث في مدينتك</h2>
-    <input id="findQ" class="fd-q" type="search" placeholder="اكتب: مسجد، بئر، مستشفى، اسم حارة…" value="${FIND.q.replace(/"/g, "&quot;")}" autocomplete="off">
-    <div class="fd-chips">${[["", "الكل"], ...CATS.filter((c) => c.id !== "road" && (c.id !== "mil" || S.world)).map((c) => [c.id, c.name])].map(([id, n]) => `<button type="button" class="${FIND.cat === id ? "on" : ""}" data-fdcat="${id}">${n}</button>`).join("")}</div>
-    <div class="fd-chips flt">${[["up", "⬆️ يقدر يتطور"], ["hurt", "🔧 يحتاج تصليح"], ["idle", "⚠️ واقف"]].map(([k, n]) => `<button type="button" class="${FIND.flt === k ? "on" : ""}" data-fdflt="${k}">${n} (${ar(count(k))})</button>`).join("")}</div>
-    <p class="hint">${ar(list.length)} مبنى${q || FIND.cat || FIND.flt ? "" : " بمدينتك"}</p>
-    <div class="fd-body">${body || `<p class="hint">ما لقيت شي. جرّب كلمة ثانية.</p>`}</div>`, "find");
+  box.innerHTML = `<p class="hint">${ar(list.length)} مبنى${q || FIND.cat || FIND.flt ? "" : " بمدينتك"}</p>
+    <div class="fd-body">${body || `<p class="hint">ما لقيت شي. جرّب كلمة ثانية.</p>`}</div>`;
   FIND.groups = rows;
-  const qi = $("findQ");
-  if (keep) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
-  qi.addEventListener("input", () => { FIND.q = qi.value; clearTimeout(FIND.t); FIND.t = setTimeout(findSheet, 180); });
-  const q2 = (s) => $("sheetBody").querySelectorAll(s);
-  q2("[data-fdcat]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); FIND.cat = b.dataset.fdcat; findSheet(); }));
-  q2("[data-fdflt]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); FIND.flt = FIND.flt === b.dataset.fdflt ? "" : b.dataset.fdflt; findSheet(); }));
-  q2("[data-fdopen]").forEach((b) => b.addEventListener("click", () => { sfx.tap(); FIND.open = FIND.open === b.dataset.fdopen ? "" : b.dataset.fdopen; findSheet(); }));
-  q2("[data-fdgo]").forEach((b) => b.addEventListener("click", () => {
-    sfx.tap();
-    const i = Number(b.dataset.fdgo), g = rows.find((r) => r.some((it) => it.i === i)) || [];
-    FIND.list = g.map((it) => it.i); FIND.at = Math.max(0, FIND.list.indexOf(i));
-    findGo();
-  }));
 }
 
 /** Fly to the building at FIND.at, open its card, and keep the bar to step through its kind. */
